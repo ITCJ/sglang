@@ -134,10 +134,16 @@ class SparseKVCacheManager:
         )
         self.store_dtype = self.paged_kv_cache.store_dtype
         self.layer_num = self.paged_kv_cache.layer_num
+
+        self._prefetch_hit_prepare_stream = torch.npu.Stream()
+        self._prefetch_miss_prepare_stream = torch.npu.Stream()
+        self._prefetch_refill_prepare_stream = torch.npu.Stream()
         self._prefetch_d2d_hit_stream = torch.npu.Stream()
         self._prefetch_h2d_miss_stream = torch.npu.Stream()
         self._prefetch_refill_stream = torch.npu.Stream()
         self._prefetch_slot_map_stream = torch.npu.Stream()
+
+
 
         self.hit_done = torch.npu.Event()
         self.miss_done = torch.npu.Event()
@@ -737,6 +743,9 @@ class SparseKVCacheManager:
         layer_idx = layer.layer_id - self.start_layer
         stream = stream if stream is not None else torch.npu.current_stream()
 
+
+
+
         with torch.npu.stream(stream):
             # Route invalid requests to sentinel rows without changing graph shape.
             # slot_map_row_indices: invalid -> self.size (reserved slot-map row)
@@ -782,16 +791,30 @@ class SparseKVCacheManager:
             )
             token_on_device = token_on_device.to(torch.bool) & valid_topk_mask
             _profile_pop(profile_range)
+            copy_ready = torch.npu.Event()
+            hit_prepared = torch.npu.Event()
+            miss_prepared = torch.npu.Event()
+            refill_prepared = torch.npu.Event()
+            _record_stream_event(stream, copy_ready)
 
+
+        with torch.npu.stream(self._prefetch_hit_prepare_stream):
             # Build copy indices on the main stream, then protect their use on
             # the hit and miss streams with copy_ready.
+            _wait_stream_event(self._prefetch_hit_prepare_stream, copy_ready)
             hit_src_index, hit_dst_index, hit_valid_mask = _build_hit_src_dst_index(
                 token_on_device,
                 device_token_pos,
                 device_cache_row_indices,
                 self.sparse_context_len,
             )
+            hit_src_index.record_stream(self._prefetch_d2d_hit_stream)
+            hit_dst_index.record_stream(self._prefetch_d2d_hit_stream)
+            hit_valid_mask.record_stream(self._prefetch_d2d_hit_stream)
+            _record_stream_event(self._prefetch_hit_prepare_stream, hit_prepared)
 
+        with torch.npu.stream(self._prefetch_miss_prepare_stream):
+            _wait_stream_event(self._prefetch_miss_prepare_stream, copy_ready)
             host_miss_mask = (~token_on_device) & valid_topk_mask
             miss_src_index, miss_dst_index, miss_valid_mask = _build_miss_src_dst_index(
                 host_miss_mask,
@@ -799,7 +822,13 @@ class SparseKVCacheManager:
                 device_cache_row_indices,
                 self.max_context_len,
             )
+            miss_src_index.record_stream(self._prefetch_h2d_miss_stream)
+            miss_dst_index.record_stream(self._prefetch_h2d_miss_stream)
+            miss_valid_mask.record_stream(self._prefetch_h2d_miss_stream)
+            _record_stream_event(self._prefetch_miss_prepare_stream, miss_prepared)
 
+        with torch.npu.stream(self._prefetch_refill_prepare_stream):
+            _wait_stream_event(self._prefetch_refill_prepare_stream, copy_ready)
             cache_slot_ids = self._device_cache_slot_ids[:topk_len]
             request_cache_offsets = (
                 device_cache_row_indices.unsqueeze(1) * self.sparse_context_len
@@ -813,14 +842,16 @@ class SparseKVCacheManager:
                 (request_cache_offsets + cache_slot_ids).reshape(-1).contiguous()
             )
             refill_valid_mask = valid_topk_mask.reshape(-1).contiguous()
+            refill_src_index.record_stream(self._prefetch_refill_stream)
+            refill_dst_index.record_stream(self._prefetch_refill_stream)
+            refill_valid_mask.record_stream(self._prefetch_refill_stream)
+            _record_stream_event(self._prefetch_refill_prepare_stream, refill_prepared)
 
-            copy_ready = torch.npu.Event()
-            _record_stream_event(stream, copy_ready)
 
         # Copy device-cache hits into the current KV buffer.
         profile_range = _profile_push("sparse_kv_prefetch.d2d_hit_copy")
         with torch.npu.stream(self._prefetch_d2d_hit_stream):
-            _wait_stream_event(self._prefetch_d2d_hit_stream, copy_ready)
+            _wait_stream_event(self._prefetch_d2d_hit_stream, hit_prepared)
             unidex_copy_inplace(
                 self.device_kv_buffer[layer_idx],
                 current_kv_buffer,
@@ -837,7 +868,7 @@ class SparseKVCacheManager:
         # Copy host shared-memory misses into the current KV buffer.
         profile_range = _profile_push("sparse_kv_prefetch.h2d_miss_copy")
         with torch.npu.stream(self._prefetch_h2d_miss_stream):
-            _wait_stream_event(self._prefetch_h2d_miss_stream, copy_ready)
+            _wait_stream_event(self._prefetch_h2d_miss_stream, miss_prepared)
             unidex_copy_inplace(
                 self.host_kv_buffer[layer_idx],
                 current_kv_buffer,
@@ -856,6 +887,7 @@ class SparseKVCacheManager:
         # copies complete, so the next step can reuse these entries.
         profile_range = _profile_push("sparse_kv_prefetch.device_refill")
         with torch.npu.stream(self._prefetch_refill_stream):
+            _wait_stream_event(self._prefetch_refill_stream, refill_prepared)
             _wait_stream_event(self._prefetch_refill_stream, self.hit_done)
             _wait_stream_event(self._prefetch_refill_stream, self.miss_done)
             unidex_copy_inplace(
