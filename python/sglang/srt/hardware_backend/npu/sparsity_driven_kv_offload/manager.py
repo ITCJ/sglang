@@ -792,6 +792,7 @@ class SparseKVCacheManager:
             token_on_device = token_on_device.to(torch.bool) & valid_topk_mask
             token_on_host = (~token_on_device) & valid_topk_mask
             valid_2d = token_on_host & (topk_indices >= 0) & (topk_indices < self.max_context_len)
+            valid_2d = valid_2d.to(torch.bool)
             _profile_pop(profile_range)
             copy_ready = torch.npu.Event()
             hit_prepared = torch.npu.Event()
