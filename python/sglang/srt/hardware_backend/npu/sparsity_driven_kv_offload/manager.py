@@ -1054,7 +1054,7 @@ def _build_miss_src_dst_index(
     device = token_from_host.device
 
     
-    valid_mask = valid_2d.reshape(-1).contiguous()
+    valid_mask = valid_2d.to(torch.bool).reshape(-1).contiguous()
 
     flat_dst_index_all = torch.arange(
         bs * topk,
