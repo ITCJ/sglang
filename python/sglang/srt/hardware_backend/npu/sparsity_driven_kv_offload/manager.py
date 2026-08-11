@@ -792,7 +792,6 @@ class SparseKVCacheManager:
             token_on_device = token_on_device.to(torch.bool) & valid_topk_mask
             token_on_host = (~token_on_device) & valid_topk_mask
             valid_2d = token_on_host & (topk_indices >= 0) & (topk_indices < self.max_context_len)
-            valid_2d = valid_2d.to(torch.bool)
             _profile_pop(profile_range)
             copy_ready = torch.npu.Event()
             hit_prepared = torch.npu.Event()
@@ -820,8 +819,8 @@ class SparseKVCacheManager:
             _wait_stream_event(self._prefetch_miss_prepare_stream, copy_ready)
             miss_src_index, miss_dst_index, miss_valid_mask = _build_miss_src_dst_index(
                 token_on_host,
-                valid_2d,
                 topk_indices,
+                valid_2d,
                 device_cache_row_indices,
                 self.max_context_len,
             )
@@ -1054,7 +1053,7 @@ def _build_miss_src_dst_index(
     device = token_from_host.device
 
     
-    valid_mask = valid_2d.to(torch.bool).reshape(-1).contiguous()
+    valid_mask = valid_2d.reshape(-1).contiguous()
 
     flat_dst_index_all = torch.arange(
         bs * topk,
