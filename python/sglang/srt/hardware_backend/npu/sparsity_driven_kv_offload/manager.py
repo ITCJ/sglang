@@ -777,7 +777,7 @@ class SparseKVCacheManager:
                 & (topk_indices < self.max_context_len)
                 & valid_req_mask.unsqueeze(1)
             )
-
+            
             # Query the slot map for device-cache hits and their slot positions.
             profile_range = _profile_push("sparse_kv_prefetch.slot_lookup")
             slot_lookup_req_indices = slot_map_row_indices.to(
@@ -790,6 +790,8 @@ class SparseKVCacheManager:
                 slot_lookup_topk_indices,
             )
             token_on_device = token_on_device.to(torch.bool) & valid_topk_mask
+            token_on_host = (~token_on_device) & valid_topk_mask
+            valid_2d = token_on_host & (topk_indices >= 0) & (topk_indices < self.max_context_len)
             _profile_pop(profile_range)
             copy_ready = torch.npu.Event()
             hit_prepared = torch.npu.Event()
@@ -815,9 +817,9 @@ class SparseKVCacheManager:
 
         with torch.npu.stream(self._prefetch_miss_prepare_stream):
             _wait_stream_event(self._prefetch_miss_prepare_stream, copy_ready)
-            host_miss_mask = (~token_on_device) & valid_topk_mask
             miss_src_index, miss_dst_index, miss_valid_mask = _build_miss_src_dst_index(
-                host_miss_mask,
+                token_on_host,
+                valid_2d,
                 topk_indices,
                 device_cache_row_indices,
                 self.max_context_len,
@@ -1023,6 +1025,7 @@ def _build_hit_src_dst_index(
 def _build_miss_src_dst_index(
     token_from_host: torch.Tensor,
     topk_indices: torch.Tensor,
+    valid_2d: torch.Tensor,
     current_req_indices: torch.Tensor,
     max_context_len: int,
 ):
@@ -1049,7 +1052,7 @@ def _build_miss_src_dst_index(
     bs, topk = token_from_host.shape
     device = token_from_host.device
 
-    valid_2d = token_from_host & (topk_indices >= 0) & (topk_indices < max_context_len)
+    
     valid_mask = valid_2d.reshape(-1).contiguous()
 
     flat_dst_index_all = torch.arange(
