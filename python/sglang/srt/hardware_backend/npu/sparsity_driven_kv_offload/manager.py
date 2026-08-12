@@ -526,22 +526,36 @@ class SparseKVCacheManager:
                 )
             else:
                 extend_seq_lens_sum = int(extend_seq_lens.sum().item())
-            if extend_seq_lens_sum == num_src_rows:
+            num_token_non_padded_cpu = forward_batch.num_token_non_padded_cpu
+            unpadded_prefill_rows = (
+                int(num_token_non_padded_cpu)
+                if num_token_non_padded_cpu is not None
+                else None
+            )
+            has_tail_padding = (
+                unpadded_prefill_rows == extend_seq_lens_sum
+                and extend_seq_lens_sum < num_src_rows
+            )
+
+            if extend_seq_lens_sum == num_src_rows or has_tail_padding:
                 # Chunk prefill emits compact rows as [req0 tokens][req1 tokens]...
-                # instead of graph-captured padded [B, tokens_per_req] rows.
+                # instead of graph-captured padded [B, tokens_per_req] rows. MLP sync
+                # can append tail padding tokens; keep static rows but mask them out.
                 seq_starts = torch.cumsum(extend_seq_lens, dim=0) - extend_seq_lens
                 flat_req_ids = torch.repeat_interleave(
-                    req_ids, extend_seq_lens, output_size=num_src_rows
+                    req_ids, extend_seq_lens, output_size=extend_seq_lens_sum
                 )
                 flat_seq_starts = torch.repeat_interleave(
-                    seq_starts, extend_seq_lens, output_size=num_src_rows
+                    seq_starts, extend_seq_lens, output_size=extend_seq_lens_sum
                 )
                 flat_prefix_lens = torch.repeat_interleave(
-                    extend_prefix_lens, extend_seq_lens, output_size=num_src_rows
+                    extend_prefix_lens, extend_seq_lens, output_size=extend_seq_lens_sum
                 )
                 token_pos = (
                     flat_prefix_lens
-                    + torch.arange(num_src_rows, device=device, dtype=torch.long)
+                    + torch.arange(
+                        extend_seq_lens_sum, device=device, dtype=torch.long
+                    )
                     - flat_seq_starts
                 )
                 dst_index = (
@@ -552,6 +566,22 @@ class SparseKVCacheManager:
                     & (token_pos >= 0)
                     & (token_pos < self.max_context_len)
                 )
+                if has_tail_padding:
+                    pad_rows = num_src_rows - extend_seq_lens_sum
+                    dst_index = torch.cat(
+                        [
+                            dst_index,
+                            torch.zeros(pad_rows, device=device, dtype=torch.long),
+                        ],
+                        dim=0,
+                    )
+                    valid_mask = torch.cat(
+                        [
+                            valid_mask,
+                            torch.zeros(pad_rows, device=device, dtype=torch.bool),
+                        ],
+                        dim=0,
+                    )
             else:
                 if num_src_rows % batch_size != 0:
                     raise RuntimeError(
@@ -588,10 +618,10 @@ class SparseKVCacheManager:
 
             if (
                 forward_batch.out_cache_loc is not None
-                and int(forward_batch.out_cache_loc.numel()) == num_src_rows
+                and int(forward_batch.out_cache_loc.numel()) >= num_src_rows
             ):
                 valid_mask = valid_mask & (
-                    forward_batch.out_cache_loc.to(torch.long) >= 0
+                    forward_batch.out_cache_loc[:num_src_rows].to(torch.long) >= 0
                 )
             valid_mask = valid_mask.contiguous()
 
