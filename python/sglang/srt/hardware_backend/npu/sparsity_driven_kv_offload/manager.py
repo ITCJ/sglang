@@ -866,7 +866,7 @@ class SparseKVCacheManager:
                 refill_valid_mask,
                 2,
                 2,
-                block_dim=24,
+                block_dim=48,
             )
             _record_stream_event(self._prefetch_refill_stream, self.refill_done)
         _profile_pop(profile_range)
