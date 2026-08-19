@@ -772,12 +772,8 @@ class SparseKVCacheManager:
             )
             refill_valid_mask = valid_topk_mask.reshape(-1).contiguous()
 
-            copy_ready = torch.npu.Event()
-            _record_stream_event(stream, copy_ready)
 
-        # Copy device-cache hits into the selected KV buffer.
-        with torch.npu.stream(self._materialize_d2d_hit_stream):
-            _wait_stream_event(self._materialize_d2d_hit_stream, copy_ready)
+            # Copy device-cache hits into the selected KV buffer.
             unidex_copy_inplace(
                 self.device_kv_buffer[layer_idx],
                 selected_kv_buffer,
@@ -788,11 +784,8 @@ class SparseKVCacheManager:
                 2,  #
                 block_dim=24,
             )
-            _record_stream_event(self._materialize_d2d_hit_stream, self.hit_done)
 
         # Copy host shared-memory misses into the selected KV buffer.
-        with torch.npu.stream(self._materialize_h2d_miss_stream):
-            _wait_stream_event(self._materialize_h2d_miss_stream, copy_ready)
             unidex_copy_inplace(
                 self.host_kv_buffer[layer_idx],
                 selected_kv_buffer,
@@ -804,13 +797,9 @@ class SparseKVCacheManager:
                 block_dim=24,
                 src_ptr=self.dev_ptr_list[layer_idx],
             )
-            _record_stream_event(self._materialize_h2d_miss_stream, self.miss_done)
 
         # Refill the device cache with the current top-k after hit and miss
         # copies complete, so the next step can reuse these entries.
-        with torch.npu.stream(self._materialize_refill_stream):
-            _wait_stream_event(self._materialize_refill_stream, self.hit_done)
-            _wait_stream_event(self._materialize_refill_stream, self.miss_done)
             unidex_copy_inplace(
                 selected_kv_buffer,
                 self.device_kv_buffer[layer_idx],
@@ -821,12 +810,9 @@ class SparseKVCacheManager:
                 2,
                 block_dim=24,
             )
-            _record_stream_event(self._materialize_refill_stream, self.refill_done)
 
         # Replace the slot-map row with the current top-k mapping. Invalid
         # entries use the max_context_len sentinel column to preserve shape.
-        with torch.npu.stream(self._materialize_slot_map_stream):
-            _wait_stream_event(self._materialize_slot_map_stream, copy_ready)
             self.device_slot_map[layer_idx].copy_(self._device_slot_map_minus_one)
 
             slot_map_token_indices = torch.where(
@@ -857,7 +843,6 @@ class SparseKVCacheManager:
                 1,
                 block_dim=48,
             )
-            _record_stream_event(self._materialize_slot_map_stream, self.slot_map_done)
 
 
 _global_sparse_kv_manager: Optional[SparseKVCacheManager] = None
