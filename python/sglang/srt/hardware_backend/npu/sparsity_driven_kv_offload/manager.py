@@ -782,7 +782,7 @@ class SparseKVCacheManager:
                 hit_valid_mask,
                 2,
                 2,  #
-                block_dim=24,
+                block_dim=48,
             )
 
         # Copy host shared-memory misses into the selected KV buffer.
@@ -794,7 +794,7 @@ class SparseKVCacheManager:
                 miss_valid_mask,
                 2,
                 2,
-                block_dim=24,
+                block_dim=48,
                 src_ptr=self.dev_ptr_list[layer_idx],
             )
 
@@ -808,7 +808,7 @@ class SparseKVCacheManager:
                 refill_valid_mask,
                 2,
                 2,
-                block_dim=24,
+                block_dim=48,
             )
 
         # Replace the slot-map row with the current top-k mapping. Invalid
