@@ -175,8 +175,6 @@ def forward_sparsity_driven_kv_offload(
             layer, forward_batch, topk_indices, selected_kv_buffer, stream
         )
 
-        _wait_stream_event(stream, sparse_kv_manager.hit_done)
-        _wait_stream_event(stream, sparse_kv_manager.miss_done)
 
         selected_k_nope, selected_k_rope = selected_kv_buffer.split(
             [nope_head_dim, rope_head_dim], dim=-1
@@ -275,8 +273,6 @@ def forward_sparsity_driven_kv_offload(
             return_softmax_lse=False,
         )
 
-        _wait_stream_event(stream, sparse_kv_manager.refill_done)
-        _wait_stream_event(stream, sparse_kv_manager.slot_map_done)
 
         attn_out = ret[0] if isinstance(ret, tuple) else ret
         attn_out = attn_out[:, :, :num_query_heads, :].reshape(
