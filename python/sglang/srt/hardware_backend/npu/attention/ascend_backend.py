@@ -20,6 +20,7 @@ from sglang.srt.hardware_backend.npu.attention.mla_preprocess import (
     is_mla_preprocess_enabled,
 )
 from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config import (
+    get_sparsity_driven_kv_offload_forced_hit_alpha,
     get_sparsity_driven_kv_offload_sparse_context_len,
     is_sparsity_driven_kv_offload_enabled,
 )
@@ -360,6 +361,7 @@ class AscendAttnBackend(AttentionBackend):
                 sparse_context_len=get_sparsity_driven_kv_offload_sparse_context_len(
                     model_config=model_runner.model_config
                 ),
+                forced_hit_alpha=get_sparsity_driven_kv_offload_forced_hit_alpha(),
             )
             register_sparse_kv_manager(self.sparse_kv_manager)
             logger.info(

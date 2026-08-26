@@ -59,6 +59,23 @@ def get_sparsity_driven_kv_offload_sparse_context_len(
     return sparse_context_len
 
 
+def get_sparsity_driven_kv_offload_forced_hit_alpha() -> Optional[int]:
+    """Return the forced per-round device-cache hit count, or None to disable.
+
+    When set, sparse KV materialization copies exactly this many tokens per
+    request from the on-device cache and copies the rest from host, regardless
+    of the real hit/miss split. The upper bound (sparse_context_len) is
+    validated at manager construction, since it is only known there.
+    """
+    alpha = envs.SGLANG_NPU_SPARSE_KV_FORCED_HIT_ALPHA.get()
+    if alpha is not None and alpha < 0:
+        raise ValueError(
+            "SGLANG_NPU_SPARSE_KV_FORCED_HIT_ALPHA must be non-negative, "
+            f"got {alpha}."
+        )
+    return alpha
+
+
 def get_sparsity_driven_kv_offload_index_head_dim(
     *,
     model_config: ModelConfig,

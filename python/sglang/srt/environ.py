@@ -663,6 +663,11 @@ class Envs:
     SGLANG_NPU_USE_MULTI_STREAM = EnvBool(False)
     SGLANG_NPU_USE_MLAPO = EnvBool(False)
     SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD = EnvBool(False)
+    # Force a fixed number of per-round device-cache hits (tokens copied from
+    # device) in sparse KV offload; the remaining tokens copy from host. Used to
+    # simulate a controlled hit rate for memory-traffic experiments; None
+    # (default) keeps the natural hit/miss split.
+    SGLANG_NPU_SPARSE_KV_FORCED_HIT_ALPHA = EnvInt(None)
     # Forward native implementation for activation gelu tanh for model Skywork-Reward-Gemma-2-27B-v0.2
     SGLANG_NPU_FORWARD_NATIVE_GELUTANH = EnvBool(False)
     # Forward native implementation for gemma rms norm for model Skywork-Reward-Gemma-2-27B-v0.2

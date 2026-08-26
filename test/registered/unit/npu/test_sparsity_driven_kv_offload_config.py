@@ -3,8 +3,10 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from sglang.srt.environ import envs
 from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config import (
     get_sparsity_driven_kv_offload_cell_size,
+    get_sparsity_driven_kv_offload_forced_hit_alpha,
     get_sparsity_driven_kv_offload_sparse_context_len,
     is_sparsity_driven_kv_offload_enabled,
 )
@@ -68,6 +70,18 @@ class TestSparsityDrivenKVOffloadConfig(unittest.TestCase):
                 ),
                 512,
             )
+
+    def test_forced_hit_alpha_disabled_by_default(self):
+        with envs.SGLANG_NPU_SPARSE_KV_FORCED_HIT_ALPHA.override(None):
+            self.assertIsNone(get_sparsity_driven_kv_offload_forced_hit_alpha())
+
+    def test_forced_hit_alpha_rejects_negative(self):
+        with patch.dict(
+            os.environ,
+            {"SGLANG_NPU_SPARSE_KV_FORCED_HIT_ALPHA": "-1"},
+        ):
+            with self.assertRaises(ValueError):
+                get_sparsity_driven_kv_offload_forced_hit_alpha()
 
 
 if __name__ == "__main__":
