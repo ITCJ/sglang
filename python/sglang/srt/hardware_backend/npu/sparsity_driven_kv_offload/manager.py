@@ -756,15 +756,15 @@ class SparseKVCacheManager:
                 ):
                     # First call for this layer, or a shape change: fall back
                     # to the current top-k so the cache stays self-consistent.
-                    lookup_topk_indices = topk_indices
-            else:
-                lookup_topk_indices = topk_indices
+                    self.pre_topk_indices[layer_idx] = topk_indices.clone()
+                else:
+                    topk_indices = lookup_topk_indices 
 
             # Query the slot map for device-cache hits and their slot positions.
             slot_lookup_req_indices = slot_map_row_indices.to(
                 dtype=torch.int32
             ).contiguous()
-            slot_lookup_topk_indices = lookup_topk_indices.to(
+            slot_lookup_topk_indices = topk_indices.to(
                 dtype=torch.int32
             ).contiguous()
             token_on_device, device_token_pos = slot_map_lookup(
@@ -784,11 +784,7 @@ class SparseKVCacheManager:
                 ).unsqueeze(0)
                 forced_hit_mask = (row_slot < forced_hit_count) & valid_topk_mask
                 token_on_device = token_on_device & forced_hit_mask
-                # Snapshot this round's top-k so the next round can replay it
-                # as guaranteed device-resident hits. clone() keeps the
-                # snapshot stable when the caller reuses a static top-k input
-                # buffer across steps.
-                self.pre_topk_indices[layer_idx] = topk_indices.clone()
+
 
             # Build copy indices on the main stream, then protect their use on
             # the hit and miss streams with copy_ready.
