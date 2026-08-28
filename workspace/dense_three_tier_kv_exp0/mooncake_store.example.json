@@ -1,0 +1,10 @@
+{
+  "local_hostname": "CHANGE_ME_STORE_HOST",
+  "metadata_server": "http://CHANGE_ME_MASTER_HOST:8080/metadata",
+  "master_server_address": "CHANGE_ME_MASTER_HOST:50051",
+  "protocol": "rdma",
+  "device_name": "",
+  "global_segment_size": 640000000000,
+  "local_buffer_size": 0,
+  "tenant_id": "dense-three-tier-kv-exp0"
+}

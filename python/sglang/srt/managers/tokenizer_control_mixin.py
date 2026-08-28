@@ -72,6 +72,7 @@ from sglang.srt.managers.io_struct import (
     UpdateWeightsFromIPCReqOutput,
     UpdateWeightsFromTensorReqInput,
     UpdateWeightsFromTensorReqOutput,
+    WaitUntilIdleReqInput,
 )
 from sglang.srt.managers.load_snapshot import LoadSnapshot
 from sglang.srt.server_args import LoRARef, ServerArgs
@@ -300,6 +301,30 @@ class TokenizerControlMixin:
         return (
             await self.flush_cache_communicator(FlushCacheReqInput(timeout_s=timeout_s))
         )[0]
+
+    async def wait_until_idle(
+        self: TokenizerManager, timeout_s: Optional[float] = None
+    ) -> FlushCacheReqOutput:
+        self.auto_create_handle_loop()
+        communicator_task = asyncio.create_task(
+            self.flush_cache_communicator(WaitUntilIdleReqInput(timeout_s=timeout_s))
+        )
+        self.asyncio_tasks.add(communicator_task)
+
+        def cleanup_task(task: asyncio.Task) -> None:
+            self.asyncio_tasks.discard(task)
+            if not task.cancelled():
+                task.exception()
+
+        communicator_task.add_done_callback(cleanup_task)
+        results = await asyncio.shield(communicator_task)
+        messages = list(
+            dict.fromkeys(result.message for result in results if result.message)
+        )
+        return FlushCacheReqOutput(
+            success=all(result.success for result in results),
+            message=" | ".join(messages),
+        )
 
     async def clear_hicache_storage(self: TokenizerManager) -> ClearHiCacheReqOutput:
         """Clear the hierarchical cache storage."""

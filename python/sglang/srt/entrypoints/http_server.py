@@ -961,6 +961,24 @@ async def flush_cache(timeout: float = Query(0.0, ge=0.0)):
     )
 
 
+@app.post("/wait_until_idle")
+@auth_level(AuthLevel.ADMIN_OPTIONAL)
+async def wait_until_idle(timeout: float = Query(..., gt=0.0)):
+    """Wait for every scheduler rank to drain after request submission has stopped.
+
+    This is a read-only barrier and does not flush any cache tier.
+    """
+    ret = await _global_state.tokenizer_manager.wait_until_idle(timeout_s=timeout)
+    return Response(
+        content=(
+            "Schedulers are idle.\n"
+            if ret.success
+            else ret.message or "Schedulers did not become idle.\n"
+        ),
+        status_code=200 if ret.success else HTTPStatus.BAD_REQUEST,
+    )
+
+
 @app.post("/add_external_corpus")
 @auth_level(AuthLevel.ADMIN_OPTIONAL)
 async def add_external_corpus(request: Request):

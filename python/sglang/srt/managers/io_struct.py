@@ -1542,6 +1542,10 @@ class FlushCacheReqInput(BaseReq, kw_only=True):
     timeout_s: Optional[float] = None
 
 
+class WaitUntilIdleReqInput(FlushCacheReqInput, kw_only=True):
+    pass
+
+
 class FlushCacheReqOutput(BaseReq, kw_only=True):
     success: bool
     message: str = ""
@@ -2330,7 +2334,8 @@ _struct_types = tuple(
     cls
     for cls in BaseReq.__subclasses__()
     + BaseBatchReq.__subclasses__()
-    + [PickleWrapper]
+    # This indirect subclass is not returned by BaseReq.__subclasses__().
+    + [WaitUntilIdleReqInput, PickleWrapper]
 )
 # Primitive types that msgpack can serialize directly without PickleWrapper.
 # Do not include str here: msgspec rejects a Union containing both str and bytes
