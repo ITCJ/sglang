@@ -211,9 +211,6 @@ class SparseKVCacheManager:
         self.token_on_device_cpu = None
         self.device_token_pos_cpu = None
         self.current_req_indices_cpu = None
-        # Per-layer snapshot of the previous round's top-k indices, used to
-        # simulate a controlled hit rate in materialize_selected_kv.
-        self.pre_topk_indices: dict[int, torch.Tensor] = {}
 
         self._device_cache_slot_ids = torch.arange(
             self.sparse_context_len, dtype=torch.long, device=self.device
@@ -735,30 +732,21 @@ class SparseKVCacheManager:
                     "DSA top-k length exceeds sparse KV device cache capacity: "
                     f"topk_len={topk_len}, sparse_context_len={self.sparse_context_len}."
                 )
+
+            # In forced-hit mode, use stable positional token IDs instead of
+            # the indexer's data-dependent output. This keeps graph capture
+            # free of Python-side cross-round state: a reset slot map makes the
+            # first round miss, and later rounds look up the same IDs refilled
+            # into device slots 0..topk_len-1. Numerical accuracy is intentionally
+            # not preserved in this traffic-simulation mode.
+            topk_indices = self._device_cache_slot_ids[:topk_len].unsqueeze(0)
+            topk_indices = topk_indices.expand(batch_size, -1)
+
             valid_topk_mask = (
                 (topk_indices >= 0)
                 & (topk_indices < self.max_context_len)
                 & valid_req_mask.unsqueeze(1)
             )
-
-            # When a forced hit rate is configured, reuse the previous round's
-            # top-k indices for the slot-map lookup so every candidate is
-            # already resident on device (guaranteed hits), then mask
-            # token_on_device down to exactly `forced_hit_alpha` hits per row.
-            # The remaining tokens copy from host as usual, so only the
-            # hit/miss split is controlled; copied data content is not.
-            forced_hit_alpha = self.forced_hit_alpha
-            if forced_hit_alpha is not None:
-                lookup_topk_indices = self.pre_topk_indices.get(layer_idx)
-                if (
-                    lookup_topk_indices is None
-                    or tuple(lookup_topk_indices.shape) != (batch_size, topk_len)
-                ):
-                    # First call for this layer, or a shape change: fall back
-                    # to the current top-k so the cache stays self-consistent.
-                    self.pre_topk_indices[layer_idx] = topk_indices.clone()
-                else:
-                    topk_indices = lookup_topk_indices 
 
             # Query the slot map for device-cache hits and their slot positions.
             slot_lookup_req_indices = slot_map_row_indices.to(
@@ -774,17 +762,10 @@ class SparseKVCacheManager:
             )
             token_on_device = token_on_device.to(torch.bool) & valid_topk_mask
 
-            if forced_hit_alpha is not None:
-                # Intersect with the natural lookup result so hit source slots
-                # are always valid; hits are the first `forced_hit_alpha`
-                # columns of each valid row.
-                forced_hit_count = min(forced_hit_alpha, topk_len)
-                row_slot = torch.arange(
-                    topk_len, dtype=torch.long, device=topk_indices.device
-                ).unsqueeze(0)
-                forced_hit_mask = (row_slot < forced_hit_count) & valid_topk_mask
-                token_on_device = token_on_device & forced_hit_mask
 
+            forced_hit_count = min(self.forced_hit_alpha, topk_len)
+            forced_hit_mask = (topk_indices < forced_hit_count) & valid_topk_mask
+            token_on_device = token_on_device & forced_hit_mask
 
             # Build copy indices on the main stream, then protect their use on
             # the hit and miss streams with copy_ready.
