@@ -9,10 +9,15 @@ measure TTFT, and summarize three runs.
 Use the Ascend SGLang environment and install its matching Mooncake package:
 
 ```bash
-python -m pip install mooncake-transfer-engine-npu==0.3.12.post1
-cp mooncake_worker.example.json mooncake_worker.json
-cp mooncake_store.example.json mooncake_store.json
+workspace/install_mooncake.sh
+cp workspace/dense_three_tier_kv_exp0/mooncake_worker.example.json \
+  workspace/dense_three_tier_kv_exp0/mooncake_worker.json
+cp workspace/dense_three_tier_kv_exp0/mooncake_store.example.json \
+  workspace/dense_three_tier_kv_exp0/mooncake_store.json
 ```
+
+For the remote stage, run the installer in the SGLang environment on both
+machines.
 
 Edit the top of both shell scripts and replace every `CHANGE_ME` in the JSON
 files. Keep `global_segment_size=0` for the SGLang worker and
