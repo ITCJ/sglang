@@ -1,4 +1,5 @@
-config.env
+mooncake_worker.json
+mooncake_store.json
 manifests/
 results/
 runtime/

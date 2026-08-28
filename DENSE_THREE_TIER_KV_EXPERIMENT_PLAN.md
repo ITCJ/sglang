@@ -2,7 +2,8 @@
 
 ## 1. 验证命题
 
-1. 在目标互联上，`L3 -> L2 -> L1` 命中比 `L2 -> L1` 命中慢。
+1. `L3 -> L2 -> L1` 命中比 `L2 -> L1` 命中慢：先用同机 L3
+   隔离逻辑第三层自身的开销，再将 L3 移到远端机器量化目标互联带来的增量。
 2. 固定 Host KV 物理预算时，增大私有 L2 虽提高本地命中，却会压缩共享 L3，并因 L2/L3 同时保留相同 KV 降低唯一 KV 容量。
 3. locality-first 与 load-first 路由分别偏向缓存命中和负载均衡，三层架构难以同时取得两者。
 
@@ -10,11 +11,11 @@
 
 ## 2. 固定环境
 
-- 机器：两台 Ascend 910C 服务器。先记录 HCCS/RDMA、NIC 和 NUMA 拓扑；若不是超节点，结果只代表当前机器。
+- 机器：两台 Ascend 910C 服务器。实验 0 第一步只用一台，第二步使用第二台承载远端 L3；实验 1/2 使用两台。先记录 HCCS/RDMA、NIC 和 NUMA 拓扑；若不是超节点，结果只代表当前机器。
 - 模型：固定 revision 的 `sgl-npu/DeepSeek-V3.1-w8a8`，使用 dense MLA（全量访问 KV），KV dtype 固定为 BF16。
-- 部署：每台一个 SGLang replica，每个 replica 使用 `--tp-size 16 --dp-size 16 --enable-dp-attention`；`attn_tp_size=1`、`DCP=1`。实验 0 只启动一台推理服务器，L3 可部署在另一台机器。
+- 部署：每台最多一个 SGLang replica，每个 replica 使用 `--tp-size 16 --dp-size 16 --enable-dp-attention`；`attn_tp_size=1`、`DCP=1`。实验 0 两步都只启动一个 replica：第一步 Mooncake L3 与 replica 同机，第二步只把 Mooncake L3 移到另一台机器。
 - 固定参数：`--attention-backend ascend --page-size 64 --max-running-requests 128`。64K 配置使用 `--max-total-tokens 73728`；128K 配置在预检查通过后使用 `--max-total-tokens 139264`。
-- HiCache：`write_through`、Mooncake RDMA、L3 单副本、`wait_complete`。NPU 启动日志必须确认实际为 `kernel_ascend + page_first_direct`。
+- HiCache：`write_through`、Mooncake RDMA、L3 单副本、`wait_complete`。NPU 启动日志必须确认实际为官方 Ascend MLA 路径 `kernel_ascend + page_first_kv_split`。
 - 打开 `--enable-metrics --enable-cache-report`；客户端使用 `--cache-report --output-details`。
 - 每个配置从空 L1/L2/L3 和空 Router tree 开始，独立运行 3 次；报告 3 次中位数及最小/最大值。
 
@@ -53,21 +54,24 @@
 
 ### 方法
 
-1. 单 replica、TP16+DPA16，L2=`20 GB/rank`，Mooncake store=`640 GB`；驱动程序只调用生产 `/generate` API，并将全部请求固定到 `routed_dp_rank=0`。
-2. 主实验固定 10 个互异的 64K 输入；每个输入由 `65,408-token prefix + 128-token question` 构成，`max_new_tokens=1`、`concurrency=1`。若 128K 预检查通过，再以 `130,944-token prefix + 128-token question` 重复相同流程。
-3. **L2 hit**：先生成全部 prefix 并等待 write-through 完成，再写入足量互异 filler 淘汰 L1。filler 数量由启动日志中的 L1 token 容量决定，至少为 `1.2 * L1_capacity`。仅接纳 `device=0、storage=0`，且 `host` 覆盖全部可缓存完整 page 的请求。
-4. **L3 hit**：确认 prefix 已写入 L3 后重启 worker、保留 Mooncake，使 L1/L2 为空。仅接纳 `device=0、host=0`，且 `storage` 覆盖全部可缓存完整 page 的请求。
-5. 对同一 prefix 的 L2 hit 和 L3 hit 做配对比较；每个配置独立运行 3 次。
+1. 两步都使用单 replica、TP16+DPA16，L2=`20 GB/rank`，独立 Mooncake store=`640 GB`。SGLang 的 Mooncake worker 不贡献 L3 内存（`global_segment_size=0`）；驱动程序只调用生产 `/generate` API，并将全部请求固定到 `routed_dp_rank=0`。
+2. **第一步，同机 L3**：Mooncake master/store 与 SGLang 位于同一台物理机，但使用独立进程；SGLang worker 重启时 master/store 保持存活。该步骤去掉跨机网络，用于测量逻辑第三层、Mooncake 查找/搬运和重新装入 L2 的开销下界。
+3. **第二步，远端 L3**：保持模型、请求、容量、参数和单 replica 不变，只将 Mooncake master/store 移到第二台机器，通过指定 RDMA 网络访问。该步骤测量实际远端 L3 路径，并与第一步比较目标互联带来的增量。
+4. 每一步固定相同的 10 个互异 64K 输入；每个输入由 `65,408-token prefix + 128-token question` 构成，`max_new_tokens=1`、`concurrency=1`。若 128K 预检查通过，再以 `130,944-token prefix + 128-token question` 重复相同流程。
+5. **L2 hit**：生成一个 prefix 并等待 write-through 完成，再写入足量互异 filler 淘汰 L1。filler 数量由启动日志中的 L1 token 容量决定，至少为 `1.2 * L1_capacity`。仅接纳 `device=0、storage=0`，且 `host` 覆盖全部可缓存完整 page 的请求。20 GB/rank 无法同时容纳全部 10 个 prefix 和 filler，因此逐 prefix 隔离准备和测量。
+6. **L3 hit**：确认全部 prefix 已写入 L3 后重启 SGLang worker、保留 Mooncake，使 L1/L2 为空。仅接纳 `device=0、host=0`，且 `storage` 覆盖全部可缓存完整 page 的请求。
+7. 在每个 L3 placement 内对同一 prefix 的 L2 hit 和 L3 hit 做配对比较；`local` 和 `remote` 分开输出，每个 placement 独立运行 3 次，不把两者样本合并。
 
 ### 指标
 
 - 主指标：`TTFT = first_nonempty_token_time - HTTP_send_start`。
-- 配对差：`DeltaTTFT_j = TTFT_L3,j - TTFT_L2,j`。
+- 配对差：`DeltaTTFT_j^p = TTFT_L3,j^p - TTFT_L2,j^p`，其中 `p` 为 `local` 或 `remote`。
+- 远端增量：`DeltaRemote_j = DeltaTTFT_j^remote - DeltaTTFT_j^local`；只对相同 manifest、prefix 和固定配置比较。
 - 可选 breakdown：复用现有计时记录 `T_32`（`batch_get_v1`）和 `T_21`（Host-to-Device load），不新建 micro benchmark。
 
-每个 run、每个长度先在 10 个 prefix 上计算 `median(TTFT_L2)`、`median(TTFT_L3)` 和 `m_r=median(DeltaTTFT)`，再报告 3 个 run-level 值的中位数及最小/最大值。
+每个 placement、run 和长度先在 10 个 prefix 上计算 `median(TTFT_L2)`、`median(TTFT_L3)` 和 `m_r^p=median(DeltaTTFT^p)`，再分别报告 3 个 run-level 值的中位数及最小/最大值。两步完成后，另报配对的 `DeltaRemote`。
 
-64K 的 3 个 run 若都满足 `m_r>0`，说明当前三层实现的 L3 hit 存在可重复的额外延迟。该实验不区分实现问题与设计问题，也不证明 L2 必然多余；它只建立当前三层实现的端到端基线，供未来与优化后的新系统使用相同 workload 对比。128K 只用于观察差值是否随 KV 量继续放大。
+64K 同机步骤的 3 个 run 若都满足 `m_r^local>0`，说明去掉跨机网络后当前三层实现仍存在可重复的 L3 命中额外延迟；远端步骤给出真实部署成本及目标互联增量。该实验不单独区分实现问题与设计问题，也不证明 L2 必然多余；它与实验 1 的容量/复制结果共同建立三层设计的延迟与有效容量权衡。128K 只用于观察差值是否随 KV 量继续放大。
 
 ## 5. 实验 1：命中率与有效容量
 
@@ -179,7 +183,7 @@ Router 只增加一个 `decision_total{reason}` counter：正常分支为 `cache
 
 ## 7. 判定
 
-- 实验 0：L3 hit 的配对 TTFT 在 3 次独立运行中都高于 L2 hit，说明当前三层实现存在可重复的 L3 命中额外延迟。
+- 实验 0：先要求同机 L3 hit 的配对 TTFT 在 3 次独立运行中都高于 L2 hit，证明额外延迟不能全部归因于跨机网络；再报告远端 L3 的配对差和相对同机的增量，量化实际部署成本。
 - 实验 1：随 L2 增大，`H_L2` 上升、TTFT 下降，同时 `eta` 下降或 `A_copy` 上升，支持低延迟命中与有效容量的权衡。
 - 实验 2：相对 load-first，locality-first 提高 `H_local`、降低 `R_L2,end`，但提高 `I_active`，并降低 req/s 或提高 TTFT，支持 locality 与 load balance 的权衡。若实际路由选择没有差异，则该 trace 不提供此命题的证据。
 

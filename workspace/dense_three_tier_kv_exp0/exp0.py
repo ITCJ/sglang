@@ -9,11 +9,13 @@ import json
 import math
 import random
 import re
+import statistics
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -34,6 +36,10 @@ class ExperimentError(RuntimeError):
 
 
 class SkipExperiment(ExperimentError):
+    pass
+
+
+class SummaryError(ExperimentError):
     pass
 
 
@@ -449,7 +455,7 @@ def _parse_mooncake_size(value: Any) -> int:
 
 
 def validate_mooncake_configs(
-    worker_path: Path, store_path: Path
+    worker_path: Path, store_path: Path, l3_placement: str | None = None
 ) -> dict[str, Any]:
     worker = json.loads(worker_path.read_bytes())
     store = json.loads(store_path.read_bytes())
@@ -481,12 +487,32 @@ def validate_mooncake_configs(
             f"Mooncake protocol must be rdma, got {worker['protocol']!r}"
         )
 
+    if l3_placement not in {None, "local", "remote"}:
+        raise ExperimentError(f"invalid L3 placement: {l3_placement!r}")
+    worker_host = str(worker.get("local_hostname", "")).strip()
+    store_host = str(store.get("local_hostname", "")).strip()
+    if not worker_host or not store_host:
+        raise ExperimentError("Mooncake worker/store local_hostname is required")
+    if l3_placement == "local" and worker_host != store_host:
+        raise ExperimentError(
+            "local L3 requires matching worker/store local_hostname: "
+            f"worker={worker_host!r}, store={store_host!r}"
+        )
+    if l3_placement == "remote" and worker_host == store_host:
+        raise ExperimentError(
+            "remote L3 requires different worker/store local_hostname, got "
+            f"{worker_host!r}"
+        )
+
     return {
+        "l3_placement": l3_placement,
         "worker_config_path": str(worker_path),
         "worker_config_sha256": sha256_file(worker_path),
+        "worker_local_hostname": worker_host,
         "worker_global_segment_bytes": worker_bytes,
         "store_config_path": str(store_path),
         "store_config_sha256": sha256_file(store_path),
+        "store_local_hostname": store_host,
         "store_global_segment_bytes": store_bytes,
         "protocol": str(worker["protocol"]),
         "tenant_id": str(worker["tenant_id"]),
@@ -535,13 +561,14 @@ def preflight(
     enforce_capacity: bool = True,
     mooncake_worker_config: Path | None = None,
     mooncake_store_config: Path | None = None,
+    l3_placement: str | None = None,
 ) -> dict[str, Any]:
     mooncake_config = None
     if mooncake_worker_config is not None or mooncake_store_config is not None:
         if mooncake_worker_config is None or mooncake_store_config is None:
             raise ExperimentError("both Mooncake config paths are required")
         mooncake_config = validate_mooncake_configs(
-            mooncake_worker_config, mooncake_store_config
+            mooncake_worker_config, mooncake_store_config, l3_placement
         )
     info = request_json(base_url, "/server_info", api_key=api_key, timeout_s=60.0)
     for key, expected in (
@@ -623,6 +650,7 @@ def preflight(
 
     result = {
         "manifest_sha256": manifest["manifest_sha256"],
+        "l3_placement": l3_placement,
         "protocol": protocol,
         "prompt_len": prompt_len,
         "min_cached_tokens": min_cached,
@@ -713,11 +741,13 @@ def _base_record(
     phase: str,
     prefix_id: str,
     manifest: dict[str, Any],
+    l3_placement: str,
 ) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "run_id": run_id,
         "length": length_label,
+        "l3_placement": l3_placement,
         "phase": phase,
         "prefix_id": prefix_id,
         "manifest_sha256": manifest["manifest_sha256"],
@@ -739,6 +769,7 @@ def run_l2(
     timeout_s: float,
     idle_timeout_s: float,
     flight: dict[str, Any],
+    l3_placement: str = "local",
 ) -> None:
     control_api_key = admin_api_key or api_key
     token_pool = [int(value) for value in manifest["filler_token_pool"]]
@@ -764,6 +795,7 @@ def run_l2(
                 phase="warm",
                 prefix_id=prefix_id,
                 manifest=manifest,
+                l3_placement=l3_placement,
             )
         )
         warm["record_type"] = "setup"
@@ -797,6 +829,7 @@ def run_l2(
                     phase="filler",
                     prefix_id=prefix_id,
                     manifest=manifest,
+                    l3_placement=l3_placement,
                 )
             )
             filler_result["filler_index"] = filler_index
@@ -821,6 +854,7 @@ def run_l2(
                 phase="l2",
                 prefix_id=prefix_id,
                 manifest=manifest,
+                l3_placement=l3_placement,
             )
         )
         measured["record_type"] = "measurement"
@@ -844,6 +878,7 @@ def run_l3(
     admin_api_key: str | None,
     timeout_s: float,
     idle_timeout_s: float,
+    l3_placement: str = "local",
 ) -> None:
     control_api_key = admin_api_key or api_key
     min_cached = cacheable_tokens(int(manifest["prompt_len"]))
@@ -864,6 +899,7 @@ def run_l3(
                 phase="l3",
                 prefix_id=prefix_id,
                 manifest=manifest,
+                l3_placement=l3_placement,
             )
         )
         measured["record_type"] = "measurement"
@@ -874,6 +910,188 @@ def run_l3(
         wait_until_idle(
             base_url, api_key=control_api_key, timeout_s=idle_timeout_s
         )
+
+
+def load_measurements(results_root: Path) -> list[dict[str, Any]]:
+    records = []
+    for path in sorted(results_root.rglob("*.jsonl")):
+        with path.open(encoding="utf-8") as source:
+            for line_number, line in enumerate(source, 1):
+                if not line.strip():
+                    continue
+                record = json.loads(line)
+                if record.get("record_type") != "measurement":
+                    continue
+                if record.get("accepted") is not True:
+                    raise SummaryError(
+                        f"unaccepted measurement in {path}:{line_number}"
+                    )
+                record["_source"] = f"{path}:{line_number}"
+                records.append(record)
+    if not records:
+        raise SummaryError(f"no accepted measurements under {results_root}")
+    return records
+
+
+def summarize(
+    records: list[dict[str, Any]], expected_runs: int = 3
+) -> dict[str, Any]:
+    grouped: dict[
+        tuple[str, str, str, str], dict[str, dict[str, Any]]
+    ] = defaultdict(dict)
+    manifests: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for record in records:
+        phase = str(record.get("phase", "")).lower()
+        if phase not in {"l2", "l3"}:
+            continue
+        placement = str(record.get("l3_placement", "unknown"))
+        length = str(record["length"])
+        run_id = str(record["run_id"])
+        prefix_id = str(record["prefix_id"])
+        key = (placement, length, run_id, prefix_id)
+        if phase in grouped[key]:
+            raise SummaryError(f"duplicate {phase} measurement for {key}")
+        grouped[key][phase] = record
+        manifests[(placement, length)].add(str(record["manifest_sha256"]))
+
+    for (placement, length), hashes in manifests.items():
+        if len(hashes) != 1:
+            raise SummaryError(
+                f"{placement}/{length} used multiple manifests: {sorted(hashes)}"
+            )
+
+    pairs = []
+    for (placement, length, run_id, prefix_id), phases in sorted(grouped.items()):
+        missing = {"l2", "l3"} - set(phases)
+        if missing:
+            raise SummaryError(
+                "missing "
+                f"{sorted(missing)} for {(placement, length, run_id, prefix_id)}"
+            )
+        l2_ms = float(phases["l2"]["ttft_ms"])
+        l3_ms = float(phases["l3"]["ttft_ms"])
+        pairs.append(
+            {
+                "l3_placement": placement,
+                "length": length,
+                "run_id": run_id,
+                "prefix_id": prefix_id,
+                "ttft_l2_ms": l2_ms,
+                "ttft_l3_ms": l3_ms,
+                "delta_ttft_ms": l3_ms - l2_ms,
+            }
+        )
+
+    by_run: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for pair in pairs:
+        by_run[
+            (pair["l3_placement"], pair["length"], pair["run_id"])
+        ].append(pair)
+
+    run_summaries = []
+    for (placement, length, run_id), run_pairs in sorted(by_run.items()):
+        if len(run_pairs) != 10:
+            raise SummaryError(
+                f"{placement}/{length}/{run_id} has {len(run_pairs)} pairs; expected 10"
+            )
+        run_summaries.append(
+            {
+                "l3_placement": placement,
+                "length": length,
+                "run_id": run_id,
+                "num_pairs": 10,
+                "median_ttft_l2_ms": statistics.median(
+                    pair["ttft_l2_ms"] for pair in run_pairs
+                ),
+                "median_ttft_l3_ms": statistics.median(
+                    pair["ttft_l3_ms"] for pair in run_pairs
+                ),
+                "median_delta_ttft_ms": statistics.median(
+                    pair["delta_ttft_ms"] for pair in run_pairs
+                ),
+            }
+        )
+
+    by_placement_length: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(
+        list
+    )
+    for run in run_summaries:
+        by_placement_length[(run["l3_placement"], run["length"])].append(run)
+
+    aggregate = []
+    for (placement, length), runs in sorted(by_placement_length.items()):
+        if len(runs) != expected_runs:
+            raise SummaryError(
+                f"{placement}/{length} has {len(runs)} complete runs; "
+                f"expected {expected_runs}"
+            )
+        l2_values = [float(run["median_ttft_l2_ms"]) for run in runs]
+        l3_values = [float(run["median_ttft_l3_ms"]) for run in runs]
+        delta_values = [float(run["median_delta_ttft_ms"]) for run in runs]
+        aggregate.append(
+            {
+                "l3_placement": placement,
+                "length": length,
+                "num_runs": len(runs),
+                "median_of_run_median_ttft_l2_ms": statistics.median(l2_values),
+                "min_run_median_ttft_l2_ms": min(l2_values),
+                "max_run_median_ttft_l2_ms": max(l2_values),
+                "median_of_run_median_ttft_l3_ms": statistics.median(l3_values),
+                "min_run_median_ttft_l3_ms": min(l3_values),
+                "max_run_median_ttft_l3_ms": max(l3_values),
+                "median_of_run_median_delta_ttft_ms": statistics.median(
+                    delta_values
+                ),
+                "min_run_median_delta_ttft_ms": min(delta_values),
+                "max_run_median_delta_ttft_ms": max(delta_values),
+                "all_run_medians_positive": all(value > 0 for value in delta_values),
+            }
+        )
+    return {
+        "schema_version": 1,
+        "paired_measurements": pairs,
+        "run_summaries": run_summaries,
+        "aggregate": aggregate,
+    }
+
+
+def summary_markdown(summary: dict[str, Any]) -> str:
+    lines = [
+        "# Experiment 0 Summary",
+        "",
+        "| L3 | Length | Run | Pairs | Median L2 (ms) | Median L3 (ms) | Median Delta (ms) |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: |",
+    ]
+    for run in summary["run_summaries"]:
+        lines.append(
+            f"| {run['l3_placement']} | {run['length']} | {run['run_id']} | "
+            f"{run['num_pairs']} | "
+            f"{run['median_ttft_l2_ms']:.3f} | "
+            f"{run['median_ttft_l3_ms']:.3f} | "
+            f"{run['median_delta_ttft_ms']:.3f} |"
+        )
+    lines.extend(["", "## Across Runs", ""])
+    for item in summary["aggregate"]:
+        lines.extend(
+            [
+                f"- L3/length: {item['l3_placement']}/{item['length']} "
+                f"({item['num_runs']} runs)",
+                "- L2 run medians: "
+                f"median={item['median_of_run_median_ttft_l2_ms']:.3f}, "
+                f"min={item['min_run_median_ttft_l2_ms']:.3f}, "
+                f"max={item['max_run_median_ttft_l2_ms']:.3f} ms",
+                "- L3 run medians: "
+                f"median={item['median_of_run_median_ttft_l3_ms']:.3f}, "
+                f"min={item['min_run_median_ttft_l3_ms']:.3f}, "
+                f"max={item['max_run_median_ttft_l3_ms']:.3f} ms",
+                "- Delta run medians: "
+                f"median={item['median_of_run_median_delta_ttft_ms']:.3f}, "
+                f"min={item['min_run_median_delta_ttft_ms']:.3f}, "
+                f"max={item['max_run_median_delta_ttft_ms']:.3f} ms",
+                f"- All delta medians positive: {item['all_run_medians_positive']}",
+            ]
+        )
+    return "\n".join(lines) + "\n"
 
 
 def _add_connection_args(parser: argparse.ArgumentParser) -> None:
@@ -892,6 +1110,7 @@ def _add_phase_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--length", choices=("64k", "128k"), required=True)
+    parser.add_argument("--l3-placement", choices=("local", "remote"), required=True)
     parser.add_argument(
         "--request-timeout", type=float, default=DEFAULT_REQUEST_TIMEOUT_S
     )
@@ -919,11 +1138,19 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--server-log", type=Path, required=True)
     check.add_argument("--mooncake-worker-config", type=Path, required=True)
     check.add_argument("--mooncake-store-config", type=Path, required=True)
+    check.add_argument("--l3-placement", choices=("local", "remote"), required=True)
     check.add_argument(
         "--protocol", choices=("isolated", "plan-batch"), default="isolated"
     )
     check.add_argument("--hicache-size-gb", type=float, default=20.0)
     check.add_argument("--output", type=Path)
+
+    mooncake_check = subparsers.add_parser("validate-mooncake")
+    mooncake_check.add_argument("--mooncake-worker-config", type=Path, required=True)
+    mooncake_check.add_argument("--mooncake-store-config", type=Path, required=True)
+    mooncake_check.add_argument(
+        "--l3-placement", choices=("local", "remote"), required=True
+    )
 
     reset = subparsers.add_parser("reset")
     _add_connection_args(reset)
@@ -936,6 +1163,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     l3 = subparsers.add_parser("l3")
     _add_phase_args(l3)
+
+    summary = subparsers.add_parser("summarize")
+    summary.add_argument("results", type=Path)
+    summary.add_argument("--expected-runs", type=int, default=3)
+    summary.add_argument("--json-output", type=Path, required=True)
+    summary.add_argument("--markdown-output", type=Path, required=True)
     return parser
 
 
@@ -973,6 +1206,15 @@ def main(argv: Iterable[str] | None = None) -> int:
             )
             return 0
 
+        if args.command == "validate-mooncake":
+            checked = validate_mooncake_configs(
+                args.mooncake_worker_config,
+                args.mooncake_store_config,
+                args.l3_placement,
+            )
+            print(json.dumps(checked, indent=2, sort_keys=True))
+            return 0
+
         if args.command == "reset":
             reset_all_caches(
                 args.url,
@@ -991,6 +1233,21 @@ def main(argv: Iterable[str] | None = None) -> int:
             print("all scheduler ranks are fully idle")
             return 0
 
+        if args.command == "summarize":
+            result = summarize(
+                load_measurements(args.results), expected_runs=args.expected_runs
+            )
+            rendered = summary_markdown(result)
+            args.json_output.parent.mkdir(parents=True, exist_ok=True)
+            args.json_output.write_text(
+                json.dumps(result, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            args.markdown_output.parent.mkdir(parents=True, exist_ok=True)
+            args.markdown_output.write_text(rendered, encoding="utf-8")
+            print(rendered, end="")
+            return 0
+
         loaded = load_manifest(args.manifest)
         if args.command == "preflight":
             checked = preflight(
@@ -1003,6 +1260,7 @@ def main(argv: Iterable[str] | None = None) -> int:
                 enforce_capacity=False,
                 mooncake_worker_config=args.mooncake_worker_config,
                 mooncake_store_config=args.mooncake_store_config,
+                l3_placement=args.l3_placement,
             )
             encoded = json.dumps(checked, indent=2, sort_keys=True)
             if args.output:
@@ -1029,6 +1287,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             enforce_capacity=args.command == "l2",
             mooncake_worker_config=args.mooncake_worker_config,
             mooncake_store_config=args.mooncake_store_config,
+            l3_placement=args.l3_placement,
         )
         if args.command == "l2":
             run_l2(
@@ -1042,6 +1301,7 @@ def main(argv: Iterable[str] | None = None) -> int:
                 timeout_s=args.request_timeout,
                 idle_timeout_s=args.idle_timeout,
                 flight=checked,
+                l3_placement=args.l3_placement,
             )
         elif args.command == "l3":
             run_l3(
@@ -1054,12 +1314,19 @@ def main(argv: Iterable[str] | None = None) -> int:
                 admin_api_key=args.admin_api_key,
                 timeout_s=args.request_timeout,
                 idle_timeout_s=args.idle_timeout,
+                l3_placement=args.l3_placement,
             )
         return 0
     except SkipExperiment as exc:
         print(f"SKIP: {exc}", file=sys.stderr)
         return 3
-    except (ExperimentError, OSError, ValueError, json.JSONDecodeError) as exc:
+    except (
+        ExperimentError,
+        OSError,
+        ValueError,
+        KeyError,
+        json.JSONDecodeError,
+    ) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 

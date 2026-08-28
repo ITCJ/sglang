@@ -20,7 +20,6 @@ def load_module(name: str, path: Path):
 
 
 exp0 = load_module("exp0", ROOT / "exp0.py")
-summarizer = load_module("summarize_exp0", ROOT / "summarize.py")
 
 
 def server_info(l1_capacity: int, max_req_input_len: int) -> dict:
@@ -148,10 +147,25 @@ class TestExperimentZero(unittest.TestCase):
             worker_path.write_text(json.dumps(worker))
             store_path.write_text(json.dumps(store))
 
-            checked = exp0.validate_mooncake_configs(worker_path, store_path)
+            checked = exp0.validate_mooncake_configs(
+                worker_path, store_path, "remote"
+            )
             self.assertEqual(
                 checked["store_global_segment_bytes"], 640_000_000_000
             )
+            self.assertEqual(checked["l3_placement"], "remote")
+
+            with self.assertRaises(exp0.ExperimentError):
+                exp0.validate_mooncake_configs(worker_path, store_path, "local")
+
+            store["local_hostname"] = "worker"
+            store_path.write_text(json.dumps(store))
+            checked = exp0.validate_mooncake_configs(
+                worker_path, store_path, "local"
+            )
+            self.assertEqual(checked["l3_placement"], "local")
+            with self.assertRaises(exp0.ExperimentError):
+                exp0.validate_mooncake_configs(worker_path, store_path, "remote")
 
             store["global_segment_size"] = "640gb"
             store_path.write_text(json.dumps(store))
@@ -272,6 +286,8 @@ class TestExperimentZero(unittest.TestCase):
                             str(Path(directory) / "worker.json"),
                             "--mooncake-store-config",
                             str(Path(directory) / "store.json"),
+                            "--l3-placement",
+                            "local",
                             "--output",
                             str(output),
                         ]
@@ -336,25 +352,32 @@ class TestExperimentZero(unittest.TestCase):
 class TestSummarize(unittest.TestCase):
     def test_three_run_paired_summary(self):
         records = []
-        for run_number in range(1, 4):
-            for prefix_number in range(10):
-                for phase, ttft in (("l2", 10 + prefix_number), ("l3", 15 + prefix_number)):
-                    records.append(
-                        {
-                            "length": "64k",
-                            "run_id": f"run-{run_number}",
-                            "prefix_id": f"p{prefix_number:02d}",
-                            "phase": phase,
-                            "ttft_ms": ttft,
-                            "manifest_sha256": "same",
-                            "accepted": True,
-                            "_source": "test",
-                        }
-                    )
+        for placement, l3_offset in (("local", 15), ("remote", 18)):
+            for run_number in range(1, 4):
+                for prefix_number in range(10):
+                    for phase, ttft in (
+                        ("l2", 10 + prefix_number),
+                        ("l3", l3_offset + prefix_number),
+                    ):
+                        records.append(
+                            {
+                                "length": "64k",
+                                "l3_placement": placement,
+                                "run_id": f"run-{run_number}",
+                                "prefix_id": f"p{prefix_number:02d}",
+                                "phase": phase,
+                                "ttft_ms": ttft,
+                                "manifest_sha256": "same",
+                                "accepted": True,
+                                "_source": "test",
+                            }
+                        )
 
-        result = summarizer.summarize(records)
+        result = exp0.summarize(records)
 
-        self.assertEqual(len(result["run_summaries"]), 3)
+        self.assertEqual(len(result["run_summaries"]), 6)
+        self.assertEqual(len(result["aggregate"]), 2)
+        self.assertEqual(result["aggregate"][0]["l3_placement"], "local")
         self.assertEqual(
             result["aggregate"][0]["median_of_run_median_delta_ttft_ms"], 5
         )
@@ -365,10 +388,15 @@ class TestSummarize(unittest.TestCase):
             result["aggregate"][0]["median_of_run_median_ttft_l3_ms"], 19.5
         )
         self.assertTrue(result["aggregate"][0]["all_run_medians_positive"])
+        self.assertEqual(result["aggregate"][1]["l3_placement"], "remote")
+        self.assertEqual(
+            result["aggregate"][1]["median_of_run_median_delta_ttft_ms"], 8
+        )
 
     def test_missing_pair_is_rejected(self):
         record = {
             "length": "64k",
+            "l3_placement": "local",
             "run_id": "run-1",
             "prefix_id": "p00",
             "phase": "l2",
@@ -377,8 +405,8 @@ class TestSummarize(unittest.TestCase):
             "accepted": True,
             "_source": "test",
         }
-        with self.assertRaises(summarizer.SummaryError):
-            summarizer.summarize([record])
+        with self.assertRaises(exp0.SummaryError):
+            exp0.summarize([record])
 
 
 if __name__ == "__main__":
