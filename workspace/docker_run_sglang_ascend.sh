@@ -115,8 +115,15 @@ PY
       real_path="$(find "${dir}" -maxdepth 1 -name "${soname}.*" -type f -print -quit 2>/dev/null || true)"
       [[ -n "${real_path}" ]] && break
     done
-    if [[ -n "${real_path}" && ! -e "$(dirname "${real_path}")/${soname}" ]]; then
-      ln -s "$(basename "${real_path}")" "$(dirname "${real_path}")/${soname}"
+    if [[ -n "${real_path}" ]]; then
+      if [[ ! -e "$(dirname "${real_path}")/${soname}" ]]; then
+        ln -s "$(basename "${real_path}")" "$(dirname "${real_path}")/${soname}"
+      fi
+      mkdir -p /usr/lib/aarch64-linux-gnu
+      if [[ ! -e "/usr/lib/aarch64-linux-gnu/${soname}" ]]; then
+        ln -s "${real_path}" "/usr/lib/aarch64-linux-gnu/${soname}"
+      fi
+      echo "$(dirname "${real_path}")" >/etc/ld.so.conf.d/rdma-lib64.conf
     fi
   fi
 }

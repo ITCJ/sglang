@@ -34,6 +34,15 @@ ensure_soname() {
       else
         echo "${soname}: link already exists at ${link}"
       fi
+
+      # Some Ascend containers have the files under /usr/lib64, but the dynamic
+      # loader only searches the Debian multiarch libdir by default.
+      mkdir -p /usr/lib/aarch64-linux-gnu
+      if [[ ! -e "/usr/lib/aarch64-linux-gnu/${soname}" ]]; then
+        ln -s "${candidate}" "/usr/lib/aarch64-linux-gnu/${soname}"
+        echo "${soname}: linked /usr/lib/aarch64-linux-gnu/${soname} -> ${candidate}"
+      fi
+      echo "$(dirname "${candidate}")" >/etc/ld.so.conf.d/rdma-lib64.conf
       return 0
     fi
   done
