@@ -132,11 +132,7 @@ if dst.is_symlink():
         raise SystemExit(0)
     dst.unlink()
 elif dst.exists():
-    backup = dst.with_name(dst.name + ".image_bak")
-    if backup.exists():
-        shutil.rmtree(dst)
-    else:
-        dst.rename(backup)
+    shutil.rmtree(dst)
 
 dst.parent.mkdir(parents=True, exist_ok=True)
 os.symlink(src, dst, target_is_directory=True)
