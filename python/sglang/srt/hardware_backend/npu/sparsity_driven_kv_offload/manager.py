@@ -208,7 +208,16 @@ class SparseKVCacheManager:
         )
         self._slot_map_width = (self.max_context_len // 8 + 1) * 8
 
-        self._install_req_alloc_hook(req_to_token_pool)
+        # Keep hit/miss counters on device so NPU graph capture/replay does not
+        # need a host synchronization. The dimensions are [layer, request, 2],
+        # where the last dimension stores hit and miss counts respectively.
+        self._cache_stats = torch.zeros(
+            (self.layer_num, self.size, 2),
+            dtype=torch.int32,
+            device=self.device,
+        )
+
+        self._install_req_lifecycle_hooks(req_to_token_pool)
 
     def _raise_buffer_allocation_error(
         self,
@@ -245,12 +254,19 @@ class SparseKVCacheManager:
         ).contiguous()
         for layer_idx in range(self.layer_num):
             self.device_slot_map[layer_idx].index_fill_(0, req_ids_tensor, -1)
+        self._cache_stats.index_fill_(1, req_ids_tensor, 0)
 
-    def _install_req_alloc_hook(self, req_to_token_pool: ReqToTokenPool) -> None:
+    def _install_req_lifecycle_hooks(
+        self, req_to_token_pool: ReqToTokenPool
+    ) -> None:
         original_alloc = getattr(
             req_to_token_pool, "_sparse_kv_original_alloc", req_to_token_pool.alloc
         )
         setattr(req_to_token_pool, "_sparse_kv_original_alloc", original_alloc)
+        original_free = getattr(
+            req_to_token_pool, "_sparse_kv_original_free", req_to_token_pool.free
+        )
+        setattr(req_to_token_pool, "_sparse_kv_original_free", original_free)
 
         def alloc_with_sparse_reset(reqs: list[Req]) -> Optional[List[int]]:
             newly_allocated = [req.req_pool_idx is None for req in reqs]
@@ -265,7 +281,44 @@ class SparseKVCacheManager:
                 )
             return req_pool_indices
 
+        def free_with_sparse_stats(req: Req) -> None:
+            req_pool_idx = req.req_pool_idx
+            try:
+                if req_pool_idx is not None:
+                    if req.finished():
+                        self._report_request_cache_stats(req, req_pool_idx)
+                    else:
+                        self.reset_requests([req_pool_idx])
+            except Exception:
+                # Statistics must never prevent the request slot from being freed.
+                logger.exception(
+                    "Failed to report sparse KV cache stats for request rid=%s",
+                    getattr(req, "rid", "unknown"),
+                )
+            finally:
+                original_free(req)
+
         setattr(req_to_token_pool, "alloc", alloc_with_sparse_reset)
+        setattr(req_to_token_pool, "free", free_with_sparse_stats)
+
+    def _report_request_cache_stats(self, req: Req, req_pool_idx: int) -> None:
+        stats = self._cache_stats[:, req_pool_idx, :].cpu().tolist()
+        layer_stats = []
+        for layer_idx, (hit_count, miss_count) in enumerate(stats):
+            total_count = hit_count + miss_count
+            hit_rate = hit_count / total_count if total_count else 0.0
+            layer_stats.append(
+                f"  layer {self.start_layer + layer_idx}: "
+                f"hit={hit_count}, miss={miss_count}, hit_rate={hit_rate:.2%}"
+            )
+
+        logger.info(
+            "Sparse KV cache stats for request rid=%s, req_pool_idx=%d:\n%s",
+            getattr(req, "rid", "unknown"),
+            req_pool_idx,
+            "\n".join(layer_stats),
+        )
+        self.reset_requests([req_pool_idx])
 
     def offload(
         self,
@@ -756,6 +809,24 @@ class SparseKVCacheManager:
                 topk_indices,
                 device_cache_row_indices,
                 self.max_context_len,
+            )
+
+            # Accumulate on-device counters as part of graph capture/replay.
+            # Request slot 0 is graph padding and must not contribute stats.
+            stats_valid_mask = valid_topk_mask & req_pool_indices.ne(0).unsqueeze(1)
+            request_stats = torch.stack(
+                (
+                    (token_on_device & stats_valid_mask).sum(
+                        dim=1, dtype=torch.int32
+                    ),
+                    ((~token_on_device) & stats_valid_mask).sum(
+                        dim=1, dtype=torch.int32
+                    ),
+                ),
+                dim=1,
+            )
+            self._cache_stats[layer_idx].index_add_(
+                0, device_cache_row_indices, request_stats
             )
 
             cache_slot_ids = self._device_cache_slot_ids[:topk_len]
