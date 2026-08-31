@@ -103,6 +103,25 @@ if [[ -n "${RDMA_FIXUPS:-}" ]]; then
     fi
   done <<< "${RDMA_FIXUPS}"
 fi
+ensure_soname_link() {
+  local soname="$1"
+  local real_path=""
+  if ! "${PYTHON_BIN}" - <<PY >/dev/null 2>&1
+import ctypes
+ctypes.CDLL("${soname}")
+PY
+  then
+    for dir in /usr/lib64 /usr/lib/aarch64-linux-gnu /lib/aarch64-linux-gnu /usr/lib /lib; do
+      real_path="$(find "${dir}" -maxdepth 1 -name "${soname}.*" -type f -print -quit 2>/dev/null || true)"
+      [[ -n "${real_path}" ]] && break
+    done
+    if [[ -n "${real_path}" && ! -e "$(dirname "${real_path}")/${soname}" ]]; then
+      ln -s "$(basename "${real_path}")" "$(dirname "${real_path}")/${soname}"
+    fi
+  fi
+}
+ensure_soname_link libibverbs.so.1
+ensure_soname_link librdmacm.so.1
 command -v ldconfig >/dev/null 2>&1 && ldconfig || true
 
 repo="${HOST_SGLANG_REPO}"
