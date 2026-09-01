@@ -125,11 +125,12 @@ def forward_sparsity_driven_kv_offload(
         topk_2d_input = normalize_batch_topk_indices(topk_indices)
         effective_topk_length = topk_2d_input.shape[1]
         selected_kv_length = sparse_kv_manager.sparse_context_len
+        current_kv_buffer_length = sparse_kv_manager.device_cache_capacity
         if effective_topk_length <= 0:
             raise RuntimeError("SFA BSND compact path expects a positive top-k length.")
         if effective_topk_length > selected_kv_length:
             raise RuntimeError(
-                "DSA top-k length exceeds sparse KV device cache capacity: "
+                "DSA top-k length exceeds sparse attention window: "
                 f"topk_len={effective_topk_length}, "
                 f"sparse_context_len={selected_kv_length}."
             )
@@ -157,14 +158,14 @@ def forward_sparsity_driven_kv_offload(
             f"num_query_heads={num_query_heads}"
         )
 
-        # Materialize the compact top-k KV for the current attention step:
-        # device-cache hits and host misses are copied into this buffer, the
-        # device cache is refilled from it, and sparse attention consumes it
-        # directly.
+        # The first selected_kv_length entries materialize the current top-k and
+        # are consumed by sparse attention. The second half retains old cache
+        # entries selected by the LRU policy before the whole buffer refills the
+        # device cache.
         selected_kv_buffer = torch.zeros(
             (
                 batch_size,
-                selected_kv_length,
+                current_kv_buffer_length,
                 num_kv_heads,
                 nope_head_dim + rope_head_dim,
             ),
@@ -178,7 +179,8 @@ def forward_sparsity_driven_kv_offload(
         _wait_stream_event(stream, sparse_kv_manager.hit_done)
         _wait_stream_event(stream, sparse_kv_manager.miss_done)
 
-        selected_k_nope, selected_k_rope = selected_kv_buffer.split(
+        attention_kv_buffer = selected_kv_buffer[:, :selected_kv_length]
+        selected_k_nope, selected_k_rope = attention_kv_buffer.split(
             [nope_head_dim, rope_head_dim], dim=-1
         )
 
