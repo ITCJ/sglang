@@ -50,6 +50,7 @@ from sglang.srt.disaggregation.utils import (
     ReqToMetadataIdxAllocator,
     TransferBackend,
     _is_fake_transfer,
+    append_state_component,
     get_dsv4_c128_state_indices,
     get_kv_class,
     is_dsv4_c128_online_enabled,
@@ -358,6 +359,33 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
                 "SGLANG_DISAGG_STAGING_BUFFER is designed for non-MLA models "
                 "(e.g. GQA, MHA). MLA models should not set this flag."
             )
+        self.sparse_kv_manager = None
+        self.use_sparse_kv_pd = False
+        self.sparse_kv_pd_decode_staging = None
+        if _is_npu:
+            from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.manager import (
+                get_sparse_kv_manager,
+            )
+            from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.pd import (
+                SparseKVPDDecodeStaging,
+                is_sparse_kv_pd_enabled,
+            )
+
+            self.sparse_kv_manager = get_sparse_kv_manager()
+            self.use_sparse_kv_pd = is_sparse_kv_pd_enabled(
+                self.transfer_backend, self.sparse_kv_manager
+            )
+            if self.use_sparse_kv_pd:
+                self.sparse_kv_manager.ensure_pd_decode_staging_buffers(1)
+                self.sparse_kv_pd_decode_staging = SparseKVPDDecodeStaging(
+                    self.sparse_kv_manager,
+                    1,
+                )
+                self.transfer_queue.use_sparse_kv_pd = True
+                self.transfer_queue.sparse_kv_pd_decode_staging = (
+                    self.sparse_kv_pd_decode_staging
+                )
+                logger.info("Sparse KV PD decode temporary staging enabled.")
         self.kv_manager = self._init_kv_manager()
         if self.enable_staging:
             self.transfer_queue._init_staging_handler(self.kv_manager)
@@ -431,16 +459,24 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
             if self.scheduler.enable_hisparse
             else self.token_to_kv_pool
         )
-        kv_data_ptrs, kv_data_lens, kv_item_lens = (
-            transfer_kv_pool.get_contiguous_buf_infos()
-        )
-        kv_data_mem_kinds = (
-            ["DRAM"] * len(kv_data_ptrs)
-            if self.scheduler.enable_hisparse
-            else ["VRAM"] * len(kv_data_ptrs)
-        )
-        if self.scheduler.enable_hisparse and isinstance(
-            self.token_to_kv_pool, DeepSeekV4TokenToKVPool
+        if self.use_sparse_kv_pd:
+            kv_data_ptrs, kv_data_lens, kv_item_lens = (
+                self.sparse_kv_manager.get_pd_decode_transfer_buf_infos()
+            )
+            kv_data_mem_kinds = ["VRAM"] * len(kv_data_ptrs)
+        else:
+            kv_data_ptrs, kv_data_lens, kv_item_lens = (
+                transfer_kv_pool.get_contiguous_buf_infos()
+            )
+            kv_data_mem_kinds = (
+                ["DRAM"] * len(kv_data_ptrs)
+                if self.scheduler.enable_hisparse
+                else ["VRAM"] * len(kv_data_ptrs)
+            )
+        if (
+            not self.use_sparse_kv_pd
+            and self.scheduler.enable_hisparse
+            and isinstance(self.token_to_kv_pool, DeepSeekV4TokenToKVPool)
         ):
             device_kv_data_ptrs, device_kv_data_lens, device_kv_item_lens = (
                 self.token_to_kv_pool.get_contiguous_buf_infos()
@@ -450,7 +486,7 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
             kv_data_lens += device_kv_data_lens[c4_layer_num:]
             kv_item_lens += device_kv_item_lens[c4_layer_num:]
             kv_data_mem_kinds += ["VRAM"] * len(device_kv_data_ptrs[c4_layer_num:])
-        if self.draft_token_to_kv_pool is not None:
+        if self.draft_token_to_kv_pool is not None and not self.use_sparse_kv_pd:
             # We should also transfer draft model kv cache. The indices are
             # always shared with a target model.
             draft_kv_data_ptrs, draft_kv_data_lens, draft_kv_item_lens = (
@@ -472,7 +508,9 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
         )
         if self.transfer_backend == TransferBackend.NIXL:
             kv_args.kv_data_mem_kinds = kv_data_mem_kinds
-        kv_args.page_size = self.token_to_kv_pool.page_size
+        kv_args.page_size = (
+            1 if self.use_sparse_kv_pd else self.token_to_kv_pool.page_size
+        )
 
         kv_args.aux_data_ptrs, kv_args.aux_data_lens, kv_args.aux_item_lens = (
             self.metadata_buffers.get_buf_infos()
@@ -481,10 +519,20 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
         setup_state_kv_args(
             kv_args,
             self.token_to_kv_pool,
-            self.draft_token_to_kv_pool,
+            None if self.use_sparse_kv_pd else self.draft_token_to_kv_pool,
             total_kv_layers=self.scheduler.model_config.num_hidden_layers,
             req_to_token_pool=getattr(self, "req_to_token_pool", None),
         )
+        if self.use_sparse_kv_pd and hasattr(
+            self.token_to_kv_pool, "get_state_buf_infos"
+        ):
+            data_ptrs, data_lens, item_lens = (
+                self.token_to_kv_pool.get_state_buf_infos()
+            )
+            if data_ptrs and StateType.DSA not in kv_args.state_types:
+                append_state_component(
+                    kv_args, StateType.DSA, data_ptrs, data_lens, item_lens
+                )
 
         kv_args.ib_device = self.scheduler.server_args.disaggregation_ib_device
         kv_args.gpu_id = self.scheduler.ps.gpu_id
@@ -678,6 +726,8 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
             self.add(req, is_retracted=is_retracted)
 
     def release_memory_occupation(self):
+        if self.use_sparse_kv_pd and self.sparse_kv_pd_decode_staging is not None:
+            self.sparse_kv_pd_decode_staging.release()
         self.queue.clear()
         self.retracted_queue.clear()
         if hasattr(self.kv_manager, "deregister_buffer_to_engine"):
@@ -1013,6 +1063,7 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
             use_decode_radix_cache = (
                 self.scheduler.server_args.disaggregation_decode_enable_radix_cache
                 and not decode_req.is_rebootstrap
+                and not self.use_sparse_kv_pd
             )
             if use_decode_radix_cache:
                 # Match prefix against decode's radix cache.
@@ -1099,12 +1150,29 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
                     "for PD + chunked prefill."
                 )
 
+            if self.use_sparse_kv_pd and not _is_fake_transfer(
+                decode_req.req, self.scheduler.server_args
+            ):
+                if total_prefix_len != 0:
+                    if prefix_len > 0:
+                        self.tree_cache.dec_lock_ref(decode_req.req.last_node)
+                    raise RuntimeError(
+                        "Sparse KV offload PD temporary path does not support "
+                        "decode-side prefix cache yet."
+                    )
+                if not self.sparse_kv_pd_decode_staging.try_acquire(decode_req):
+                    if prefix_len > 0:
+                        self.tree_cache.dec_lock_ref(decode_req.req.last_node)
+                    break
+
             dst_kv_indices = self._pre_alloc(
                 decode_req.req,
                 prefix_indices,
                 prefix_len,
                 total_prefix_len,
             )
+            if self.use_sparse_kv_pd:
+                self.sparse_kv_manager.init_req(decode_req.req)
             decode_req.prefix_match = prefix_match
             if self.scheduler.enable_decode_hicache:
                 self._start_hicache_prefetch(decode_req.req, prefix_match)
@@ -1127,7 +1195,10 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
 
             page_size = self.token_to_kv_pool_allocator.page_size
             kv_transfer_page_size = page_size
-            if self.scheduler.enable_hisparse:
+            if self.use_sparse_kv_pd:
+                kv_transfer_page_size = 1
+                kv_indices = None
+            elif self.scheduler.enable_hisparse:
                 # Direct-to-host sends host/C4 rows; keep allocator.page_size
                 # logical and use the compressed page size only for these indices.
                 kv_transfer_page_size = getattr(
@@ -1246,9 +1317,20 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
             )
             assert decode_req.metadata_buffer_index is not None
             # int32 for ZMQ serialization -- from_zmq reads np.int32.
-            page_indices = kv_to_page_indices(kv_indices, kv_transfer_page_size).astype(
-                np.int32
-            )
+            if self.use_sparse_kv_pd:
+                sparse_kv_pd_token_count = origin_input_len - total_prefix_len
+                if not _is_fake_transfer(decode_req.req, self.scheduler.server_args):
+                    self.sparse_kv_pd_decode_staging.mark_token_count(
+                        decode_req,
+                        sparse_kv_pd_token_count,
+                    )
+                page_indices = self.sparse_kv_pd_decode_staging.transfer_indices(
+                    sparse_kv_pd_token_count
+                )
+            else:
+                page_indices = kv_to_page_indices(
+                    kv_indices, kv_transfer_page_size
+                ).astype(np.int32)
             device_page_indices = None
             if (
                 self.scheduler.enable_hisparse
@@ -1782,6 +1864,16 @@ class DecodeTransferQueue(DecodeHiCacheTransferMixin):
         self.spec_algorithm = scheduler.spec_algorithm
         self.enable_staging = envs.SGLANG_DISAGG_STAGING_BUFFER.get()
         self.staging_handler = None
+        self.use_sparse_kv_pd = False
+        self.sparse_kv_pd_decode_staging = None
+
+    def release_sparse_kv_pd_decode_staging(self, decode_req: DecodeRequest) -> None:
+        if self.use_sparse_kv_pd and self.sparse_kv_pd_decode_staging is not None:
+            self.sparse_kv_pd_decode_staging.release(decode_req)
+
+    def offload_sparse_kv_pd_decode_staging(self, decode_req: DecodeRequest) -> None:
+        if self.use_sparse_kv_pd and self.sparse_kv_pd_decode_staging is not None:
+            self.sparse_kv_pd_decode_staging.offload_to_host(decode_req)
 
     def add(self, decode_req: DecodeRequest) -> None:
         self.queue.append(decode_req)
@@ -2038,6 +2130,7 @@ class DecodeTransferQueue(DecodeHiCacheTransferMixin):
                 release_kv_cache(decode_req.req, self.tree_cache, is_insert=False)
                 decode_req.kv_receiver.clear()
                 decode_req.kv_receiver = None
+                self.release_sparse_kv_pd_decode_staging(decode_req)
                 indices_to_remove.add(i)
                 if self.scheduler.metrics_reporter.enable_metrics:
                     self.scheduler.metrics_collector.increment_transfer_failed_reqs()
@@ -2048,6 +2141,13 @@ class DecodeTransferQueue(DecodeHiCacheTransferMixin):
                     and hicache_restore_status == HiCacheRestoreResult.PENDING
                 ):
                     continue
+                if self.use_sparse_kv_pd and not _is_fake_transfer(
+                    decode_req.req, self.scheduler.server_args
+                ):
+                    try:
+                        self.offload_sparse_kv_pd_decode_staging(decode_req)
+                    finally:
+                        self.release_sparse_kv_pd_decode_staging(decode_req)
                 self._commit_transfer_to_req(decode_req)
                 indices_to_remove.add(i)
                 # Check if request was aborted due to corruption
@@ -2097,6 +2197,8 @@ class DecodeTransferQueue(DecodeHiCacheTransferMixin):
 
     def release_memory_occupation(self):
         """Clean up in-flight transfers before releasing GPU memory."""
+        if self.use_sparse_kv_pd and self.sparse_kv_pd_decode_staging is not None:
+            self.sparse_kv_pd_decode_staging.release()
         self.queue.clear()
 
     def resume_memory_occupation(self):

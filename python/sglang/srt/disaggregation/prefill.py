@@ -39,6 +39,7 @@ from sglang.srt.disaggregation.utils import (
     MetadataBuffers,
     ReqToMetadataIdxAllocator,
     TransferBackend,
+    append_state_component,
     get_dsv4_c128_state_indices,
     get_kv_class,
     is_aborted,
@@ -176,6 +177,34 @@ class PrefillBootstrapQueue:
                     "SGLANG_DISAGG_STAGING_BUFFER does not support "
                     "prefill context parallelism."
                 )
+        self.sparse_kv_manager = None
+        self.use_sparse_kv_pd = False
+        self.sparse_kv_pd_prefill_slots = None
+        if _is_npu:
+            from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.manager import (
+                get_sparse_kv_manager,
+            )
+            from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.pd import (
+                SparseKVPDPrefillSlots,
+                is_sparse_kv_pd_enabled,
+                resolve_pd_prefill_slot_count,
+            )
+
+            self.sparse_kv_manager = get_sparse_kv_manager()
+            self.use_sparse_kv_pd = is_sparse_kv_pd_enabled(
+                self.transfer_backend, self.sparse_kv_manager
+            )
+            if self.use_sparse_kv_pd:
+                slot_count = resolve_pd_prefill_slot_count(self.scheduler)
+                self.sparse_kv_manager.ensure_pd_prefill_transfer_buffers(slot_count)
+                self.sparse_kv_pd_prefill_slots = SparseKVPDPrefillSlots(
+                    self.sparse_kv_manager,
+                    slot_count,
+                )
+                logger.info(
+                    "Sparse KV PD prefill temporary HBM slots enabled: %s",
+                    slot_count,
+                )
         self.kv_manager = self._init_kv_manager()
 
     def _init_kv_manager(self) -> CommonKVManager:
@@ -195,24 +224,36 @@ class PrefillBootstrapQueue:
         transfer_draft_cache = (
             not layer_shard_enabled or layer_shard_rank == layer_shard_size - 1
         )
-        kv_args.prefill_start_layer = (
-            getattr(
-                self.token_to_kv_pool,
-                "layer_shard_start",
-                self.token_to_kv_pool.start_layer,
+        if self.use_sparse_kv_pd:
+            transfer_draft_cache = False
+            kv_args.prefill_start_layer = self.sparse_kv_manager.start_layer
+        else:
+            kv_args.prefill_start_layer = (
+                getattr(
+                    self.token_to_kv_pool,
+                    "layer_shard_start",
+                    self.token_to_kv_pool.start_layer,
+                )
+                if layer_shard_enabled
+                else self.token_to_kv_pool.start_layer
             )
-            if layer_shard_enabled
-            else self.token_to_kv_pool.start_layer
-        )
         kv_args.mla_compression_ratios = None
-        kv_data_ptrs, kv_data_lens, kv_item_lens = (
-            self.token_to_kv_pool.get_contiguous_buf_infos()
-        )
-        kv_args.prefill_end_layer = (
-            kv_args.prefill_start_layer + len(kv_data_ptrs)
-            if layer_shard_enabled
-            else getattr(self.token_to_kv_pool, "end_layer", None)
-        )
+        if self.use_sparse_kv_pd:
+            kv_data_ptrs, kv_data_lens, kv_item_lens = (
+                self.sparse_kv_manager.get_pd_prefill_transfer_buf_infos()
+            )
+            kv_args.prefill_end_layer = (
+                kv_args.prefill_start_layer + self.sparse_kv_manager.layer_num
+            )
+        else:
+            kv_data_ptrs, kv_data_lens, kv_item_lens = (
+                self.token_to_kv_pool.get_contiguous_buf_infos()
+            )
+            kv_args.prefill_end_layer = (
+                kv_args.prefill_start_layer + len(kv_data_ptrs)
+                if layer_shard_enabled
+                else getattr(self.token_to_kv_pool, "end_layer", None)
+            )
 
         if self.draft_token_to_kv_pool is not None and transfer_draft_cache:
             # We should also transfer draft model kv cache. The indices are
@@ -238,7 +279,9 @@ class PrefillBootstrapQueue:
             kv_args.total_kv_head_num = (
                 self.scheduler.model_config.get_total_num_kv_heads()
             )
-        kv_args.page_size = self.token_to_kv_pool.page_size
+        kv_args.page_size = (
+            1 if self.use_sparse_kv_pd else self.token_to_kv_pool.page_size
+        )
 
         kv_args.aux_data_ptrs, kv_args.aux_data_lens, kv_args.aux_item_lens = (
             self.metadata_buffers.get_buf_infos()
@@ -254,6 +297,16 @@ class PrefillBootstrapQueue:
             self.scheduler.model_config.num_hidden_layers,
             req_to_token_pool=req_to_token_pool,
         )
+        if self.use_sparse_kv_pd and hasattr(
+            self.token_to_kv_pool, "get_state_buf_infos"
+        ):
+            data_ptrs, data_lens, item_lens = (
+                self.token_to_kv_pool.get_state_buf_infos()
+            )
+            if data_ptrs and StateType.DSA not in kv_args.state_types:
+                append_state_component(
+                    kv_args, StateType.DSA, data_ptrs, data_lens, item_lens
+                )
 
         if isinstance(self.token_to_kv_pool, DeepSeekV4TokenToKVPool):
             # V4's KVCache is organized by compression-ratio
@@ -335,10 +388,13 @@ class PrefillBootstrapQueue:
         num_kv_indices = len(req.origin_input_ids)
         req.start_send_idx = decode_prefix_len
         num_kv_indices_to_send = num_kv_indices - decode_prefix_len
-        num_pages = kv_to_page_num(
-            num_kv_indices_to_send,
-            self.scheduler.token_to_kv_pool_allocator.page_size,
-        )
+        if self.use_sparse_kv_pd:
+            num_pages = num_kv_indices_to_send
+        else:
+            num_pages = kv_to_page_num(
+                num_kv_indices_to_send,
+                self.scheduler.token_to_kv_pool_allocator.page_size,
+            )
         req.disagg_kv_sender.init(num_pages, req.metadata_buffer_index)
         req.pending_bootstrap = False
         return True
@@ -367,6 +423,21 @@ class PrefillBootstrapQueue:
         Set max_new_tokens = 1, so PrefillAdder memory estimation is accurate
         """
         req.sampling_params.max_new_tokens = 1
+
+    def try_acquire_sparse_kv_pd_prefill_slot(self, req: Req) -> bool:
+        if not self.use_sparse_kv_pd:
+            return True
+        if req.bootstrap_host == FAKE_BOOTSTRAP_HOST:
+            return True
+        return self.sparse_kv_pd_prefill_slots.try_acquire(req)
+
+    def bind_sparse_kv_pd_prefill_slots(self, reqs: List[Req]) -> None:
+        if self.use_sparse_kv_pd:
+            self.sparse_kv_pd_prefill_slots.bind_batch(reqs)
+
+    def release_sparse_kv_pd_prefill_slot(self, req: Req) -> None:
+        if self.use_sparse_kv_pd:
+            self.sparse_kv_pd_prefill_slots.release(req)
 
     def pop_bootstrapped(
         self,
@@ -430,7 +501,10 @@ class PrefillBootstrapQueue:
                     < self.scheduler.server_args.optimistic_prefill_attempts
                     and not req.is_retracted  # engine paused
                 ):
+                    if not self.try_acquire_sparse_kv_pd_prefill_slot(req):
+                        continue
                     if not self.ensure_metadata_buffer(req):
+                        self.release_sparse_kv_pd_prefill_slot(req)
                         continue  # no more metadata buffer
                     req.prefill_attempt_count += 1
                     bootstrapped_reqs.append(req)
@@ -438,11 +512,18 @@ class PrefillBootstrapQueue:
                     req.time_stats.set_wait_queue_entry_time()
             elif poll == KVPoll.WaitingForInput:
                 if should_force_retry(req):  # skip checking for testing
+                    if not self.try_acquire_sparse_kv_pd_prefill_slot(req):
+                        continue
                     if not self.ensure_metadata_buffer(req):
+                        self.release_sparse_kv_pd_prefill_slot(req)
                         continue  # no more metadata buffer
                     req.prefill_attempt_count += 1
-                elif not self.finalize_bootstrap(req):
-                    continue
+                else:
+                    if not self.try_acquire_sparse_kv_pd_prefill_slot(req):
+                        continue
+                    if req.pending_bootstrap and not self.finalize_bootstrap(req):
+                        self.release_sparse_kv_pd_prefill_slot(req)
+                        continue
                 bootstrapped_reqs.append(req)
                 indices_to_remove.add(i)
                 req.time_stats.set_wait_queue_entry_time()
@@ -461,6 +542,8 @@ class PrefillBootstrapQueue:
             return bootstrapped_reqs, failed_reqs
 
     def release_memory_occupation(self):
+        for req in self.queue:
+            self.release_sparse_kv_pd_prefill_slot(req)
         self.queue.clear()
         if hasattr(self.kv_manager, "deregister_buffer_to_engine"):
             self.kv_manager.deregister_buffer_to_engine()
@@ -581,6 +664,9 @@ class SchedulerDisaggregationPrefillMixin:
             if batch:
                 if self.enable_staging:
                     self.maybe_prefetch_staging_for_batch(batch)
+                self.disagg_prefill_bootstrap_queue.bind_sparse_kv_pd_prefill_slots(
+                    batch.reqs
+                )
                 result = self.run_batch(batch)
                 self.process_batch_result(batch, result)
             else:
@@ -620,6 +706,9 @@ class SchedulerDisaggregationPrefillMixin:
             if batch:
                 if self.enable_staging:
                     self.maybe_prefetch_staging_for_batch(batch)
+                self.disagg_prefill_bootstrap_queue.bind_sparse_kv_pd_prefill_slots(
+                    batch.reqs
+                )
                 batch_result = self.run_batch(batch)
                 self._apply_war_barrier()
                 self.result_queue.append((batch.copy(), batch_result))
@@ -778,6 +867,9 @@ class SchedulerDisaggregationPrefillMixin:
                 # Optimistic bootstrap can fail while this overlapped chunk is
                 # already running. Drop aborted chunks instead of sending KV.
                 if is_aborted(req):
+                    self.disagg_prefill_bootstrap_queue.release_sparse_kv_pd_prefill_slot(
+                        req
+                    )
                     advance_logprob_pt(i, req)
                     req.time_stats.set_last_chunked_prefill_finish_time()
                     continue
@@ -870,12 +962,18 @@ class SchedulerDisaggregationPrefillMixin:
             elif poll == KVPoll.Success:  # transfer done
                 if not isinstance(req.finished_reason, FINISH_ABORT):
                     req.finished_reason = FINISH_LENGTH(length=0)
+                self.disagg_prefill_bootstrap_queue.release_sparse_kv_pd_prefill_slot(
+                    req
+                )
                 release_kv_cache(req, self.tree_cache)  # unlock the tree
                 # FIXME: clean up req's data in transfer engine
                 req.disagg_kv_sender.clear()
                 done_reqs.append(req)
                 req.time_stats.set_prefill_kv_transfer_finish_time()
             elif poll == KVPoll.Failed:
+                self.disagg_prefill_bootstrap_queue.release_sparse_kv_pd_prefill_slot(
+                    req
+                )
                 self.handle_inflight_transfer_failure(req)
                 done_reqs.append(req)
             else:
@@ -985,6 +1083,7 @@ class SchedulerDisaggregationPrefillMixin:
         else:
             logger.warning(error_message)
         req.time_stats.trace_ctx.abort(abort_info={"reason": error_message})
+        self.disagg_prefill_bootstrap_queue.release_sparse_kv_pd_prefill_slot(req)
         if (
             req.req_pool_idx is not None
             or req.kv is not None
@@ -1112,7 +1211,12 @@ class SchedulerDisaggregationPrefillMixin:
         """
         Send a prefilled chunk to the decode server
         """
+        use_sparse_kv_pd = (
+            self.disagg_prefill_bootstrap_queue.use_sparse_kv_pd
+            and req.bootstrap_host != FAKE_BOOTSTRAP_HOST
+        )
         page_size = self.token_to_kv_pool_allocator.page_size
+        kv_transfer_page_size = 1 if use_sparse_kv_pd else page_size
         start_idx = req.start_send_idx
         transfer_input_len = len(req.origin_input_ids)
         end_idx = (
@@ -1123,7 +1227,7 @@ class SchedulerDisaggregationPrefillMixin:
 
         if not last_chunk:
             # if not the last chunk and the last page is partial, delay the last partial page to the next send
-            end_idx = end_idx - end_idx % page_size
+            end_idx = end_idx - end_idx % kv_transfer_page_size
 
         if end_idx < start_idx:
             logger.debug(
@@ -1172,7 +1276,10 @@ class SchedulerDisaggregationPrefillMixin:
                 kv_indices_full = self.req_to_token_pool.req_to_token[
                     req.req_pool_idx, :seq_len
                 ]
-                return kv_to_page_indices(kv_indices_full, page_size)
+                device_page_size = (
+                    self.token_to_kv_pool_allocator.get_kvcache().page_size
+                )
+                return kv_to_page_indices(kv_indices_full, device_page_size)
 
             def _swa_ring_payload():
                 # Unified_kv SWA ring rows (req_pool_idx*ring_stride + pos%ring_stride)
@@ -1238,10 +1345,28 @@ class SchedulerDisaggregationPrefillMixin:
                 payloads[st]() if st in payloads else None for st in state_types
             ]
 
+        if use_sparse_kv_pd:
+            page_indices = (
+                self.disagg_prefill_bootstrap_queue.sparse_kv_pd_prefill_slots.transfer_indices(
+                    req, start_idx, end_idx
+                )
+            )
+            if not req.disagg_kv_sender.should_send_kv_chunk(
+                len(page_indices), last_chunk
+            ):
+                return
+            req.disagg_kv_sender.send(
+                page_indices,
+                state_indices,
+                num_kv_tokens=end_idx - start_idx,
+            )
+            req.start_send_idx = end_idx
+            return
+
         kv_indices = self.req_to_token_pool.req_to_token[
             req.req_pool_idx, start_idx:end_idx
         ]
-        page_indices = kv_to_page_indices(kv_indices, page_size)
+        page_indices = kv_to_page_indices(kv_indices, kv_transfer_page_size)
         if not req.disagg_kv_sender.should_send_kv_chunk(len(page_indices), last_chunk):
             return
         req.disagg_kv_sender.send(
@@ -1255,6 +1380,7 @@ class SchedulerDisaggregationPrefillMixin:
         """Release KV cache and requeue an optimistic prefill request."""
         max_attempts = get_disagg().optimistic_prefill_attempts
         maybe_cache_unfinished_req(req, self.tree_cache)
+        self.disagg_prefill_bootstrap_queue.release_sparse_kv_pd_prefill_slot(req)
         release_kv_cache(req, self.tree_cache)
         req.reset_for_retract()
         req.output_ids = array("q")

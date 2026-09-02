@@ -21,6 +21,8 @@ from sglang.srt.mem_cache.memory_pool import (
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch
 from sglang.srt.utils.torch_memory_saver_adapter import TorchMemorySaverAdapter
 
+from .pd import SPARSE_KV_PD_PREFILL_SLOT_ATTR
+
 if TYPE_CHECKING:
     import torch.npu
 
@@ -247,6 +249,11 @@ class SparseKVCacheManager:
             self.sparse_context_len, dtype=torch.long, device=self.device
         )
         self._slot_map_width = (self.max_context_len // 8 + 1) * 8
+        self.pd_prefill_kv_buffer: Optional[list[torch.Tensor]] = None
+        self.pd_decode_kv_staging: Optional[list[torch.Tensor]] = None
+        self._pd_prefill_req_to_slot: Optional[torch.Tensor] = None
+        self._pd_decode_token_indices: Optional[torch.Tensor] = None
+        self._pd_decode_copy_stream = torch.npu.Stream()
 
         self._install_req_alloc_hook(req_to_token_pool)
 
@@ -263,6 +270,227 @@ class SparseKVCacheManager:
             "The sparse KV request capacity may be too large; set a smaller "
             "--max-running-requests for sparse KV offload."
         ) from exc
+
+
+    def _pd_buffer_shape(self, slot_count: int) -> tuple[int, int, int, int]:
+        return (
+            int(slot_count),
+            self.max_context_len,
+            self.head_num,
+            self.head_dim,
+        )
+
+    def _alloc_pd_device_buffers(
+        self,
+        slot_count: int,
+        buffer_name: str,
+        fill_value: float,
+    ) -> list[torch.Tensor]:
+        enable_memory_saver = False
+        memory_saver_adapter = TorchMemorySaverAdapter.create(
+            enable=enable_memory_saver
+        )
+        try:
+            with memory_saver_adapter.region(GPU_MEMORY_TYPE_KV_CACHE):
+                return [
+                    torch.full(
+                        self._pd_buffer_shape(slot_count),
+                        fill_value,
+                        dtype=self.store_dtype,
+                        device=self.device,
+                    )
+                    for _ in range(self.layer_num)
+                ]
+        except Exception as e:
+            self._raise_buffer_allocation_error(buffer_name, e)
+
+    def _pd_transfer_buf_infos(
+        self,
+        buffers: list[torch.Tensor],
+    ) -> tuple[list[int], list[int], list[int]]:
+        return (
+            [buf.data_ptr() for buf in buffers],
+            [buf.nbytes for buf in buffers],
+            [buf[0, 0].nbytes for buf in buffers],
+        )
+
+    def ensure_pd_prefill_transfer_buffers(self, slot_count: int) -> None:
+        slot_count = int(slot_count)
+        if slot_count <= 0:
+            raise ValueError(
+                f"Sparse KV PD prefill slot_count must be > 0: {slot_count}"
+            )
+        if self.pd_prefill_kv_buffer is not None:
+            current_slots = int(self.pd_prefill_kv_buffer[0].shape[0])
+            if current_slots < slot_count:
+                raise RuntimeError(
+                    "Sparse KV PD prefill buffer was already initialized with "
+                    f"{current_slots} slots, cannot grow to {slot_count} slots."
+                )
+            return
+
+        logger.info(
+            "Sparse KV PD prefill HBM transfer buffer shape: %s",
+            self._pd_buffer_shape(slot_count),
+        )
+        self.pd_prefill_kv_buffer = self._alloc_pd_device_buffers(
+            slot_count,
+            "pd_prefill_kv_buffer",
+            3333.33,
+        )
+        self._pd_prefill_req_to_slot = torch.full(
+            (self.size,), -1, dtype=torch.long, device=self.device
+        )
+
+    def ensure_pd_decode_staging_buffers(self, slot_count: int = 1) -> None:
+        slot_count = int(slot_count)
+        if slot_count <= 0:
+            raise ValueError(
+                f"Sparse KV PD decode slot_count must be > 0: {slot_count}"
+            )
+        if self.pd_decode_kv_staging is not None:
+            current_slots = int(self.pd_decode_kv_staging[0].shape[0])
+            if current_slots < slot_count:
+                raise RuntimeError(
+                    "Sparse KV PD decode staging was already initialized with "
+                    f"{current_slots} slots, cannot grow to {slot_count} slots."
+                )
+            return
+
+        logger.info(
+            "Sparse KV PD decode HBM staging buffer shape: %s",
+            self._pd_buffer_shape(slot_count),
+        )
+        self.pd_decode_kv_staging = self._alloc_pd_device_buffers(
+            slot_count,
+            "pd_decode_kv_staging",
+            4444.44,
+        )
+        self._pd_decode_token_indices = torch.arange(
+            self.max_context_len, dtype=torch.long, device=self.device
+        ).contiguous()
+
+    def get_pd_prefill_transfer_buf_infos(
+        self,
+    ) -> tuple[list[int], list[int], list[int]]:
+        if self.pd_prefill_kv_buffer is None:
+            raise RuntimeError(
+                "Sparse KV PD prefill transfer buffer is not initialized."
+            )
+        return self._pd_transfer_buf_infos(self.pd_prefill_kv_buffer)
+
+    def get_pd_decode_transfer_buf_infos(
+        self,
+    ) -> tuple[list[int], list[int], list[int]]:
+        if self.pd_decode_kv_staging is None:
+            raise RuntimeError(
+                "Sparse KV PD decode staging buffer is not initialized."
+            )
+        return self._pd_transfer_buf_infos(self.pd_decode_kv_staging)
+
+    def bind_pd_prefill_slots(self, reqs: list[Req]) -> None:
+        if self._pd_prefill_req_to_slot is None:
+            return
+
+        req_pool_indices = []
+        slot_ids = []
+        for req in reqs:
+            req_pool_idx = getattr(req, "req_pool_idx", None)
+            slot = getattr(req, SPARSE_KV_PD_PREFILL_SLOT_ATTR, -1)
+            if req_pool_idx is None or slot < 0:
+                continue
+            req_pool_indices.append(int(req_pool_idx))
+            slot_ids.append(int(slot))
+
+        if not req_pool_indices:
+            return
+        req_pool_indices_tensor = torch.tensor(
+            req_pool_indices, dtype=torch.long, device=self.device
+        )
+        slot_ids_tensor = torch.tensor(slot_ids, dtype=torch.long, device=self.device)
+        self._pd_prefill_req_to_slot[req_pool_indices_tensor] = slot_ids_tensor
+
+    def clear_pd_prefill_slot_for_req(self, req: Req) -> None:
+        if self._pd_prefill_req_to_slot is None:
+            return
+        req_pool_idx = getattr(req, "req_pool_idx", None)
+        if req_pool_idx is None:
+            return
+        self._pd_prefill_req_to_slot[int(req_pool_idx)] = -1
+
+    def _copy_to_pd_prefill_buffer(
+        self,
+        src_tensor: torch.Tensor,
+        src_index: torch.Tensor,
+        dst_index: torch.Tensor,
+        valid_mask: torch.Tensor,
+        layer_idx: int,
+    ) -> None:
+        if self.pd_prefill_kv_buffer is None or self._pd_prefill_req_to_slot is None:
+            return
+
+        req_ids = torch.div(dst_index, self.max_context_len, rounding_mode="floor")
+        token_pos = torch.remainder(dst_index, self.max_context_len)
+        clamped_req_ids = req_ids.clamp(0, self.size - 1)
+        slot_ids = self._pd_prefill_req_to_slot[clamped_req_ids]
+        pd_valid_mask = (valid_mask & (req_ids >= 0) & (slot_ids >= 0)).contiguous()
+        safe_slot_ids = torch.where(slot_ids >= 0, slot_ids, torch.zeros_like(slot_ids))
+        pd_dst_index = (safe_slot_ids * self.max_context_len + token_pos).contiguous()
+        unidex_copy_inplace(
+            src_tensor,
+            self.pd_prefill_kv_buffer[layer_idx],
+            src_index,
+            pd_dst_index,
+            pd_valid_mask,
+            1,
+            2,
+            block_dim=48,
+        )
+
+    def offload_pd_decode_staging_to_host(
+        self,
+        req_pool_idx: int,
+        token_count: int,
+        stream: Optional[torch.npu.Stream] = None,
+    ) -> None:
+        if self.pd_decode_kv_staging is None or self._pd_decode_token_indices is None:
+            raise RuntimeError(
+                "Sparse KV PD decode staging buffer is not initialized."
+            )
+        if req_pool_idx < 0 or req_pool_idx >= self.size:
+            raise RuntimeError(
+                f"Sparse KV PD decode got req_pool_idx={req_pool_idx}, "
+                f"outside sparse pool size {self.size}."
+            )
+        if token_count < 0 or token_count > self.max_context_len:
+            raise RuntimeError(
+                f"Sparse KV PD decode got token_count={token_count}, "
+                f"outside max_context_len {self.max_context_len}."
+            )
+
+        self.host_kv_ctx_len[req_pool_idx] = int(token_count)
+        self.reset_requests([int(req_pool_idx)])
+        actual_stream = stream if stream is not None else self._pd_decode_copy_stream
+        token_indices = self._pd_decode_token_indices
+        dst_index = (
+            int(req_pool_idx) * self.max_context_len + token_indices
+        ).contiguous()
+        valid_mask = (token_indices < int(token_count)).contiguous()
+
+        with torch.npu.stream(actual_stream):
+            for layer_idx in range(self.layer_num):
+                unidex_copy_inplace(
+                    self.pd_decode_kv_staging[layer_idx],
+                    self.host_kv_buffer[layer_idx],
+                    token_indices,
+                    dst_index,
+                    valid_mask,
+                    2,
+                    2,
+                    block_dim=48,
+                    dst_ptr=self.dev_ptr_list[layer_idx],
+                )
+        actual_stream.synchronize()
 
     def init_req(self, req: Req) -> None:
         if req.is_chunked > 0:
@@ -641,6 +869,14 @@ class SparseKVCacheManager:
                 block_dim=48,
                 dst_ptr=self.dev_ptr_list[layer_idx],
             )
+            if not forward_batch.forward_mode.is_decode():
+                self._copy_to_pd_prefill_buffer(
+                    src_tensor,
+                    src_index,
+                    dst_index,
+                    valid_mask,
+                    layer_idx,
+                )
 
     def get_forward_kv(
         self,

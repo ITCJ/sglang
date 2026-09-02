@@ -4298,6 +4298,13 @@ class Scheduler(
                 maybe_release_metadata_buffer(
                     req, self.req_to_metadata_buffer_idx_allocator
                 )
+                if hasattr(
+                    self.disagg_prefill_bootstrap_queue,
+                    "release_sparse_kv_pd_prefill_slot",
+                ):
+                    self.disagg_prefill_bootstrap_queue.release_sparse_kv_pd_prefill_slot(
+                        req
+                    )
                 if (
                     bootstrap_pending
                     and hasattr(req, "disagg_kv_sender")
@@ -4345,6 +4352,13 @@ class Scheduler(
                     if self.enable_hicache_storage:
                         self.tree_cache.release_aborted_request(req.rid)
 
+                    if hasattr(
+                        self.disagg_prefill_bootstrap_queue,
+                        "release_sparse_kv_pd_prefill_slot",
+                    ):
+                        self.disagg_prefill_bootstrap_queue.release_sparse_kv_pd_prefill_slot(
+                            req
+                        )
                     if hasattr(req.disagg_kv_sender, "abort"):
                         req.disagg_kv_sender.abort()
                     if self.ps.pp_size > 1:
