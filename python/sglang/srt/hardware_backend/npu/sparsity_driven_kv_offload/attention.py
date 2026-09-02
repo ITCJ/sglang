@@ -125,7 +125,6 @@ def forward_sparsity_driven_kv_offload(
         topk_2d_input = normalize_batch_topk_indices(topk_indices)
         effective_topk_length = topk_2d_input.shape[1]
         selected_kv_length = sparse_kv_manager.sparse_context_len
-        current_kv_buffer_length = sparse_kv_manager.device_cache_capacity
         if effective_topk_length <= 0:
             raise RuntimeError("SFA BSND compact path expects a positive top-k length.")
         if effective_topk_length > selected_kv_length:
@@ -158,14 +157,12 @@ def forward_sparsity_driven_kv_offload(
             f"num_query_heads={num_query_heads}"
         )
 
-        # The first selected_kv_length entries materialize the current top-k and
-        # are consumed by sparse attention. The second half retains old cache
-        # entries selected by the LRU policy before the whole buffer refills the
-        # device cache.
+        # Materialize only the current top-k. The 2x device cache uses stable
+        # physical slots, so retained entries never pass through this buffer.
         selected_kv_buffer = torch.zeros(
             (
                 batch_size,
-                current_kv_buffer_length,
+                selected_kv_length,
                 num_kv_heads,
                 nope_head_dim + rope_head_dim,
             ),
@@ -179,8 +176,7 @@ def forward_sparsity_driven_kv_offload(
         _wait_stream_event(stream, sparse_kv_manager.hit_done)
         _wait_stream_event(stream, sparse_kv_manager.miss_done)
 
-        attention_kv_buffer = selected_kv_buffer[:, :selected_kv_length]
-        selected_k_nope, selected_k_rope = attention_kv_buffer.split(
+        selected_k_nope, selected_k_rope = selected_kv_buffer.split(
             [nope_head_dim, rope_head_dim], dim=-1
         )
 

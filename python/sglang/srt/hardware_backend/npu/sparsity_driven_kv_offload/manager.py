@@ -121,16 +121,14 @@ class SparseKVCacheManager:
 
         self.hit_done = torch.npu.Event()
         self.miss_done = torch.npu.Event()
-        self.retain_done = torch.npu.Event()
         self.refill_done = torch.npu.Event()
         self.slot_map_done = torch.npu.Event()
 
         # device KV buffer
         try:
             with memory_saver_adapter.region(GPU_MEMORY_TYPE_KV_CACHE):
-                # [bs, 2 * ctx_len, head_num, head_dim] for each layer. Slots
-                # [0, ctx_len) are the current MRU top-k and slots
-                # [ctx_len, 2 * ctx_len) retain older entries in LRU order.
+                # Physical cache slots are stable. LRU ordering is maintained
+                # separately in device_lru_slots so hits never need a writeback.
                 # The padded slot 0 is used for writing dummy outputs from padded tokens.
                 self.device_kv_buffer: list[torch.Tensor] = [
                     torch.empty(
@@ -165,14 +163,7 @@ class SparseKVCacheManager:
                     )
                     for _ in range(self.layer_num)
                 ]
-                # Pre-filled all-(-1) template used to reset the slot map with a
-                # fast device-to-device copy instead of an indexed fill.
-                self._device_slot_map_minus_one = torch.full_like(
-                    self.device_slot_map[0], -1
-                )
-
-                # Reverse metadata for the slot map. Slot order is also the LRU
-                # order: lower slots are more recently used.
+                # Reverse metadata from stable physical slot to token position.
                 self.device_slot_tokens: list[torch.Tensor] = [
                     torch.full(
                         (self.size, self.device_cache_capacity),
@@ -182,9 +173,20 @@ class SparseKVCacheManager:
                     )
                     for _ in range(self.layer_num)
                 ]
-                self._device_slot_tokens_minus_one = torch.full_like(
-                    self.device_slot_tokens[0], -1
-                )
+
+                # Logical MRU-to-LRU order of physical slots. Unused slots start
+                # at the tail and are therefore selected before valid victims.
+                self._initial_lru_slot_order = torch.arange(
+                    self.device_cache_capacity,
+                    dtype=torch.int32,
+                    device=self.device,
+                ).unsqueeze(0)
+                self.device_lru_slots: list[torch.Tensor] = [
+                    self._initial_lru_slot_order.expand(
+                        self.size, self.device_cache_capacity
+                    ).clone()
+                    for _ in range(self.layer_num)
+                ]
         except Exception as e:
             self._raise_buffer_allocation_error("device_slot_map", e)
 
@@ -278,6 +280,13 @@ class SparseKVCacheManager:
         for layer_idx in range(self.layer_num):
             self.device_slot_map[layer_idx].index_fill_(0, req_ids_tensor, -1)
             self.device_slot_tokens[layer_idx].index_fill_(0, req_ids_tensor, -1)
+            self.device_lru_slots[layer_idx].index_copy_(
+                0,
+                req_ids_tensor,
+                self._initial_lru_slot_order.expand(
+                    len(req_ids), self.device_cache_capacity
+                ).contiguous(),
+            )
         self._cache_stats.index_fill_(1, req_ids_tensor, 0)
 
     def _install_req_lifecycle_hooks(
@@ -770,7 +779,7 @@ class SparseKVCacheManager:
         selected_kv_buffer: torch.Tensor,
         stream: torch.npu.Stream,
     ) -> None:
-        """Materialize top-k KV entries and update the device cache LRU state."""
+        """Materialize top-k KV and update a non-moving physical-slot LRU."""
         layer_idx = layer.layer_id - self.start_layer
         stream = stream if stream is not None else torch.npu.current_stream()
 
@@ -803,13 +812,13 @@ class SparseKVCacheManager:
             if (
                 selected_kv_buffer.dim() != 4
                 or selected_kv_buffer.shape[0] != batch_size
-                or selected_kv_buffer.shape[1] != self.device_cache_capacity
+                or selected_kv_buffer.shape[1] != self.sparse_context_len
             ):
                 raise RuntimeError(
                     "Current KV buffer must have shape "
-                    "[batch, device_cache_capacity, head_num, head_dim], got "
+                    "[batch, sparse_context_len, head_num, head_dim], got "
                     f"{tuple(selected_kv_buffer.shape)} with batch={batch_size} and "
-                    f"device_cache_capacity={self.device_cache_capacity}."
+                    f"sparse_context_len={self.sparse_context_len}."
                 )
             valid_topk_mask = (
                 (topk_indices >= 0)
@@ -836,6 +845,7 @@ class SparseKVCacheManager:
                 device_token_pos,
                 device_cache_row_indices,
                 self.device_cache_capacity,
+                self.sparse_context_len,
             )
 
             host_miss_mask = (~token_on_device) & valid_topk_mask
@@ -844,7 +854,7 @@ class SparseKVCacheManager:
                 topk_indices,
                 device_cache_row_indices,
                 self.max_context_len,
-                self.device_cache_capacity,
+                self.sparse_context_len,
             )
 
             # Accumulate on-device counters as part of graph capture/replay.
@@ -865,22 +875,27 @@ class SparseKVCacheManager:
                 0, device_cache_row_indices, request_stats
             )
 
-            # device_slot_tokens is ordered from MRU to LRU. Remove slots hit
-            # by the current top-k, compact the remaining entries stably, and
-            # retain at most one sparse-attention window in the buffer tail.
+            # Select one stable physical victim slot for every miss and build
+            # the next logical MRU-to-LRU order. KV in hit slots never moves.
             old_cache_tokens = self.device_slot_tokens[layer_idx].index_select(
                 0, device_cache_row_indices
             )
-            retained_mask, retained_rank = _build_lru_retention_plan(
+            old_lru_slots = self.device_lru_slots[layer_idx].index_select(
+                0, device_cache_row_indices
+            )
+            victim_slots, new_lru_slots = _build_lru_slot_plan(
                 token_on_device,
                 device_token_pos,
+                valid_topk_mask,
+                old_lru_slots,
+            )
+            evicted_tokens = torch.gather(
                 old_cache_tokens,
-                valid_req_mask,
-                self.sparse_context_len,
+                1,
+                victim_slots.to(torch.long),
             )
 
-            cache_slot_ids = self._device_cache_slot_ids[:topk_len]
-            old_slot_ids = self._device_cache_slot_ids.unsqueeze(0)
+            topk_slot_ids = self._device_cache_slot_ids[:topk_len]
             request_cache_offsets = device_cache_row_indices.unsqueeze(1) * (
                 self.device_cache_capacity
             )
@@ -888,30 +903,28 @@ class SparseKVCacheManager:
                 torch.arange(
                     batch_size, dtype=torch.long, device=topk_indices.device
                 ).unsqueeze(1)
-                * self.device_cache_capacity
+                * self.sparse_context_len
             )
 
-            front_refill_src_index = (
-                current_buffer_offsets + cache_slot_ids
-            ).reshape(-1)
-            front_refill_dst_index = (
-                (request_cache_offsets + cache_slot_ids).reshape(-1).contiguous()
-            )
-            front_refill_valid_mask = valid_topk_mask.reshape(-1).contiguous()
+            miss_refill_src_index = (
+                current_buffer_offsets + topk_slot_ids
+            ).reshape(-1).contiguous()
+            miss_refill_dst_index = (
+                request_cache_offsets + victim_slots.to(torch.long)
+            ).reshape(-1).contiguous()
+            miss_refill_valid_mask = host_miss_mask.reshape(-1).contiguous()
 
-            retained_slot_pos = self.sparse_context_len + retained_rank.clamp(
-                min=0, max=self.sparse_context_len - 1
-            ).to(torch.long)
-            retain_src_index = (
-                request_cache_offsets + old_slot_ids
+            lru_slot_positions = self._device_cache_slot_ids.unsqueeze(0)
+            lru_update_dst_index = (
+                request_cache_offsets + lru_slot_positions
             ).reshape(-1).contiguous()
-            retain_current_index = (
-                current_buffer_offsets + retained_slot_pos
-            ).reshape(-1).contiguous()
-            retain_device_index = (
-                request_cache_offsets + retained_slot_pos
-            ).reshape(-1).contiguous()
-            retain_valid_mask = retained_mask.reshape(-1).contiguous()
+            lru_update_valid_mask = (
+                (valid_req_mask & req_pool_indices.ne(0))
+                .unsqueeze(1)
+                .expand(batch_size, self.device_cache_capacity)
+                .reshape(-1)
+                .contiguous()
+            )
 
             copy_ready = torch.npu.Event()
             _record_stream_event(stream, copy_ready)
@@ -931,20 +944,6 @@ class SparseKVCacheManager:
             )
             _record_stream_event(self._materialize_d2d_hit_stream, self.hit_done)
 
-            # Preserve the most-recently-used old entries that were not part of
-            # this step's top-k in the second half of the current buffer.
-            unidex_copy_inplace(
-                self.device_kv_buffer[layer_idx],
-                selected_kv_buffer,
-                retain_src_index,
-                retain_current_index,
-                retain_valid_mask,
-                2,
-                2,
-                block_dim=24,
-            )
-            _record_stream_event(self._materialize_d2d_hit_stream, self.retain_done)
-
         # Copy host shared-memory misses into the selected KV buffer.
         with torch.npu.stream(self._materialize_h2d_miss_stream):
             _wait_stream_event(self._materialize_h2d_miss_stream, copy_ready)
@@ -961,76 +960,81 @@ class SparseKVCacheManager:
             )
             _record_stream_event(self._materialize_h2d_miss_stream, self.miss_done)
 
-        # Refill the device cache with the current top-k MRU prefix and retained
-        # LRU tail after all source copies complete.
+        # Hits already occupy stable physical slots. Only host misses need a
+        # current-buffer-to-device write into their selected victim slots.
         with torch.npu.stream(self._materialize_refill_stream):
-            _wait_stream_event(self._materialize_refill_stream, self.hit_done)
             _wait_stream_event(self._materialize_refill_stream, self.miss_done)
-            _wait_stream_event(self._materialize_refill_stream, self.retain_done)
             unidex_copy_inplace(
                 selected_kv_buffer,
                 self.device_kv_buffer[layer_idx],
-                front_refill_src_index,
-                front_refill_dst_index,
-                front_refill_valid_mask,
-                2,
-                2,
-                block_dim=24,
-            )
-            unidex_copy_inplace(
-                selected_kv_buffer,
-                self.device_kv_buffer[layer_idx],
-                retain_current_index,
-                retain_device_index,
-                retain_valid_mask,
+                miss_refill_src_index,
+                miss_refill_dst_index,
+                miss_refill_valid_mask,
                 2,
                 2,
                 block_dim=24,
             )
             _record_stream_event(self._materialize_refill_stream, self.refill_done)
 
-        # Replace the slot-map row with the current top-k mapping. Invalid
-        # entries use the max_context_len sentinel column to preserve shape.
+        # Incrementally update metadata for misses. Hit token mappings and all
+        # non-victim reverse mappings remain unchanged.
         with torch.npu.stream(self._materialize_slot_map_stream):
             _wait_stream_event(self._materialize_slot_map_stream, copy_ready)
-            self.device_slot_map[layer_idx].copy_(self._device_slot_map_minus_one)
-            self.device_slot_tokens[layer_idx].copy_(
-                self._device_slot_tokens_minus_one
-            )
 
-            slot_map_token_indices = torch.where(
-                valid_topk_mask,
-                topk_indices.to(torch.long),
-                torch.full_like(topk_indices, self.max_context_len, dtype=torch.long),
+            evicted_token_valid_mask = host_miss_mask & (evicted_tokens >= 0)
+            evicted_token_indices = torch.where(
+                evicted_token_valid_mask,
+                evicted_tokens.to(torch.long),
+                torch.full_like(
+                    evicted_tokens, self.max_context_len, dtype=torch.long
+                ),
             )
-            slot_map_slot_values = torch.where(
-                valid_topk_mask,
-                cache_slot_ids.to(torch.int32),
-                torch.full_like(cache_slot_ids, -1, dtype=torch.int32),
-            )
-            slot_map_flat_indices = (
+            evicted_slot_map_dst = (
                 slot_map_row_indices.unsqueeze(1) * self._slot_map_width
-                + slot_map_token_indices
+                + evicted_token_indices
             ).reshape(-1)
             unidex_copy_inplace(
-                slot_map_slot_values.reshape(-1, 1).contiguous(),
+                torch.full_like(victim_slots, -1, dtype=torch.int32)
+                .reshape(-1, 1)
+                .contiguous(),
                 self.device_slot_map[layer_idx].view(-1, 1),
                 torch.arange(
-                    slot_map_slot_values.numel(),
+                    victim_slots.numel(),
                     dtype=torch.long,
                     device=topk_indices.device,
                 ),
-                slot_map_flat_indices,
-                valid_topk_mask.reshape(-1),
+                evicted_slot_map_dst,
+                evicted_token_valid_mask.reshape(-1),
                 1,
                 1,
                 block_dim=48,
             )
 
-            # Store the reverse token metadata for the new MRU top-k prefix.
-            topk_slot_token_dst = (
-                request_cache_offsets + cache_slot_ids
+            new_token_indices = torch.where(
+                host_miss_mask,
+                topk_indices.to(torch.long),
+                torch.full_like(topk_indices, self.max_context_len, dtype=torch.long),
+            )
+            new_slot_map_dst = (
+                slot_map_row_indices.unsqueeze(1) * self._slot_map_width
+                + new_token_indices
             ).reshape(-1)
+            unidex_copy_inplace(
+                victim_slots.to(torch.int32).reshape(-1, 1).contiguous(),
+                self.device_slot_map[layer_idx].view(-1, 1),
+                torch.arange(
+                    victim_slots.numel(),
+                    dtype=torch.long,
+                    device=topk_indices.device,
+                ),
+                new_slot_map_dst,
+                host_miss_mask.reshape(-1),
+                1,
+                1,
+                block_dim=48,
+            )
+
+            # Overwrite only victim reverse mappings with their new miss token.
             unidex_copy_inplace(
                 topk_indices.to(torch.int32).reshape(-1, 1).contiguous(),
                 self.device_slot_tokens[layer_idx].view(-1, 1),
@@ -1039,50 +1043,24 @@ class SparseKVCacheManager:
                     dtype=torch.long,
                     device=topk_indices.device,
                 ),
-                topk_slot_token_dst,
-                valid_topk_mask.reshape(-1),
+                miss_refill_dst_index,
+                host_miss_mask.reshape(-1),
                 1,
                 1,
                 block_dim=48,
             )
 
-            # Rebuild both token->slot and slot->token metadata for retained
-            # entries in the LRU tail.
-            retained_token_indices = torch.where(
-                retained_mask,
-                old_cache_tokens.to(torch.long),
-                torch.full_like(
-                    old_cache_tokens, self.max_context_len, dtype=torch.long
-                ),
-            )
-            retained_slot_map_dst = (
-                slot_map_row_indices.unsqueeze(1) * self._slot_map_width
-                + retained_token_indices
-            ).reshape(-1)
+            # LRU ordering moves only int32 physical-slot metadata, never KV.
             unidex_copy_inplace(
-                retained_slot_pos.to(torch.int32).reshape(-1, 1).contiguous(),
-                self.device_slot_map[layer_idx].view(-1, 1),
+                new_lru_slots.reshape(-1, 1).contiguous(),
+                self.device_lru_slots[layer_idx].view(-1, 1),
                 torch.arange(
-                    retained_slot_pos.numel(),
+                    new_lru_slots.numel(),
                     dtype=torch.long,
                     device=topk_indices.device,
                 ),
-                retained_slot_map_dst,
-                retain_valid_mask,
-                1,
-                1,
-                block_dim=48,
-            )
-            unidex_copy_inplace(
-                old_cache_tokens.reshape(-1, 1).contiguous(),
-                self.device_slot_tokens[layer_idx].view(-1, 1),
-                torch.arange(
-                    old_cache_tokens.numel(),
-                    dtype=torch.long,
-                    device=topk_indices.device,
-                ),
-                retain_device_index,
-                retain_valid_mask,
+                lru_update_dst_index,
+                lru_update_valid_mask,
                 1,
                 1,
                 block_dim=48,
@@ -1102,62 +1080,125 @@ def get_sparse_kv_manager() -> Optional[SparseKVCacheManager]:
     return _global_sparse_kv_manager
 
 
-def _build_lru_retention_plan(
+def _build_lru_slot_plan(
     token_on_device: torch.Tensor,
     device_token_pos: torch.Tensor,
-    old_cache_tokens: torch.Tensor,
-    valid_req_mask: torch.Tensor,
-    retention_capacity: int,
+    valid_topk_mask: torch.Tensor,
+    old_lru_slots: torch.Tensor,
 ):
-    """Select unreferenced old cache slots in stable MRU-to-LRU order."""
+    """Choose miss victims and update logical MRU-to-LRU physical-slot order."""
     if token_on_device.shape != device_token_pos.shape:
         raise RuntimeError(
             "token_on_device and device_token_pos must have the same shape, got "
             f"{tuple(token_on_device.shape)} and {tuple(device_token_pos.shape)}"
         )
-    if old_cache_tokens.dim() != 2:
+    if token_on_device.shape != valid_topk_mask.shape:
         raise RuntimeError(
-            f"old_cache_tokens must be 2-D, got {old_cache_tokens.dim()}"
+            "token_on_device and valid_topk_mask must have the same shape, got "
+            f"{tuple(token_on_device.shape)} and {tuple(valid_topk_mask.shape)}"
         )
-    batch_size, cache_capacity = old_cache_tokens.shape
+    if old_lru_slots.dim() != 2:
+        raise RuntimeError(
+            f"old_lru_slots must be 2-D, got {old_lru_slots.dim()}"
+        )
+    batch_size, cache_capacity = old_lru_slots.shape
     if token_on_device.dim() != 2 or token_on_device.shape[0] != batch_size:
         raise RuntimeError(
-            "token_on_device must be 2-D and match old_cache_tokens batch size"
+            "token_on_device must be 2-D and match old_lru_slots batch size"
         )
-    if valid_req_mask.dim() != 1 or valid_req_mask.numel() != batch_size:
+    if token_on_device.shape[1] > cache_capacity:
         raise RuntimeError(
-            "valid_req_mask must be 1-D and match old_cache_tokens batch size"
-        )
-    if retention_capacity <= 0 or retention_capacity > cache_capacity:
-        raise RuntimeError(
-            "retention_capacity must be in (0, cache_capacity], got "
-            f"{retention_capacity} and {cache_capacity}"
+            "top-k length must not exceed cache capacity, got "
+            f"{token_on_device.shape[1]} and {cache_capacity}"
         )
 
-    # Mark old slots referenced by this top-k. Miss positions are clamped only
+    # Exclude current hit slots from eviction. Miss positions are clamped only
     # to keep scatter indices valid; their zero source values have no effect.
-    safe_device_pos = device_token_pos.to(torch.long).clamp(
+    safe_hit_slot = device_token_pos.to(torch.long).clamp(
         min=0, max=cache_capacity - 1
     )
-    selected_slot_counts = torch.zeros(
+    hit_slot_counts = torch.zeros(
         (batch_size, cache_capacity),
         dtype=torch.int32,
-        device=old_cache_tokens.device,
+        device=old_lru_slots.device,
     )
-    selected_slot_counts.scatter_add_(
-        1, safe_device_pos, token_on_device.to(torch.int32)
+    hit_slot_counts.scatter_add_(
+        1, safe_hit_slot, token_on_device.to(torch.int32)
+    )
+    old_lru_hit_mask = torch.gather(
+        hit_slot_counts.gt(0), 1, old_lru_slots.to(torch.long)
+    )
+    evictable_mask = ~old_lru_hit_mask
+
+    # Rank evictable slots from the LRU tail. Rank 0 is the first victim.
+    evictable_prefix_count = torch.cumsum(
+        evictable_mask, dim=1, dtype=torch.int32
+    )
+    evictable_tail_rank = (
+        evictable_prefix_count[:, -1:] - evictable_prefix_count
+    )
+    victim_slots_by_rank = torch.zeros_like(old_lru_slots, dtype=torch.int32)
+    victim_slots_by_rank.scatter_add_(
+        1,
+        evictable_tail_rank.clamp(min=0, max=cache_capacity - 1).to(torch.long),
+        torch.where(
+            evictable_mask,
+            old_lru_slots.to(torch.int32),
+            torch.zeros_like(old_lru_slots, dtype=torch.int32),
+        ),
     )
 
-    retain_candidates = (
-        (old_cache_tokens >= 0)
-        & selected_slot_counts.eq(0)
-        & valid_req_mask.unsqueeze(1)
+    host_miss_mask = (~token_on_device) & valid_topk_mask
+    miss_rank = torch.cumsum(host_miss_mask, dim=1, dtype=torch.int32) - 1
+    victim_slots = torch.gather(
+        victim_slots_by_rank,
+        1,
+        miss_rank.clamp(min=0, max=cache_capacity - 1).to(torch.long),
     )
-    retained_rank = (
-        torch.cumsum(retain_candidates, dim=1, dtype=torch.int32) - 1
+    current_topk_slots = torch.where(
+        token_on_device,
+        device_token_pos.to(torch.int32),
+        victim_slots,
     )
-    retained_mask = retain_candidates & (retained_rank < retention_capacity)
-    return retained_mask, retained_rank
+
+    # Promote all valid current top-k physical slots to the MRU prefix. Append
+    # all unselected old slots in their previous relative order.
+    selected_slot_counts = torch.zeros_like(old_lru_slots, dtype=torch.int32)
+    selected_slot_counts.scatter_add_(
+        1,
+        current_topk_slots.to(torch.long).clamp(min=0, max=cache_capacity - 1),
+        valid_topk_mask.to(torch.int32),
+    )
+    old_lru_selected_mask = torch.gather(
+        selected_slot_counts.gt(0), 1, old_lru_slots.to(torch.long)
+    )
+    remaining_mask = ~old_lru_selected_mask
+
+    selected_rank = torch.cumsum(valid_topk_mask, dim=1, dtype=torch.int32) - 1
+    selected_count = valid_topk_mask.sum(dim=1, dtype=torch.int32).unsqueeze(1)
+    remaining_rank = torch.cumsum(remaining_mask, dim=1, dtype=torch.int32) - 1
+
+    new_lru_slots = torch.zeros_like(old_lru_slots, dtype=torch.int32)
+    new_lru_slots.scatter_add_(
+        1,
+        selected_rank.clamp(min=0, max=cache_capacity - 1).to(torch.long),
+        torch.where(
+            valid_topk_mask,
+            current_topk_slots,
+            torch.zeros_like(current_topk_slots),
+        ),
+    )
+    remaining_dst = selected_count + remaining_rank
+    new_lru_slots.scatter_add_(
+        1,
+        remaining_dst.clamp(min=0, max=cache_capacity - 1).to(torch.long),
+        torch.where(
+            remaining_mask,
+            old_lru_slots.to(torch.int32),
+            torch.zeros_like(old_lru_slots, dtype=torch.int32),
+        ),
+    )
+    return victim_slots, new_lru_slots
 
 
 def _build_hit_src_dst_index(
@@ -1165,6 +1206,7 @@ def _build_hit_src_dst_index(
     device_token_pos: torch.Tensor,
     current_req_indices: torch.Tensor,
     device_cache_capacity: int,
+    current_buffer_capacity: int,
 ):
     """
     token_on_device: [bs, topk], bool
@@ -1178,7 +1220,7 @@ def _build_hit_src_dst_index(
 
     Flattening rule:
         src row = req_id * device_cache_capacity + device_token_pos
-        dst row = batch_id * device_cache_capacity + topk_pos
+        dst row = batch_id * current_buffer_capacity + topk_pos
     """
     if token_on_device.dim() != 2 or device_token_pos.dim() != 2:
         raise RuntimeError(
@@ -1206,6 +1248,11 @@ def _build_hit_src_dst_index(
             "device_cache_capacity must be positive, got "
             f"{device_cache_capacity}"
         )
+    if current_buffer_capacity <= 0:
+        raise RuntimeError(
+            "current_buffer_capacity must be positive, got "
+            f"{current_buffer_capacity}"
+        )
 
     device = token_on_device.device
 
@@ -1213,7 +1260,7 @@ def _build_hit_src_dst_index(
 
     batch_offsets = (
         torch.arange(bs, device=device, dtype=torch.int64).unsqueeze(1)
-        * device_cache_capacity
+        * current_buffer_capacity
     )
     topk_offsets = torch.arange(topk, device=device, dtype=torch.int64)
     flat_dst_index_all = (batch_offsets + topk_offsets).reshape(-1).contiguous()
