@@ -252,7 +252,6 @@ class SparseKVCacheManager:
         self.pd_prefill_kv_buffer: Optional[list[torch.Tensor]] = None
         self.pd_decode_kv_staging: Optional[list[torch.Tensor]] = None
         self._pd_prefill_req_to_slot: Optional[torch.Tensor] = None
-        self._pd_decode_token_indices: Optional[torch.Tensor] = None
         self._pd_decode_copy_stream = torch.npu.Stream()
 
         self._install_req_alloc_hook(req_to_token_pool)
@@ -366,9 +365,6 @@ class SparseKVCacheManager:
             "pd_decode_kv_staging",
             4444.44,
         )
-        self._pd_decode_token_indices = torch.arange(
-            self.max_context_len, dtype=torch.long, device=self.device
-        ).contiguous()
 
     def get_pd_prefill_transfer_buf_infos(
         self,
@@ -453,7 +449,7 @@ class SparseKVCacheManager:
         token_count: int,
         stream: Optional[torch.npu.Stream] = None,
     ) -> None:
-        if self.pd_decode_kv_staging is None or self._pd_decode_token_indices is None:
+        if self.pd_decode_kv_staging is None:
             raise RuntimeError(
                 "Sparse KV PD decode staging buffer is not initialized."
             )
@@ -471,25 +467,18 @@ class SparseKVCacheManager:
         self.host_kv_ctx_len[req_pool_idx] = int(token_count)
         self.reset_requests([int(req_pool_idx)])
         actual_stream = stream if stream is not None else self._pd_decode_copy_stream
-        token_indices = self._pd_decode_token_indices
-        dst_index = (
-            int(req_pool_idx) * self.max_context_len + token_indices
-        ).contiguous()
-        valid_mask = (token_indices < int(token_count)).contiguous()
+        copy_len = int(token_count)
+        if copy_len == 0:
+            actual_stream.synchronize()
+            return
 
         with torch.npu.stream(actual_stream):
             for layer_idx in range(self.layer_num):
-                unidex_copy_inplace(
-                    self.pd_decode_kv_staging[layer_idx],
-                    self.host_kv_buffer[layer_idx],
-                    token_indices,
-                    dst_index,
-                    valid_mask,
-                    2,
-                    2,
-                    block_dim=48,
-                    dst_ptr=self.dev_ptr_list[layer_idx],
-                )
+                # This copy is outside decode graph. Keep it as a bounded
+                # contiguous copy instead of scanning max_context_len indices.
+                src = self.pd_decode_kv_staging[layer_idx][0, :copy_len]
+                dst = self.host_kv_buffer[layer_idx][req_pool_idx, :copy_len]
+                dst.copy_(src, non_blocking=False)
         actual_stream.synchronize()
 
     def init_req(self, req: Req) -> None:
