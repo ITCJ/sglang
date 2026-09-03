@@ -482,7 +482,7 @@ class SparseKVCacheManager:
         actual_stream.synchronize()
 
     def init_req(self, req: Req) -> None:
-        if req.is_chunked > 0:
+        if getattr(req, "is_chunked", 0) > 0:
             return
         rid = req.req_pool_idx
         if rid is None:
