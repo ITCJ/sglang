@@ -914,16 +914,13 @@ class SparseKVCacheManager:
             ).reshape(-1).contiguous()
             miss_refill_valid_mask = host_miss_mask.reshape(-1).contiguous()
 
-            lru_slot_positions = self._device_cache_slot_ids.unsqueeze(0)
-            lru_update_dst_index = (
-                request_cache_offsets + lru_slot_positions
-            ).reshape(-1).contiguous()
-            lru_update_valid_mask = (
-                (valid_req_mask & req_pool_indices.ne(0))
-                .unsqueeze(1)
-                .expand(batch_size, self.device_cache_capacity)
-                .reshape(-1)
-                .contiguous()
+            lru_update_req_mask = (
+                valid_req_mask & req_pool_indices.ne(0)
+            ).unsqueeze(1)
+            lru_rows_to_write = torch.where(
+                lru_update_req_mask,
+                new_lru_slots,
+                old_lru_slots,
             )
 
             copy_ready = torch.npu.Event()
@@ -1051,19 +1048,12 @@ class SparseKVCacheManager:
             )
 
             # LRU ordering moves only int32 physical-slot metadata, never KV.
-            unidex_copy_inplace(
-                new_lru_slots.reshape(-1, 1).contiguous(),
-                self.device_lru_slots[layer_idx].view(-1, 1),
-                torch.arange(
-                    new_lru_slots.numel(),
-                    dtype=torch.long,
-                    device=topk_indices.device,
-                ),
-                lru_update_dst_index,
-                lru_update_valid_mask,
-                1,
-                1,
-                block_dim=48,
+            # Invalid and graph-padding requests write their original rows back,
+            # preserving row 0 while keeping graph-captured tensor shapes static.
+            self.device_lru_slots[layer_idx].index_copy_(
+                0,
+                device_cache_row_indices,
+                lru_rows_to_write,
             )
             _record_stream_event(self._materialize_slot_map_stream, self.slot_map_done)
 
