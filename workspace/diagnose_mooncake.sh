@@ -8,7 +8,7 @@ if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
   exit 2
 fi
 
-"${PYTHON_BIN}" - <<'PY'
+"${PYTHON_BIN}" - "$@" <<'PY'
 import ctypes
 import glob
 import importlib.metadata
@@ -23,6 +23,14 @@ import tempfile
 fd, log_path = tempfile.mkstemp(prefix="mooncake-diag-", suffix=".log")
 log = os.fdopen(fd, "w")
 codes = []
+missing_dependencies = set()
+
+def collect_missing(output):
+    for match in re.finditer(
+        r"([A-Za-z0-9_+.-]+\.so(?:\.[A-Za-z0-9_+.-]+)*)"
+        r"(?:\s+=>\s+not found|: cannot open shared object file)", output
+    ):
+        missing_dependencies.add(match.group(1))
 
 def record(title, value):
     log.write(f"\n## {title}\n{value}\n")
@@ -98,13 +106,15 @@ for name in ("libibverbs.so.1", "librdmacm.so.1"):
     absolute_errors = []
     for path in sorted(real_files):
         run(["file", path])
-        run(["ldd", path])
+        _, dependencies = run(["ldd", path])
+        collect_missing(dependencies)
         try:
             ctypes.CDLL(path)
             absolute_ok += 1
             record(path + " absolute load", "OK")
         except OSError as exc:
             absolute_errors.append(str(exc))
+            collect_missing(str(exc))
             record(path + " absolute load", str(exc))
             if "FAIL" in result and "cannot open shared object file" in result:
                 result += " ABS=" + short(str(exc), 160)
@@ -164,5 +174,8 @@ detail(f"NPU_SMI={'OK' if rc == 0 else 'FAIL'} MEMLOCK={'unlimited' if memlock =
 record("code order", "ibverbs rdmacm mooncake master sysfs uverbs ibv npu memlock")
 record("report", "D2:" + "".join(codes))
 log.close()
-print("D2:" + "".join(codes))
+if "--deps" in os.sys.argv[1:]:
+    print("DEP:" + (",".join(sorted(missing_dependencies)) or "NONE"))
+else:
+    print("D2:" + "".join(codes))
 PY
