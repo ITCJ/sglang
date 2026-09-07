@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# G=GitHub, P=configured pip index, A=configured apt repositories.
-# 0=reachable, H=HTTP error, N=network/TLS error, T=timeout,
-# C=configuration error, X=tool missing, -=not checked.
+# Human-readable endpoint checks with retries for intermittent connectivity.
 # Probe failures block only the repository required by the calling installer.
 set -euo pipefail
 "${PYTHON_BIN:-python3}" - "$@" <<'PY'
@@ -14,11 +12,38 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
+import re
 from urllib.parse import urlsplit
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--require", choices=("all", "apt", "pip"), default="all")
+parser.add_argument("--attempts", type=int, default=3)
+parser.add_argument("--timeout", type=int, default=20)
 args = parser.parse_args()
+if args.attempts < 1 or args.timeout < 1:
+    parser.error("--attempts and --timeout must be positive")
+
+fd, path = tempfile.mkstemp(prefix="mooncake-network-", suffix=".log")
+log = os.fdopen(fd, "w")
+output_lock = threading.Lock()
+
+def emit(message):
+    with output_lock:
+        print(message, flush=True)
+        log.write(message + "\n")
+        log.flush()
+
+def safe_url(url):
+    parsed = urlsplit(url)
+    host = parsed.hostname or "<invalid-host>"
+    if ":" in host:
+        host = "[" + host + "]"
+    return parsed.scheme + "://" + host + (":" + str(parsed.port) if parsed.port else "") + parsed.path
+
+def safe_error(error):
+    return re.sub(r"https?://[^\s\"']+", lambda match: safe_url(match.group()), error).strip()
 
 def command(argv):
     return subprocess.run(argv, capture_output=True, text=True, timeout=10)
@@ -58,46 +83,76 @@ def apt_urls():
     releases = [url for url in urls if url.endswith(("/InRelease", "/Release"))]
     return list(dict.fromkeys(releases or urls))
 
-def probe(url):
+def probe(label, url):
+    target = f"[{label}] {safe_url(url)}"
     if not shutil.which("curl"):
+        emit(f"{target}: curl is not installed")
         return "X"
     if urlsplit(url).scheme not in ("https", "http"):
+        emit(f"{target}: unsupported URL scheme")
         return "C"
-    try:
-        result = command(["curl", "--silent", "--location", "--fail",
-                          "--connect-timeout", "3", "--max-time", "6",
-                          "--proto", "=http,https", "--proto-redir", "=http,https",
-                          "--output", os.devnull, url])
-        return {0: "0", 22: "H", 28: "T"}.get(result.returncode, "N")
-    except subprocess.TimeoutExpired:
-        return "T"
-    except OSError:
-        return "X"
+    state = "N"
+    for attempt in range(1, args.attempts + 1):
+        emit(f"{target}: attempt {attempt}/{args.attempts}")
+        try:
+            result = subprocess.run(
+                ["curl", "--silent", "--show-error", "--location", "--fail",
+                 "--connect-timeout", str(min(10, args.timeout)),
+                 "--max-time", str(args.timeout),
+                 "--proto", "=http,https", "--proto-redir", "=http,https",
+                 "--write-out", "%{http_code} %{time_total}",
+                 "--output", os.devnull, url],
+                capture_output=True, text=True, timeout=args.timeout + 2)
+            state = {0: "0", 22: "H", 28: "T"}.get(result.returncode, "N")
+            if state == "0":
+                suffix = " (succeeded after retry; connection may be unstable)" if attempt > 1 else ""
+                emit(f"{target}: OK; HTTP/time(s): {result.stdout.strip()}{suffix}")
+                return state
+            emit(f"{target}: FAILED; curl exit={result.returncode}; HTTP/time(s): {result.stdout.strip()}; {safe_error(result.stderr)}")
+        except subprocess.TimeoutExpired:
+            state = "T"
+            emit(f"{target}: timed out after {args.timeout + 2}s")
+        except OSError as exc:
+            emit(f"{target}: could not execute curl: {exc}")
+            return "X"
+        if attempt < args.attempts:
+            time.sleep(1)
+    emit(f"{target}: all {args.attempts} attempts failed; this does not prove permanent unavailability")
+    return state
 
 groups = {"G": ["https://github.com"], "P": [], "A": []}
 states = {}
+names = {"G": "GitHub", "P": "pip index", "A": "Ubuntu repositories"}
+emit(f"Network check: up to {args.attempts} attempts per URL, {args.timeout}s per attempt.")
+emit("GitHub is tested directly; git pull may use a different proxy or remote URL.")
 for label, resolver in (("P", pip_urls), ("A", apt_urls)):
     if (args.require == "apt" and label == "P") or (args.require == "pip" and label == "A"):
         states[label] = "-"
         continue
     try:
         groups[label] = resolver()
-    except (ValueError, SyntaxError, OSError, subprocess.TimeoutExpired):
+    except (ValueError, SyntaxError, OSError, subprocess.TimeoutExpired) as exc:
         states[label] = "C"
+        emit(f"[{names[label]}] Could not read repository configuration ({type(exc).__name__}).")
 
-fd, path = tempfile.mkstemp(prefix="mooncake-network-", suffix=".log")
-with os.fdopen(fd, "w") as log, concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-    pending = [(label, url, pool.submit(probe, url))
+with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+    pending = [(label, url, pool.submit(probe, names[label], url))
                for label, urls in groups.items() for url in urls]
     for label, url, future in pending:
         state = future.result()
-        # Do not record URL credentials or query strings from private mirrors.
-        log.write(f"{label} {urlsplit(url).hostname} {state}\n")
         if states.get(label, "0") == "0":
             states[label] = state
-    report = "NET:" + "".join(label + states.get(label, "C") for label in "GPA")
-    log.write(report + "\n")
-print(report)
+descriptions = {"0": "reachable", "H": "HTTP error", "N": "network or TLS failure",
+                "T": "timed out", "C": "configuration unavailable",
+                "X": "required tool missing", "-": "not checked"}
+emit("\nSummary:")
+for label in "GPA":
+    emit(f"  {names[label]}: {descriptions[states.get(label, 'C')]}")
+emit("A successful check does not guarantee subsequent package downloads will succeed.")
+emit(f"Log: {path}")
 required = {"all": "GPA", "apt": "A", "pip": "P"}[args.require]
+if args.require != "all" and states.get(required) != "0":
+    emit("Installation stopped because its required repository check failed.")
+log.close()
 raise SystemExit(int(any(states.get(label) != "0" for label in required)))
 PY
