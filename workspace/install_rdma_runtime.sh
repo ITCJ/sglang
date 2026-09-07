@@ -30,7 +30,6 @@ if awk '$5 ~ /\/lib(ibverbs|rdmacm|nl-3|nl-route-3)\.so/ {found=1; print $5}
 fi
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-bash "${script_dir}/check_network.sh" --require apt
 
 export DEBIAN_FRONTEND=noninteractive
 apt_options=(-o Acquire::Retries=0 -o Acquire::http::Timeout=20
