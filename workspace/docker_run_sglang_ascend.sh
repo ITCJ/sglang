@@ -11,7 +11,7 @@ CODE_HOME_HOST="$1"
 MODEL_HOME_HOST="$2"
 CODE_REPO_IN_CONTAINER="${CODE_HOME_HOST%/}/sglang"
 
-IMAGE="${IMAGE:-quay.io/ascend/sglang:v0.5.16-cann9.0.0-a3}"
+IMAGE="${IMAGE:-quay.io/ascend/sglang:cann9.0.0-a3-v0.5.16}"
 CONTAINER_NAME="${CONTAINER_NAME:-sglang_ascend}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
@@ -31,6 +31,7 @@ fi
 DOCKER_ARGS=(
   run -it
   --shm-size=16g
+  --ulimit memlock=-1:-1
   --name "${CONTAINER_NAME}"
   --net=host
   --privileged
@@ -58,8 +59,6 @@ for path in \
   /etc/hccn.conf \
   /etc/ascend_install.info \
   /etc/default/grub \
-  /etc/rdma \
-  /etc/libibverbs.d \
   /dev/infiniband \
   /sys/class/infiniband; do
   if [[ -e "${path}" ]]; then
@@ -69,72 +68,9 @@ for path in \
   fi
 done
 
-RDMA_FIXUPS=""
-add_rdma_lib() {
-  local soname="$1"
-  local link_path real_path
-  link_path="$(ldconfig -p 2>/dev/null | awk -v lib="${soname}" '$1 == lib {print $NF; exit}')"
-  if [[ -n "${link_path}" && -e "${link_path}" ]]; then
-    real_path="$(readlink -f "${link_path}")"
-    DOCKER_ARGS+=( -v "${real_path}:${real_path}:ro" )
-    RDMA_FIXUPS+="${real_path}|${link_path}"$'\n'
-  else
-    echo "Warning: ${soname} not found on host ldconfig path" >&2
-  fi
-}
-add_rdma_lib libibverbs.so.1
-add_rdma_lib librdmacm.so.1
-add_rdma_lib libnl-3.so.200
-add_rdma_lib libnl-route-3.so.200
-
-for dir in \
-  /usr/lib/aarch64-linux-gnu/libibverbs \
-  /lib/aarch64-linux-gnu/libibverbs \
-  /usr/lib64/libibverbs \
-  /usr/lib/libibverbs; do
-  [[ -d "${dir}" ]] && DOCKER_ARGS+=( -v "${dir}:${dir}:ro" )
-done
-
+# RDMA userspace libraries/providers are installed inside the container with
+# install_rdma_runtime.sh. Host library mounts would block package installation.
 CONTAINER_SETUP='set -euo pipefail
-if [[ -n "${RDMA_FIXUPS:-}" ]]; then
-  while IFS="|" read -r real_path link_path; do
-    [[ -n "${real_path}" && -n "${link_path}" ]] || continue
-    mkdir -p "$(dirname "${link_path}")"
-    if [[ ! -e "${link_path}" ]]; then
-      ln -s "${real_path}" "${link_path}"
-    fi
-  done <<< "${RDMA_FIXUPS}"
-fi
-ensure_soname_link() {
-  local soname="$1"
-  local real_path=""
-  if ! "${PYTHON_BIN}" - <<PY >/dev/null 2>&1
-import ctypes
-ctypes.CDLL("${soname}")
-PY
-  then
-    for dir in /usr/lib64 /usr/lib/aarch64-linux-gnu /lib/aarch64-linux-gnu /usr/lib /lib; do
-      real_path="$(find "${dir}" -maxdepth 1 -name "${soname}.*" -type f -print -quit 2>/dev/null || true)"
-      [[ -n "${real_path}" ]] && break
-    done
-    if [[ -n "${real_path}" ]]; then
-      if [[ ! -e "$(dirname "${real_path}")/${soname}" ]]; then
-        ln -s "$(basename "${real_path}")" "$(dirname "${real_path}")/${soname}"
-      fi
-      mkdir -p /usr/lib/aarch64-linux-gnu
-      if [[ ! -e "/usr/lib/aarch64-linux-gnu/${soname}" ]]; then
-        ln -s "${real_path}" "/usr/lib/aarch64-linux-gnu/${soname}"
-      fi
-      echo "$(dirname "${real_path}")" >/etc/ld.so.conf.d/rdma-lib64.conf
-    fi
-  fi
-}
-ensure_soname_link libnl-3.so.200
-ensure_soname_link libnl-route-3.so.200
-ensure_soname_link libibverbs.so.1
-ensure_soname_link librdmacm.so.1
-command -v ldconfig >/dev/null 2>&1 && ldconfig || true
-
 repo="${HOST_SGLANG_REPO}"
 if [[ ! -d "${repo}/python/sglang" ]]; then
   echo "Missing mounted repo package: ${repo}/python/sglang" >&2
@@ -174,6 +110,6 @@ echo "Container ready. Repo=${repo}; MODEL_HOME=${MODEL_HOME}"
 exec /bin/bash
 '
 
-DOCKER_ARGS+=( -e "RDMA_FIXUPS=${RDMA_FIXUPS}" -w "${CODE_REPO_IN_CONTAINER}" "${IMAGE}" -lc "${CONTAINER_SETUP}" )
+DOCKER_ARGS+=( -w "${CODE_REPO_IN_CONTAINER}" "${IMAGE}" -lc "${CONTAINER_SETUP}" )
 
 exec docker "${DOCKER_ARGS[@]}"
