@@ -84,6 +84,8 @@ add_rdma_lib() {
 }
 add_rdma_lib libibverbs.so.1
 add_rdma_lib librdmacm.so.1
+add_rdma_lib libnl-3.so.200
+add_rdma_lib libnl-route-3.so.200
 
 for dir in \
   /usr/lib/aarch64-linux-gnu/libibverbs \
@@ -127,6 +129,8 @@ PY
     fi
   fi
 }
+ensure_soname_link libnl-3.so.200
+ensure_soname_link libnl-route-3.so.200
 ensure_soname_link libibverbs.so.1
 ensure_soname_link librdmacm.so.1
 command -v ldconfig >/dev/null 2>&1 && ldconfig || true
