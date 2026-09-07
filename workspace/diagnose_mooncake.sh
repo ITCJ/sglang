@@ -64,6 +64,44 @@ def load_code(error):
 def detail(value):
     record("summary", value)
 
+if "--native" in os.sys.argv[1:]:
+    packages = {}
+    for dist in importlib.metadata.distributions():
+        name = (dist.metadata.get("Name") or "").lower().replace("_", "-")
+        if "mooncake" in name or name in ("torch", "torch-npu", "numpy"):
+            packages.setdefault(name, []).append(dist.version)
+            record(name, f"versions={packages[name]} location={dist.locate_file('')}")
+    npu_version = "+".join(packages.get("mooncake-transfer-engine-npu", ["NONE"]))
+    count = sum(len(versions) for name, versions in packages.items()
+                if name.startswith("mooncake-transfer-engine"))
+    record("environment", str({key: os.environ.get(key, "") for key in
+                              ("LD_PRELOAD", "LD_LIBRARY_PATH", "PYTHONPATH")}))
+    # Inspect distribution-owned binaries without importing the crashing module.
+    for dist in importlib.metadata.distributions():
+        if "mooncake" not in (dist.metadata.get("Name") or "").lower():
+            continue
+        for file in dist.files or ():
+            if str(file).endswith(".so"):
+                run(["ldd", str(dist.locate_file(file))])
+    trace = "NO_GDB"
+    if shutil.which("gdb"):
+        source = ("import resource; resource.setrlimit(resource.RLIMIT_CORE, (0, 0)); "
+                  "import mooncake.engine; print('IMPORT_DONE', flush=True)")
+        _, output = run(["gdb", "--batch", "-nx", "-ex", "set pagination off",
+                         "-ex", "run", "-ex", "bt 40", "--args",
+                         os.sys.executable, "-c", source])
+        # Prefer an owning library over generic libc abort/free frames.
+        owners = re.findall(r"^#\d+.*?\bfrom\s+(\S+)", output, re.MULTILINE)
+        owners = [os.path.basename(owner) for owner in owners
+                  if not any(skip in os.path.basename(owner) for skip in
+                             ("libc.so", "libpthread", "ld-linux", "libpython"))]
+        trace = short(owners[0], 48) if owners else "SEE_LOG"
+    report = f"N1:{npu_version} W={count} BT={trace}"
+    record("report", report)
+    log.close()
+    print(report)
+    raise SystemExit(0)
+
 if "--isolate" in os.sys.argv[1:]:
     # Separate processes distinguish native aborts from Python import errors.
     probes = (
