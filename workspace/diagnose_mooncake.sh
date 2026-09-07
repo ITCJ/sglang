@@ -4,7 +4,7 @@ set -uo pipefail
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
-  echo "DIAG1 PYTHON=NOT_FOUND"
+  echo "D2:P"
   exit 2
 fi
 
@@ -15,12 +15,14 @@ import importlib.metadata
 import os
 import platform
 import resource
+import re
 import shutil
 import subprocess
 import tempfile
 
 fd, log_path = tempfile.mkstemp(prefix="mooncake-diag-", suffix=".log")
 log = os.fdopen(fd, "w")
+codes = []
 
 def record(title, value):
     log.write(f"\n## {title}\n{value}\n")
@@ -40,10 +42,24 @@ def short(value, limit=240):
     value = " ".join(value.split())
     return value if len(value) <= limit else value[:limit] + "..."
 
+def load_code(error):
+    # 0=OK, P=search path, F=file absent, L=broken link,
+    # D=dependency absent, V=ABI/version, A=ELF/architecture, E=other.
+    if "version" in error or "undefined symbol" in error:
+        return "V"
+    if any(term in error for term in ("ELF", "file too short", "Exec format")):
+        return "A"
+    if "cannot open shared object file" in error:
+        return "D"
+    return "E"
+
+def detail(value):
+    record("summary", value)
+
 record("environment", str({k: os.environ.get(k, "") for k in (
     "PATH", "LD_LIBRARY_PATH", "PYTHONPATH", "HOST_SGLANG_REPO",
     "ASCEND_ENABLE_USE_FABRIC_MEM", "HCCL_INTRA_ROCE_ENABLE")}))
-print(f"DIAG1 ARCH={platform.machine()} PY={platform.python_version()}")
+detail(f"DIAG1 ARCH={platform.machine()} PY={platform.python_version()}")
 run(["uname", "-a"])
 run(["ldconfig", "-p"])
 for path in ("/etc/os-release", "/etc/ld.so.conf",
@@ -73,10 +89,13 @@ for name in ("libibverbs.so.1", "librdmacm.so.1"):
     try:
         ctypes.CDLL(name)
         result = "OK"
+        code = "0"
     except OSError as exc:
         result = "FAIL " + short(str(exc))
+        code = load_code(str(exc))
         record(name + " load error", str(exc))
     absolute_ok = 0
+    absolute_errors = []
     for path in sorted(real_files):
         run(["file", path])
         run(["ldd", path])
@@ -85,10 +104,19 @@ for name in ("libibverbs.so.1", "librdmacm.so.1"):
             absolute_ok += 1
             record(path + " absolute load", "OK")
         except OSError as exc:
+            absolute_errors.append(str(exc))
             record(path + " absolute load", str(exc))
             if "FAIL" in result and "cannot open shared object file" in result:
                 result += " ABS=" + short(str(exc), 160)
-    print(f"{name}: {result} [files={len(real_files)} broken={broken} abs_ok={absolute_ok}]")
+    if code != "0":
+        if absolute_ok:
+            code = "P"
+        elif absolute_errors:
+            code = load_code(absolute_errors[0])
+        elif not real_files and code == "D":
+            code = "L" if broken else "F"
+    codes.append(code)
+    detail(f"{name}: {result} [files={len(real_files)} broken={broken} abs_ok={absolute_ok}]")
 
 try:
     version = importlib.metadata.version("mooncake-transfer-engine-npu")
@@ -98,7 +126,9 @@ rc, output = run([os.sys.executable, "-c",
     "import mooncake.engine; from mooncake.store import MooncakeDistributedStore; "
     "import mooncake.mooncake_store_service; print('OK')"])
 error = output.strip().splitlines()[-1] if output.strip() else f"exit={rc}"
-print(f"MOONCAKE={version} IMPORT={'OK' if rc == 0 else short(error)} MASTER={'YES' if shutil.which('mooncake_master') else 'NO'}")
+codes.append("0" if rc == 0 else ("F" if version == "NOT_INSTALLED" else "E"))
+codes.append("0" if shutil.which("mooncake_master") else "F")
+detail(f"MOONCAKE={version} IMPORT={'OK' if rc == 0 else short(error)} MASTER={'YES' if shutil.which('mooncake_master') else 'NO'}")
 
 devices = sorted(glob.glob("/sys/class/infiniband/*"))
 ports = []
@@ -115,13 +145,24 @@ for device in devices:
 uverbs = glob.glob("/dev/infiniband/uverbs*")
 rc, output = run(["ibv_devinfo", "-l"])
 verbs = "TOOL_MISSING" if not shutil.which("ibv_devinfo") else ("OK" if rc == 0 else "FAIL")
-print(f"RDMA sys={len(devices)} uverbs={len(uverbs)} ibv={verbs} ports={short(','.join(ports) or 'NONE', 300)}")
+codes.append("0" if devices else "F")
+codes.append("0" if uverbs else "F")
+found = re.search(r"\b([0-9]+) HCAs? found", output)
+codes.append("T" if not shutil.which("ibv_devinfo") else
+             "E" if rc != 0 else
+             "0" if found and int(found.group(1)) > 0 else
+             "F" if found else "U")
+detail(f"RDMA sys={len(devices)} uverbs={len(uverbs)} ibv={verbs} ports={short(','.join(ports) or 'NONE', 300)}")
 run(["ibv_devinfo"])
 run(["rdma", "link", "show"])
 run(["ip", "-brief", "address"])
 rc, _ = run(["npu-smi", "info"])
 memlock = resource.getrlimit(resource.RLIMIT_MEMLOCK)[0]
-print(f"NPU_SMI={'OK' if rc == 0 else 'FAIL'} MEMLOCK={'unlimited' if memlock == resource.RLIM_INFINITY else str(memlock) + 'B'}")
+codes.append("0" if rc == 0 else "E")
+codes.append("0" if memlock == resource.RLIM_INFINITY else "L")
+detail(f"NPU_SMI={'OK' if rc == 0 else 'FAIL'} MEMLOCK={'unlimited' if memlock == resource.RLIM_INFINITY else str(memlock) + 'B'}")
+record("code order", "ibverbs rdmacm mooncake master sysfs uverbs ibv npu memlock")
+record("report", "D2:" + "".join(codes))
 log.close()
-print(f"LOG={log_path}")
+print("D2:" + "".join(codes))
 PY
