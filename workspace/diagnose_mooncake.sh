@@ -136,6 +136,19 @@ rc, output = run([os.sys.executable, "-c",
     "import mooncake.engine; from mooncake.store import MooncakeDistributedStore; "
     "import mooncake.mooncake_store_service; print('OK')"])
 error = output.strip().splitlines()[-1] if output.strip() else f"exit={rc}"
+import_report = "OK"
+if rc != 0:
+    missing_module = re.search(r"No module named ['\"]([^'\"]+)['\"]", error)
+    missing_library = re.search(
+        r"([A-Za-z0-9_+.-]+\.so(?:\.[A-Za-z0-9_+.-]+)*): cannot open shared object file",
+        error,
+    )
+    if missing_module:
+        import_report = "MODULE:" + missing_module.group(1)
+    elif missing_library:
+        import_report = "LIB:" + missing_library.group(1)
+    else:
+        import_report = short(error, 72)
 codes.append("0" if rc == 0 else ("F" if version == "NOT_INSTALLED" else "E"))
 codes.append("0" if shutil.which("mooncake_master") else "F")
 detail(f"MOONCAKE={version} IMPORT={'OK' if rc == 0 else short(error)} MASTER={'YES' if shutil.which('mooncake_master') else 'NO'}")
@@ -174,7 +187,9 @@ detail(f"NPU_SMI={'OK' if rc == 0 else 'FAIL'} MEMLOCK={'unlimited' if memlock =
 record("code order", "ibverbs rdmacm mooncake master sysfs uverbs ibv npu memlock")
 record("report", "D2:" + "".join(codes))
 log.close()
-if "--deps" in os.sys.argv[1:]:
+if "--import" in os.sys.argv[1:]:
+    print("MC:" + import_report)
+elif "--deps" in os.sys.argv[1:]:
     print("DEP:" + (",".join(sorted(missing_dependencies)) or "NONE"))
 else:
     print("D2:" + "".join(codes))
