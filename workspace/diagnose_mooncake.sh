@@ -64,6 +64,43 @@ def load_code(error):
 def detail(value):
     record("summary", value)
 
+if "--isolate" in os.sys.argv[1:]:
+    # Separate processes distinguish native aborts from Python import errors.
+    probes = (
+        "import mooncake.engine",
+        "from mooncake.store import MooncakeDistributedStore",
+        "import mooncake.mooncake_store_service",
+        "import torch; import torch_npu",
+        "import torch; import torch_npu; import mooncake.engine",
+        "import mooncake.engine; from mooncake.store import MooncakeDistributedStore; import mooncake.mooncake_store_service",
+    )
+    results = []
+    for probe in probes:
+        # Prevent large core dumps; retain stderr and the exact return code.
+        source = (
+            "import resource; resource.setrlimit(resource.RLIMIT_CORE, (0, 0)); "
+            + probe + "; print('IMPORT_DONE', flush=True)"
+        )
+        rc, output = run([os.sys.executable, "-c", source])
+        status = ("0" if rc == 0 else "A" if rc == -6 else
+                  "S" if rc == -11 else "T" if rc == -1 and "timed out" in output
+                  else "E")
+        # Lowercase means imports completed but the process failed at shutdown.
+        results.append(status.lower() if "IMPORT_DONE" in output.splitlines() else status)
+    versions = []
+    for package in ("mooncake-transfer-engine-npu", "mooncake-transfer-engine",
+                    "mooncake-transfer-engine-non-cuda", "torch", "torch-npu"):
+        try:
+            versions.append(package + "=" + importlib.metadata.version(package))
+        except importlib.metadata.PackageNotFoundError:
+            pass
+    record("packages", "\n".join(versions))
+    report = "X1:" + "".join(results)
+    record("report", report)
+    log.close()
+    print(report)
+    raise SystemExit(0)
+
 record("environment", str({k: os.environ.get(k, "") for k in (
     "PATH", "LD_LIBRARY_PATH", "PYTHONPATH", "HOST_SGLANG_REPO",
     "ASCEND_ENABLE_USE_FABRIC_MEM", "HCCL_INTRA_ROCE_ENABLE")}))
