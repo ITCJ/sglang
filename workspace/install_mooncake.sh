@@ -5,6 +5,9 @@ set -euo pipefail
 PYTHON_BIN="python3"
 MOONCAKE_VERSION="0.3.12.post1"
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON_BIN="${PYTHON_BIN}" bash "${SCRIPT_DIR}/check_network.sh" --require pip
+
 "${PYTHON_BIN}" -m pip install \
   "mooncake-transfer-engine-npu==${MOONCAKE_VERSION}"
 
