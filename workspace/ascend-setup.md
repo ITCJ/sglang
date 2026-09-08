@@ -6,7 +6,7 @@
 
 目标是两节点 Ascend 910C（A3）超节点上的 Dense 三层 KV 实验，计划见 [实验方案](../DENSE_THREE_TIER_KV_EXPERIMENT_PLAN.md)。远端访问外网困难，两台机器分别手动操作。
 
-**目前两台都通过了 Fabric Memory 模式下的单节点 Mooncake Store 初始化、写入读回和正常退出测试。尚未通过跨节点测试，也尚未完成 SGLang 三层 KV 实验。** 不要将本文理解为整个实验已经跑通。
+**两台已通过 Fabric 模式下的单节点测试和双节点远端 Store 数据校验。SGLang 在 TP16+DP1 下已启动并通过操作者的聊天请求，但尚未完成 HiCache 集成、TP16+DPA16 内存验证及正式实验。** 物理 HCCS 路径尚未独立确认。
 
 | 项目 | 当前掌握的信息 |
 | --- | --- |
@@ -120,6 +120,26 @@ verified 1048576 bytes
 
 ## 排障经验
 
+### 模型启动最新进度
+
+双机 Store 测试已由操作者回报 `F2:REMOTE_OK`，双机日志报告 Fabric 模式启用；尚未独立确认物理 HCCS 链路。
+
+V3.1 W8A8 使用 TP16+DP16 时，曾报告加载内存增量 56.44 GiB、剩余 4.64 GiB，自动静态预算 0.665 导致 KV 预算不足。改为 TP16+DP1 后模型启动成功，操作者已通过 `/v1/chat/completions` 得到回答。这不是正式 TP16+DPA16 实验配置通过。
+
+`run_model.sh` 当前是 TP16+DP1 的诊断启动脚本，未开启 HiCache。`col.sh` 原为 V3.2-Exp 的 TP16+DP1，不能仅用版本差异解释内存变化。Attention TP 随 DP 改变，权重分片方式也会改变。
+
+模型启动后在同容器另一个终端运行：
+
+```bash
+bash workspace/check_model.sh
+# 基础请求通过后，运行非流式、流式、多轮三个功能检查：
+bash workspace/check_model.sh --suite
+```
+
+检查只使用 `/v1/chat/completions`，从 `/v1/models` 发现模型 ID；也可通过 `--model` 指定。`SERVER_URL` 指定服务地址，`API_KEY` 可指定鉴权。完整请求和响应保存在 `/tmp/sglang-chat-*`，不会把鉴权头写入日志。空文本、仅 reasoning、截断结束或缺失 SSE 结束标志不会被算作通过。若因生成上限截断，可用 `--max-tokens 512` 调整。这些检查验证响应协议和非空完整答案，答案语义需查看输出，不是模型精度评测。
+
+聊天功能检查不会强制 DP rank、清空缓存或宣称 KV 命中来源，也不是正式 TTFT 性能结果。原实验 `/generate` 驱动仍保留，用于精确 token 输入和缓存来源控制；不能因为原始聊天提示词返回空文本就认定该接口不可用。正式实验还需解决 DP16 内存余量、Fabric HiCache 配置和生产请求集成。
+
 | 现象 | 已知含义及处理经验 |
 | --- | --- |
 | `link already exists` 但 `still missing` | 文件存在不等于动态库加载成功，必须看实际 loader 错误 |
@@ -160,7 +180,7 @@ python3 workspace/check_fabric_pair.py client --local-ip <第一台IP> --target-
 
 客户端写入进程退出后，再启动全新的读取进程；两个客户端都不贡献存储段。`F2:REMOTE_OK` 表示读回的数据正确且客户端正常退出，不单独证明物理 HCCS 路径。日志保存在 `/tmp/mooncake-fabric-pair-*`；`show_fabric_log.sh` 可以打印最近一次本地或双机 worker 日志。客户端结束后在第二台按 Ctrl+C 清理测试服务，临时 Store 内的数据随服务结束释放，日志保留。
 
-该脚本尚需远端双节点实际验收。不要直接把现有 `dense_three_tier_kv_exp0/run_mooncake.sh` 当作这一步：其示例 JSON 及 `exp0.py` 仍固定/校验 `protocol=rdma`。
+该脚本已由操作者回报 `F2:REMOTE_OK`。不要直接把现有 `dense_three_tier_kv_exp0/run_mooncake.sh` 当作这一步：其示例 JSON 及 `exp0.py` 仍固定/校验 `protocol=rdma`。
 
 双节点功能通过后，再同步调整实验方案、配置校验与 SGLang 启动环境，以验证 SGLang 的实际 Ascend MLA HiCache 路径、生产请求缓存来源、容量与 TTFT。`F1:LOCAL_OK` 不证明这些集成项可用。最后固定镜像 digest、仓库 commit、wheel/系统包版本、启动参数及两节点环境记录。
 
