@@ -144,7 +144,23 @@ verified 1048576 bytes
 3. 明确使用 Ascend/Fabric 配置，写入唯一测试 key，读回并校验；保留两端分配、连接、后端日志。
 4. 确认对象在第二台，以及实际使用的传输路径；成功后才扩大容量。
 
-**对应的 Fabric 双节点编排脚本尚未实现。** 不要直接把现有 `dense_three_tier_kv_exp0/run_mooncake.sh` 当作这一步：其示例 JSON 及 `exp0.py` 仍固定/校验 `protocol=rdma`。
+双节点脚本为 `check_fabric_pair.py`。两台更新仓库后，先在第二台容器运行：
+
+```bash
+python3 workspace/check_fabric_pair.py target --local-ip <第二台IP>
+```
+
+等待 `F2:READY`，保持终端运行。在第一台容器执行：
+
+```bash
+python3 workspace/check_fabric_pair.py client --local-ip <第一台IP> --target-ip <第二台IP>
+```
+
+默认 master 端口 50071，两端可用相同 `--port` 修改；Ascend 引擎还会建立额外连接，不能仅开放 master 端口就认定传输可用。默认逻辑 NPU 0，可用 `--device` 修改。测试不下载依赖。
+
+客户端写入进程退出后，再启动全新的读取进程；两个客户端都不贡献存储段。`F2:REMOTE_OK` 表示读回的数据正确且客户端正常退出，不单独证明物理 HCCS 路径。日志保存在 `/tmp/mooncake-fabric-pair-*`；`show_fabric_log.sh` 可以打印最近一次本地或双机 worker 日志。客户端结束后在第二台按 Ctrl+C 清理测试服务，临时 Store 内的数据随服务结束释放，日志保留。
+
+该脚本尚需远端双节点实际验收。不要直接把现有 `dense_three_tier_kv_exp0/run_mooncake.sh` 当作这一步：其示例 JSON 及 `exp0.py` 仍固定/校验 `protocol=rdma`。
 
 双节点功能通过后，再同步调整实验方案、配置校验与 SGLang 启动环境，以验证 SGLang 的实际 Ascend MLA HiCache 路径、生产请求缓存来源、容量与 TTFT。`F1:LOCAL_OK` 不证明这些集成项可用。最后固定镜像 digest、仓库 commit、wheel/系统包版本、启动参数及两节点环境记录。
 

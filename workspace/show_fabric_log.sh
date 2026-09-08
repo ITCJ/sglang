@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 
 logs = list(Path('/tmp').glob('mooncake-fabric-local-*/probe.log'))
+logs += list(Path('/tmp').glob('mooncake-fabric-pair-*/*/probe.log'))
 if not logs:
     print('No local Fabric probe log found in this container.')
     raise SystemExit(1)
