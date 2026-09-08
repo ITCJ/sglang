@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# First-stage model smoke test: one A3 node, TP16+DPA16, no HiCache yet.
+# Diagnostic model smoke test: one A3 node, TP16+DP1, no HiCache yet.
 set -euo pipefail
 if [[ $# != 1 ]]; then
   echo 'Usage: bash workspace/run_model.sh <model-directory>' >&2
@@ -72,7 +72,7 @@ echo 'This uses a small token budget and eager execution, not experiment perform
   --host "${SERVER_HOST}" --port "${SERVER_PORT}" \
   --device npu --trust-remote-code --watchdog-timeout 9000 \
   --quantization modelslim --dtype bfloat16 --kv-cache-dtype bfloat16 \
-  --tp-size 16 --dp-size 16 --enable-dp-attention --enable-dp-lm-head \
+  --tp-size 16 --dp-size 1 --enable-dp-attention --enable-dp-lm-head \
   --dcp-size 1 --attention-backend ascend --page-size 64 \
   --max-running-requests 16 --max-total-tokens 8192 \
   --context-length 4096 --chunked-prefill-size 4096 \
