@@ -2,12 +2,45 @@
 """Chat functionality checks. These are not KV-hit or performance measurements."""
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import tempfile
 import time
 import urllib.request
 import urllib.error
+
+
+def wait_for_health(base, headers, timeout):
+    start = time.monotonic()
+    deadline = start + timeout
+    next_report = start
+    last_error = 'not ready'
+    print(f'Waiting for /health (up to {timeout:g}s)...', flush=True)
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(f'/health not ready after {timeout:g}s; last error: {last_error}')
+        request = urllib.request.Request(base + '/health', headers=headers)
+        try:
+            with urllib.request.urlopen(request, timeout=min(5.0, remaining)) as response:
+                status = response.status
+                if 200 <= status < 300:
+                    print(f'Health: {status}; ready after {time.monotonic() - start:.1f}s', flush=True)
+                    return
+                last_error = f'HTTP {status}'
+        except urllib.error.HTTPError as exc:
+            last_error = f'HTTP {exc.code}'
+            exc.close()
+            if exc.code in (401, 403):
+                raise RuntimeError(f'/health returned {last_error}; check API_KEY') from exc
+        except (urllib.error.URLError, OSError) as exc:
+            last_error = str(exc)
+        now = time.monotonic()
+        if now >= next_report:
+            print(f'Still waiting ({now - start:.0f}s): {last_error[:160]}', flush=True)
+            next_report = now + 15
+        time.sleep(min(1.0, max(0.0, deadline - now)))
 
 
 def stream_result(response, events):
@@ -51,8 +84,11 @@ def main():
     parser.add_argument('--suite', action='store_true', help='include streaming and multi-turn requests')
     parser.add_argument('--max-tokens', type=int, default=256)
     parser.add_argument('--timeout', type=float, default=180)
+    parser.add_argument('--wait-timeout', type=float, default=1800,
+                        help='startup health wait in seconds (default 1800); retries every 1s')
     args = parser.parse_args()
-    if args.max_tokens < 1 or args.timeout <= 0:
+    if args.max_tokens < 1 or any(not math.isfinite(value) or value <= 0
+                                  for value in (args.timeout, args.wait_timeout)):
         parser.error('max-tokens and timeout must be positive')
     directory = Path(tempfile.mkdtemp(prefix='sglang-chat-'))
     print('Logs:', directory, flush=True)
@@ -68,8 +104,7 @@ def main():
 
     results = []
     try:
-        with open_request('/health') as response:
-            print('Health:', response.status, flush=True)
+        wait_for_health(base, headers, args.wait_timeout)
         model = args.model
         if not model:
             with open_request('/v1/models') as response:
