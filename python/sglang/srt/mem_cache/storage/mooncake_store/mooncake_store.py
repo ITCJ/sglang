@@ -507,11 +507,24 @@ class MooncakeStore(HiCacheStorage, MooncakeBaseStore):
 
                 while True:
                     try:
+                        # Fabric allocations require GiB alignment. The usual
+                        # 16 MiB staging pool can fail in aclrtMapMem on A3.
+                        local_buffer_size = DEFAULT_LOCAL_BUFFER_SIZE
+                        if self.config.protocol == "ascend" and os.environ.get(
+                            "ASCEND_ENABLE_USE_FABRIC_MEM"
+                        ) == "1":
+                            local_buffer_size = 1 << 30
+                        logger.info(
+                            "Mooncake setup: protocol=%s, segment_bytes=%s, local_buffer_bytes=%s",
+                            self.config.protocol,
+                            per_tp_global_segment_size,
+                            local_buffer_size,
+                        )
                         ret_code = self.store.setup(
                             client_hostname,
                             self.config.metadata_server,
                             per_tp_global_segment_size,
-                            DEFAULT_LOCAL_BUFFER_SIZE,  # Zero copy interface does not need local buffer
+                            local_buffer_size,
                             self.config.protocol,
                             device_name,
                             self.config.master_server_address,
