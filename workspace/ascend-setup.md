@@ -58,7 +58,7 @@ grep '^Version=' /usr/local/Ascend/driver/version.info
 ```bash
 git pull --ff-only
 CONTAINER_NAME="<自选新名字>" IMAGE="<本地原始SGLang镜像名或ID>" \
-bash workspace/docker_run_sglang_ascend.sh "<代码父目录>" "<模型目录>"
+bash workspace/setup/docker_run_sglang_ascend.sh "<代码父目录>" "<模型目录>"
 ```
 
 第一个参数是包含 `sglang` 目录的父目录。第二个参数须为存在的目录；只测试 Store 时不需要模型，可以与第一个参数相同。实际名字、IP、路径通过参数填写，不写进公开仓库。
@@ -74,9 +74,9 @@ bash workspace/docker_run_sglang_ascend.sh "<代码父目录>" "<模型目录>"
 在容器内以 root、仓库目录为当前目录，依次运行：
 
 ```bash
-bash workspace/install_rdma_runtime.sh
-bash workspace/install_mooncake.sh
-bash workspace/diagnose_mooncake.sh
+bash workspace/setup/install_rdma_runtime.sh
+bash workspace/setup/install_mooncake.sh
+bash workspace/setup/diagnose_mooncake.sh
 ```
 
 RDMA 安装脚本实时显示 apt 输出及阶段，完整日志在 `/tmp/mooncake-rdma-install-*.log`。安装的系统包是 `libibverbs1`、`ibverbs-providers`、`librdmacm1`、`rdma-core`、`ibverbs-utils`、`libnl-3-200`、`libnl-route-3-200`，递归依赖由 apt 处理。
@@ -88,7 +88,7 @@ Mooncake 安装脚本应出现 `Mooncake Transfer Engine + Store: OK` 和 `moonc
 网络检查独立、可选：
 
 ```bash
-bash workspace/check_network.sh
+bash workspace/setup/check_network.sh
 ```
 
 它显示 GitHub、pip 源、Ubuntu 源的访问结果，每个地址最多尝试 3 次、每次 20 秒。安装脚本不会自动运行它。GitHub 不通不意味着 Ubuntu 源不通，GitHub 直接访问也可能与 git remote 的代理路径不同。预检查成功不保证大文件下载成功。
@@ -98,8 +98,8 @@ bash workspace/check_network.sh
 ### 3. 单节点功能验证
 
 ```bash
-python3 workspace/check_fabric_local.py
-bash workspace/show_fabric_log.sh
+python3 workspace/setup/check_fabric_local.py
+bash workspace/setup/show_fabric_log.sh
 ```
 
 默认使用逻辑 NPU 0，可用 `--device <逻辑编号>` 调整。测试使用独立临时 master，不复用实验 master，不加载模型；Store 为 1 GiB、本地缓冲为 1 GiB（Fabric 分配有 GB 级对齐要求），实际载荷很小。
@@ -131,9 +131,9 @@ V3.1 W8A8 使用 TP16+DP16 时，曾报告加载内存增量 56.44 GiB、剩余 
 模型启动后在同容器另一个终端运行：
 
 ```bash
-bash workspace/check_model.sh
+bash workspace/setup/check_model.sh
 # 基础请求通过后，运行非流式、流式、多轮三个功能检查：
-bash workspace/check_model.sh --suite
+bash workspace/setup/check_model.sh --suite
 ```
 
 检查只使用 `/v1/chat/completions`，从 `/v1/models` 发现模型 ID；也可通过 `--model` 指定。`SERVER_URL` 指定服务地址，`API_KEY` 可指定鉴权。完整请求和响应保存在 `/tmp/sglang-chat-*`，不会把鉴权头写入日志。空文本、仅 reasoning、截断结束或缺失 SSE 结束标志不会被算作通过。若因生成上限截断，可用 `--max-tokens 512` 调整。这些检查验证响应协议和非空完整答案，答案语义需查看输出，不是模型精度评测。
@@ -167,13 +167,13 @@ bash workspace/check_model.sh --suite
 双节点脚本为 `check_fabric_pair.py`。两台更新仓库后，先在第二台容器运行：
 
 ```bash
-python3 workspace/check_fabric_pair.py target --local-ip <第二台IP>
+python3 workspace/setup/check_fabric_pair.py target --local-ip <第二台IP>
 ```
 
 等待 `F2:READY`，保持终端运行。在第一台容器执行：
 
 ```bash
-python3 workspace/check_fabric_pair.py client --local-ip <第一台IP> --target-ip <第二台IP>
+python3 workspace/setup/check_fabric_pair.py client --local-ip <第一台IP> --target-ip <第二台IP>
 ```
 
 默认 master 端口 50071，两端可用相同 `--port` 修改；Ascend 引擎还会建立额外连接，不能仅开放 master 端口就认定传输可用。默认逻辑 NPU 0，可用 `--device` 修改。测试不下载依赖。

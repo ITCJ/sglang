@@ -2,8 +2,8 @@
 set -euo pipefail
 
 if [[ $# -lt 2 || $# -gt 2 ]]; then
-  echo "Usage: bash workspace/docker_run_sglang_ascend.sh <code_home_host> <model_home_host>" >&2
-  echo "Example: bash workspace/docker_run_sglang_ascend.sh /home1path /home2path" >&2
+  echo "Usage: bash workspace/setup/docker_run_sglang_ascend.sh <code_home_host> <model_home_host>" >&2
+  echo "Example: bash workspace/setup/docker_run_sglang_ascend.sh /home1path /home2path" >&2
   exit 2
 fi
 

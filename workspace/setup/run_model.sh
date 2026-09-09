@@ -2,7 +2,7 @@
 # Diagnostic model smoke test: one A3 node, TP16+DP1, no HiCache yet.
 set -euo pipefail
 if [[ $# != 1 ]]; then
-  echo 'Usage: bash workspace/run_model.sh <model-directory>' >&2
+  echo 'Usage: bash workspace/setup/run_model.sh <model-directory>' >&2
   exit 2
 fi
 MODEL_PATH="$1"
@@ -10,7 +10,7 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 SERVER_PORT="${SERVER_PORT:-30000}"
 SERVER_HOST="${SERVER_HOST:-127.0.0.1}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 export PYTHONPATH="${REPO_ROOT}/python${PYTHONPATH:+:${PYTHONPATH}}"
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
@@ -67,6 +67,18 @@ echo "Starting model smoke test on ${SERVER_HOST}:${SERVER_PORT}; Ctrl+C stops i
 echo 'This uses a small token budget and eager execution, not experiment performance settings.'
 
 # A foreground pipeline retains live logs; pipefail preserves launch failures.
+extra_args=()
+if [[ -n "${MOONCAKE_CONFIG:-}" ]]; then
+  [[ -f "${MOONCAKE_CONFIG}" ]] || { echo 'Missing MOONCAKE_CONFIG' >&2; exit 2; }
+  export SGLANG_HICACHE_MOONCAKE_CONFIG_PATH="${MOONCAKE_CONFIG}"
+  export ASCEND_ENABLE_USE_FABRIC_MEM=1
+  export HCCL_INTRA_ROCE_ENABLE=0
+  export ASCEND_GLOBAL_RESOURCE_CONFIG='{"fabric_memory.max_capacity":4}'
+  extra_args=(--enable-hierarchical-cache --hicache-size 2
+    --hicache-write-policy write_through --hicache-io-backend kernel_ascend
+    --hicache-mem-layout page_first_kv_split --hicache-storage-backend mooncake
+    --hicache-storage-prefetch-policy wait_complete)
+fi
 "${PYTHON_BIN}" -m sglang.launch_server \
   --model-path "${MODEL_PATH}" \
   --host "${SERVER_HOST}" --port "${SERVER_PORT}" \
@@ -77,4 +89,5 @@ echo 'This uses a small token budget and eager execution, not experiment perform
   --max-running-requests 16 --max-total-tokens 8192 \
   --context-length 4096 --chunked-prefill-size 4096 \
   --disable-cuda-graph --enable-metrics --enable-cache-report \
+  "${extra_args[@]}" \
   2>&1 | tee "${LOG_DIR}/server.log"
