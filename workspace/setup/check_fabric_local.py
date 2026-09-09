@@ -79,6 +79,20 @@ def worker(args):
         if received != payload:
             raise RuntimeError(f"Data mismatch for {size} bytes")
         print("verified", size, "bytes", flush=True)
+    if args.register_pinned:
+        mark(directory, "PIN_ALLOC")
+        # Match the NPU HiCache allocator: ordinary CPU pinned torch storage.
+        tensor = torch.empty(args.pinned_mib * 1024 * 1024, dtype=torch.uint8,
+                             device="cpu", pin_memory=True)
+        print("pinned:", tensor.is_pinned(), "address:", tensor.data_ptr(),
+              "bytes:", tensor.numel(), flush=True)
+        mark(directory, "PIN_REGISTER")
+        result = store.register_buffer(tensor.data_ptr(), tensor.numel())
+        print("register_buffer returned:", result, flush=True)
+        if result != 0:
+            raise RuntimeError(f"Pinned registration failed: {result}")
+        mark(directory, "PIN_OK")
+        # Keep tensor alive until close has released all registrations.
     mark(directory, "CLOSE")
     store.close()
     mark(directory, "DONE")
@@ -99,11 +113,15 @@ def stop(process):
         process.wait()
 
 
-def main():
+def main(registration=False):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device", type=int, default=0, help="logical NPU ID (default 0)")
     parser.add_argument("--host", default="127.0.0.1", help="local address for single-node probe")
     parser.add_argument("--timeout", type=int, default=180)
+    parser.add_argument("--register-pinned", action="store_true", default=registration,
+                        help=argparse.SUPPRESS)
+    parser.add_argument("--pinned-mib", type=int, default=1024,
+                        help="pinned buffer MiB for registration probe (default 1024)")
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--output", help=argparse.SUPPRESS)
     parser.add_argument("--port", type=int, help=argparse.SUPPRESS)
@@ -111,14 +129,15 @@ def main():
     if args.worker:
         worker(args)
         return 0
-    if args.timeout < 1 or args.device < 0:
-        parser.error("timeout must be positive; device must be nonnegative")
+    if args.timeout < 1 or args.device < 0 or args.pinned_mib < 1:
+        parser.error("timeout and pinned-mib must be positive; device must be nonnegative")
+    prefix = "F3:" if args.register_pinned else "F1:"
     directory = Path(tempfile.mkdtemp(prefix="mooncake-fabric-local-"))
     print(f"Logs: {directory}", flush=True)
     print(f"Testing logical NPU {args.device}; Store=1 GiB, buffer=1 GiB; no network downloads.", flush=True)
     master = shutil.which("mooncake_master")
     if master is None:
-        print("F1:MASTER_MISSING")
+        print(prefix + "MASTER_MISSING")
         return 1
     with socket.socket() as reservation:
         reservation.bind(("127.0.0.1", 0))
@@ -148,6 +167,8 @@ def main():
             command = [sys.executable, str(Path(__file__).resolve()), "--worker",
                        "--output", str(directory), "--port", str(port),
                        "--device", str(args.device), "--host", args.host]
+            if args.register_pinned:
+                command.extend(["--register-pinned", "--pinned-mib", str(args.pinned_mib)])
             process = subprocess.Popen(command, stdout=probe_log, stderr=subprocess.STDOUT,
                                        env=env, start_new_session=True)
             processes.append(process)
@@ -156,7 +177,8 @@ def main():
             while process.poll() is None:
                 stage = (directory / "stage").read_text() if (directory / "stage").exists() else "START"
                 if stage and stage != previous:
-                    print("Stage:", stage, flush=True)
+                    if not args.register_pinned:
+                        print("Stage:", stage, flush=True)
                     previous = stage
                 if time.monotonic() >= deadline:
                     raise RuntimeError("TIMEOUT_" + stage)
@@ -164,12 +186,15 @@ def main():
             stage = (directory / "stage").read_text() if (directory / "stage").exists() else "START"
             if process.returncode != 0 or stage != "DONE":
                 raise RuntimeError(f"{stage}_EXIT{process.returncode}")
+        if args.register_pinned:
+            print("F3:BASE_OK,PIN_OK")
+            return 0
         print("F1:LOCAL_OK")
         print("Ascend setup and local byte verification passed with Fabric mode requested.")
         print("Fabric allocation/transport evidence remains in probe.log; this does NOT prove remote HCCS.")
         return 0
     except (RuntimeError, OSError) as exc:
-        print("F1:" + str(exc), flush=True)
+        print(prefix + str(exc), flush=True)
         (directory / "controller-error.log").write_text(traceback.format_exc())
         return 1
     finally:
