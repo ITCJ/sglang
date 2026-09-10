@@ -198,6 +198,9 @@ def main():
                 "ASCEND_GLOBAL_RESOURCE_CONFIG", "MC_MS_AUTO_DISC"):
         env.pop(key, None)
     env["MOONCAKE_PROTOCOL"] = "tcp"
+    # Ascend builds may install Ascend transport during engine.init(), before
+    # Store applies its protocol argument. Skip that automatic installation.
+    env["MC_FORCE_TCP"] = "1"
     env["PYTHONUNBUFFERED"] = "1"
     processes, handles = [], []
     args.token = uuid.uuid4().hex

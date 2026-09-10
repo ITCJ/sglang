@@ -56,6 +56,14 @@ python3 workspace/tcp_test/check_pair.py client \
 客户端结束后，在 target 终端按 Ctrl+C。脚本仅清理自己启动的进程，
 临时 Store 中的数据随服务退出释放，日志保留。不修改交互式 shell；
 子进程清除本测试涉及的 Fabric 配置，Store setup 明确指定 `tcp`。
+同时设置 `MC_FORCE_TCP=1`，绕过 Ascend 构建在引擎初始化时自动安装
+Ascend transport 的逻辑。若 wheel 未编译 TCP 或不支持该开关，仍需根据日志判断。
+
+查看当前容器最新一次测试日志（开头和末尾）：
+
+```bash
+bash workspace/tcp_test/log.sh
+```
 
 两项测试通过后才能继续小容量 HiCache 集成。这些结果不证明 L3 缓存命中、
 RDMA/Fabric 可用或正式实验性能；不应直接使用旧 Fabric 集成入口启动 TCP HiCache。
