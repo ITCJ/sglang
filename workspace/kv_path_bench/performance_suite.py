@@ -3,20 +3,35 @@
 
 import argparse
 import csv
+from contextlib import redirect_stdout, redirect_stderr
+from datetime import datetime
 import io
 import json
 import os
 import signal
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 
 CAPACITIES = (1024, 4096, 16384, 65536, 131072)
 LAYOUTS = ("contiguous", "scattered")
-SUMMARY = Path("/tmp/a3-kv-perf-suite.json")
-CSV = Path("/tmp/a3-kv-perf-suite.csv")
+RESULTS = Path(__file__).resolve().parent / "results"
+
+
+class Tee:
+    def __init__(self, terminal, logfile):
+        self.terminal, self.logfile = terminal, logfile
+
+    def write(self, text):
+        self.terminal.write(text)
+        self.logfile.write(text)
+        self.logfile.flush()
+        return len(text)
+
+    def flush(self):
+        self.terminal.flush()
+        self.logfile.flush()
 
 
 def cases():
@@ -46,7 +61,6 @@ def execute_case(command, timeout):
 def save_summary(result, run_dir):
     encoded = json.dumps(result, indent=2) + "\n"
     (run_dir / "summary.json").write_text(encoded)
-    SUMMARY.write_text(encoded)
     table = io.StringIO()
     writer = csv.writer(table)
     writer.writerow(("tokens", "layout", "path", "median_ms", "p95_ms", "effective_gbps"))
@@ -58,10 +72,15 @@ def save_summary(result, run_dir):
                              path["median_s"] * 1000, path["p95_s"] * 1000,
                              path["effective_gbps"]))
     (run_dir / "summary.csv").write_text(table.getvalue())
-    CSV.write_text(table.getvalue())
 
 
 def run_suite(args, run_dir, run_case=execute_case):
+    with (run_dir / "cli.log").open("w") as logfile:
+        with redirect_stdout(Tee(sys.stdout, logfile)), redirect_stderr(Tee(sys.stderr, logfile)):
+            return _run_suite(args, run_dir, run_case)
+
+
+def _run_suite(args, run_dir, run_case):
     result = {"status": "running", "run_dir": str(run_dir), "cases": []}
     save_summary(result, run_dir)
     script = Path(__file__).with_name("kv_transfer_bench.py")
@@ -124,7 +143,9 @@ def main():
     args = parser.parse_args()
     if args.device < 0 or args.warmup < 0 or args.repeats < 1 or args.timeout <= 0:
         parser.error("invalid device, warmup, repeats or timeout")
-    run_dir = Path(tempfile.mkdtemp(prefix="a3-kv-perf-"))
+    run_dir = RESULTS / datetime.now().strftime("%y%m%d_%H%M%S")
+    # Never overwrite a previous run, including two starts in the same second.
+    run_dir.mkdir(parents=True, exist_ok=False)
     return run_suite(args, run_dir)
 
 

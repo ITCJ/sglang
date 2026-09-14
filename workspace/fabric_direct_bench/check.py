@@ -9,6 +9,8 @@ import socket
 import subprocess
 import sys
 import traceback
+import threading
+from datetime import datetime
 from importlib import metadata
 from pathlib import Path
 
@@ -27,17 +29,17 @@ POOL_BYTES = 1 << 30
 PROTOCOL = "a3-bm-host-to-l1-v1"
 
 
-def transfer_plan(source_gva, k_base, rope_base):
-    """Scatter one packed page directly into slot 1 of layer-first MLA L1."""
+def transfer_plan(source_gva, k_base, rope_base, count=1, slot=1):
+    """Scatter one packed page directly into a slot of layer-first MLA L1."""
     k_layer = PAGE_SIZE * K_DIM * 2
     rope_layer = PAGE_SIZE * ROPE_DIM * 2
     sources, targets, sizes = [], [], []
     for layer in range(LAYERS):
         sources.extend((source_gva + layer * k_layer,
                         source_gva + LAYERS * k_layer + layer * rope_layer))
-        # L1 has two slots per layer: reserved zero page, then the tested page.
-        targets.extend((k_base + (layer * 2 + 1) * k_layer,
-                        rope_base + (layer * 2 + 1) * rope_layer))
+        # Slot zero is reserved in each layer.
+        targets.extend((k_base + (layer * (count + 1) + slot) * k_layer,
+                        rope_base + (layer * (count + 1) + slot) * rope_layer))
         sizes.extend((k_layer, rope_layer))
     return sources, targets, sizes
 
@@ -66,15 +68,16 @@ def worker(args):
     source = role == "source"
     source_ip = args.local_ip if source else args.source_ip
     rank = 0 if source else 1
-    logfile = Path(f"/tmp/a3-fabric-{role}.log")
+    pool_bytes = 10 * POOL_BYTES if args.performance else POOL_BYTES
+    logfile = args.run_dir / "native.log" if args.run_dir else Path(f"/tmp/a3-fabric-{role}.log")
     enable_log("fabric", role, path=logfile)
     result = {
         "status": "running", "role": role, "page_bytes": PAGE_BYTES,
         "source_memory": "remote BM Host DRAM", "destination_memory": "NPU HBM L1",
         "transport": "BM SDMA", "copy_type": "GH2L", "rank": rank,
         "local_ip": args.local_ip, "source_ip": source_ip, "device": args.device,
-        "bm_host_bytes_per_rank": POOL_BYTES, "bm_hbm_bytes_per_rank": 0,
-        "extra_receive_staging": False, "timed": False,
+        "bm_host_bytes_per_rank": pool_bytes, "bm_hbm_bytes_per_rank": 0,
+        "extra_receive_staging": False, "timed": args.performance,
         "commit": subprocess.run(["git", "rev-parse", "--short", "HEAD"],
                                  cwd=Path(__file__).parent, capture_output=True,
                                  text=True).stdout.strip(),
@@ -120,10 +123,12 @@ def worker(args):
             connection = socket.create_connection((source_ip, CONTROL_PORT), timeout=30)
         connection.settimeout(args.timeout)
         reader = connection.makefile("rb")
-        send(connection, "HELLO", protocol=PROTOCOL, rank=rank)
+        send(connection, "HELLO", protocol=PROTOCOL, rank=rank, performance=args.performance)
         hello = receive(reader, "HELLO")
         if hello.get("protocol") != PROTOCOL or hello.get("rank") != 1 - rank:
             raise RuntimeError("peer protocol or rank mismatch")
+        if hello.get("performance", False) != args.performance:
+            raise RuntimeError("both ends must use the same performance mode")
 
         code, stage = "F3", "BM initialize, allocate Host pool and join"
         torch.npu.set_device(args.device)
@@ -141,15 +146,15 @@ def worker(args):
         bm_ready = True
         # Follow the public BM DRAM example: both ranks contribute Host memory.
         # Client's contribution is unused; it is never a KV receive staging area.
-        handle = bm.create2(id=0, local_dram_size=POOL_BYTES, max_dram_size=POOL_BYTES,
+        handle = bm.create2(id=0, local_dram_size=pool_bytes, max_dram_size=pool_bytes,
                             local_hbm_size=0, max_hbm_size=0,
                             data_op_type=bm.BmDataOpType.SDMA)
         if handle is None:
             raise RuntimeError("bm.create2 returned no handle")
         check_rc(handle.join(), "BM join")
         joined = True
-        if handle.local_mem_size(bm.BmMemType.HOST) < PAGE_BYTES:
-            raise RuntimeError("BM Host pool is smaller than one page")
+        if handle.local_mem_size(bm.BmMemType.HOST) < PAGE_BYTES * (1024 if args.performance else 1):
+            raise RuntimeError("BM Host pool is smaller than the workload")
         if handle.local_mem_size(bm.BmMemType.DEVICE) != 0:
             raise RuntimeError("unexpected HBM contribution: experiment requires a Host source")
 
@@ -158,10 +163,11 @@ def worker(args):
             gva = handle.peer_rank_ptr(0, bm.BmMemType.HOST)
             if not gva:
                 raise RuntimeError("source Host GVA is null")
-            payload = bytearray(split_page_payload(0))
-            tensor = torch.frombuffer(payload, dtype=torch.uint8)
-            check_rc(handle.copy_data(tensor.data_ptr(), gva, PAGE_BYTES, bm.BmCopyType.H2GH, 0), "H2GH fill")
-            check_rc(handle.wait(), "source BM wait")
+            for page in range(1024 if args.performance else 1):
+                payload = bytearray(split_page_payload(page))
+                tensor = torch.frombuffer(payload, dtype=torch.uint8)
+                check_rc(handle.copy_data(tensor.data_ptr(), gva + page * PAGE_BYTES, PAGE_BYTES, bm.BmCopyType.H2GH, 0), "H2GH fill")
+                check_rc(handle.wait(), "source BM wait")
             send(connection, "READY", page_bytes=PAGE_BYTES, memory="HOST")
             print_result("FS")
             code, stage = "F2", "wait for client verification and cleanup"
@@ -175,18 +181,11 @@ def worker(args):
             if not source_gva:
                 raise RuntimeError("remote rank 0 Host GVA is null")
             code, stage = "F5", "GH2L directly into final NPU L1"
-            device_k = torch.zeros((LAYERS, 2, PAGE_SIZE, 1, K_DIM), dtype=torch.bfloat16, device="npu")
-            device_rope = torch.zeros((LAYERS, 2, PAGE_SIZE, 1, ROPE_DIM), dtype=torch.bfloat16, device="npu")
-            torch.npu.synchronize()
-            sources, targets, sizes = transfer_plan(source_gva, device_k.data_ptr(), device_rope.data_ptr())
-            result["transfer_fragments"] = len(sizes)
-            check_rc(handle.copy_data_batch(sources, targets, sizes, len(sizes), bm.BmCopyType.GH2L, 0), "GH2L batch")
-            check_rc(handle.wait(), "client BM wait")
-            torch.npu.synchronize()
-            code, stage = "F6", "verify final L1 bytes and reserved page"
-            check_page(device_k, device_rope, 1, 0, torch)
-            if torch.count_nonzero(device_k[:, 0]).item() or torch.count_nonzero(device_rope[:, 0]).item():
-                raise RuntimeError("reserved L1 page was overwritten")
+            if args.performance:
+                from performance import run_client
+                run_client(handle, bm, torch, source_gva, args)
+            else:
+                check_one_page(handle, bm, torch, source_gva, result)
     except Exception as exc:
         failure = (code, stage, repr(exc))
         if mf is not None and hasattr(mf, "get_last_err_msg"):
@@ -234,15 +233,42 @@ def worker(args):
     else:
         result.update(status="ok", code="FD" if source else "FP")
     Path(f"/tmp/a3-fabric-{role}.json").write_text(json.dumps(result, indent=2) + "\n")
+    if args.run_dir:
+        (args.run_dir / "status.json").write_text(json.dumps(result, indent=2) + "\n")
     print_result(result["code"])
     return 1 if failure else 0
+
+
+def check_one_page(handle, bm, torch, source_gva, result):
+    device_k = torch.zeros((LAYERS, 2, PAGE_SIZE, 1, K_DIM), dtype=torch.bfloat16, device="npu")
+    device_rope = torch.zeros((LAYERS, 2, PAGE_SIZE, 1, ROPE_DIM), dtype=torch.bfloat16, device="npu")
+    torch.npu.synchronize()
+    sources, targets, sizes = transfer_plan(source_gva, device_k.data_ptr(), device_rope.data_ptr())
+    result["transfer_fragments"] = len(sizes)
+    check_rc(handle.copy_data_batch(sources, targets, sizes, len(sizes), bm.BmCopyType.GH2L, 0), "GH2L batch")
+    check_rc(handle.wait(), "client BM wait")
+    torch.npu.synchronize()
+    check_page(device_k, device_rope, 1, 0, torch)
+    if torch.count_nonzero(device_k[:, 0]).item() or torch.count_nonzero(device_rope[:, 0]).item():
+        raise RuntimeError("reserved L1 page was overwritten")
 
 
 def supervise(args):
     result_path = Path(f"/tmp/a3-fabric-{args.role}.json")
     result_path.write_text(json.dumps({"status": "running", "code": "RUN"}) + "\n")
-    process = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), *sys.argv[1:], "--worker"],
-                               start_new_session=True)
+    extra = ["--run-dir", str(args.run_dir)] if getattr(args, "run_dir", None) else []
+    process = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), *sys.argv[1:], "--worker", *extra],
+                               start_new_session=True, stdout=subprocess.PIPE if extra else None,
+                               stderr=subprocess.STDOUT if extra else None, text=True)
+    def relay():
+        with (args.run_dir / "cli.log").open("w") as log:
+            for line in process.stdout:
+                print(line, end="", flush=True)
+                log.write(line)
+                log.flush()
+    thread = threading.Thread(target=relay, daemon=True) if extra else None
+    if thread:
+        thread.start()
     try:
         rc = process.wait(timeout=args.timeout)
         if rc < 0:
@@ -262,6 +288,14 @@ def supervise(args):
         }) + "\n")
         print(code, flush=True)
         return 130 if code == "STOP" else 1
+    finally:
+        if thread:
+            thread.join()
+            status = json.loads(result_path.read_text())
+            (args.run_dir / "status.json").write_text(json.dumps(status, indent=2) + "\n")
+            if status.get("code") in ("STOP", "FT", "F9"):
+                with (args.run_dir / "cli.log").open("a") as log:
+                    log.write(status["code"] + "\n")
 
 
 def main():
@@ -270,10 +304,15 @@ def main():
     parser.add_argument("local_ip", nargs="?")
     parser.add_argument("source_ip", nargs="?")
     parser.add_argument("--device", type=int, default=0)
-    parser.add_argument("--timeout", type=int, default=180)
+    parser.add_argument("--timeout", type=int, default=None)
+    parser.add_argument("--performance", action="store_true")
+    parser.add_argument("--warmup", type=int, default=2)
+    parser.add_argument("--repeats", type=int, default=10)
+    parser.add_argument("--run-dir", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--diagnose", action="store_true")
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
+    args.timeout = args.timeout if args.timeout is not None else (3600 if args.performance else 180)
     if args.diagnose:
         path = Path(f"/tmp/a3-fabric-{args.role}.json")
         if not path.exists():
@@ -286,10 +325,13 @@ def main():
         parser.error("source needs its IP; client needs its own IP and the source IP")
     if args.role == "client" and args.local_ip == args.source_ip:
         parser.error("client and source must use distinct node IPs")
-    if args.device < 0 or args.timeout <= 0:
+    if args.device < 0 or args.timeout <= 0 or args.warmup < 0 or args.repeats < 1:
         parser.error("device must be nonnegative and timeout positive")
     if args.worker:
         return worker(args)
+    if args.performance:
+        args.run_dir = Path(__file__).resolve().parent / "results" / datetime.now().strftime("%y%m%d_%H%M%S")
+        args.run_dir.mkdir(parents=True, exist_ok=False)
     return supervise(args)
 
 

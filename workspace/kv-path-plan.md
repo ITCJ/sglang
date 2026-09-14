@@ -46,4 +46,4 @@
 
 ## 新增直达候选：先验证，不纳入性能套件
 
-`fabric_direct_bench/check.py` 独立验证远端 Host DRAM → MemFabric BM SDMA/GH2L → 最终 NPU L1，绕过 Mooncake。保持同一页 KV/RoPE 对象布局，按层分片直接写入最终地址；不改成 NPU→NPU，也不增加接收暂存。先做一页校验，当前只是基于上游代码的候选，尚未远端验证。功能通过、UB 物理链路确认和性能测量分别记录；原有三路径套件保持不变。
+`fabric_direct_bench/check.py` 独立测试远端 Host DRAM → MemFabric BM SDMA/GH2L → 最终 NPU L1，绕过 Mooncake。保持同一页 KV/RoPE 对象布局，按层分片直接写入最终地址；不改成 NPU→NPU，也不增加接收暂存。新增 `--performance` 自动测量同样五档容量、两种布局，编码 D，沿用每批最多 8 页、2 次预热和 10 次采样及批次累加统计。两端 Host 池各 10 GiB，源预填完整 128K；源对象连续分配和绕过 Store 管理属于明确的实验差异。结果及 CLI 日志写入该目录下 `results/YYMMDD_HHMMSS/`。功能通过、UB 物理链路确认和性能测量分别记录；原有三路径套件保持不变。

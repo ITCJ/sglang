@@ -1,4 +1,23 @@
-# 一页 Host → NPU 直达验证
+# Host → NPU 直达验证与性能实验
+
+## 自动性能实验
+
+在已通过一页验证的同一环境运行。两端使用相同模式，先源端，看到 `FR` 再启动客户端：
+
+```sh
+python3 workspace/fabric_direct_bench/check.py source <SOURCE_IP> --performance
+python3 workspace/fabric_direct_bench/check.py client <CLIENT_IP> <SOURCE_IP> --performance
+```
+
+一次完成一页冒烟，以及 1K、4K、16K、64K、128K × 连续/分散布局，共 10 组正式测量。路径编码 D。默认每批最多 8 页、预热 2 次、测量 10 次，与现有 A/B/C 一样将各批对应采样相加，再取中位数/P95；不是连续端到端请求耗时。计时包括 GH2L 批量调用、BM wait 和 NPU 同步；分配、地址列表构造、源准备、清零、逐页校验不计时。每页仍是独立对象地址，源按页连续分配属于本实验的分配选择，不声称模拟 Store 分配碎片。
+
+两端各贡献 10 GiB BM Host 池，客户端的 Host 池不接收 KV；源一次准备完整 128K 数据。客户端最大 L1 约 8.59 GiB；初始化/库内部额外资源不含在这些容量中。不要与自己的 A/B/C 实验同时运行。
+
+两端各自在 `workspace/fabric_direct_bench/results/YYMMDD_HHMMSS/` 保存 `cli.log`、`native.log`、`status.json`；客户端另有 `summary.json`、`summary.csv`、各组 JSON。时间戳为本机时间，组间实时保存；最终成功仍是客户端 `FP`、源端 `FD`。终端 D 值和 CSV 耗时单位 ms，JSON `_s` 字段为秒，带宽为 GB/s。结果不提交 Git。
+
+Ctrl+C 终止自己的工作进程组；性能模式总超时默认 3600 秒（是防挂死上限，不是预计耗时），可用 `--timeout` 调整。失败回报短码；诊断命令仍为 `python3 workspace/fabric_direct_bench/check.py client --diagnose`。未完成的组不会冒充成功，已完成的组保留。绕过 Store 的 D 不含 Store 管理开销，需与 A/B/C 分开标识。
+
+## 一页验证
 
 **基于官方代码的候选实现，尚未在 A3 验证。** 这里只验证正确性，不测性能，也不代表 Mooncake Store 直读 NPU 已解决。
 

@@ -6,7 +6,6 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
 
 import performance_suite as suite
 
@@ -18,10 +17,10 @@ class SuiteTest(unittest.TestCase):
             output = io.StringIO()
             args = SimpleNamespace(client_ip="client", store_ip="store", device=0,
                                    warmup=2, repeats=10, timeout=600)
-            with patch.object(suite, "SUMMARY", root / "latest.json"), \
-                    patch.object(suite, "CSV", root / "latest.csv"), \
-                    contextlib.redirect_stdout(output):
+            with contextlib.redirect_stdout(output):
                 rc = suite.run_suite(args, root, run_case=fake)
+            self.assertEqual((root / "cli.log").read_text(), output.getvalue())
+            self.assertTrue((root / "summary.csv").exists())
             return rc, output.getvalue(), json.loads((root / "summary.json").read_text())
 
     @staticmethod

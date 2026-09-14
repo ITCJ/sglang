@@ -43,7 +43,9 @@ python3 workspace/kv_path_bench/performance_suite.py <CLIENT_IP> <STORE_IP>
 
 屏幕先输出 R0～R10 表示当前配置，再输出 `T1024C A=… B=… C=…` 等一行结果（C/S 表示连续/分散，数值为毫秒）；最后 ALL_OK 表示全部完成。失败为 `X编号 F码` 或 `X编号 TIMEOUT`，立即停止后续配置，已完成结果保留。默认每个配置最多 600 秒（可用 `--timeout` 调整，不是预计耗时）；Ctrl+C 会强制结束本次启动的客户端子进程组，输出 `X编号 STOP`，不会停止其他任务。结束后 Store 端 Ctrl+C。
 
-汇总在 `/tmp/a3-kv-perf-suite.json` 和 `/tmp/a3-kv-perf-suite.csv`；每次运行的完整结果和日志保存在独立 `/tmp/a3-kv-perf-*` 目录中，目录名记录在汇总 JSON 的 run_dir，无需手抄长日志。客户端可用 `--device`、`--warmup`、`--repeats` 调整，默认无须增加参数。
+每次运行的全部结果保存在仓库的 `workspace/kv_path_bench/results/YYMMDD_HHMMSS/`，例如 `260914_180900/`，使用客户端本地时间。目录内 `summary.json` / `summary.csv` 是汇总，`cli.log` 保存终端输出，各配置的 JSON 和详细日志也在同一目录。每组完成即保存，失败保留已有结果；同秒重启不会覆盖旧目录。结果目录不提交 Git。客户端可用 `--device`、`--warmup`、`--repeats` 调整，默认无须增加参数。
+
+单位：终端 A/B/C 数值及汇总 CSV 的 `median_ms`、`p95_ms` 为毫秒（ms）；JSON 的 `median_s`、`p95_s`、`samples_s`、`batch_samples_s` 为秒（s）。`effective_gbps` 实际为 GB/s（十进制字节/秒，不是 Gbit/s）。
 
 ### 单独测一档
 
