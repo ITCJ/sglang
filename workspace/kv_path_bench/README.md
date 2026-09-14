@@ -10,21 +10,30 @@
 
 数据按 DeepSeek V3.1 的 61 层、每页 128 token、BF16、每 token 512 维压缩 KV + 64 维 RoPE 构造。一页一个 Store 对象（约 8.99 MB），对象内按 `[layer, token, 512+64]` 排列；Host L2 和 NPU L1 则各自将 512/64 分别存入两个缓冲区。这里的 `v_buffer` 是 RoPE，不是传统注意力里单独的 V。
 
+远端不能复制命令：先在两端仓库各手输一次 `git pull --ff-only`。claim 设备之前，分别手输一条不初始化 NPU 的命令；脚本会打印 commit，需确认两端与交接的 commit 相同：
+
+```bash
+python3 workspace/kv_path_bench/preclaim_check.py store
+python3 workspace/kv_path_bench/preclaim_check.py client
+```
+
+两行分别在 Store 端、客户端运行，不是在一台机器上连续运行。看到 `PRECLAIM_OK` 才继续。此检查不连接两端、不验证 Fabric，也不替代 claim 后的小规模传输测试。仓库不保存真实 IP、容器名和凭据。
+
 在远端 A3 上启动 Store（保持进程运行）：
 
 ```bash
-python3 workspace/kv_path_bench/store_server.py --local-ip <远端IP> --tokens 1024
+python3 workspace/kv_path_bench/store_server.py --local-ip <STORE_IP> --tokens 128
 ```
 
 看到 `DATA_READY` 后，在本机 A3 上运行：
 
 ```bash
-python3 workspace/kv_path_bench/kv_transfer_bench.py --local-ip <本机IP> --master-ip <远端IP> --tokens 1024
+python3 workspace/kv_path_bench/kv_transfer_bench.py --local-ip <CLIENT_IP> --master-ip <STORE_IP> --tokens 128
 ```
 
 两端需有 `torch`、`torch_npu`、`mooncake.store`，本机还需 `sgl_kernel_npu`；使用相同的 `--tokens`、`--prefix` 和端口。两端都配置了 `ascend` Store 传输和 Fabric 环境变量。结果写入本机 `kv-transfer-results.json`，包含每次样本、耗时中位数、P95、按原始 KV 字节数计算的有效 GB/s 和额外暂存内存。预热 2 次、记录 10 次；每次计时包含最终 NPU 同步，数据校验在计时后进行。内存分配、注册和远端数据准备不计时。
 
-默认仅测 1K token（约 69 MiB）；扩大数据量需两端同步调整 `--tokens`，16K 时远端还需 `--segment-gib 2`。暂存内存会随规模增长，先确认可用内存。`--skip-direct` 可跳过第三条路径；如果 NPU 缓冲区不能注册到当前 Store，结果中将该路径标为 `unavailable`，不把 Host 中转冒充直达。配置 `ascend` 并不单独证明实际使用了 Fabric，仍需结合 A3 环境的传输日志或计数器确认。
+两端先确认设备已 claim、模型已停止，且平台允许在机器 28 上恢复小规模测试。上述命令先测一页；成功校验后两端再同步使用 `--tokens 1024`（约 69 MiB）。扩大数据量时，16K 远端还需 `--segment-gib 2`。暂存内存会随规模增长，先确认可用内存。`--skip-direct` 可跳过第三条路径；如果 NPU 缓冲区不能注册到当前 Store，结果中将该路径标为 `unavailable`，不把 Host 中转冒充直达。配置 `ascend` 并不单独证明实际使用了 Fabric，仍需结合 A3 环境的传输日志或计数器确认。
 
 本地无需 NPU 的数据布局检查：
 
