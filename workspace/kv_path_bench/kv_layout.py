@@ -25,5 +25,15 @@ def page_payload(page: int) -> bytes:
     return bytes(output)
 
 
+def split_page_payload(page: int) -> bytes:
+    """One key still holds one page: all compressed KV, then all RoPE."""
+    packed = page_payload(page)
+    token_bytes = (K_DIM + ROPE_DIM) * ELEMENT_BYTES
+    k_bytes = K_DIM * ELEMENT_BYTES
+    return b"".join(packed[i : i + k_bytes] for i in range(0, len(packed), token_bytes)) + b"".join(
+        packed[i + k_bytes : i + token_bytes] for i in range(0, len(packed), token_bytes)
+    )
+
+
 def page_keys(prefix: str, count: int) -> list[str]:
     return [f"{prefix}/page-{page}" for page in range(count)]

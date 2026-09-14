@@ -46,6 +46,7 @@ sys.stdout.flush()
 subprocess.run([sys.executable, '-c', "print('child detail')"], check=True)
 print('S0', flush=True)
 print('P0', flush=True)
+print('D0', flush=True)
 """
         with tempfile.TemporaryDirectory() as directory:
             logfile = Path(directory) / "check.log"
@@ -54,7 +55,7 @@ print('P0', flush=True)
                 cwd=Path(__file__).resolve().parent,
                 capture_output=True, text=True, check=True,
             )
-            self.assertEqual(result.stdout, "S0\nP0\n")
+            self.assertEqual(result.stdout, "S0\nP0\nD0\n")
             self.assertEqual(result.stderr, "")
             details = logfile.read_text()
             for message in ("Python detail", "native stdout", "native stderr",

@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 
 from bench_ports import MASTER_PORT, METRICS_PORT
-from kv_layout import PAGE_BYTES, PAGE_SIZE, page_keys, page_payload
+from kv_layout import PAGE_BYTES, PAGE_SIZE, page_keys, page_payload, split_page_payload
 
 
 def wait_port(host: str, port: int, process: subprocess.Popen) -> None:
@@ -41,6 +41,7 @@ def main(argv=None, ready_code=None) -> int:
     parser.add_argument("--segment-gib", type=int, default=1)
     parser.add_argument("--prefix", default="a3-kv-path-bench")
     parser.add_argument("--master-log", type=Path)
+    parser.add_argument("--direct-l2", action="store_true")
     args = parser.parse_args(argv)
     if args.tokens < PAGE_SIZE or args.tokens % PAGE_SIZE:
         parser.error("--tokens must be a positive multiple of 128")
@@ -89,8 +90,10 @@ def main(argv=None, ready_code=None) -> int:
             f"PREPARING prefix={args.prefix} pages={page_count} page_bytes={PAGE_BYTES}",
             flush=True,
         )
-        for page, key in enumerate(page_keys(args.prefix, page_count)):
-            rc = store.put(key, page_payload(page))
+        prefix = args.prefix + ("-split" if args.direct_l2 else "")
+        payload = split_page_payload if args.direct_l2 else page_payload
+        for page, key in enumerate(page_keys(prefix, page_count)):
+            rc = store.put(key, payload(page))
             if rc != 0:
                 raise RuntimeError(f"put failed for {key}: {rc}")
         print(f"DATA_READY pages={page_count} bytes={page_count * PAGE_BYTES}", flush=True)

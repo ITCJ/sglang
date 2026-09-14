@@ -16,7 +16,7 @@ class LogStream:
         self.pending += message
         while "\n" in self.pending:
             line, self.pending = self.pending.split("\n", 1)
-            if line in {"S0", "S1", "H0", "H1", "P0", "P1", "F1", "F2", "F3", "F4", "F5", "F6", "F9"}:
+            if line in {"S0", "S1", "H0", "H1", "D0", "D1", "P0", "P1", "F1", "F2", "F3", "F4", "F5", "F6", "F9"}:
                 self.terminal.write(line + "\n")
         self.flush()
         return len(message)

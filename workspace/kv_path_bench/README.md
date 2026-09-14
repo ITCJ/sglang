@@ -45,6 +45,26 @@ python3 -m unittest discover -s workspace/kv_path_bench -p 'test_*.py'
 
 ## 可行性验证（不计时）
 
+### 直接写入最终 L2（新模式，等待 A3 验证）
+
+先停止旧 Store，两端拉取同一提交；先只测 small。Store 端运行：
+
+```bash
+python3 workspace/kv_path_bench/feasibility_store.py <STORE_IP> small --direct-l2
+```
+
+等 S0 后，客户端运行：
+
+```bash
+python3 workspace/kv_path_bench/feasibility_check.py <CLIENT_IP> <STORE_IP> small --direct-l2
+```
+
+客户端 D0 表示一页 L3 直接写入最终 ADXL Host L2、L2 内容校验、同一内存到 L1 搬运与校验全部通过。D1 是对应 max 结果，先等 small 通过再扩大。F3 为 Host 分配问题，F5 日志中的阶段区分 direct L2 read 与 ADXL Host to NPU；失败只回报短码，详细日志沿用原位置。结束后 Store 按 Ctrl+C。
+
+此模式仍是一页一个 key，使用独立的 `-split` key 前缀；对象内容调整为整页压缩 KV 后接整页 RoPE，调用 `batch_get_into_multi_buffers` 直接写入两处最终 L2 地址。L2 从已注册 BufferPool 借用，保持租约直到搬运结束，不再申请另一块 pinned L2，不发生接收暂存到 L2 的拆分拷贝。清零和 CPU/NPU 数据校验仅用于此可行性验证，不采性能。若后续做路径性能对比，必须统一各路径的对象顺序；不能直接与旧交错对象格式的计时作公平比较。
+
+### 原 Host 中转及双路径模式
+
 当前先测 Host 路径：客户端原命令末尾加 `--host-only`，Store 命令不变。`H0` / `H1` 分别表示 small / max 的 `L3->Host->L1` 逐页校验通过；不代表 NPU 直达通过。默认双路径模式也会先输出 Host 成功码，再分配和注册 NPU 暂存区，最后两条都通过才输出 `P0` / `P1`。`F4` 表示 NPU 暂存分配或注册失败。NPU 分配调查见 [交接文档](NPU_FABRIC_HANDOFF.md)。
 
 Python、底层库和子进程的标准输出/错误均写入日志；终端只显示短结果码。

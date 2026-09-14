@@ -68,6 +68,7 @@ def main() -> int:
     parser.add_argument("size", choices=("small", "max"))
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--host-only", action="store_true", help="check only L3->Host->L1")
+    parser.add_argument("--direct-l2", action="store_true", help="read directly into final Fabric Host L2")
     args = parser.parse_args()
     if args.device < 0:
         parser.error("--device must be nonnegative")
@@ -85,7 +86,7 @@ def main() -> int:
     torch.npu.set_device(args.device)
     count = 1 if args.size == "small" else 1024
     scattered = args.size == "max"
-    keys = page_keys("a3-kv-path-bench", count)
+    keys = page_keys("a3-kv-path-bench" + ("-split" if args.direct_l2 else ""), count)
     batch = min(count, BATCH_PAGES)
     host_shape = (batch + 1, LAYERS, PAGE_SIZE, 1)
     device_shape = (LAYERS, count + 1, PAGE_SIZE, 1)
@@ -96,8 +97,9 @@ def main() -> int:
     host_lease = None
     stage = "L1/Host allocation"
     try:
-        host_k = torch.empty((*host_shape, K_DIM), dtype=torch.bfloat16, pin_memory=True)
-        host_rope = torch.empty((*host_shape, ROPE_DIM), dtype=torch.bfloat16, pin_memory=True)
+        if not args.direct_l2:
+            host_k = torch.empty((*host_shape, K_DIM), dtype=torch.bfloat16, pin_memory=True)
+            host_rope = torch.empty((*host_shape, ROPE_DIM), dtype=torch.bfloat16, pin_memory=True)
         device_k = torch.empty((*device_shape, K_DIM), dtype=torch.bfloat16, device="npu")
         device_rope = torch.empty((*device_shape, ROPE_DIM), dtype=torch.bfloat16, device="npu")
 
@@ -112,17 +114,23 @@ def main() -> int:
         # Borrow from setup's already registered ADXL Host buffer. Keep the
         # lease alive until all transfers finish; do not register it again.
         host_pool = BufferPool(store, block_on_exhaustion=False)
-        host_lease = host_pool.acquire(stage_bytes)
+        host_bytes = (batch + 1) * PAGE_BYTES if args.direct_l2 else stage_bytes
+        host_lease = host_pool.acquire(host_bytes)
         ptr = host_lease.ptr
-        backing = (ctypes.c_byte * stage_bytes).from_address(int(ptr))
-        staging = torch.frombuffer(backing, dtype=torch.bfloat16)
-        staging = staging.view(batch, LAYERS, PAGE_SIZE, 1, K_DIM + ROPE_DIM)
+        backing = (ctypes.c_byte * host_bytes).from_address(int(ptr))
+        host_storage = torch.frombuffer(backing, dtype=torch.bfloat16)
+        if args.direct_l2:
+            k_elements = (batch + 1) * LAYERS * PAGE_SIZE * K_DIM
+            host_k = host_storage[:k_elements].view(*host_shape, K_DIM)
+            host_rope = host_storage[k_elements:].view(*host_shape, ROPE_DIM)
+        else:
+            staging = host_storage.view(batch, LAYERS, PAGE_SIZE, 1, K_DIM + ROPE_DIM)
         print(
             f"CHECK_BEGIN size={args.size} pages={count} "
             f"layout={'scattered' if scattered else 'contiguous'}",
             flush=True,
         )
-        paths = ("L3_L2_L1",) if args.host_only else ("L3_L2_L1", "L3_NPU_L1")
+        paths = ("L3_L2_L1",) if args.host_only or args.direct_l2 else ("L3_L2_L1", "L3_NPU_L1")
         for path in paths:
             if path == "L3_NPU_L1":
                 stage = "NPU staging allocation"
@@ -137,14 +145,30 @@ def main() -> int:
                 pages = range(start, start + n)
                 slots = [destination(page, count, scattered) for page in pages]
                 if path == "L3_L2_L1":
-                    read_pages(
-                        store,
-                        keys[start : start + n],
-                        [staging[i].data_ptr() for i in range(n)],
-                    )
-                    for i in range(n):
-                        host_k[i + 1].copy_(staging[i, ..., :K_DIM])
-                        host_rope[i + 1].copy_(staging[i, ..., K_DIM:])
+                    if args.direct_l2:
+                        stage = f"{path} direct L2 read pages={start}-{start + n - 1}"
+                        host_k.zero_()
+                        host_rope.zero_()
+                        ptrs = [[host_k[i + 1].data_ptr(), host_rope[i + 1].data_ptr()] for i in range(n)]
+                        sizes = [[LAYERS * PAGE_SIZE * K_DIM * 2, LAYERS * PAGE_SIZE * ROPE_DIM * 2] for _ in range(n)]
+                        result = list(store.batch_get_into_multi_buffers(keys[start : start + n], ptrs, sizes))
+                        if result != [PAGE_BYTES] * n:
+                            raise RuntimeError(f"Mooncake direct L2 read failed: {result}")
+                        for i, page in enumerate(pages):
+                            check_page(host_k.transpose(0, 1), host_rope.transpose(0, 1), i + 1, page, torch)
+                        stage = f"{path} ADXL Host to NPU pages={start}-{start + n - 1}"
+                        for slot in slots:
+                            device_k[:, slot].zero_()
+                            device_rope[:, slot].zero_()
+                    else:
+                        read_pages(
+                            store,
+                            keys[start : start + n],
+                            [staging[i].data_ptr() for i in range(n)],
+                        )
+                        for i in range(n):
+                            host_k[i + 1].copy_(staging[i, ..., :K_DIM])
+                            host_rope[i + 1].copy_(staging[i, ..., K_DIM:])
                     host_indices = torch.arange(
                         PAGE_SIZE, (n + 1) * PAGE_SIZE, dtype=torch.int64
                     )
@@ -184,8 +208,9 @@ def main() -> int:
                     print(f"CHECK_PROGRESS path={path} verified={start + n}/{count}", flush=True)
             print(f"{path}_OK pages={count}", flush=True)
             if path == "L3_L2_L1":
-                print("H0" if args.size == "small" else "H1", flush=True)
-        if args.host_only:
+                code = "D" if args.direct_l2 else "H"
+                print(code + ("0" if args.size == "small" else "1"), flush=True)
+        if args.host_only or args.direct_l2:
             return 0
         print("FEASIBILITY_OK", flush=True)
         print("P0" if args.size == "small" else "P1", flush=True)

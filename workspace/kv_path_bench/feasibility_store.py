@@ -14,6 +14,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("store_ip")
     parser.add_argument("size", choices=("small", "max"))
+    parser.add_argument("--direct-l2", action="store_true")
     args = parser.parse_args()
     enable_log("store", args.size)
 
@@ -42,7 +43,7 @@ def main() -> int:
                 str(segment_gib),
                 "--master-log",
                 f"/tmp/a3-kv-feasibility-master-{args.size}.log",
-            ],
+            ] + (["--direct-l2"] if args.direct_l2 else []),
             ready_code="S0" if args.size == "small" else "S1",
         )
     except Exception:
