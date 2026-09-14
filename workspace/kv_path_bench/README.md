@@ -45,6 +45,8 @@ python3 -m unittest discover -s workspace/kv_path_bench -p 'test_*.py'
 
 ## 可行性验证（不计时）
 
+当前先测 Host 路径：客户端原命令末尾加 `--host-only`，Store 命令不变。`H0` / `H1` 分别表示 small / max 的 `L3->Host->L1` 逐页校验通过；不代表 NPU 直达通过。默认双路径模式也会先输出 Host 成功码，再分配和注册 NPU 暂存区，最后两条都通过才输出 `P0` / `P1`。`F4` 表示 NPU 暂存分配或注册失败。NPU 分配调查见 [交接文档](NPU_FABRIC_HANDOFF.md)。
+
 Python、底层库和子进程的标准输出/错误均写入日志；终端只显示短结果码。
 
 可行性脚本用 `mooncake.store.BufferPool` 从 `setup()` 已注册的 1 GiB ADXL Host 缓冲区借用接收暂存区（最多 8 页），不再额外分配并注册 Host 内存。测试结束先归还缓冲区再关闭 Store；不改变批量读取、拆分或 L1 搬运过程。该接口已核对官方 `v0.3.12.post1` 源码，A3 运行仍待验证；旧性能脚本的分配方式尚未同步。

@@ -28,7 +28,7 @@ def failure_code(stage: str) -> str:
         return "F2"
     if stage in ("staging allocation", "Host staging registration"):
         return "F3"
-    if stage == "NPU staging registration":
+    if stage in ("NPU staging allocation", "NPU staging registration"):
         return "F4"
     if stage.startswith("L3_L2_L1"):
         return "F5"
@@ -67,6 +67,7 @@ def main() -> int:
     parser.add_argument("store_ip")
     parser.add_argument("size", choices=("small", "max"))
     parser.add_argument("--device", type=int, default=0)
+    parser.add_argument("--host-only", action="store_true", help="check only L3->Host->L1")
     args = parser.parse_args()
     if args.device < 0:
         parser.error("--device must be nonnegative")
@@ -116,19 +117,20 @@ def main() -> int:
         backing = (ctypes.c_byte * stage_bytes).from_address(int(ptr))
         staging = torch.frombuffer(backing, dtype=torch.bfloat16)
         staging = staging.view(batch, LAYERS, PAGE_SIZE, 1, K_DIM + ROPE_DIM)
-        direct = torch.empty(staging.shape, dtype=torch.bfloat16, device="npu")
-
-        stage = "NPU staging registration"
-        rc = store.register_buffer(direct.data_ptr(), stage_bytes)
-        if rc != 0:
-            raise RuntimeError(f"register_buffer returned {rc}")
-
         print(
             f"CHECK_BEGIN size={args.size} pages={count} "
             f"layout={'scattered' if scattered else 'contiguous'}",
             flush=True,
         )
-        for path in ("L3_L2_L1", "L3_NPU_L1"):
+        paths = ("L3_L2_L1",) if args.host_only else ("L3_L2_L1", "L3_NPU_L1")
+        for path in paths:
+            if path == "L3_NPU_L1":
+                stage = "NPU staging allocation"
+                direct = torch.empty(staging.shape, dtype=torch.bfloat16, device="npu")
+                stage = "NPU staging registration"
+                rc = store.register_buffer(direct.data_ptr(), stage_bytes)
+                if rc != 0:
+                    raise RuntimeError(f"register_buffer returned {rc}")
             for start in range(0, count, batch):
                 n = min(batch, count - start)
                 stage = f"{path} pages={start}-{start + n - 1}"
@@ -181,6 +183,10 @@ def main() -> int:
                 if (start + n) % 128 == 0:
                     print(f"CHECK_PROGRESS path={path} verified={start + n}/{count}", flush=True)
             print(f"{path}_OK pages={count}", flush=True)
+            if path == "L3_L2_L1":
+                print("H0" if args.size == "small" else "H1", flush=True)
+        if args.host_only:
+            return 0
         print("FEASIBILITY_OK", flush=True)
         print("P0" if args.size == "small" else "P1", flush=True)
     except Exception as exc:
