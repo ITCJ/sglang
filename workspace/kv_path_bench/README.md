@@ -45,6 +45,8 @@ python3 -m unittest discover -s workspace/kv_path_bench -p 'test_*.py'
 
 ## 可行性验证（不计时）
 
+Python、底层库和子进程的标准输出/错误均写入日志；终端只显示短结果码。
+
 claim 设备、停止模型后，先在 Store 端运行（出现 `S0` 后保持运行），再在客户端运行：
 
 ```bash

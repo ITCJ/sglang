@@ -1,5 +1,6 @@
 """Keep detailed output in /tmp and show only short result codes."""
 
+import os
 import sys
 from pathlib import Path
 
@@ -24,13 +25,22 @@ class LogStream:
         self.terminal.flush()
         self.logfile.flush()
 
+    def fileno(self):
+        return self.logfile.fileno()
+
     def __getattr__(self, name):
-        return getattr(self.terminal, name)
+        return getattr(self.logfile, name)
 
 
 def enable_log(role: str, size: str) -> None:
     path = Path(f"/tmp/a3-kv-feasibility-{role}-{size}.log")
-    logfile = path.open("w")
-    sys.stdout = LogStream(sys.stdout, logfile)
-    sys.stderr = LogStream(sys.stderr, logfile)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    terminal = os.fdopen(os.dup(1), "w", buffering=1)
+    logfile = path.open("w", buffering=1)
+    # Capture native libraries and subprocesses that bypass Python's streams.
+    os.dup2(logfile.fileno(), 1)
+    os.dup2(logfile.fileno(), 2)
+    sys.stdout = LogStream(terminal, logfile)
+    sys.stderr = LogStream(terminal, logfile)
     print(f"LOG={path}", flush=True)

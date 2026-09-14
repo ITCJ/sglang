@@ -1,5 +1,9 @@
 import io
+import subprocess
+import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 from feasibility_check import destination, failure_code
 from feasibility_log import LogStream
@@ -22,6 +26,40 @@ class DestinationTest(unittest.TestCase):
         self.assertEqual(terminal.getvalue(), "F4\n")
         self.assertIn("FEASIBILITY_FAIL", logfile.getvalue())
         self.assertEqual(failure_code("NPU staging registration"), "F4")
+
+    def test_native_and_child_logs_stay_off_terminal(self):
+        script = """
+import os
+import subprocess
+import sys
+from pathlib import Path
+from unittest.mock import patch
+from feasibility_log import enable_log
+with patch('feasibility_log.Path', return_value=Path(sys.argv[1])):
+    enable_log('client', 'small')
+print('Python detail')
+os.write(1, b'native stdout\\n')
+os.write(2, b'native stderr\\n')
+os.write(sys.stdout.fileno(), b'fileno detail\\n')
+sys.stdout.buffer.write(b'buffer detail\\n')
+sys.stdout.flush()
+subprocess.run([sys.executable, '-c', "print('child detail')"], check=True)
+print('S0', flush=True)
+print('P0', flush=True)
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            logfile = Path(directory) / "check.log"
+            result = subprocess.run(
+                [sys.executable, "-c", script, str(logfile)],
+                cwd=Path(__file__).resolve().parent,
+                capture_output=True, text=True, check=True,
+            )
+            self.assertEqual(result.stdout, "S0\nP0\n")
+            self.assertEqual(result.stderr, "")
+            details = logfile.read_text()
+            for message in ("Python detail", "native stdout", "native stderr",
+                            "fileno detail", "buffer detail", "child detail", "S0", "P0"):
+                self.assertIn(message, details)
 
 
 if __name__ == "__main__":
