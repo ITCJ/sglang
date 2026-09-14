@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, List, Optional, Union
 import torch
 from sgl_kernel_npu.sparsity_driven_kv_offload import (
     create_shm_tensor,
+    fused_timestamp_lru_metadata_update,
     slot_map_lookup,
     unidex_copy_inplace,
 )
@@ -174,8 +175,8 @@ class SparseKVCacheManager:
                     for _ in range(self.layer_num)
                 ]
 
-                # Logical MRU-to-LRU order of physical slots. Unused slots start
-                # at the tail and are therefore selected before valid victims.
+                # Physical-slot permutation paired with descending timestamps.
+                # Initial equal-stamp ties may use any slot order.
                 self._initial_lru_slot_order = torch.arange(
                     self.device_cache_capacity,
                     dtype=torch.int32,
@@ -185,6 +186,17 @@ class SparseKVCacheManager:
                     self._initial_lru_slot_order.expand(
                         self.size, self.device_cache_capacity
                     ).clone()
+                    for _ in range(self.layer_num)
+                ]
+                # Timestamp is aligned with device_lru_slots: larger means
+                # older. The fused AIV kernel increments with saturation and
+                # resets hit/newly-filled slots to zero.
+                self.device_lru_slot_stamps: list[torch.Tensor] = [
+                    torch.zeros(
+                        (self.size, self.device_cache_capacity),
+                        dtype=torch.int32,
+                        device=self.device,
+                    )
                     for _ in range(self.layer_num)
                 ]
         except Exception as e:
@@ -286,6 +298,9 @@ class SparseKVCacheManager:
                 self._initial_lru_slot_order.expand(
                     len(req_ids), self.device_cache_capacity
                 ).contiguous(),
+            )
+            self.device_lru_slot_stamps[layer_idx].index_fill_(
+                0, req_ids_tensor, 0
             )
         self._cache_stats.index_fill_(1, req_ids_tensor, 0)
 
@@ -804,6 +819,13 @@ class SparseKVCacheManager:
             # Normalize top-k indices and mask invalid requests and token IDs.
             topk_indices = normalize_batch_topk_indices(topk_indices)
             batch_size, topk_len = topk_indices.shape
+            if topk_len != 2048 or self.device_cache_capacity != 4096:
+                raise RuntimeError(
+                    "The fused timestamp-LRU kernel currently requires "
+                    "topk_len=2048 and device_cache_capacity=4096, got "
+                    f"topk_len={topk_len} and "
+                    f"device_cache_capacity={self.device_cache_capacity}."
+                )
             if topk_len > self.sparse_context_len:
                 raise RuntimeError(
                     "DSA top-k length exceeds sparse attention window: "
@@ -875,26 +897,6 @@ class SparseKVCacheManager:
                 0, device_cache_row_indices, request_stats
             )
 
-            # Select one stable physical victim slot for every miss and build
-            # the next logical MRU-to-LRU order. KV in hit slots never moves.
-            old_cache_tokens = self.device_slot_tokens[layer_idx].index_select(
-                0, device_cache_row_indices
-            )
-            old_lru_slots = self.device_lru_slots[layer_idx].index_select(
-                0, device_cache_row_indices
-            )
-            victim_slots, new_lru_slots = _build_lru_slot_plan(
-                token_on_device,
-                device_token_pos,
-                valid_topk_mask,
-                old_lru_slots,
-            )
-            evicted_tokens = torch.gather(
-                old_cache_tokens,
-                1,
-                victim_slots.to(torch.long),
-            )
-
             topk_slot_ids = self._device_cache_slot_ids[:topk_len]
             request_cache_offsets = device_cache_row_indices.unsqueeze(1) * (
                 self.device_cache_capacity
@@ -904,23 +906,6 @@ class SparseKVCacheManager:
                     batch_size, dtype=torch.long, device=topk_indices.device
                 ).unsqueeze(1)
                 * self.sparse_context_len
-            )
-
-            miss_refill_src_index = (
-                current_buffer_offsets + topk_slot_ids
-            ).reshape(-1).contiguous()
-            miss_refill_dst_index = (
-                request_cache_offsets + victim_slots.to(torch.long)
-            ).reshape(-1).contiguous()
-            miss_refill_valid_mask = host_miss_mask.reshape(-1).contiguous()
-
-            lru_update_req_mask = (
-                valid_req_mask & req_pool_indices.ne(0)
-            ).unsqueeze(1)
-            lru_rows_to_write = torch.where(
-                lru_update_req_mask,
-                new_lru_slots,
-                old_lru_slots,
             )
 
             copy_ready = torch.npu.Event()
@@ -957,10 +942,35 @@ class SparseKVCacheManager:
             )
             _record_stream_event(self._materialize_h2d_miss_stream, self.miss_done)
 
-        # Hits already occupy stable physical slots. Only host misses need a
-        # current-buffer-to-device write into their selected victim slots.
+        # One AIV owns one request row and fuses timestamp aging, hit reset,
+        # victim selection, slot-map point updates, reverse-map updates, and
+        # full LRU pair writeback. The returned victims stay aligned with top-k.
+        with torch.npu.stream(self._materialize_slot_map_stream):
+            _wait_stream_event(self._materialize_slot_map_stream, copy_ready)
+            victim_slots = fused_timestamp_lru_metadata_update(
+                self.device_slot_map[layer_idx],
+                slot_lookup_req_indices,
+                slot_lookup_topk_indices,
+                device_token_pos,
+                self.device_lru_slots[layer_idx],
+                self.device_lru_slot_stamps[layer_idx],
+                self.device_slot_tokens[layer_idx],
+                max_context_len=self.max_context_len,
+            )
+            _record_stream_event(self._materialize_slot_map_stream, self.slot_map_done)
+
+        # Hits already occupy stable physical slots. Refill waits until the
+        # host miss copy and fused victim plan are both available.
         with torch.npu.stream(self._materialize_refill_stream):
             _wait_stream_event(self._materialize_refill_stream, self.miss_done)
+            _wait_stream_event(self._materialize_refill_stream, self.slot_map_done)
+            miss_refill_src_index = (
+                current_buffer_offsets + topk_slot_ids
+            ).reshape(-1).contiguous()
+            miss_refill_dst_index = (
+                request_cache_offsets + victim_slots.to(torch.long)
+            ).reshape(-1).contiguous()
+            miss_refill_valid_mask = host_miss_mask.reshape(-1).contiguous()
             unidex_copy_inplace(
                 selected_kv_buffer,
                 self.device_kv_buffer[layer_idx],
@@ -972,90 +982,6 @@ class SparseKVCacheManager:
                 block_dim=24,
             )
             _record_stream_event(self._materialize_refill_stream, self.refill_done)
-
-        # Incrementally update metadata for misses. Hit token mappings and all
-        # non-victim reverse mappings remain unchanged.
-        with torch.npu.stream(self._materialize_slot_map_stream):
-            _wait_stream_event(self._materialize_slot_map_stream, copy_ready)
-
-            evicted_token_valid_mask = host_miss_mask & (evicted_tokens >= 0)
-            evicted_token_indices = torch.where(
-                evicted_token_valid_mask,
-                evicted_tokens.to(torch.long),
-                torch.full_like(
-                    evicted_tokens, self.max_context_len, dtype=torch.long
-                ),
-            )
-            evicted_slot_map_dst = (
-                slot_map_row_indices.unsqueeze(1) * self._slot_map_width
-                + evicted_token_indices
-            ).reshape(-1)
-            unidex_copy_inplace(
-                torch.full_like(victim_slots, -1, dtype=torch.int32)
-                .reshape(-1, 1)
-                .contiguous(),
-                self.device_slot_map[layer_idx].view(-1, 1),
-                torch.arange(
-                    victim_slots.numel(),
-                    dtype=torch.long,
-                    device=topk_indices.device,
-                ),
-                evicted_slot_map_dst,
-                evicted_token_valid_mask.reshape(-1),
-                1,
-                1,
-                block_dim=48,
-            )
-
-            new_token_indices = torch.where(
-                host_miss_mask,
-                topk_indices.to(torch.long),
-                torch.full_like(topk_indices, self.max_context_len, dtype=torch.long),
-            )
-            new_slot_map_dst = (
-                slot_map_row_indices.unsqueeze(1) * self._slot_map_width
-                + new_token_indices
-            ).reshape(-1)
-            unidex_copy_inplace(
-                victim_slots.to(torch.int32).reshape(-1, 1).contiguous(),
-                self.device_slot_map[layer_idx].view(-1, 1),
-                torch.arange(
-                    victim_slots.numel(),
-                    dtype=torch.long,
-                    device=topk_indices.device,
-                ),
-                new_slot_map_dst,
-                host_miss_mask.reshape(-1),
-                1,
-                1,
-                block_dim=48,
-            )
-
-            # Overwrite only victim reverse mappings with their new miss token.
-            unidex_copy_inplace(
-                topk_indices.to(torch.int32).reshape(-1, 1).contiguous(),
-                self.device_slot_tokens[layer_idx].view(-1, 1),
-                torch.arange(
-                    topk_indices.numel(),
-                    dtype=torch.long,
-                    device=topk_indices.device,
-                ),
-                miss_refill_dst_index,
-                host_miss_mask.reshape(-1),
-                1,
-                1,
-                block_dim=48,
-            )
-
-            # LRU ordering moves only int32 physical-slot metadata, never KV.
-            # Invalid and graph-padding requests write their original rows back,
-            # preserving row 0 while keeping graph-captured tensor shapes static.
-            self.device_lru_slots[layer_idx].index_copy_(
-                0,
-                device_cache_row_indices,
-                lru_rows_to_write,
-            )
-            _record_stream_event(self._materialize_slot_map_stream, self.slot_map_done)
 
 
 _global_sparse_kv_manager: Optional[SparseKVCacheManager] = None
