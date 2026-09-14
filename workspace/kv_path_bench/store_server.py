@@ -14,6 +14,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from bench_ports import MASTER_PORT, METRICS_PORT
 from kv_layout import PAGE_BYTES, PAGE_SIZE, page_keys, page_payload
 
 
@@ -33,7 +34,8 @@ def wait_port(host: str, port: int, process: subprocess.Popen) -> None:
 def main(argv=None, ready_code=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--local-ip", required=True, help="reachable IP of this node")
-    parser.add_argument("--port", type=int, default=50071)
+    parser.add_argument("--port", type=int, default=MASTER_PORT)
+    parser.add_argument("--metrics-port", type=int, default=METRICS_PORT)
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--tokens", type=int, default=1024)
     parser.add_argument("--segment-gib", type=int, default=1)
@@ -62,7 +64,7 @@ def main(argv=None, ready_code=None) -> int:
         raise RuntimeError("mooncake_master was not found in PATH")
     master_log = args.master_log.open("w") if args.master_log else None
     master = subprocess.Popen(
-        [master_bin, f"--port={args.port}"],
+        [master_bin, f"--port={args.port}", f"--metrics_port={args.metrics_port}"],
         stdout=master_log if master_log is not None else subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
         start_new_session=True,

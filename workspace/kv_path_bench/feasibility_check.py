@@ -6,6 +6,7 @@ import ctypes
 import os
 import traceback
 
+from bench_ports import MASTER_PORT
 from feasibility_log import enable_log
 from kv_layout import (
     K_DIM,
@@ -99,7 +100,7 @@ def main() -> int:
 
         stage = "store setup"
         rc = store.setup(
-            args.client_ip, "P2PHANDSHAKE", 0, GIB, "ascend", "", f"{args.store_ip}:50071"
+            args.client_ip, "P2PHANDSHAKE", 0, GIB, "ascend", "", f"{args.store_ip}:{MASTER_PORT}"
         )
         if rc != 0:
             raise RuntimeError(f"Mooncake setup returned {rc}")

@@ -10,6 +10,7 @@ import statistics
 import time
 from pathlib import Path
 
+from bench_ports import MASTER_PORT
 from kv_layout import (
     K_DIM,
     LAYERS,
@@ -91,7 +92,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--local-ip", required=True)
     parser.add_argument("--master-ip", required=True)
-    parser.add_argument("--port", type=int, default=50071)
+    parser.add_argument("--port", type=int, default=MASTER_PORT)
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--tokens", type=int, default=1024)
     parser.add_argument("--prefix", default="a3-kv-path-bench")
