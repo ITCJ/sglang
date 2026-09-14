@@ -1,6 +1,11 @@
 # Dense Three-Tier KV Experiment 0
 
-## Current integration gate (Fabric, TP16+DP1)
+> Historical experiment entry point. It describes the earlier Fabric/RDMA
+> HiCache integration attempt and is not the current research plan. See
+> [research-status](../research-status.md) and [kv-path-plan](../kv-path-plan.md)
+> for the current status and benchmark task.
+
+## Historical integration gate (Fabric, TP16+DP1)
 
 The original formal experiment below remains RDMA/TP16+DPA16 and is not yet
 validated on this deployment. First validate actual HiCache integration with
