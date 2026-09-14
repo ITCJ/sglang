@@ -9,11 +9,13 @@ python3 workspace/fabric_direct_bench/check.py source <SOURCE_IP> --performance
 python3 workspace/fabric_direct_bench/check.py client <CLIENT_IP> <SOURCE_IP> --performance
 ```
 
-一次完成一页冒烟，以及 1K、4K、16K、64K、128K × 连续/分散布局，共 10 组正式测量。路径编码 D。默认每批最多 8 页、预热 2 次、测量 10 次，与现有 A/B/C 一样将各批对应采样相加，再取中位数/P95；不是连续端到端请求耗时。计时包括 GH2L 批量调用、BM wait 和 NPU 同步；分配、地址列表构造、源准备、清零、逐页校验不计时。每页仍是独立对象地址，源按页连续分配属于本实验的分配选择，不声称模拟 Store 分配碎片。
+一次完成三路径一页冒烟，以及 1K、4K、16K、64K、128K × 连续/分散布局 × 三路径，共 30 项正式测量。命名见 [新旧对应表](../kv_path_bench/PATH_NAMES.md)：E=`L2-L1_MemFabric`，F=`L3-L2-L1_MemFabric`，D=`L3-L1_MemFabric`。默认每批最多 8 页、预热 2 次、测量 10 次，逐批轮换三路径顺序；与 A/B/C 一样将各批对应采样相加，再取中位数/P95，不是连续端到端请求耗时。
 
-两端各贡献 10 GiB BM Host 池，客户端的 Host 池不接收 KV；源一次准备完整 128K 数据。客户端最大 L1 约 8.59 GiB；初始化/库内部额外资源不含在这些容量中。不要与自己的 A/B/C 实验同时运行。
+E 的本地 L2 在计时前填好，计时只有本地 GH2L；F 计时包括远端到本地 L2 的 G2G、等待、本地 GH2L、等待；D 直接 GH2L。各路径都包含末尾 NPU 同步。分配、地址列表构造、源准备、清零、逐页校验不计时。F 每轮计时前清空 L2，防止误用前一路径的旧数据；每条路径结束分别校验 L1。新接口是 1.1.5 提供的候选用法，尚需远端验证，失败即停止扩大。源按页连续分配属于本实验的分配选择，不声称模拟 Mooncake 分配碎片。
 
-两端各自在 `workspace/fabric_direct_bench/results/YYMMDD_HHMMSS/` 保存 `cli.log`、`native.log`、`status.json`；客户端另有 `summary.json`、`summary.csv`、各组 JSON。时间戳为本机时间，组间实时保存；最终成功仍是客户端 `FP`、源端 `FD`。终端 D 值和 CSV 耗时单位 ms，JSON `_s` 字段为秒，带宽为 GB/s。结果不提交 Git。
+两端各贡献 10 GiB BM Host 池，客户端从自己的池中使用 9 页容量作为最终 L2（含保留页，独立的 page-first KV/RoPE，约 77.2 MiB），不是额外 staging；另有同容量 CPU 零缓冲用于计时外清零。源一次准备完整 128K 数据。客户端最大 L1 约 8.59 GiB；初始化/库内部额外资源不含在这些容量中。不要与自己的 A/B/C 实验同时运行。
+
+两端各自在 `workspace/fabric_direct_bench/results/YYMMDD_HHMMSS/` 保存 `cli.log`、`native.log`、`status.json`；客户端另有 `summary.json`、`summary.csv`、各组各路径 JSON，`path` 使用完整语义名称，`code` 保留短码。时间戳为本机时间，组间实时保存；最终成功仍是客户端 `FP`、源端 `FD`。终端 E/F/D 值和 CSV 耗时单位 ms，JSON `_s` 字段为秒，带宽为 GB/s。结果不提交 Git。
 
 Ctrl+C 终止自己的工作进程组；性能模式总超时默认 3600 秒（是防挂死上限，不是预计耗时），可用 `--timeout` 调整。失败回报短码；诊断命令仍为 `python3 workspace/fabric_direct_bench/check.py client --diagnose`。未完成的组不会冒充成功，已完成的组保留。绕过 Store 的 D 不含 Store 管理开销，需与 A/B/C 分开标识。
 

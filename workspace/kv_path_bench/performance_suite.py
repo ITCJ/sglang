@@ -12,6 +12,7 @@ import signal
 import subprocess
 import sys
 from pathlib import Path
+from path_names import PATH_NAMES
 
 
 CAPACITIES = (1024, 4096, 16384, 65536, 131072)
@@ -63,12 +64,12 @@ def save_summary(result, run_dir):
     (run_dir / "summary.json").write_text(encoded)
     table = io.StringIO()
     writer = csv.writer(table)
-    writer.writerow(("tokens", "layout", "path", "median_ms", "p95_ms", "effective_gbps"))
+    writer.writerow(("tokens", "layout", "path", "code", "median_ms", "p95_ms", "effective_gbps"))
     for case in result["cases"]:
         if case["smoke"]:
             continue
         for path in case["result"]["paths"]:
-            writer.writerow((case["tokens"], case["layout"], path["code"],
+            writer.writerow((case["tokens"], case["layout"], PATH_NAMES[path["code"]], path["code"],
                              path["median_s"] * 1000, path["p95_s"] * 1000,
                              path["effective_gbps"]))
     (run_dir / "summary.csv").write_text(table.getvalue())

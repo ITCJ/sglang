@@ -26,7 +26,7 @@ STORE_PORT = 19571
 CONTROL_PORT = 19573
 NIC_PORT = 19575
 POOL_BYTES = 1 << 30
-PROTOCOL = "a3-bm-host-to-l1-v1"
+PROTOCOL = "a3-bm-host-to-l1-v2"
 
 
 def transfer_plan(source_gva, k_base, rope_base, count=1, slot=1):
@@ -102,6 +102,8 @@ def worker(args):
             if not hasattr(enum, symbol):
                 raise RuntimeError(f"installed BM enum lacks {symbol}")
         config = bm.BmConfig()
+        if args.performance and not hasattr(bm.BmCopyType, "G2G"):
+            raise RuntimeError("installed BM enum lacks G2G")
         if not hasattr(config, "set_nic"):
             raise RuntimeError("installed BmConfig lacks set_nic")
         result["versions"] = {"torch": torch.__version__, "torch_npu": torch_npu.__version__}
@@ -145,7 +147,7 @@ def worker(args):
         check_rc(bm.initialize(f"tcp://{source_ip}:{STORE_PORT}", 2, args.device, config), "bm.initialize")
         bm_ready = True
         # Follow the public BM DRAM example: both ranks contribute Host memory.
-        # Client's contribution is unused; it is never a KV receive staging area.
+        # Performance mode uses the client's contribution as final L2, not staging.
         handle = bm.create2(id=0, local_dram_size=pool_bytes, max_dram_size=pool_bytes,
                             local_hbm_size=0, max_hbm_size=0,
                             data_op_type=bm.BmDataOpType.SDMA)

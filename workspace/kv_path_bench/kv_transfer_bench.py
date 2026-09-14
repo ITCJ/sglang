@@ -22,11 +22,9 @@ GIB = 1 << 30
 BATCH_PAGES = 8
 WARMUP = 2
 REPEATS = 10
-PATHS = {
-    "A": "L2->L1",
-    "B": "L3->Host staging->L2->L1",
-    "C": "L3->L2->L1",
-}
+from path_names import PATH_NAMES
+
+PATHS = {code: PATH_NAMES[code] for code in "ABC"}
 
 
 def make_batches(count: int, batch_pages: int = BATCH_PAGES, layout: str = "scattered") -> list[dict]:
