@@ -43,19 +43,15 @@ python3 -m unittest discover -s workspace/kv_path_bench -p 'test_*.py'
 
 ## 可行性验证（不计时）
 
-claim 设备、停止模型后，先验证一页连续地址，再验证 128K 的分散 page 映射；两个规模都只检查 `L3->L2->L1` 和 `L3->NPU staging->L1` 各一次，前者已包含 L2 到 L1 的 kernel。先在 Store 端运行对应模式（保持运行），出现 `DATA_READY` 后在客户端运行同一模式：
+claim 设备、停止模型后，先在 Store 端运行（出现 `S0` 后保持运行），再在客户端运行：
 
 ```bash
 python3 workspace/kv_path_bench/feasibility_store.py <STORE_IP> small
 python3 workspace/kv_path_bench/feasibility_check.py <CLIENT_IP> <STORE_IP> small
 ```
 
-`small` 出现 `L3_L2_L1_OK`、`L3_NPU_L1_OK`、`FEASIBILITY_OK` 后，用 Ctrl+C 结束 Store 端。需要测试最大规模时，两端将上述命令末尾的 `small` 改为 `max`，再次按相同顺序启动和结束；中间规模不重复验证。`max` 会在 Store 端申请 10 GiB segment，设置 `fabric_memory.max_capacity=16`；客户端保留约 8.6 GiB 的完整 128K L1 空间，但仅以 8 页为一批接收和逐页校验。如果服务端环境已设置较小的 `ASCEND_GLOBAL_RESOURCE_CONFIG`，脚本会明确报错，不会悄悄覆盖现有配置。
+客户端返回 `P0` 后在 Store 端按 Ctrl+C。最大规模时，两端把命令末尾的 `small` 改成 `max`，Store 端等 `S1`、客户端等 `P1`，然后再次 Ctrl+C。小规模是一页连续地址，最大规模是完整 128K 分散地址；每组只验证两条远端路径各一次，不采性能样本。最大规模在 Store 端申请 10 GiB segment、设置 `fabric_memory.max_capacity=16`，客户端保留约 8.6 GiB L1、每批接收 8 页。
 
-失败后停止客户端并 Ctrl+C 结束 Store，先不要扩大规模；在出错的一端运行一条短日志命令，并回报最后 30 行及退出码：
+失败只需回报终端上最后出现的短码：`F1` Store 启动或准备数据失败；`F2` 客户端 L1 分配或 Store 初始化失败；`F3` Host 暂存分配/注册失败；`F4` NPU 注册失败；`F5` Host 中转读取/校验失败；`F6` NPU 暂存读取/校验失败；`F9` 其他错误。详细输出自动写入 `/tmp/a3-kv-feasibility-{store,client}-{small,max}.log`；不用手工查日志、抄日志或输入 `tail` 命令。失败后 Ctrl+C 结束 Store，不继续扩大规模。
 
-```bash
-tail -n 30 /tmp/a3-kv-feasibility-client-small.log
-```
-
-将 `client` 换成 `store`、`small` 换成 `max` 即对应其他日志；Store master 的日志为 `/tmp/a3-kv-feasibility-master-small.log`（最大规模改成 `-max.log`）。最后还需核查 A3 的 UB 传输日志或计数器；`FEASIBILITY_OK` 只证明数据路径正确，不能单独证明物理链路。这里的分散模式是确定性的非连续 page 索引映射；正式性能测试需要另行加入分配器产生的碎片地址，并记录性能采样。当前性能脚本仍是整批读取、连续写入，尚不能根据这个可行性结果推断它已能运行最大规模；下一次修改时要保持与本验证相同的批量和地址映射。
+成功短码只证明数据路径正确，UB 实际传输仍需另查日志或计数器。这里的分散模式是确定性的非连续 page 索引映射；正式性能脚本下一次再加分批、碎片地址和性能采样。

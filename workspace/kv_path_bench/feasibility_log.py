@@ -1,4 +1,4 @@
-"""Mirror feasibility status and tracebacks to a predictable /tmp log."""
+"""Keep detailed output in /tmp and show only short result codes."""
 
 import sys
 from pathlib import Path
@@ -8,10 +8,15 @@ class LogStream:
     def __init__(self, terminal, logfile):
         self.terminal = terminal
         self.logfile = logfile
+        self.pending = ""
 
     def write(self, message):
-        self.terminal.write(message)
         self.logfile.write(message)
+        self.pending += message
+        while "\n" in self.pending:
+            line, self.pending = self.pending.split("\n", 1)
+            if line in {"S0", "S1", "P0", "P1", "F1", "F2", "F3", "F4", "F5", "F6", "F9"}:
+                self.terminal.write(line + "\n")
         self.flush()
         return len(message)
 

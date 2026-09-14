@@ -30,7 +30,7 @@ def wait_port(host: str, port: int, process: subprocess.Popen) -> None:
     raise RuntimeError(f"timed out waiting for master at {host}:{port}")
 
 
-def main(argv=None) -> int:
+def main(argv=None, ready_code=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--local-ip", required=True, help="reachable IP of this node")
     parser.add_argument("--port", type=int, default=50071)
@@ -92,6 +92,8 @@ def main(argv=None) -> int:
             if rc != 0:
                 raise RuntimeError(f"put failed for {key}: {rc}")
         print(f"DATA_READY pages={page_count} bytes={page_count * PAGE_BYTES}", flush=True)
+        if ready_code is not None:
+            print(ready_code, flush=True)
         print("Leave this process running while the client benchmark executes.", flush=True)
         try:
             signal.pause()

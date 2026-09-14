@@ -4,6 +4,7 @@
 import argparse
 import ctypes
 import os
+import traceback
 
 from feasibility_log import enable_log
 from kv_layout import (
@@ -19,6 +20,20 @@ from kv_layout import (
 
 GIB = 1 << 30
 BATCH_PAGES = 8
+
+
+def failure_code(stage: str) -> str:
+    if stage in ("L1/Host allocation", "store setup"):
+        return "F2"
+    if stage in ("staging allocation", "Host staging registration"):
+        return "F3"
+    if stage == "NPU staging registration":
+        return "F4"
+    if stage.startswith("L3_L2_L1"):
+        return "F5"
+    if stage.startswith("L3_NPU_L1"):
+        return "F6"
+    return "F9"
 
 
 def destination(page: int, count: int, scattered: bool) -> int:
@@ -167,13 +182,21 @@ def main() -> int:
                     print(f"CHECK_PROGRESS path={path} verified={start + n}/{count}", flush=True)
             print(f"{path}_OK pages={count}", flush=True)
         print("FEASIBILITY_OK", flush=True)
+        print("P0" if args.size == "small" else "P1", flush=True)
     except Exception as exc:
         print(f"FEASIBILITY_FAIL stage={stage} error={exc!r}", flush=True)
-        raise
+        traceback.print_exc()
+        print(failure_code(stage), flush=True)
+        return 1
     finally:
         store.close()
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except Exception:
+        traceback.print_exc()
+        print("F9", flush=True)
+        raise SystemExit(1)
