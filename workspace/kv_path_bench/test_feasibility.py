@@ -34,7 +34,7 @@ import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import patch
-from feasibility_log import enable_log
+from feasibility_log import enable_log, print_result
 with patch('feasibility_log.Path', return_value=Path(sys.argv[1])):
     enable_log('client', 'small')
 print('Python detail')
@@ -47,6 +47,7 @@ subprocess.run([sys.executable, '-c', "print('child detail')"], check=True)
 print('S0', flush=True)
 print('P0', flush=True)
 print('D0', flush=True)
+print_result('T128 A=1.000 B=2.000 C=1.500')
 """
         with tempfile.TemporaryDirectory() as directory:
             logfile = Path(directory) / "check.log"
@@ -55,7 +56,7 @@ print('D0', flush=True)
                 cwd=Path(__file__).resolve().parent,
                 capture_output=True, text=True, check=True,
             )
-            self.assertEqual(result.stdout, "S0\nP0\nD0\n")
+            self.assertEqual(result.stdout, "S0\nP0\nD0\nT128 A=1.000 B=2.000 C=1.500\n")
             self.assertEqual(result.stderr, "")
             details = logfile.read_text()
             for message in ("Python detail", "native stdout", "native stderr",

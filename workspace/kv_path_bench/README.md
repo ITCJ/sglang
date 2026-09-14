@@ -6,11 +6,13 @@
 
 | 输出中的路径 | 计时范围 |
 | --- | --- |
-| `L2->L1` | 本机 Host L2 经 Ascend 搬运 kernel 写入 L1 |
-| `L3->L2->L1` | Mooncake Store 读入本机 Host，拆分两个分量，再经同一 kernel 写入 L1 |
-| `L3->NPU staging->L1` | Store 读入 NPU 暂存，重排到同一 L1；包括暂存和重排时间 |
+| A：`L2->L1` | 数据已在最终 ADXL Host L2，经 Ascend 搬运 kernel 写入 L1 |
+| B：`L3->Host staging->L2->L1` | 整页读入额外 ADXL Host 暂存，拷贝 KV/RoPE 到最终 L2，再搬到 L1 |
+| C：`L3->L2->L1` | 多目标读取直接写入最终 L2 的 KV/RoPE，再搬到 L1 |
 
-数据按 DeepSeek V3.1 的 61 层、每页 128 token、BF16、每 token 512 维压缩 KV + 64 维 RoPE 构造。一页一个 Store 对象（约 8.99 MB），对象内按 `[layer, token, 512+64]` 排列；Host L2 和 NPU L1 则各自将 512/64 分别存入两个缓冲区。这里的 `v_buffer` 是 RoPE，不是传统注意力里单独的 V。
+性能脚本固定只测 A/B/C，L3 直接到 NPU 的路径已禁用，不申请或注册 NPU 接收暂存区。原 `--skip-direct` 参数仅为兼容旧命令保留，不改变行为。
+
+数据按 DeepSeek V3.1 的 61 层、每页 128 token、BF16、每 token 512 维压缩 KV + 64 维 RoPE 构造。一页一个 Store 对象（8994816 bytes），三种方式统一使用“整页 KV 后接整页 RoPE”的排列和 `-split` key 前缀。Host L2 和 NPU L1 各自将 512/64 分别存入两个缓冲区；这里的 `v_buffer` 是 RoPE，不是传统注意力里单独的 V。
 
 远端不能复制命令：先在两端仓库各手输一次 `git pull --ff-only`。claim 设备之前，分别手输一条不初始化 NPU 的命令；脚本会打印 commit，需确认两端与交接的 commit 相同：
 
@@ -21,21 +23,32 @@ python3 workspace/kv_path_bench/preclaim_check.py client
 
 两行分别在 Store 端、客户端运行，不是在一台机器上连续运行。看到 `PRECLAIM_OK` 才继续。此检查不连接两端、不验证 Fabric，也不替代 claim 后的小规模传输测试。仓库不保存真实 IP、容器名和凭据。
 
-在远端 A3 上启动 Store（保持进程运行）：
+## 三种路径性能测试
+
+两端使用同一环境和提交，设备已可用、模型已停止。先测 small。Store 端运行（旧的非 direct-l2 Store 需先 Ctrl+C 停止）：
 
 ```bash
-python3 workspace/kv_path_bench/store_server.py --local-ip <STORE_IP> --tokens 128
+python3 workspace/kv_path_bench/feasibility_store.py <STORE_IP> small --direct-l2
 ```
 
-看到 `DATA_READY` 后，在本机 A3 上运行：
+看到 S0 后，在客户端运行：
 
 ```bash
-python3 workspace/kv_path_bench/kv_transfer_bench.py --local-ip <CLIENT_IP> --master-ip <STORE_IP> --tokens 128
+python3 workspace/kv_path_bench/kv_transfer_bench.py <CLIENT_IP> <STORE_IP> small
 ```
 
-两端需有 `torch`、`torch_npu`、`mooncake.store`，本机还需 `sgl_kernel_npu`；使用相同的 `--tokens`、`--prefix` 和端口。两端都配置了 `ascend` Store 传输和 Fabric 环境变量。结果写入本机 `kv-transfer-results.json`，包含每次样本、耗时中位数、P95、按原始 KV 字节数计算的有效 GB/s 和额外暂存内存。预热 2 次、记录 10 次；每次计时包含最终 NPU 同步，数据校验在计时后进行。内存分配、注册和远端数据准备不计时。
+成功只打印一行，例如 `T128 A=1.000 B=2.000 C=1.500`：T 后是 token 数，A/B/C 是三条路径的累加批次耗时中位数，单位毫秒；这仅为格式示例，不是实测数据。回报这一行即可。详细结果写入 `/tmp/a3-kv-perf-128.json`，底层日志写入 `/tmp/a3-kv-perf-128.log`。失败输出 F2（L1/Store 初始化）、F3（Host 分配）、F5（路径执行/校验）、F9（其他），日志中记录路径和批次。
 
-两端先确认设备已 claim、模型已停止。上述命令先测一页；成功校验后两端再同步使用 `--tokens 1024`（约 69 MiB）。扩大数据量时，16K 远端还需 `--segment-gib 2`。暂存内存会随规模增长，先确认可用内存。`--skip-direct` 可跳过第三条路径；如果 NPU 缓冲区不能注册到当前 Store，结果中将该路径标为 `unavailable`，不把 Host 中转冒充直达。配置 `ascend` 并不单独证明实际使用了 Fabric，仍需结合 A3 环境的传输日志或计数器确认。
+small 成功后结束 Store，两端把 `small` 改成 `max`，等 Store S1 后再运行客户端；结果为 `T131072 ...`，文件名中的 128 改为 131072。若对应规模的 direct-l2 Store 已在运行，无需重启。每轮结束后 Store Ctrl+C；失败不扩大规模。
+
+比较口径：
+
+- 三种方式使用同一块最终 ADXL L2、相同对象、最多 8 页的批次和同一组非连续 L1 目标地址。B 也改为相同对象顺序及 ADXL L2，以隔离额外暂存拷贝的影响；它不再沿用旧可行性脚本的交错对象和 pinned L2。
+- 每个批次、每条路径预热 2 次，记录 10 次（可用 `--warmup` / `--repeats` 修改），批次间轮换 A/B/C 顺序。A 的本地数据准备、各路径清零和地址列表构造在计时外；接收、B 的额外 CPU 拷贝、L2→L1 调用和批次末尾 NPU 同步在计时内。每条路径每批最后一次执行后都逐页校验 L1。
+- 第 r 个总样本是所有批次第 r 次计时之和。JSON 保存批次原始样本、累加样本、中位数、P95、逻辑 KV bytes / 中位数得到的有效 GB/s、L1/L2/额外暂存大小。这是逐批预热的串行搬运比较，不是连续请求延迟、模型吞吐或物理链路带宽；没有流水重叠。
+- max 保留完整 128K L1（约 8.6 GiB），L2 最多 9 页（含保留页），额外 Host 暂存最多 8 页，两者从同一个 1 GiB Store 内部缓冲池借用。所有路径测试期间两块 Host 内存都保留，分配和释放不计时。
+
+两端需有 `torch`、`torch_npu`、`mooncake.store.BufferPool`，客户端还需 `sgl_kernel_npu`。旧 `--local-ip`、`--master-ip`、`--tokens` 入口仍可用；自选容量时 Store 也需准备相同容量的 split 对象。结果不单独证明实际使用了 UB 物理链路。
 
 本地无需 NPU 的数据布局检查：
 
@@ -45,7 +58,7 @@ python3 -m unittest discover -s workspace/kv_path_bench -p 'test_*.py'
 
 ## 可行性验证（不计时）
 
-### 直接写入最终 L2（新模式，等待 A3 验证）
+### 直接写入最终 L2
 
 先停止旧 Store，两端拉取同一提交；先只测 small。Store 端运行：
 
@@ -69,7 +82,7 @@ python3 workspace/kv_path_bench/feasibility_check.py <CLIENT_IP> <STORE_IP> smal
 
 Python、底层库和子进程的标准输出/错误均写入日志；终端只显示短结果码。
 
-可行性脚本用 `mooncake.store.BufferPool` 从 `setup()` 已注册的 1 GiB ADXL Host 缓冲区借用接收暂存区（最多 8 页），不再额外分配并注册 Host 内存。测试结束先归还缓冲区再关闭 Store；不改变批量读取、拆分或 L1 搬运过程。该接口已核对官方 `v0.3.12.post1` 源码，A3 运行仍待验证；旧性能脚本的分配方式尚未同步。
+可行性脚本用 `mooncake.store.BufferPool` 从 `setup()` 已注册的 1 GiB ADXL Host 缓冲区借用接收暂存区（最多 8 页），不再额外分配并注册 Host 内存。测试结束先归还缓冲区再关闭 Store；该接口已核对官方 `v0.3.12.post1` 源码。
 
 claim 设备、停止模型后，先在 Store 端运行（出现 `S0` 后保持运行），再在客户端运行：
 
@@ -82,4 +95,4 @@ python3 workspace/kv_path_bench/feasibility_check.py <CLIENT_IP> <STORE_IP> smal
 
 失败只需回报终端上最后出现的短码：`F1` Store 启动或准备数据失败；`F2` 客户端 L1 分配或 Store 初始化失败；`F3` Host 暂存分配/注册失败；`F4` NPU 注册失败；`F5` Host 中转读取/校验失败；`F6` NPU 暂存读取/校验失败；`F9` 其他错误。详细输出自动写入 `/tmp/a3-kv-feasibility-{store,client}-{small,max}.log`；不用手工查日志、抄日志或输入 `tail` 命令。失败后 Ctrl+C 结束 Store，不继续扩大规模。
 
-成功短码只证明数据路径正确，UB 实际传输仍需另查日志或计数器。这里的分散模式是确定性的非连续 page 索引映射；正式性能脚本下一次再加分批、碎片地址和性能采样。
+成功短码只证明数据路径正确，UB 实际传输仍需另查日志或计数器。这里和性能脚本的分散模式均为确定性的非连续 page 索引映射，不代表分配器长期运行后的真实碎片状态。

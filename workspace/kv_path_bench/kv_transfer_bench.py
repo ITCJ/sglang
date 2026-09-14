@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare three ways to materialize remote MLA pages into Ascend L1 KV."""
+"""Measure L2->L1 and L3->L2->L1 with and without extra Host staging."""
 
 import argparse
 import ctypes
@@ -7,236 +7,268 @@ import json
 import math
 import os
 import statistics
+import subprocess
 import time
+import traceback
 from pathlib import Path
 
 from bench_ports import MASTER_PORT
-from kv_layout import (
-    K_DIM,
-    LAYERS,
-    PAGE_BYTES,
-    PAGE_SIZE,
-    ROPE_DIM,
-    page_keys,
-    page_payload,
-)
+from feasibility_check import check_page
+from feasibility_log import enable_log, print_result
+from kv_layout import K_DIM, LAYERS, PAGE_BYTES, PAGE_SIZE, ROPE_DIM, page_keys, split_page_payload
 
 
+GIB = 1 << 30
+BATCH_PAGES = 8
 WARMUP = 2
 REPEATS = 10
-GIB = 1 << 30
+PATHS = {
+    "A": "L2->L1",
+    "B": "L3->Host staging->L2->L1",
+    "C": "L3->L2->L1",
+}
 
 
-def split_page(packed, host_k, host_rope, page: int) -> None:
-    host_k[page + 1].copy_(packed[..., :K_DIM])
-    host_rope[page + 1].copy_(packed[..., K_DIM:])
+def make_batches(count: int, batch_pages: int = BATCH_PAGES) -> list[dict]:
+    """Same bounded batches and non-overlapping L1 destinations for every path."""
+    stride = 137
+    while math.gcd(stride, count) != 1:
+        stride += 1
+    return [
+        {
+            "pages": list(range(start, min(start + batch_pages, count))),
+            "slots": [1 + (page * stride) % count for page in range(start, min(start + batch_pages, count))],
+        }
+        for start in range(0, count, batch_pages)
+    ]
 
 
-def check_result(device_k, device_rope, count: int, torch) -> None:
-    k = device_k[:, 1:].cpu()
-    rope = device_rope[:, 1:].cpu()
-    for page in range(count):
-        expected = torch.frombuffer(bytearray(page_payload(page)), dtype=torch.bfloat16)
-        expected = expected.view(LAYERS, PAGE_SIZE, 1, K_DIM + ROPE_DIM)
-        # Compare bytes: arbitrary BF16 payloads need not compare equal as floats.
-        for actual, reference in (
-            (k[:, page], expected[..., :K_DIM]),
-            (rope[:, page], expected[..., K_DIM:]),
-        ):
-            if not torch.equal(
-                actual.contiguous().view(torch.uint8),
-                reference.contiguous().view(torch.uint8),
-            ):
-                raise RuntimeError(f"NPU KV mismatch at page {page}")
+def measure_batch(action, prepare, synchronize, warmup, repeats, clock=time.perf_counter):
+    """Exclude input/reset preparation; include completion of each reusable batch."""
+    samples = []
+    for iteration in range(warmup + repeats):
+        prepare()
+        synchronize()
+        start = clock()
+        action()
+        synchronize()
+        elapsed = clock() - start
+        if iteration >= warmup:
+            samples.append(elapsed)
+    return samples
 
 
-def read_pages(store, keys, page_ptrs) -> None:
-    result = store.batch_get_into(keys, page_ptrs, [PAGE_BYTES] * len(keys))
-    if len(result) != len(keys) or any(size != PAGE_BYTES for size in result):
-        raise RuntimeError(f"Mooncake short/failed read: {result}")
-
-
-def summarize(
-    path: str, samples: list[float], nbytes: int, host_extra=0, npu_extra=0
-) -> dict:
-    ordered = sorted(samples)
-    median = statistics.median(ordered)
-    p95 = ordered[math.ceil(0.95 * len(ordered)) - 1]
+def summarize(code: str, batch_samples: list[list[float]], nbytes: int, staging_bytes: int) -> dict:
+    # Sample r is the sum of timed batch r measurements, not a continuous sweep.
+    samples = [sum(values) for values in zip(*batch_samples)]
+    median = statistics.median(samples)
     return {
-        "path": path,
+        "code": code,
+        "path": PATHS[code],
         "median_s": median,
-        "p95_s": p95,
+        "p95_s": sorted(samples)[math.ceil(0.95 * len(samples)) - 1],
         "effective_gbps": nbytes / median / 1e9,
-        "host_staging_bytes": host_extra,
-        "npu_staging_bytes": npu_extra,
+        "host_staging_bytes": staging_bytes,
         "samples_s": samples,
+        "batch_samples_s": batch_samples,
         "correct": True,
     }
 
 
-def measure(action, device_k, device_rope, torch) -> list[float]:
-    samples = []
-    for iteration in range(WARMUP + REPEATS):
-        device_k.zero_()
-        device_rope.zero_()
-        torch.npu.synchronize()
-        start = time.perf_counter()
-        action()
-        torch.npu.synchronize()
-        if iteration >= WARMUP:
-            samples.append(time.perf_counter() - start)
-    return samples
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--local-ip", required=True)
-    parser.add_argument("--master-ip", required=True)
+    parser.add_argument("client_ip", nargs="?")
+    parser.add_argument("store_ip", nargs="?")
+    parser.add_argument("size", nargs="?", choices=("small", "max"))
+    parser.add_argument("--local-ip", dest="local_ip")
+    parser.add_argument("--master-ip", dest="master_ip")
+    parser.add_argument("--tokens", type=int)
     parser.add_argument("--port", type=int, default=MASTER_PORT)
     parser.add_argument("--device", type=int, default=0)
-    parser.add_argument("--tokens", type=int, default=1024)
     parser.add_argument("--prefix", default="a3-kv-path-bench")
-    parser.add_argument("--output", type=Path, default=Path("kv-transfer-results.json"))
-    parser.add_argument("--skip-direct", action="store_true", help="only measure L2 and L3 via L2")
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--warmup", type=int, default=WARMUP)
+    parser.add_argument("--repeats", type=int, default=REPEATS)
+    parser.add_argument("--skip-direct", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
-    if args.tokens < PAGE_SIZE or args.tokens % PAGE_SIZE:
-        parser.error("--tokens must be a positive multiple of 128")
-    if args.device < 0:
-        parser.error("--device must be nonnegative")
+    local_ip, master_ip = args.local_ip or args.client_ip, args.master_ip or args.store_ip
+    if not local_ip or not master_ip:
+        parser.error("provide client and Store IPs")
+    tokens = args.tokens if args.tokens is not None else {"small": 128, "max": 131072, None: 1024}[args.size]
+    if args.size and args.tokens is not None and tokens != {"small": 128, "max": 131072}[args.size]:
+        parser.error("size and --tokens disagree")
+    if not PAGE_SIZE <= tokens <= 131072 or tokens % PAGE_SIZE:
+        parser.error("--tokens must be a multiple of 128 between 128 and 131072")
+    if args.device < 0 or args.warmup < 0 or args.repeats < 1:
+        parser.error("device/warmup must be nonnegative; repeats must be positive")
 
+    output = args.output or Path(f"/tmp/a3-kv-perf-{tokens}.json")
+    enable_log("perf", str(tokens), path=Path(f"/tmp/a3-kv-perf-{tokens}.log"))
     os.environ.setdefault("ASCEND_ENABLE_USE_FABRIC_MEM", "1")
     os.environ.setdefault("HCCL_INTRA_ROCE_ENABLE", "0")
     os.environ.setdefault("ASCEND_GLOBAL_RESOURCE_CONFIG", '{"fabric_memory.max_capacity":4}')
 
-    import torch
-    import torch_npu  # noqa: F401
-    from mooncake.store import MooncakeDistributedStore, MooncakeHostMemAllocator
-    from sgl_kernel_npu.kvcacheio import TransferDirection, transfer_kv_dim_exchange
-
-    torch.npu.set_device(args.device)
-    count = args.tokens // PAGE_SIZE
-    page_num = count + 1  # reserve page 0 as in NPUMLATokenToKVPool
-    host_shape = (page_num, LAYERS, PAGE_SIZE, 1)
-    device_shape = (LAYERS, page_num, PAGE_SIZE, 1)
-    host_k = torch.empty((*host_shape, K_DIM), dtype=torch.bfloat16, pin_memory=True)
-    host_rope = torch.empty((*host_shape, ROPE_DIM), dtype=torch.bfloat16, pin_memory=True)
-    device_k = torch.zeros((*device_shape, K_DIM), dtype=torch.bfloat16, device="npu")
-    device_rope = torch.zeros((*device_shape, ROPE_DIM), dtype=torch.bfloat16, device="npu")
-    indices = torch.arange(PAGE_SIZE, page_num * PAGE_SIZE, dtype=torch.int64)
-    keys = page_keys(args.prefix, count)
-    total_bytes = count * PAGE_BYTES
-
-    def load_l1():
-        transfer_kv_dim_exchange(
-            device_indices=indices,
-            host_indices=indices,
-            device_k=device_k,
-            host_k=host_k,
-            device_v=device_rope,
-            host_v=host_rope,
-            device_index_k=None,
-            host_index_k=None,
-            page_size=PAGE_SIZE,
-            direction=TransferDirection.H2D,
-        )
-
+    count = tokens // PAGE_SIZE
+    batch = min(count, BATCH_PAGES)
+    k_page_elements = LAYERS * PAGE_SIZE * K_DIM
+    k_page_bytes = k_page_elements * 2
+    rope_page_bytes = PAGE_BYTES - k_page_bytes
+    host_shape = (batch + 1, LAYERS, PAGE_SIZE, 1)
+    l2_bytes = (batch + 1) * PAGE_BYTES
+    staging_bytes = batch * PAGE_BYTES
+    keys = page_keys(args.prefix + "-split", count)
+    batches = make_batches(count)
     result = {
-        "tokens": args.tokens,
-        "pages": count,
-        "page_bytes": PAGE_BYTES,
-        "bytes": total_bytes,
-        "warmup": WARMUP,
-        "repeats": REPEATS,
-        "object_layout": "[layer,token,compressed_kv_512,rope_64]",
-        "paths": [],
+        "status": "running", "tokens": tokens, "pages": count, "page_bytes": PAGE_BYTES,
+        "bytes": count * PAGE_BYTES, "batch_pages": batch,
+        "warmup": args.warmup, "repeats": args.repeats,
+        "object_layout": "one key per page: all compressed KV, then all RoPE",
+        "l2_layout": "page,layer,token,1,dim; separate KV/RoPE in ADXL Host buffer",
+        "l1_layout": "layer,page,token,1,dim; separate KV/RoPE",
+        "l1_slots": [slot for item in batches for slot in item["slots"]],
+        "timing": "sum of synchronized per-batch wall times; each batch warmed independently",
+        "path_order": "rotate A/B/C per batch",
+        "l2_bytes": l2_bytes, "allocated_host_staging_bytes": staging_bytes,
+        "store_local_buffer_bytes": GIB,
+        "l1_bytes": (count + 1) * PAGE_BYTES,
+        "disabled_paths": ["L3->NPU staging->L1"], "paths": [],
+        "commit": subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=Path(__file__).parent,
+            capture_output=True, text=True,
+        ).stdout.strip(),
     }
-    store = MooncakeDistributedStore()
+    store = pool = None
+    leases = []
+    stage = "imports"
+    failure = "F9"
     try:
-        rc = store.setup(args.local_ip, "P2PHANDSHAKE", 0, GIB, "ascend", "", f"{args.master_ip}:{args.port}")
+        import torch
+        import torch_npu  # noqa: F401
+        from mooncake.store import BufferPool, MooncakeDistributedStore
+        from sgl_kernel_npu.kvcacheio import TransferDirection, transfer_kv_dim_exchange
+
+        failure, stage = "F2", "L1 allocation and Store setup"
+        torch.npu.set_device(args.device)
+        device_k = torch.empty((LAYERS, count + 1, PAGE_SIZE, 1, K_DIM), dtype=torch.bfloat16, device="npu")
+        device_rope = torch.empty((LAYERS, count + 1, PAGE_SIZE, 1, ROPE_DIM), dtype=torch.bfloat16, device="npu")
+        store = MooncakeDistributedStore()
+        rc = store.setup(local_ip, "P2PHANDSHAKE", 0, GIB, "ascend", "", f"{master_ip}:{args.port}")
         if rc != 0:
-            raise RuntimeError(f"Mooncake setup returned {rc}")
+            raise RuntimeError(f"Store setup returned {rc}")
 
-        for page in range(count):
-            packed = torch.frombuffer(bytearray(page_payload(page)), dtype=torch.bfloat16)
-            split_page(packed.view(LAYERS, PAGE_SIZE, 1, K_DIM + ROPE_DIM), host_k, host_rope, page)
-        samples = measure(load_l1, device_k, device_rope, torch)
-        check_result(device_k, device_rope, count, torch)
-        result["paths"].append(summarize("L2->L1", samples, total_bytes))
+        failure, stage = "F3", "ADXL L2 and staging allocation"
+        pool = BufferPool(store, block_on_exhaustion=False)
 
-        # The only Mooncake-registered Host buffer is a whole-page receive area.
-        # L2 stays in the split, pinned layout used by Ascend HiCache.
-        allocator = MooncakeHostMemAllocator()
-        ptr = allocator.alloc(total_bytes)
-        if not ptr:
-            raise RuntimeError(f"MooncakeHostMemAllocator.alloc({total_bytes}) failed")
-        backing = (ctypes.c_byte * total_bytes).from_address(int(ptr))
-        staging = torch.frombuffer(backing, dtype=torch.bfloat16)
-        staging = staging.view(count, LAYERS, PAGE_SIZE, 1, K_DIM + ROPE_DIM)
-        rc = store.register_buffer(int(ptr), total_bytes)
-        if rc != 0:
-            raise RuntimeError(f"Mooncake Host buffer registration failed: {rc}")
-        stage_ptrs = [staging[page].data_ptr() for page in range(count)]
+        def host_tensor(nbytes):
+            lease = pool.acquire(nbytes)
+            leases.append(lease)
+            backing = (ctypes.c_byte * nbytes).from_address(int(lease.ptr))
+            return torch.frombuffer(backing, dtype=torch.bfloat16)
 
-        def via_l2():
-            read_pages(store, keys, stage_ptrs)
-            for page in range(count):
-                split_page(staging[page], host_k, host_rope, page)
-            load_l1()
-
-        samples = measure(via_l2, device_k, device_rope, torch)
-        check_result(device_k, device_rope, count, torch)
-        result["paths"].append(
-            summarize("L3->L2->L1", samples, total_bytes, total_bytes)
-        )
-
-        if not args.skip_direct:
-            # Store writes page objects into NPU staging; reshape to the exact
-            # same layer-first L1 destinations, with the reshape timed.
-            direct = torch.empty(
-                (count, LAYERS, PAGE_SIZE, 1, K_DIM + ROPE_DIM),
-                dtype=torch.bfloat16,
-                device="npu",
+        l2 = host_tensor(l2_bytes)
+        k_elements = (batch + 1) * k_page_elements
+        host_k = l2[:k_elements].view(*host_shape, K_DIM)
+        host_rope = l2[k_elements:].view(*host_shape, ROPE_DIM)
+        staging = host_tensor(staging_bytes).view(batch, PAGE_BYTES // 2)
+        batch_samples = {code: [] for code in PATHS}
+        for batch_index, item in enumerate(batches):
+            pages, slots = item["pages"], item["slots"]
+            n = len(pages)
+            selected_keys = [keys[page] for page in pages]
+            host_indices = torch.arange(PAGE_SIZE, (n + 1) * PAGE_SIZE, dtype=torch.int64)
+            device_indices = torch.tensor(
+                [slot * PAGE_SIZE + token for slot in slots for token in range(PAGE_SIZE)],
+                dtype=torch.int64,
             )
-            try:
-                rc = store.register_buffer(direct.data_ptr(), total_bytes)
-            except Exception as exc:
-                result["paths"].append(
-                    {"path": "L3->NPU staging->L1", "status": "unavailable", "error": repr(exc)}
+            staged_ptrs = [staging[i].data_ptr() for i in range(n)]
+            target_ptrs = [[host_k[i + 1].data_ptr(), host_rope[i + 1].data_ptr()] for i in range(n)]
+            target_sizes = [[k_page_bytes, rope_page_bytes] for _ in range(n)]
+            # At most eight pages of expected Host data, created outside timing.
+            expected = [torch.frombuffer(bytearray(split_page_payload(page)), dtype=torch.bfloat16) for page in pages]
+
+            def load_l1():
+                transfer_kv_dim_exchange(
+                    device_indices=device_indices, host_indices=host_indices,
+                    device_k=device_k, host_k=host_k, device_v=device_rope, host_v=host_rope,
+                    device_index_k=None, host_index_k=None, page_size=PAGE_SIZE,
+                    direction=TransferDirection.H2D,
                 )
-            else:
-                if rc != 0:
-                    result["paths"].append(
-                        {
-                            "path": "L3->NPU staging->L1",
-                            "status": "unavailable",
-                            "error": f"NPU register_buffer returned {rc}",
-                        }
-                    )
-                else:
-                    direct_ptrs = [direct[page].data_ptr() for page in range(count)]
 
-                    def direct_to_l1():
-                        read_pages(store, keys, direct_ptrs)
-                        device_k[:, 1:].copy_(direct[..., :K_DIM].permute(1, 0, 2, 3, 4))
-                        device_rope[:, 1:].copy_(direct[..., K_DIM:].permute(1, 0, 2, 3, 4))
+            def run_path(code):
+                if code == "B":
+                    rc = list(store.batch_get_into(selected_keys, staged_ptrs, [PAGE_BYTES] * n))
+                    if rc != [PAGE_BYTES] * n:
+                        raise RuntimeError(f"staged read failed: {rc}")
+                    for i in range(n):
+                        host_k[i + 1].copy_(staging[i, :k_page_elements].view_as(host_k[i + 1]))
+                        host_rope[i + 1].copy_(staging[i, k_page_elements:].view_as(host_rope[i + 1]))
+                elif code == "C":
+                    rc = list(store.batch_get_into_multi_buffers(selected_keys, target_ptrs, target_sizes))
+                    if rc != [PAGE_BYTES] * n:
+                        raise RuntimeError(f"direct L2 read failed: {rc}")
+                load_l1()
 
-                    samples = measure(direct_to_l1, device_k, device_rope, torch)
-                    check_result(device_k, device_rope, count, torch)
-                    result["paths"].append(
-                        summarize(
-                            "L3->NPU staging->L1",
-                            samples,
-                            total_bytes,
-                            npu_extra=total_bytes,
-                        )
-                    )
+            order = list(PATHS)
+            offset = batch_index % len(order)
+            for code in order[offset:] + order[:offset]:
+                failure, stage = "F5", f"performance {code} batch={batch_index}"
+                if code == "A":
+                    for i, packed in enumerate(expected):
+                        host_k[i + 1].copy_(packed[:k_page_elements].view_as(host_k[i + 1]))
+                        host_rope[i + 1].copy_(packed[k_page_elements:].view_as(host_rope[i + 1]))
 
-        args.output.write_text(json.dumps(result, indent=2) + "\n")
-        print(json.dumps(result, indent=2), flush=True)
+                def prepare():
+                    for slot in slots:
+                        device_k[:, slot].zero_()
+                        device_rope[:, slot].zero_()
+                    if code != "A":
+                        host_k.zero_()
+                        host_rope.zero_()
+                    if code == "B":
+                        staging.zero_()
+
+                samples = measure_batch(
+                    lambda: run_path(code), prepare, torch.npu.synchronize,
+                    args.warmup, args.repeats,
+                )
+                # Validate every logical page for every path, outside timed regions.
+                stage = f"validation {code} batch={batch_index}"
+                for page, slot in zip(pages, slots):
+                    check_page(device_k, device_rope, slot, page, torch)
+                batch_samples[code].append(samples)
+            print(f"BATCH_OK pages={pages[0]}-{pages[-1]}", flush=True)
+
+        result["paths"] = [
+            summarize(code, batch_samples[code], count * PAGE_BYTES, staging_bytes if code == "B" else 0)
+            for code in PATHS
+        ]
+        result["status"] = "ok"
+    except Exception as exc:
+        result.update(status="failed", stage=stage, error=repr(exc))
+        print(f"PERFORMANCE_FAIL stage={stage} error={exc!r}", flush=True)
+        traceback.print_exc()
     finally:
-        store.close()
+        try:
+            for lease in reversed(leases):
+                lease.release()
+            if pool is not None:
+                pool.close()
+        finally:
+            if store is not None:
+                store.close()
+        output.write_text(json.dumps(result, indent=2) + "\n")
+    if result["status"] != "ok":
+        print(failure, flush=True)
+        return 1
+    summary = " ".join(f"{item['code']}={item['median_s'] * 1000:.3f}" for item in result["paths"])
+    print_result(f"T{tokens} {summary}")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except Exception:
+        traceback.print_exc()
+        print("F9", flush=True)
+        raise SystemExit(1)

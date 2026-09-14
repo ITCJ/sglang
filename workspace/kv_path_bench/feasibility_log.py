@@ -32,8 +32,18 @@ class LogStream:
         return getattr(self.logfile, name)
 
 
-def enable_log(role: str, size: str) -> None:
-    path = Path(f"/tmp/a3-kv-feasibility-{role}-{size}.log")
+def print_result(message: str) -> None:
+    """Emit an intentional compact result, bypassing the detail-log filter."""
+    if isinstance(sys.stdout, LogStream):
+        sys.stdout.logfile.write(message + "\n")
+        sys.stdout.terminal.write(message + "\n")
+        sys.stdout.flush()
+    else:
+        print(message, flush=True)
+
+
+def enable_log(role: str, size: str, path: Path | None = None) -> None:
+    path = path or Path(f"/tmp/a3-kv-feasibility-{role}-{size}.log")
     sys.stdout.flush()
     sys.stderr.flush()
     terminal = os.fdopen(os.dup(1), "w", buffering=1)
