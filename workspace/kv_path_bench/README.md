@@ -33,10 +33,29 @@ python3 workspace/kv_path_bench/kv_transfer_bench.py --local-ip <CLIENT_IP> --ma
 
 两端需有 `torch`、`torch_npu`、`mooncake.store`，本机还需 `sgl_kernel_npu`；使用相同的 `--tokens`、`--prefix` 和端口。两端都配置了 `ascend` Store 传输和 Fabric 环境变量。结果写入本机 `kv-transfer-results.json`，包含每次样本、耗时中位数、P95、按原始 KV 字节数计算的有效 GB/s 和额外暂存内存。预热 2 次、记录 10 次；每次计时包含最终 NPU 同步，数据校验在计时后进行。内存分配、注册和远端数据准备不计时。
 
-两端先确认设备已 claim、模型已停止，且平台允许在机器 28 上恢复小规模测试。上述命令先测一页；成功校验后两端再同步使用 `--tokens 1024`（约 69 MiB）。扩大数据量时，16K 远端还需 `--segment-gib 2`。暂存内存会随规模增长，先确认可用内存。`--skip-direct` 可跳过第三条路径；如果 NPU 缓冲区不能注册到当前 Store，结果中将该路径标为 `unavailable`，不把 Host 中转冒充直达。配置 `ascend` 并不单独证明实际使用了 Fabric，仍需结合 A3 环境的传输日志或计数器确认。
+两端先确认设备已 claim、模型已停止。上述命令先测一页；成功校验后两端再同步使用 `--tokens 1024`（约 69 MiB）。扩大数据量时，16K 远端还需 `--segment-gib 2`。暂存内存会随规模增长，先确认可用内存。`--skip-direct` 可跳过第三条路径；如果 NPU 缓冲区不能注册到当前 Store，结果中将该路径标为 `unavailable`，不把 Host 中转冒充直达。配置 `ascend` 并不单独证明实际使用了 Fabric，仍需结合 A3 环境的传输日志或计数器确认。
 
 本地无需 NPU 的数据布局检查：
 
 ```bash
 python3 -m unittest discover -s workspace/kv_path_bench -p 'test_*.py'
 ```
+
+## 可行性验证（不计时）
+
+claim 设备、停止模型后，先验证一页连续地址，再验证 128K 的分散 page 映射；两个规模都只检查 `L3->L2->L1` 和 `L3->NPU staging->L1` 各一次，前者已包含 L2 到 L1 的 kernel。先在 Store 端运行对应模式（保持运行），出现 `DATA_READY` 后在客户端运行同一模式：
+
+```bash
+python3 workspace/kv_path_bench/feasibility_store.py <STORE_IP> small
+python3 workspace/kv_path_bench/feasibility_check.py <CLIENT_IP> <STORE_IP> small
+```
+
+`small` 出现 `L3_L2_L1_OK`、`L3_NPU_L1_OK`、`FEASIBILITY_OK` 后，用 Ctrl+C 结束 Store 端。需要测试最大规模时，两端将上述命令末尾的 `small` 改为 `max`，再次按相同顺序启动和结束；中间规模不重复验证。`max` 会在 Store 端申请 10 GiB segment，设置 `fabric_memory.max_capacity=16`；客户端保留约 8.6 GiB 的完整 128K L1 空间，但仅以 8 页为一批接收和逐页校验。如果服务端环境已设置较小的 `ASCEND_GLOBAL_RESOURCE_CONFIG`，脚本会明确报错，不会悄悄覆盖现有配置。
+
+失败后停止客户端并 Ctrl+C 结束 Store，先不要扩大规模；在出错的一端运行一条短日志命令，并回报最后 30 行及退出码：
+
+```bash
+tail -n 30 /tmp/a3-kv-feasibility-client-small.log
+```
+
+将 `client` 换成 `store`、`small` 换成 `max` 即对应其他日志；Store master 的日志为 `/tmp/a3-kv-feasibility-master-small.log`（最大规模改成 `-max.log`）。最后还需核查 A3 的 UB 传输日志或计数器；`FEASIBILITY_OK` 只证明数据路径正确，不能单独证明物理链路。这里的分散模式是确定性的非连续 page 索引映射；正式性能测试需要另行加入分配器产生的碎片地址，并记录性能采样。当前性能脚本仍是整批读取、连续写入，尚不能根据这个可行性结果推断它已能运行最大规模；下一次修改时要保持与本验证相同的批量和地址映射。

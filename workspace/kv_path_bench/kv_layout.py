@@ -16,7 +16,8 @@ def page_payload(page: int) -> bytes:
         for token in range(PAGE_SIZE):
             code = (page * 11 + layer * 7 + token * 3) % 256
             k = bytes((code, 0x3F)) * K_DIM
-            rope = bytes(((code + 91) % 256, 0x3F)) * ROPE_DIM
+            rope_code = (code + 91 + (page // 256) * 53) % 256
+            rope = bytes((rope_code, 0x3F)) * ROPE_DIM
             output[offset : offset + len(k)] = k
             offset += len(k)
             output[offset : offset + len(rope)] = rope

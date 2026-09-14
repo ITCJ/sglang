@@ -12,6 +12,7 @@ import shutil
 import socket
 import subprocess
 import time
+from pathlib import Path
 
 from kv_layout import PAGE_BYTES, PAGE_SIZE, page_keys, page_payload
 
@@ -29,7 +30,7 @@ def wait_port(host: str, port: int, process: subprocess.Popen) -> None:
     raise RuntimeError(f"timed out waiting for master at {host}:{port}")
 
 
-def main() -> int:
+def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--local-ip", required=True, help="reachable IP of this node")
     parser.add_argument("--port", type=int, default=50071)
@@ -37,7 +38,8 @@ def main() -> int:
     parser.add_argument("--tokens", type=int, default=1024)
     parser.add_argument("--segment-gib", type=int, default=1)
     parser.add_argument("--prefix", default="a3-kv-path-bench")
-    args = parser.parse_args()
+    parser.add_argument("--master-log", type=Path)
+    args = parser.parse_args(argv)
     if args.tokens < PAGE_SIZE or args.tokens % PAGE_SIZE:
         parser.error("--tokens must be a positive multiple of 128")
     if args.segment_gib < 1 or args.device < 0:
@@ -58,9 +60,10 @@ def main() -> int:
     master_bin = shutil.which("mooncake_master")
     if master_bin is None:
         raise RuntimeError("mooncake_master was not found in PATH")
+    master_log = args.master_log.open("w") if args.master_log else None
     master = subprocess.Popen(
         [master_bin, f"--port={args.port}"],
-        stdout=subprocess.DEVNULL,
+        stdout=master_log if master_log is not None else subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
         start_new_session=True,
     )
@@ -90,7 +93,10 @@ def main() -> int:
                 raise RuntimeError(f"put failed for {key}: {rc}")
         print(f"DATA_READY pages={page_count} bytes={page_count * PAGE_BYTES}", flush=True)
         print("Leave this process running while the client benchmark executes.", flush=True)
-        signal.pause()
+        try:
+            signal.pause()
+        except KeyboardInterrupt:
+            print("STORE_STOPPED", flush=True)
     finally:
         if store is not None:
             try:
@@ -104,6 +110,8 @@ def main() -> int:
             except subprocess.TimeoutExpired:
                 master.kill()
                 master.wait()
+        if master_log is not None:
+            master_log.close()
     return 0
 
 
