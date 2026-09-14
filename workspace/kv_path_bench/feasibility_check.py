@@ -78,7 +78,7 @@ def main() -> int:
 
     import torch
     import torch_npu  # noqa: F401
-    from mooncake.store import MooncakeDistributedStore, MooncakeHostMemAllocator
+    from mooncake.store import BufferPool, MooncakeDistributedStore
     from sgl_kernel_npu.kvcacheio import TransferDirection, transfer_kv_dim_exchange
 
     torch.npu.set_device(args.device)
@@ -91,6 +91,8 @@ def main() -> int:
     stage_bytes = batch * PAGE_BYTES
 
     store = MooncakeDistributedStore()
+    host_pool = None
+    host_lease = None
     stage = "L1/Host allocation"
     try:
         host_k = torch.empty((*host_shape, K_DIM), dtype=torch.bfloat16, pin_memory=True)
@@ -106,19 +108,16 @@ def main() -> int:
             raise RuntimeError(f"Mooncake setup returned {rc}")
 
         stage = "staging allocation"
-        allocator = MooncakeHostMemAllocator()
-        ptr = allocator.alloc(stage_bytes)
-        if not ptr:
-            raise RuntimeError(f"MooncakeHostMemAllocator.alloc({stage_bytes}) failed")
+        # Borrow from setup's already registered ADXL Host buffer. Keep the
+        # lease alive until all transfers finish; do not register it again.
+        host_pool = BufferPool(store, block_on_exhaustion=False)
+        host_lease = host_pool.acquire(stage_bytes)
+        ptr = host_lease.ptr
         backing = (ctypes.c_byte * stage_bytes).from_address(int(ptr))
         staging = torch.frombuffer(backing, dtype=torch.bfloat16)
         staging = staging.view(batch, LAYERS, PAGE_SIZE, 1, K_DIM + ROPE_DIM)
         direct = torch.empty(staging.shape, dtype=torch.bfloat16, device="npu")
 
-        stage = "Host staging registration"
-        rc = store.register_buffer(int(ptr), stage_bytes)
-        if rc != 0:
-            raise RuntimeError(f"register_buffer returned {rc}")
         stage = "NPU staging registration"
         rc = store.register_buffer(direct.data_ptr(), stage_bytes)
         if rc != 0:
@@ -190,7 +189,13 @@ def main() -> int:
         print(failure_code(stage), flush=True)
         return 1
     finally:
-        store.close()
+        try:
+            if host_lease is not None:
+                host_lease.release()
+            if host_pool is not None:
+                host_pool.close()
+        finally:
+            store.close()
     return 0
 
 

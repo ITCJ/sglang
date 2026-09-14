@@ -47,6 +47,8 @@ python3 -m unittest discover -s workspace/kv_path_bench -p 'test_*.py'
 
 Python、底层库和子进程的标准输出/错误均写入日志；终端只显示短结果码。
 
+可行性脚本用 `mooncake.store.BufferPool` 从 `setup()` 已注册的 1 GiB ADXL Host 缓冲区借用接收暂存区（最多 8 页），不再额外分配并注册 Host 内存。测试结束先归还缓冲区再关闭 Store；不改变批量读取、拆分或 L1 搬运过程。该接口已核对官方 `v0.3.12.post1` 源码，A3 运行仍待验证；旧性能脚本的分配方式尚未同步。
+
 claim 设备、停止模型后，先在 Store 端运行（出现 `S0` 后保持运行），再在客户端运行：
 
 ```bash
