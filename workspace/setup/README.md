@@ -12,6 +12,14 @@ bash workspace/setup/check_model.sh --suite
 
 模型启动脚本默认 TP16+DP1。`MOONCAKE_CONFIG` 非空时会开启 HiCache，仅供实验目录的集成入口调用。
 
+MemFabric Host→NPU 直达实验：两端现有 A3 容器内运行，直接替换为固定版本 1.1.5，并检查 BM 接口，不初始化 NPU。安装前结束自己的实验进程。
+
+```bash
+bash workspace/setup/install_memfabric.sh
+```
+
+`MF0` 表示安装及接口检查通过，`MF1` 表示失败；完整日志在 `/tmp/a3-memfabric-install.log`。这不代表直达传输已验证。
+
 离线测试：
 
 ```bash
