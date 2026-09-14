@@ -11,6 +11,10 @@ class PerformanceTest(unittest.TestCase):
             self.assertEqual(sorted(s for b in batches for s in b["slots"]), list(range(1, count + 1)))
             self.assertTrue(all(1 <= len(b["pages"]) <= 8 for b in batches))
         self.assertNotEqual(make_batches(1024)[0]["slots"], list(range(1, 9)))
+        self.assertEqual(
+            [s for b in make_batches(1024, layout="contiguous") for s in b["slots"]],
+            list(range(1, 1025)),
+        )
 
     def test_timing_excludes_preparation_and_includes_completion(self):
         now = 0

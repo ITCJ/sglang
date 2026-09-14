@@ -29,9 +29,9 @@ PATHS = {
 }
 
 
-def make_batches(count: int, batch_pages: int = BATCH_PAGES) -> list[dict]:
+def make_batches(count: int, batch_pages: int = BATCH_PAGES, layout: str = "scattered") -> list[dict]:
     """Same bounded batches and non-overlapping L1 destinations for every path."""
-    stride = 137
+    stride = 137 if layout == "scattered" else 1
     while math.gcd(stride, count) != 1:
         stride += 1
     return [
@@ -87,6 +87,8 @@ def main() -> int:
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--prefix", default="a3-kv-path-bench")
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--log", type=Path)
+    parser.add_argument("--layout", choices=("contiguous", "scattered"), default="scattered")
     parser.add_argument("--warmup", type=int, default=WARMUP)
     parser.add_argument("--repeats", type=int, default=REPEATS)
     parser.add_argument("--skip-direct", action="store_true", help=argparse.SUPPRESS)
@@ -103,7 +105,7 @@ def main() -> int:
         parser.error("device/warmup must be nonnegative; repeats must be positive")
 
     output = args.output or Path(f"/tmp/a3-kv-perf-{tokens}.json")
-    enable_log("perf", str(tokens), path=Path(f"/tmp/a3-kv-perf-{tokens}.log"))
+    enable_log("perf", str(tokens), path=args.log or Path(f"/tmp/a3-kv-perf-{tokens}.log"))
     os.environ.setdefault("ASCEND_ENABLE_USE_FABRIC_MEM", "1")
     os.environ.setdefault("HCCL_INTRA_ROCE_ENABLE", "0")
     os.environ.setdefault("ASCEND_GLOBAL_RESOURCE_CONFIG", '{"fabric_memory.max_capacity":4}')
@@ -117,9 +119,10 @@ def main() -> int:
     l2_bytes = (batch + 1) * PAGE_BYTES
     staging_bytes = batch * PAGE_BYTES
     keys = page_keys(args.prefix + "-split", count)
-    batches = make_batches(count)
+    batches = make_batches(count, layout=args.layout)
     result = {
         "status": "running", "tokens": tokens, "pages": count, "page_bytes": PAGE_BYTES,
+        "layout": args.layout,
         "bytes": count * PAGE_BYTES, "batch_pages": batch,
         "warmup": args.warmup, "repeats": args.repeats,
         "object_layout": "one key per page: all compressed KV, then all RoPE",
@@ -261,7 +264,8 @@ def main() -> int:
         print(failure, flush=True)
         return 1
     summary = " ".join(f"{item['code']}={item['median_s'] * 1000:.3f}" for item in result["paths"])
-    print_result(f"T{tokens} {summary}")
+    suffix = "C" if args.layout == "contiguous" else "S"
+    print_result(f"T{tokens}{suffix} {summary}")
     return 0
 
 

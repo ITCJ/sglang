@@ -25,6 +25,28 @@ python3 workspace/kv_path_bench/preclaim_check.py client
 
 ## 三种路径性能测试
 
+### 一次跑完当前全部项目
+
+两端拉取同一提交，设备已可用、模型已停止。Store 一次准备最大规模，保持运行：
+
+```bash
+python3 workspace/kv_path_bench/feasibility_store.py <STORE_IP> max --direct-l2
+```
+
+等 S1 后，客户端只运行一次：
+
+```bash
+python3 workspace/kv_path_bench/performance_suite.py <CLIENT_IP> <STORE_IP>
+```
+
+自动先跑 128-token 冒烟（三条路径各一次），再测 1K、4K、16K、64K、128K × 连续/分散 L1 索引 × A/B/C，共 30 个正式项目。每个配置启动独立客户端进程，退出后释放内存，Store 无需重启。每个批次/路径预热 2 次、采样 10 次，规则与下面单次测试一致。这里的分散是确定性索引映射，不是分配器真实碎片；也不包含流水重叠或已禁用的 NPU 直达。
+
+屏幕先输出 R0～R10 表示当前配置，再输出 `T1024C A=… B=… C=…` 等一行结果（C/S 表示连续/分散，数值为毫秒）；最后 ALL_OK 表示全部完成。失败为 `X编号 F码` 或 `X编号 TIMEOUT`，立即停止后续配置，已完成结果保留。默认每个配置最多 600 秒（可用 `--timeout` 调整，不是预计耗时）；Ctrl+C 会强制结束本次启动的客户端子进程组，输出 `X编号 STOP`，不会停止其他任务。结束后 Store 端 Ctrl+C。
+
+汇总在 `/tmp/a3-kv-perf-suite.json` 和 `/tmp/a3-kv-perf-suite.csv`；每次运行的完整结果和日志保存在独立 `/tmp/a3-kv-perf-*` 目录中，目录名记录在汇总 JSON 的 run_dir，无需手抄长日志。客户端可用 `--device`、`--warmup`、`--repeats` 调整，默认无须增加参数。
+
+### 单独测一档
+
 两端使用同一环境和提交，设备已可用、模型已停止。先测 small。Store 端运行（旧的非 direct-l2 Store 需先 Ctrl+C 停止）：
 
 ```bash
@@ -37,7 +59,7 @@ python3 workspace/kv_path_bench/feasibility_store.py <STORE_IP> small --direct-l
 python3 workspace/kv_path_bench/kv_transfer_bench.py <CLIENT_IP> <STORE_IP> small
 ```
 
-成功只打印一行，例如 `T128 A=1.000 B=2.000 C=1.500`：T 后是 token 数，A/B/C 是三条路径的累加批次耗时中位数，单位毫秒；这仅为格式示例，不是实测数据。回报这一行即可。详细结果写入 `/tmp/a3-kv-perf-128.json`，底层日志写入 `/tmp/a3-kv-perf-128.log`。失败输出 F2（L1/Store 初始化）、F3（Host 分配）、F5（路径执行/校验）、F9（其他），日志中记录路径和批次。
+成功只打印一行，例如 `T128S A=1.000 B=2.000 C=1.500`：T 后是 token 数，C/S 表示连续/分散，A/B/C 是三条路径的累加批次耗时中位数，单位毫秒；这仅为格式示例，不是实测数据。回报这一行即可。详细结果写入 `/tmp/a3-kv-perf-128.json`，底层日志写入 `/tmp/a3-kv-perf-128.log`。失败输出 F2（L1/Store 初始化）、F3（Host 分配）、F5（路径执行/校验）、F9（其他），日志中记录路径和批次。单次默认分散，可用 `--layout contiguous` 改为连续。
 
 small 成功后结束 Store，两端把 `small` 改成 `max`，等 Store S1 后再运行客户端；结果为 `T131072 ...`，文件名中的 128 改为 131072。若对应规模的 direct-l2 Store 已在运行，无需重启。每轮结束后 Store Ctrl+C；失败不扩大规模。
 
