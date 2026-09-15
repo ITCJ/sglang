@@ -24,7 +24,7 @@ WARMUP = 2
 REPEATS = 10
 from path_names import PATH_NAMES
 
-PATHS = {code: PATH_NAMES[code] for code in "ABC"}
+PATHS = {code: PATH_NAMES[code] for code in "ABCM"}
 
 
 def make_batches(count: int, batch_pages: int = BATCH_PAGES, layout: str = "scattered") -> list[dict]:
@@ -61,7 +61,6 @@ def summarize(code: str, batch_samples: list[list[float]], nbytes: int, staging_
     samples = [sum(values) for values in zip(*batch_samples)]
     median = statistics.median(samples)
     return {
-        "code": code,
         "path": PATHS[code],
         "median_s": median,
         "p95_s": sorted(samples)[math.ceil(0.95 * len(samples)) - 1],
@@ -203,16 +202,17 @@ def main() -> int:
                     for i in range(n):
                         host_k[i + 1].copy_(staging[i, :k_page_elements].view_as(host_k[i + 1]))
                         host_rope[i + 1].copy_(staging[i, k_page_elements:].view_as(host_rope[i + 1]))
-                elif code == "C":
+                elif code in ("C", "M"):
                     rc = list(store.batch_get_into_multi_buffers(selected_keys, target_ptrs, target_sizes))
                     if rc != [PAGE_BYTES] * n:
                         raise RuntimeError(f"direct L2 read failed: {rc}")
-                load_l1()
+                if code != "M":
+                    load_l1()
 
             order = list(PATHS)
             offset = batch_index % len(order)
             for code in order[offset:] + order[:offset]:
-                failure, stage = "F5", f"performance {code} batch={batch_index}"
+                failure, stage = "F5", f"performance {PATHS[code]} batch={batch_index}"
                 if code == "A":
                     for i, packed in enumerate(expected):
                         host_k[i + 1].copy_(packed[:k_page_elements].view_as(host_k[i + 1]))
@@ -233,9 +233,16 @@ def main() -> int:
                     args.warmup, args.repeats,
                 )
                 # Validate every logical page for every path, outside timed regions.
-                stage = f"validation {code} batch={batch_index}"
-                for page, slot in zip(pages, slots):
-                    check_page(device_k, device_rope, slot, page, torch)
+                stage = f"validation {PATHS[code]} batch={batch_index}"
+                if code == "M":
+                    for i, packed in enumerate(expected, 1):
+                        for actual, reference in ((host_k[i].reshape(-1), packed[:k_page_elements]),
+                                                  (host_rope[i].reshape(-1), packed[k_page_elements:])):
+                            if not torch.equal(actual.view(torch.uint8), reference.view(torch.uint8)):
+                                raise RuntimeError("L2 content mismatch")
+                else:
+                    for page, slot in zip(pages, slots):
+                        check_page(device_k, device_rope, slot, page, torch)
                 batch_samples[code].append(samples)
             print(f"BATCH_OK pages={pages[0]}-{pages[-1]}", flush=True)
 
@@ -261,9 +268,8 @@ def main() -> int:
     if result["status"] != "ok":
         print(failure, flush=True)
         return 1
-    summary = " ".join(f"{item['code']}={item['median_s'] * 1000:.3f}" for item in result["paths"])
-    suffix = "C" if args.layout == "contiguous" else "S"
-    print_result(f"T{tokens}{suffix} {summary}")
+    for item in result["paths"]:
+        print_result(f"tokens={tokens} layout={args.layout} {item['path']}={item['median_s'] * 1000:.3f} ms")
     return 0
 
 

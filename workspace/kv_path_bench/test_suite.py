@@ -30,8 +30,8 @@ class SuiteTest(unittest.TestCase):
         destination = Path(command[command.index("--output") + 1])
         destination.write_text(json.dumps({
             "status": "ok", "tokens": tokens, "layout": layout,
-            "paths": [{"code": c, "correct": True, "median_s": 0.01,
-                       "p95_s": 0.02, "effective_gbps": 1} for c in "ABC"],
+            "paths": [{"path": suite.PATH_NAMES[c], "correct": True, "median_s": 0.01,
+                       "p95_s": 0.02, "effective_gbps": 1} for c in "ABCM"],
         }))
         return 0, "native noise should not reach terminal\n"
 
@@ -50,6 +50,8 @@ class SuiteTest(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertIn("ALL_OK", terminal)
         self.assertNotIn("native noise", terminal)
+        self.assertIn("L3-L2_Mooncake=10.000 ms", terminal)
+        self.assertNotIn("A=", terminal)
 
     def test_failure_keeps_previous_results_and_stops(self):
         calls = 0

@@ -31,7 +31,7 @@ class FabricPathsTest(unittest.TestCase):
         bm = SimpleNamespace(BmCopyType=SimpleNamespace(G2G="host-host", GH2L="host-npu"))
         plans = {name: ([ptr], [ptr + 1], [8]) for ptr, name in
                  enumerate(("read", "local", "direct"), 10)}
-        for code, names in (("E", ["local"]), ("F", ["read", "local"]), ("D", ["direct"])):
+        for code, names in (("E", ["local"]), ("F", ["read", "local"]), ("D", ["direct"]), ("G", ["read"])):
             handle = Mock()
             handle.copy_data_batch.return_value = handle.wait.return_value = 0
             perf.run_path(code, handle, bm, plans)

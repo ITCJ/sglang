@@ -46,6 +46,8 @@
 
 ## 新增直达候选：先验证，不纳入性能套件
 
+新增辅助拆解：两套性能入口分别增加 `L3-L2_Mooncake`、`L3-L2_MemFabric`，复用中转路径的真实读取，只测第一段并在计时外校验最终 L2。全量结果与终端使用语义路径名称，不再以单字母标识。仍为串行测试，不增加流水；单段保留容量/布局矩阵，布局标签只描述原 L1 映射，L2 地址组织并无连续/分散差别。
+
 更新：MemFabric 的性能入口现在一并测 `L2-L1_MemFabric`、`L3-L2-L1_MemFabric`、`L3-L1_MemFabric`。前两者使用客户端 BM Host 池中的最终 L2，KV/RoPE 分离 page-first 布局与原测试一致；G2G 落入最终 L2，GH2L 按层分片落入同一 L1。统一命名及比较边界见 [对应表](kv_path_bench/PATH_NAMES.md)。新对照只实现候选，先由入口自动做一页正确性验证；一页不通过则停止。以下为原直达设计背景。
 
 `fabric_direct_bench/check.py` 独立测试远端 Host DRAM → MemFabric BM SDMA/GH2L → 最终 NPU L1，绕过 Mooncake。保持同一页 KV/RoPE 对象布局，按层分片直接写入最终地址；不改成 NPU→NPU，也不增加接收暂存。新增 `--performance` 自动测量同样五档容量、两种布局，编码 D，沿用每批最多 8 页、2 次预热和 10 次采样及批次累加统计。两端 Host 池各 10 GiB，源预填完整 128K；源对象连续分配和绕过 Store 管理属于明确的实验差异。结果及 CLI 日志写入该目录下 `results/YYMMDD_HHMMSS/`。功能通过、UB 物理链路确认和性能测量分别记录；原有三路径套件保持不变。

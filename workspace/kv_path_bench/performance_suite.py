@@ -64,12 +64,12 @@ def save_summary(result, run_dir):
     (run_dir / "summary.json").write_text(encoded)
     table = io.StringIO()
     writer = csv.writer(table)
-    writer.writerow(("tokens", "layout", "path", "code", "median_ms", "p95_ms", "effective_gbps"))
+    writer.writerow(("tokens", "layout", "path", "median_ms", "p95_ms", "effective_gbps"))
     for case in result["cases"]:
         if case["smoke"]:
             continue
         for path in case["result"]["paths"]:
-            writer.writerow((case["tokens"], case["layout"], PATH_NAMES[path["code"]], path["code"],
+            writer.writerow((case["tokens"], case["layout"], path["path"],
                              path["median_s"] * 1000, path["p95_s"] * 1000,
                              path["effective_gbps"]))
     (run_dir / "summary.csv").write_text(table.getvalue())
@@ -95,7 +95,7 @@ def _run_suite(args, run_dir, run_case):
             "--warmup", "0" if smoke else str(args.warmup),
             "--repeats", "1" if smoke else str(args.repeats),
         ]
-        print(f"R{index}", flush=True)
+        print(f"Running tokens={tokens} layout={layout}", flush=True)
         failure = "F9"
         try:
             rc, terminal = run_case(command, args.timeout)
@@ -108,13 +108,12 @@ def _run_suite(args, run_dir, run_case):
             data = json.loads(output.read_text())
             if (data.get("status") != "ok" or data.get("tokens") != tokens
                     or data.get("layout") != layout
-                    or [path["code"] for path in data.get("paths", [])] != ["A", "B", "C"]
+                    or [path["path"] for path in data.get("paths", [])] != [PATH_NAMES[c] for c in "ABCM"]
                     or not all(path.get("correct") is True for path in data["paths"])):
                 raise RuntimeError("missing or invalid successful result")
             result["cases"].append({"tokens": tokens, "layout": layout, "smoke": smoke, "result": data})
-            suffix = "C" if layout == "contiguous" else "S"
-            timings = " ".join(f"{path['code']}={path['median_s'] * 1000:.3f}" for path in data["paths"])
-            print(f"T{tokens}{suffix} {timings}", flush=True)
+            for path in data["paths"]:
+                print(f"tokens={tokens} layout={layout} {path['path']}={path['median_s'] * 1000:.3f} ms", flush=True)
         except (Exception, KeyboardInterrupt) as exc:
             if isinstance(exc, KeyboardInterrupt):
                 failure = "STOP"

@@ -123,4 +123,4 @@ python3 workspace/kv_path_bench/feasibility_check.py <CLIENT_IP> <STORE_IP> smal
 
 ## 路径命名
 
-新结果使用语义名称，终端保留短码；详见 [新旧命名对应表](PATH_NAMES.md)。A 为 `L2-L1_SGLKernel`，B/C 使用 `Mooncake` 命名。
+新结果和终端全部使用语义名称，详见 [新旧命名对应表](PATH_NAMES.md)。套件新增 `L3-L2_Mooncake`，与原三条路径一起测，共 40 项正式测量。单段只计直接读入最终 L2 的调用与同步，Host 内容校验在计时外。上文 A/B/C 和 T 后缀为历史结果格式，当前输出例如 `tokens=1024 layout=contiguous L3-L2_Mooncake=1.000 ms`。命令、结果目录与 `cli.log` 不变。

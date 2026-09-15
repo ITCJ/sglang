@@ -7,4 +7,6 @@ PATH_NAMES = {
     "E": "L2-L1_MemFabric",
     "F": "L3-L2-L1_MemFabric",
     "D": "L3-L1_MemFabric",
+    "M": "L3-L2_Mooncake",
+    "G": "L3-L2_MemFabric",
 }

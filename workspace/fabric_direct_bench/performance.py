@@ -9,7 +9,7 @@ from check import (LAYERS, PAGE_SIZE, PAGE_BYTES, K_DIM, ROPE_DIM,
 from kv_transfer_bench import make_batches, measure_batch
 from path_names import PATH_NAMES
 
-FABRIC_CODES = ("E", "F", "D")
+FABRIC_CODES = ("E", "F", "D", "G")
 K_PAGE = LAYERS * PAGE_SIZE * K_DIM * 2
 ROPE_PAGE = PAGE_BYTES - K_PAGE
 L2_K_BYTES = 9 * K_PAGE
@@ -46,8 +46,10 @@ def copy(handle, plan, kind):
 
 
 def run_path(code, handle, bm, plans):
-    if code == "F":
+    if code in ("F", "G"):
         copy(handle, plans["read"], bm.BmCopyType.G2G)
+    if code == "G":
+        return
     copy(handle, plans["direct" if code == "D" else "local"], bm.BmCopyType.GH2L)
 
 
@@ -55,10 +57,10 @@ def save(cases, directory):
     (directory / "summary.json").write_text(json.dumps({"cases": cases}, indent=2) + "\n")
     with (directory / "summary.csv").open("w") as stream:
         writer = csv.writer(stream)
-        writer.writerow(("tokens", "layout", "path", "code", "median_ms", "p95_ms", "effective_gbps"))
+        writer.writerow(("tokens", "layout", "path", "median_ms", "p95_ms", "effective_gbps"))
         for case in cases:
             if not case["smoke"]:
-                writer.writerow((case["tokens"], case["layout"], case["path"], case["code"],
+                writer.writerow((case["tokens"], case["layout"], case["path"],
                                  case["median_s"] * 1000, case["p95_s"] * 1000,
                                  case["effective_gbps"]))
 
@@ -76,21 +78,22 @@ def run_client(handle, bm, torch, source_gva, args):
     for tokens, layout in matrix:
         count = tokens // PAGE_SIZE
         smoke = tokens == 128
-        print_result(f"R{len(cases) // len(FABRIC_CODES)}")
+        print_result(f"Running tokens={tokens} layout={layout}")
         k = torch.zeros((LAYERS, count + 1, PAGE_SIZE, 1, K_DIM), dtype=torch.bfloat16, device="npu")
         rope = torch.zeros((LAYERS, count + 1, PAGE_SIZE, 1, ROPE_DIM), dtype=torch.bfloat16, device="npu")
         batches = make_batches(count, 8, layout)
         batch_samples = {code: [] for code in FABRIC_CODES}
         for batch_index, batch in enumerate(batches):
             plans = batch_plans(batch, source_gva, l2_gva, k.data_ptr(), rope.data_ptr(), count)
-            order = FABRIC_CODES[batch_index % 3:] + FABRIC_CODES[:batch_index % 3]
+            offset = batch_index % len(FABRIC_CODES)
+            order = FABRIC_CODES[offset:] + FABRIC_CODES[:offset]
             for code in order:
                 print(f"MEASURE path={PATH_NAMES[code]} tokens={tokens} layout={layout} batch={batch_index}", flush=True)
                 def prepare():
                     if code == "E":
                         # Populate final L2 before timing the local-only path.
                         copy(handle, plans["read"], bm.BmCopyType.G2G)
-                    elif code == "F":
+                    elif code in ("F", "G"):
                         check_rc(handle.copy_data(zero.data_ptr(), l2_gva, L2_BYTES,
                                                   bm.BmCopyType.H2GH, 0), "clear L2")
                         check_rc(handle.wait(), "clear L2 wait")
@@ -101,6 +104,10 @@ def run_client(handle, bm, torch, source_gva, args):
                 batch_samples[code].append(measure_batch(
                     lambda: run_path(code, handle, bm, plans), prepare, torch.npu.synchronize,
                     0 if smoke else args.warmup, 1 if smoke else args.repeats))
+                if code == "G":
+                    # Validate L2 through the existing local copy, strictly OUTSIDE timing.
+                    copy(handle, plans["local"], bm.BmCopyType.GH2L)
+                    torch.npu.synchronize()
                 for page, slot in zip(batch["pages"], batch["slots"]):
                     check_page(k, rope, slot, page, torch)
         if torch.count_nonzero(k[:, 0]).item() or torch.count_nonzero(rope[:, 0]).item():
@@ -108,7 +115,7 @@ def run_client(handle, bm, torch, source_gva, args):
         for code in FABRIC_CODES:
             samples = [sum(values) for values in zip(*batch_samples[code])]
             median = statistics.median(samples)
-            case = dict(tokens=tokens, layout=layout, smoke=smoke, code=code,
+            case = dict(tokens=tokens, layout=layout, smoke=smoke,
                     path=PATH_NAMES[code], correct=True, l2_bytes=L2_BYTES if code != "D" else 0,
                     bytes=count * PAGE_BYTES, median_s=median,
                     p95_s=sorted(samples)[math.ceil(len(samples) * .95) - 1],
@@ -117,9 +124,9 @@ def run_client(handle, bm, torch, source_gva, args):
                     warmup=0 if smoke else args.warmup, repeats=len(samples),
                     l1_slots=[slot for batch in batches for slot in batch["slots"]])
             cases.append(case)
-            (args.run_dir / f"{tokens}-{layout}-{code}.json").write_text(json.dumps(case, indent=2) + "\n")
+            (args.run_dir / f"{tokens}-{layout}-{PATH_NAMES[code]}.json").write_text(json.dumps(case, indent=2) + "\n")
             save(cases, args.run_dir)
-        timing = " ".join(f"{c['code']}={c['median_s'] * 1000:.3f}" for c in cases[-3:])
-        print_result(f"T{tokens}{'C' if layout == 'contiguous' else 'S'} {timing}")
+        for case in cases[-len(FABRIC_CODES):]:
+            print_result(f"tokens={tokens} layout={layout} {case['path']}={case['median_s'] * 1000:.3f} ms")
         del k, rope
         torch.npu.empty_cache()
