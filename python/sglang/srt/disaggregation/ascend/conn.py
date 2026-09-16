@@ -7,7 +7,12 @@ import numpy as np
 import numpy.typing as npt
 
 from sglang.srt.disaggregation.ascend.transfer_engine import AscendTransferEngine
-from sglang.srt.disaggregation.base.conn import StateType
+from sglang.srt.disaggregation.ascend.sparse_pd import (
+    SparsePDDecodeStagingPool,
+    get_sparse_pd_manager,
+    is_sparse_pd_decode_enabled,
+)
+from sglang.srt.disaggregation.base.conn import KVPoll, StateType
 from sglang.srt.disaggregation.common.utils import group_concurrent_contiguous
 from sglang.srt.disaggregation.mooncake.conn import (
     MooncakeKVBootstrapServer,
@@ -36,6 +41,54 @@ _DSV4_KVCACHE_STATE_TYPES = tuple(AscendStateType)
 
 
 class AscendKVManager(MooncakeKVManager):
+    def __init__(
+        self,
+        args,
+        disaggregation_mode,
+        server_args,
+        is_mla_backend: Optional[bool] = False,
+    ):
+        self.use_sparse_pd_decode = False
+        self.sparse_pd_manager = None
+        self.sparse_pd_decode_staging = None
+
+        sparse_kv_manager = get_sparse_pd_manager()
+        if is_sparse_pd_decode_enabled(
+            server_args,
+            disaggregation_mode,
+            sparse_kv_manager=sparse_kv_manager,
+        ):
+            self.use_sparse_pd_decode = True
+            self.sparse_pd_manager = sparse_kv_manager
+            self.sparse_pd_decode_staging = SparsePDDecodeStagingPool(
+                sparse_kv_manager,
+                page_size=args.page_size,
+                slot_count=1,
+            )
+            kv_data_ptrs, kv_data_lens, kv_item_lens = (
+                sparse_kv_manager.get_pd_decode_transfer_buf_infos(
+                    page_size=args.page_size,
+                )
+            )
+            args.kv_data_ptrs = kv_data_ptrs
+            args.kv_data_lens = kv_data_lens
+            args.kv_item_lens = kv_item_lens
+            args.kv_buf_groups = 2
+            args.kv_layer_ids = list(
+                range(
+                    sparse_kv_manager.start_layer,
+                    sparse_kv_manager.start_layer + sparse_kv_manager.layer_num,
+                )
+            ) * 2
+            logger.info(
+                "Ascend sparse KV PD decode uses HBM staging buffers for transfer: "
+                "entries=%s, page_size=%s",
+                len(args.kv_data_ptrs),
+                args.page_size,
+            )
+
+        super().__init__(args, disaggregation_mode, server_args, is_mla_backend)
+
     def _requires_exact_state_index_match(self, st: StateType) -> bool:
         return (
             super()._requires_exact_state_index_match(st)
@@ -79,6 +132,51 @@ class AscendKVManager(MooncakeKVManager):
         kv_buf_groups = getattr(self.kv_args, "kv_buf_groups", 1)
         total_kv_layers = getattr(self.kv_args, "total_kv_layers", 0)
         src_layers = len(src_kv_ptrs) // kv_buf_groups
+
+        # Temporary sparse-PD path: NPU MLA prefill exposes split K/V/index-K
+        # native buffers, while decode registers split K/V staging buffers. The
+        # index-K group is not part of sparse host KV, so only pair the first two
+        # source groups with the two decode staging groups.
+        if (
+            kv_buf_groups == 3
+            and len(dst_kv_ptrs) != len(src_kv_ptrs)
+            and len(dst_kv_ptrs) % 2 == 0
+        ):
+            dst_buf_groups = 2
+            dst_total_layers = len(dst_kv_ptrs) // dst_buf_groups
+            end_layer = start_layer + src_layers
+            if src_layers == dst_total_layers:
+                sliced_dst_kv_ptrs = dst_kv_ptrs
+            else:
+                if end_layer > dst_total_layers:
+                    raise RuntimeError(
+                        "Sparse KV PD destination staging does not cover the "
+                        "prefill PP layer range: "
+                        f"start={start_layer}, end={end_layer}, "
+                        f"dst_total_layers={dst_total_layers}."
+                    )
+                sliced_dst_kv_ptrs = []
+                for i in range(dst_buf_groups):
+                    layer_offset = i * dst_total_layers
+                    sliced_dst_kv_ptrs.extend(
+                        dst_kv_ptrs[
+                            layer_offset + start_layer : layer_offset + end_layer
+                        ]
+                    )
+            sliced_src_kv_ptrs = []
+            for i in range(dst_buf_groups):
+                layer_offset = i * src_layers
+                sliced_src_kv_ptrs.extend(
+                    src_kv_ptrs[layer_offset : layer_offset + src_layers]
+                )
+            if len(sliced_src_kv_ptrs) != len(sliced_dst_kv_ptrs):
+                raise RuntimeError(
+                    "Sparse KV PD source/destination transfer entry mismatch: "
+                    f"src={len(sliced_src_kv_ptrs)}, "
+                    f"dst={len(sliced_dst_kv_ptrs)}."
+                )
+            return sliced_src_kv_ptrs, sliced_dst_kv_ptrs, len(sliced_src_kv_ptrs)
+
         # When only speculative-algorithm is enabled for decode
         # the KV has one more layer than prefill.
         # The draft layer needs to be skipped.
@@ -108,7 +206,13 @@ class AscendKVManager(MooncakeKVManager):
         dst_kv_indices: npt.NDArray[np.int32],
         executor: concurrent.futures.ThreadPoolExecutor,
         dst_layer_ids: Optional[List[int]] = None,
+        dst_device_kv_indices: Optional[npt.NDArray[np.int32]] = None,
     ):
+        if dst_device_kv_indices is not None:
+            raise NotImplementedError(
+                "Ascend KV transfer does not support separate device KV indices."
+            )
+
         # Group by indices
         prefill_kv_blocks, dst_kv_blocks = group_concurrent_contiguous(
             prefill_kv_indices, dst_kv_indices
@@ -215,13 +319,82 @@ class AscendKVManager(MooncakeKVManager):
             or st in _DSV4_KVCACHE_STATE_TYPES
         )
 
+    def update_status(self, bootstrap_room: int, status: KVPoll):
+        staging = getattr(self, "sparse_pd_decode_staging", None)
+        if staging is not None:
+            if status == KVPoll.Success and staging.has_room(bootstrap_room):
+                try:
+                    metadata = staging.offload_room_to_host(
+                        bootstrap_room,
+                        release=True,
+                    )
+                    logger.debug(
+                        "Ascend sparse KV PD staged transfer committed: "
+                        "room=%s slot=%s req_pool_idx=%s token_count=%s",
+                        metadata.room,
+                        metadata.slot_id,
+                        metadata.req_pool_idx,
+                        metadata.token_count,
+                    )
+                except Exception as exc:
+                    staging.release_room(bootstrap_room)
+                    self.record_failure(
+                        bootstrap_room,
+                        "Failed to offload Ascend sparse KV PD staging buffer "
+                        f"to host sparse KV cache: {exc}",
+                    )
+                    return super().update_status(bootstrap_room, KVPoll.Failed)
+            elif status == KVPoll.Failed:
+                staging.release_room(bootstrap_room)
+
+        return super().update_status(bootstrap_room, status)
+
 
 class AscendKVSender(MooncakeKVSender):
     pass
 
 
 class AscendKVReceiver(MooncakeKVReceiver):
-    pass
+    def send_metadata(
+        self,
+        kv_indices: npt.NDArray[np.int32],
+        aux_index: Optional[int] = None,
+        state_indices: Optional[List[int]] = None,
+        decode_prefix_len: Optional[int] = None,
+        device_kv_indices: Optional[npt.NDArray[np.int32]] = None,
+    ):
+        staging = getattr(self.kv_mgr, "sparse_pd_decode_staging", None)
+        if staging is not None and getattr(self, "bootstrap_infos", None) is not None:
+            if device_kv_indices is not None:
+                raise RuntimeError(
+                    "Ascend sparse KV PD does not support extra device KV indices."
+                )
+            kv_indices = staging.rewrite_dst_indices(
+                self.bootstrap_room,
+                np.asarray(kv_indices, dtype=np.int32),
+                decode_prefix_len=decode_prefix_len or 0,
+                wait_for_slot=True,
+            )
+
+        return super().send_metadata(
+            kv_indices,
+            aux_index,
+            state_indices,
+            decode_prefix_len=decode_prefix_len,
+            device_kv_indices=device_kv_indices,
+        )
+
+    def clear(self) -> None:
+        staging = getattr(self.kv_mgr, "sparse_pd_decode_staging", None)
+        if staging is not None:
+            staging.release_room(self.bootstrap_room)
+        return super().clear()
+
+    def abort(self):
+        staging = getattr(self.kv_mgr, "sparse_pd_decode_staging", None)
+        if staging is not None:
+            staging.release_room(self.bootstrap_room)
+        return super().abort()
 
 
 class AscendKVBootstrapServer(MooncakeKVBootstrapServer):

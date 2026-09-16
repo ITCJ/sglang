@@ -338,12 +338,26 @@ class AscendAttnBackend(AttentionBackend):
         self.req_to_token = model_runner.req_to_token_pool.req_to_token
         self.graph_mode = False
         self.use_fa = get_bool_env_var("ASCEND_USE_FA", "False")
-        self.enable_sparsity_driven_kv_offload = is_sparsity_driven_kv_offload_enabled(
+        self.sparse_kv_offload_configured = is_sparsity_driven_kv_offload_enabled(
             model_config=model_runner.model_config,
             server_args=model_runner.server_args,
             use_mla_backend=model_runner.use_mla_backend,
         )
+        self.disable_sparse_kv_offload_for_pd_prefill = (
+            self.sparse_kv_offload_configured
+            and model_runner.server_args.disaggregation_mode == "prefill"
+        )
+        self.enable_sparsity_driven_kv_offload = (
+            self.sparse_kv_offload_configured
+            and not self.disable_sparse_kv_offload_for_pd_prefill
+        )
         self.sparse_kv_manager = None
+        if self.disable_sparse_kv_offload_for_pd_prefill:
+            logger.info(
+                "Sparsity-driven KV offload is configured, but disabled on "
+                "PD prefill workers so native NPU KV cache remains the "
+                "transfer source."
+            )
         if self.enable_sparsity_driven_kv_offload:
             from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.manager import (
                 SparseKVCacheManager,

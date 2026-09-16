@@ -104,6 +104,9 @@ class SparseKVCacheManager:
             enable=enable_memory_saver
         )
 
+        self.req_to_token_pool = req_to_token_pool
+        self.token_to_kv_pool_allocator = token_to_kv_pool_allocator
+
         # Include the padding row because real request IDs can equal the
         # configured capacity when row 0 is reserved for graph padding.
         self.size = int(req_to_token_pool.req_to_token.shape[0])
@@ -247,6 +250,13 @@ class SparseKVCacheManager:
             self.sparse_context_len, dtype=torch.long, device=self.device
         )
         self._slot_map_width = (self.max_context_len // 8 + 1) * 8
+        self.pd_decode_k_staging: Optional[list[torch.Tensor]] = None
+        self.pd_decode_v_staging: Optional[list[torch.Tensor]] = None
+        self._pd_decode_staging_token_capacity = self.max_context_len
+        self._pd_decode_copy_stream = torch.npu.Stream()
+        self._pd_room_to_req_pool_idx: dict[int, int] = {}
+        self._pd_room_to_input_len: dict[int, int] = {}
+        self._pd_req_pool_idx_to_room: dict[int, int] = {}
 
         self._install_req_alloc_hook(req_to_token_pool)
 
@@ -264,8 +274,247 @@ class SparseKVCacheManager:
             "--max-running-requests for sparse KV offload."
         ) from exc
 
+    def _pd_decode_k_buffer_shape(self, slot_count: int) -> tuple[int, int, int, int]:
+        return (
+            int(slot_count),
+            int(self._pd_decode_staging_token_capacity),
+            self.head_num,
+            self.kv_lora_rank,
+        )
+
+    def _pd_decode_v_buffer_shape(self, slot_count: int) -> tuple[int, int, int, int]:
+        return (
+            int(slot_count),
+            int(self._pd_decode_staging_token_capacity),
+            self.head_num,
+            self.qk_rope_head_dim,
+        )
+
+    def _alloc_pd_device_buffers(
+        self,
+        slot_count: int,
+        buffer_name: str,
+        shape: tuple[int, int, int, int],
+        fill_value: float,
+    ) -> list[torch.Tensor]:
+        enable_memory_saver = False
+        memory_saver_adapter = TorchMemorySaverAdapter.create(
+            enable=enable_memory_saver
+        )
+        try:
+            with memory_saver_adapter.region(GPU_MEMORY_TYPE_KV_CACHE):
+                return [
+                    torch.full(
+                        shape,
+                        fill_value,
+                        dtype=self.store_dtype,
+                        device=self.device,
+                    )
+                    for _ in range(self.layer_num)
+                ]
+        except Exception as e:
+            self._raise_buffer_allocation_error(buffer_name, e)
+
+    def ensure_pd_decode_staging_buffers(
+        self,
+        slot_count: int = 1,
+        page_size: Optional[int] = None,
+    ) -> None:
+        slot_count = int(slot_count)
+        if slot_count <= 0:
+            raise ValueError(
+                f"Sparse KV PD decode slot_count must be > 0: {slot_count}"
+            )
+
+        transfer_page_size = int(page_size or self.paged_kv_cache.page_size)
+        if transfer_page_size <= 0:
+            raise ValueError(
+                "Sparse KV PD decode transfer page_size must be positive, "
+                f"got {transfer_page_size}."
+            )
+        aligned_capacity = (
+            (self.max_context_len + transfer_page_size - 1)
+            // transfer_page_size
+            * transfer_page_size
+        )
+        if self.pd_decode_k_staging is not None or self.pd_decode_v_staging is not None:
+            if self.pd_decode_k_staging is None or self.pd_decode_v_staging is None:
+                raise RuntimeError(
+                    "Sparse KV PD decode staging buffers are partially initialized."
+                )
+            current_slots = int(self.pd_decode_k_staging[0].shape[0])
+            current_capacity = int(self.pd_decode_k_staging[0].shape[1])
+            if current_slots < slot_count or current_capacity < aligned_capacity:
+                raise RuntimeError(
+                    "Sparse KV PD decode staging was already initialized with "
+                    f"shape={tuple(self.pd_decode_k_staging[0].shape)}, cannot "
+                    f"grow to slots={slot_count}, capacity={aligned_capacity}."
+                )
+            return
+
+        self._pd_decode_staging_token_capacity = aligned_capacity
+        logger.info(
+            "Sparse KV PD decode HBM staging buffer shapes: k=%s, v=%s",
+            self._pd_decode_k_buffer_shape(slot_count),
+            self._pd_decode_v_buffer_shape(slot_count),
+        )
+        self.pd_decode_k_staging = self._alloc_pd_device_buffers(
+            slot_count,
+            "pd_decode_k_staging",
+            self._pd_decode_k_buffer_shape(slot_count),
+            4444.44,
+        )
+        self.pd_decode_v_staging = self._alloc_pd_device_buffers(
+            slot_count,
+            "pd_decode_v_staging",
+            self._pd_decode_v_buffer_shape(slot_count),
+            5555.55,
+        )
+
+    def get_pd_decode_transfer_buf_infos(
+        self,
+        page_size: Optional[int] = None,
+    ) -> tuple[list[int], list[int], list[int]]:
+        if self.pd_decode_k_staging is None or self.pd_decode_v_staging is None:
+            raise RuntimeError("Sparse KV PD decode staging buffer is not initialized.")
+        transfer_page_size = int(page_size or self.paged_kv_cache.page_size)
+        if transfer_page_size <= 0:
+            raise ValueError(
+                "Sparse KV PD decode transfer page_size must be positive, "
+                f"got {transfer_page_size}."
+            )
+        return (
+            [buf.data_ptr() for buf in self.pd_decode_k_staging]
+            + [buf.data_ptr() for buf in self.pd_decode_v_staging],
+            [buf.nbytes for buf in self.pd_decode_k_staging]
+            + [buf.nbytes for buf in self.pd_decode_v_staging],
+            [
+                buf[0, 0].nbytes * transfer_page_size
+                for buf in self.pd_decode_k_staging
+            ]
+            + [
+                buf[0, 0].nbytes * transfer_page_size
+                for buf in self.pd_decode_v_staging
+            ],
+        )
+
+    def get_pd_decode_staging_token_capacity(self) -> int:
+        return int(self._pd_decode_staging_token_capacity)
+
+    def get_pd_decode_pages_per_slot(self, page_size: Optional[int] = None) -> int:
+        transfer_page_size = int(page_size or self.paged_kv_cache.page_size)
+        if transfer_page_size <= 0:
+            raise ValueError(
+                "Sparse KV PD decode transfer page_size must be positive, "
+                f"got {transfer_page_size}."
+            )
+        return self.get_pd_decode_staging_token_capacity() // transfer_page_size
+
+    def record_pd_request_metadata(self, req: Req) -> None:
+        bootstrap_room = getattr(req, "bootstrap_room", None)
+        req_pool_idx = getattr(req, "req_pool_idx", None)
+        if bootstrap_room is None or req_pool_idx is None:
+            return
+        room = int(bootstrap_room)
+        pool_idx = int(req_pool_idx)
+        input_len = int(len(req.origin_input_ids))
+        old_room = self._pd_req_pool_idx_to_room.get(pool_idx)
+        if old_room is not None and old_room != room:
+            self.clear_pd_request_metadata(bootstrap_room=old_room)
+        self._pd_room_to_req_pool_idx[room] = pool_idx
+        self._pd_room_to_input_len[room] = input_len
+        self._pd_req_pool_idx_to_room[pool_idx] = room
+
+    def clear_pd_request_metadata(
+        self,
+        bootstrap_room: Optional[int] = None,
+        req_pool_idx: Optional[int] = None,
+    ) -> None:
+        if bootstrap_room is None and req_pool_idx is not None:
+            bootstrap_room = self._pd_req_pool_idx_to_room.pop(int(req_pool_idx), None)
+        if bootstrap_room is None:
+            return
+        room = int(bootstrap_room)
+        pool_idx = self._pd_room_to_req_pool_idx.pop(room, None)
+        self._pd_room_to_input_len.pop(room, None)
+        if pool_idx is not None:
+            self._pd_req_pool_idx_to_room.pop(int(pool_idx), None)
+
+    def clear_all_pd_request_metadata(self) -> None:
+        self._pd_room_to_req_pool_idx.clear()
+        self._pd_room_to_input_len.clear()
+        self._pd_req_pool_idx_to_room.clear()
+
+    def get_pd_copy_metadata(
+        self,
+        bootstrap_room: int,
+        decode_prefix_len: int = 0,
+    ) -> tuple[int, int]:
+        room = int(bootstrap_room)
+        if room not in self._pd_room_to_req_pool_idx:
+            raise RuntimeError(
+                f"Sparse KV PD metadata for bootstrap_room={room} is not recorded."
+            )
+        req_pool_idx = self._pd_room_to_req_pool_idx[room]
+        input_len = self._pd_room_to_input_len[room]
+        token_count = input_len - int(decode_prefix_len)
+        if token_count < 0:
+            raise RuntimeError(
+                "Sparse KV PD got negative token_count from metadata: "
+                f"input_len={input_len}, decode_prefix_len={decode_prefix_len}."
+            )
+        return req_pool_idx, token_count
+
+    def offload_pd_decode_staging_to_host(
+        self,
+        slot_id: int,
+        req_pool_idx: int,
+        token_count: int,
+        stream: Optional[torch.npu.Stream] = None,
+    ) -> None:
+        if self.pd_decode_k_staging is None or self.pd_decode_v_staging is None:
+            raise RuntimeError("Sparse KV PD decode staging buffer is not initialized.")
+        slot_id = int(slot_id)
+        req_pool_idx = int(req_pool_idx)
+        token_count = int(token_count)
+        slot_count = int(self.pd_decode_k_staging[0].shape[0])
+        if slot_id < 0 or slot_id >= slot_count:
+            raise RuntimeError(
+                f"Sparse KV PD decode got slot_id={slot_id}, outside slot_count "
+                f"{slot_count}."
+            )
+        if req_pool_idx < 0 or req_pool_idx >= self.size:
+            raise RuntimeError(
+                f"Sparse KV PD decode got req_pool_idx={req_pool_idx}, outside "
+                f"sparse pool size {self.size}."
+            )
+        if token_count < 0 or token_count > self.max_context_len:
+            raise RuntimeError(
+                f"Sparse KV PD decode got token_count={token_count}, outside "
+                f"max_context_len {self.max_context_len}."
+            )
+
+        self.host_kv_ctx_len[req_pool_idx] = token_count
+        self.reset_requests([req_pool_idx])
+        if token_count == 0:
+            return
+
+        actual_stream = stream if stream is not None else self._pd_decode_copy_stream
+        with torch.npu.stream(actual_stream):
+            for layer_idx in range(self.layer_num):
+                dst = self.host_kv_buffer[layer_idx][req_pool_idx, :token_count]
+                dst[..., : self.kv_lora_rank].copy_(
+                    self.pd_decode_k_staging[layer_idx][slot_id, :token_count],
+                    non_blocking=False,
+                )
+                dst[..., self.kv_lora_rank :].copy_(
+                    self.pd_decode_v_staging[layer_idx][slot_id, :token_count],
+                    non_blocking=False,
+                )
+        actual_stream.synchronize()
+
     def init_req(self, req: Req) -> None:
-        if req.is_chunked > 0:
+        if getattr(req, "is_chunked", 0) > 0:
             return
         rid = req.req_pool_idx
         if rid is None:
@@ -291,6 +540,14 @@ class SparseKVCacheManager:
             req_to_token_pool, "_sparse_kv_original_alloc", req_to_token_pool.alloc
         )
         setattr(req_to_token_pool, "_sparse_kv_original_alloc", original_alloc)
+        original_free = getattr(
+            req_to_token_pool, "_sparse_kv_original_free", req_to_token_pool.free
+        )
+        setattr(req_to_token_pool, "_sparse_kv_original_free", original_free)
+        original_clear = getattr(
+            req_to_token_pool, "_sparse_kv_original_clear", req_to_token_pool.clear
+        )
+        setattr(req_to_token_pool, "_sparse_kv_original_clear", original_clear)
 
         def alloc_with_sparse_reset(reqs: list[Req]) -> Optional[List[int]]:
             newly_allocated = [req.req_pool_idx is None for req in reqs]
@@ -303,9 +560,23 @@ class SparseKVCacheManager:
                         if is_new
                     ]
                 )
+                for req in reqs:
+                    self.record_pd_request_metadata(req)
             return req_pool_indices
 
+        def free_with_sparse_clear(req: Req):
+            self.clear_pd_request_metadata(
+                req_pool_idx=getattr(req, "req_pool_idx", None)
+            )
+            return original_free(req)
+
+        def clear_with_sparse_clear():
+            self.clear_all_pd_request_metadata()
+            return original_clear()
+
         setattr(req_to_token_pool, "alloc", alloc_with_sparse_reset)
+        setattr(req_to_token_pool, "free", free_with_sparse_clear)
+        setattr(req_to_token_pool, "clear", clear_with_sparse_clear)
 
     def offload(
         self,
