@@ -185,6 +185,7 @@ def run(args):
         result = dict(status='running', tokens=args.tokens, layout='contiguous',
                       bytes=args.tokens * BYTES_PER_TOKEN, warmup=args.warmup,
                       repeats=args.repeats, layers=LAYERS, page_size=PAGE_SIZE,
+                      validation_enabled=args.validate, correct=None,
                       versions=versions, pinned=pinned, samples=samples,
                       device_name=torch.npu.get_device_name(args.device),
                       server_args_subset={name: getattr(server_args, name) for name in
@@ -205,12 +206,14 @@ def run(args):
             for name in names[offset:] + names[:offset]:
                 prepare()
                 indices, sample = actions[name]()
-                validate(indices)
+                if args.validate:
+                    validate(indices)
                 if iteration >= args.warmup:
                     samples[name].append(sample)
                 save()
         result['summary'] = {name: summarize(values, result['bytes'])
                              for name, values in samples.items()}
+        result['correct'] = True if args.validate else None
         result['status'] = 'ok'
         save()
         with args.output.with_suffix('.csv').open('w') as f:
@@ -235,6 +238,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--tokens', type=int, default=128)
     p.add_argument('--device', type=int, default=0)
+    p.add_argument('--validate', action='store_true', help='validate all KV bytes after every iteration (default: off)')
     p.add_argument('--warmup', type=int, default=2)
     p.add_argument('--repeats', type=int, default=10)
     p.add_argument('--output', type=Path, required=True)

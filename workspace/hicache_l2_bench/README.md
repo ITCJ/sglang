@@ -13,9 +13,9 @@
 
 `copy_whole` 经 `load_to_device_per_layer(..., layer_id=0, io_backend=kernel_ascend)` 调用 SGLKernel；Ascend MLA 在第 0 层调用时搬运全部层。`hicache_load` 由真实 controller 遍历层接口及记录事件，不改变生产代码。
 
-默认模拟 DeepSeek V3.1 MLA：61 层、BF16、128 tokens/page、压缩 KV 512 + RoPE 64。只测连续地址。所有组的 Host/NPU 池、有效页映射和数据相同；第 0 个 NPU page 保留，验证不被覆盖。Host 池按官方分配器从第 0 页分配，不强行模拟旧实验的 Host 保留页。
+默认模拟 DeepSeek V3.1 MLA：61 层、BF16、128 tokens/page、压缩 KV 512 + RoPE 64。只测连续地址。所有组的 Host/NPU 池、有效页映射和数据相同；第 0 个 NPU page 保留，启用校验时检查其未被覆盖。Host 池按官方分配器从第 0 页分配，不强行模拟旧实验的 Host 保留页。
 
-每组每轮前清零目标 NPU，重置分配器及树，构造一个完整 Host-only 前缀。Host KV 根据 page/layer/token/component 生成；每轮计时后逐页逐字节校验。构造、清零、校验和原始样本写盘均不计时。预热和采样按整个请求执行，两组轮换顺序，默认预热 2 次、采样 10 次。128-token 冒烟各执行一次，不用于稳定性判断。
+每组每轮前清零目标 NPU，重置分配器及树，构造一个完整 Host-only 前缀。Host KV 根据 page/layer/token/component 生成；性能模式默认关闭数据校验（含 128-token 冒烟）；加 `--validate` 才会每轮计时后逐页逐字节校验并检查保留页。JSON 记录 `validation_enabled`，未校验时 `correct=null`，全部校验通过才为 `true`。构造、清零、校验和原始样本写盘均不计时。预热和采样按整个请求执行，两组轮换顺序，默认预热 2 次、采样 10 次。128-token 冒烟各执行一次，不用于稳定性判断。
 
 本实验不在脚本层拆分请求：`copy_whole` 一次提交该任务的全部页，`hicache_load` 由真实 controller 提交该请求的加载任务。底层 kernel 自身仍可按页执行，这是其实现而非实验设置。两组都对完整请求计时，不累加独立批次的采样。正式加载组一次执行同时保存总耗时与内部阶段耗时；`copy_whole` 仅作为独立的纯搬运参考。
 
@@ -46,9 +46,17 @@ git log -1 --oneline
 python3 workspace/hicache_l2_bench/run.py
 ```
 
-**默认命令一次完成全部测试**：128-token 冒烟通过后自动测全部五档，每档输出两组结果并实时保存。无需手工切换 tokens。`--suite` 是同样行为的显式写法。成功标志为 `L2_ALL_OK`。
+**默认命令一次完成全部测试**：128-token 冒烟通过后自动测全部五档，每档输出两组结果并实时保存。无需手工切换 tokens。`--suite` 是同样行为的显式写法。成功标志为 `L2_ALL_OK`，默认只表示运行完成，启用 `--validate` 后才包含数据校验通过。
 
-只检查冒烟或重跑某档时，可使用：
+新实验或新环境开始时，先手动执行正确性检查：
+
+```sh
+python3 workspace/hicache_l2_bench/run.py --smoke --validate
+```
+
+通过后按默认命令测性能，无需每组重复校验。需要整套逐轮校验时使用 `run.py --validate`。关闭数据校验仍保留 pinned 状态、分配、命中、完成事件及 ack 状态检查。
+
+只运行冒烟或重跑某档时，可使用：
 
 ```sh
 python3 workspace/hicache_l2_bench/run.py --smoke

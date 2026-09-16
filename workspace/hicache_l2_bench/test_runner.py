@@ -15,19 +15,27 @@ from run import execute
 
 class RunnerTest(unittest.TestCase):
     def test_default_suite_saves_every_size_and_both_paths(self):
+        self.check_suite(False)
+
+    def test_validation_is_forwarded_to_smoke_and_all_sizes(self):
+        self.check_suite(True)
+
+    def check_suite(self, validate):
         seen = []
         def worker(command, logfile, timeout, env):
             tokens = int(command[command.index('--tokens') + 1])
             seen.append(tokens)
+            self.assertEqual("--validate" in command, validate)
             output = Path(command[command.index('--output') + 1])
             stats = {'total_s': {'median_ms': 1., 'p95_ms': 2.},
                      'effective_GBps': 1.}
-            output.write_text(json.dumps({'status': 'ok', 'summary': {
+            output.write_text(json.dumps({'status': 'ok', 'validation_enabled': validate,
+                                         'correct': True if validate else None, 'summary': {
                 'copy_whole': stats, 'hicache_load': stats}}))
             return 0
         with tempfile.TemporaryDirectory() as d, patch.object(runner, 'HERE', Path(d)), \
                 patch.object(runner, 'execute', side_effect=worker), \
-                patch.object(sys, 'argv', ['run.py']), patch('builtins.print'):
+                patch.object(sys, 'argv', ['run.py'] + (['--validate'] if validate else [])), patch('builtins.print'):
             self.assertEqual(runner.main(), 0)
             self.assertEqual(seen, [128, 1024, 4096, 16384, 65536, 131072])
             result_dir = next((Path(d) / 'results').iterdir())

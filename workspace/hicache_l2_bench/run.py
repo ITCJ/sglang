@@ -44,6 +44,7 @@ def main():
     mode.add_argument('--smoke', action='store_true', help='only the 128-token smoke check')
     mode.add_argument('--tokens', type=int, help='smoke then a single token size')
     p.add_argument('--device', type=int, default=0)
+    p.add_argument('--validate', action='store_true', help='validate every iteration, including smoke (default: off)')
     p.add_argument('--warmup', type=int, default=2)
     p.add_argument('--repeats', type=int, default=10)
     p.add_argument('--timeout', type=float, default=1800, help='seconds per case')
@@ -83,13 +84,18 @@ def main():
         command = [sys.executable, str(HERE / 'bench.py'), '--tokens', str(tokens),
                    '--device', str(args.device), '--warmup', str(warmup),
                    '--repeats', str(repeats), '--output', str(output)]
+        if args.validate:
+            command.append('--validate')
         report(f'RUN tokens={tokens}')
         try:
             rc = execute(command, directory / f'case-{tokens}.log', args.timeout, env)
             if rc:
                 raise RuntimeError(f'worker exit={rc}')
             result = json.loads(output.read_text())
-            if result['status'] != 'ok':
+            if (result['status'] != 'ok'
+                    or result.get('validation_enabled') is not args.validate
+                    or 'correct' not in result
+                    or result['correct'] is not (True if args.validate else None)):
                 raise RuntimeError('case did not finish successfully')
             status['cases'].append(tokens)
             for name, stats in result['summary'].items():
