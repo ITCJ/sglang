@@ -128,21 +128,18 @@ def run(args):
             if torch.count_nonzero(pool.k_buffer[:, 0]).item() or torch.count_nonzero(pool.v_buffer[:, 0]).item():
                 raise RuntimeError('reserved NPU page overwritten')
 
-        def direct(batch_pages):
+        def direct():
             # Allocation and CPU index preparation are outside pure-copy timing.
             indices = allocator.alloc(args.tokens)
             if indices is None:
                 raise RuntimeError('NPU allocation failed')
             cpu_indices = indices.cpu()
-            width = (batch_pages or pages) * PAGE_SIZE
-            plans = [(host_indices[i:i + width], cpu_indices[i:i + width])
-                     for i in range(0, args.tokens, width)]
             torch.npu.synchronize()
             t0 = time.perf_counter()
-            for hi, di in plans:
-                # NPU MLA copies all layers on layer_id=0 (same method as controller).
-                host.load_to_device_per_layer(pool, hi, di, 0, 'kernel_ascend')
-                torch.npu.synchronize()
+            # One task submits all its pages; the kernel handles page iteration.
+            host.load_to_device_per_layer(
+                pool, host_indices, cpu_indices, 0, 'kernel_ascend')
+            torch.npu.synchronize()
             t1 = time.perf_counter()
             return indices, dict(total_s=t1-t0)
 
@@ -177,8 +174,7 @@ def run(args):
                 sample['controller_stream_s'] = ack.start_event.elapsed_time(ack.finish_event) / 1000
             return indices, sample
 
-        actions = {'copy_8pages': lambda: direct(8),
-                   'copy_whole': lambda: direct(0), 'hicache_load': managed}
+        actions = {'copy_whole': direct, 'hicache_load': managed}
         samples = {name: [] for name in actions}
         versions = {}
         for pkg in ('torch', 'torch-npu', 'sglang', 'sgl-kernel-npu'):

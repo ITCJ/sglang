@@ -8,17 +8,16 @@
 
 | 输出路径 | 计时范围 |
 | --- | --- |
-| `copy_8pages` | 地址预备后，每批至多 8 页，调用官方 Host pool 加载接口并同步；记录整个连续批次循环 |
 | `copy_whole` | 地址预备后，将整个请求交给相同加载接口，一次同步 |
 | `hicache_load` | `match_prefix` → `init_load_back` → `ready_to_load_host_cache` → 等真实完成事件 → `loading_check` |
 
-前两组经 `load_to_device_per_layer(..., layer_id=0, io_backend=kernel_ascend)` 调用 SGLKernel；Ascend MLA 在第 0 层调用时搬运全部层。第三组由真实 controller 遍历层接口及记录事件，不改变生产代码。
+`copy_whole` 经 `load_to_device_per_layer(..., layer_id=0, io_backend=kernel_ascend)` 调用 SGLKernel；Ascend MLA 在第 0 层调用时搬运全部层。`hicache_load` 由真实 controller 遍历层接口及记录事件，不改变生产代码。
 
 默认模拟 DeepSeek V3.1 MLA：61 层、BF16、128 tokens/page、压缩 KV 512 + RoPE 64。只测连续地址。所有组的 Host/NPU 池、有效页映射和数据相同；第 0 个 NPU page 保留，验证不被覆盖。Host 池按官方分配器从第 0 页分配，不强行模拟旧实验的 Host 保留页。
 
-每组每轮前清零目标 NPU，重置分配器及树，构造一个完整 Host-only 前缀。Host KV 根据 page/layer/token/component 生成；每轮计时后逐页逐字节校验。构造、清零、校验和原始样本写盘均不计时。预热和采样按整个请求执行，三组轮换顺序，默认预热 2 次、采样 10 次。128-token 冒烟各执行一次，不用于稳定性判断。
+每组每轮前清零目标 NPU，重置分配器及树，构造一个完整 Host-only 前缀。Host KV 根据 page/layer/token/component 生成；每轮计时后逐页逐字节校验。构造、清零、校验和原始样本写盘均不计时。预热和采样按整个请求执行，两组轮换顺序，默认预热 2 次、采样 10 次。128-token 冒烟各执行一次，不用于稳定性判断。
 
-**与旧结果的差别：**旧 kv_path_bench 每批独立预热，累加各批对应采样；本测试计时一个连续请求循环，Host 池容量也改为完整请求容量。因此 copy_8pages 是粒度对照，不能仅用它与旧数据的差值精确归因内存类型。
+本实验不在脚本层拆分请求：`copy_whole` 一次提交该任务的全部页，`hicache_load` 由真实 controller 提交该请求的加载任务。底层 kernel 自身仍可按页执行，这是其实现而非实验设置。两组都对完整请求计时，不累加独立批次的采样。正式加载组一次执行同时保存总耗时与内部阶段耗时；`copy_whole` 仅作为独立的纯搬运参考。
 
 ## 管理阶段口径
 
@@ -47,19 +46,16 @@ git log -1 --oneline
 python3 workspace/hicache_l2_bench/run.py
 ```
 
-默认仅测 128-token 一页。成功打印三组延迟及 `L2_ALL_OK`，表示包括逐字节校验的完整冒烟通过。**当前仅完成本地无 NPU 检查，尚未在 A3 验证。**
+**默认命令一次完成全部测试**：128-token 冒烟通过后自动测全部五档，每档输出两组结果并实时保存。无需手工切换 tokens。`--suite` 是同样行为的显式写法。成功标志为 `L2_ALL_OK`。
 
-一页通过后建议先测 1K：
+只检查冒烟或重跑某档时，可使用：
 
 ```sh
+python3 workspace/hicache_l2_bench/run.py --smoke
 python3 workspace/hicache_l2_bench/run.py --tokens 1024
 ```
 
-需要完整规模时：
-
-```sh
-python3 workspace/hicache_l2_bench/run.py --suite
-```
+旧版一页冒烟已由用户回报通过；本次整任务/默认全量入口改动仍需远端验证。
 
 套件先冒烟，再测 1K/4K/16K/64K/128K，每档独立进程。128K 的 Host 和 NPU KV 池各约 8.59 GiB（不含库额外资源）；比旧的有限页 L2 测试占用更多 Host 内存。默认每档超时 1800 秒，是防挂死上限。可传 `--device N --warmup 2 --repeats 10 --timeout 1800`。
 

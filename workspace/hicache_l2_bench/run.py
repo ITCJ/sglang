@@ -29,10 +29,20 @@ def execute(command, logfile, timeout, env):
             raise
 
 
+def case_sizes(tokens=None, smoke=False):
+    if smoke or tokens == 128:
+        return [128]
+    if tokens is not None:
+        return [128, tokens]
+    return [128, 1024, 4096, 16384, 65536, 131072]
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--suite', action='store_true', help='smoke then 1K/4K/16K/64K/128K')
-    p.add_argument('--tokens', type=int, default=128)
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument('--suite', action='store_true', help='full suite (also the default)')
+    mode.add_argument('--smoke', action='store_true', help='only the 128-token smoke check')
+    mode.add_argument('--tokens', type=int, help='smoke then a single token size')
     p.add_argument('--device', type=int, default=0)
     p.add_argument('--warmup', type=int, default=2)
     p.add_argument('--repeats', type=int, default=10)
@@ -49,17 +59,14 @@ def main():
         print(logs[-1])
         print('\n'.join(logs[-1].read_text(errors='replace').splitlines()[-35:]))
         return 0
-    if args.tokens < 128 or args.tokens > 131072 or args.tokens % 128 or args.device < 0 or args.warmup < 0 or args.repeats < 1 or args.timeout <= 0:
+    if (args.tokens is not None and (args.tokens < 128 or args.tokens > 131072 or args.tokens % 128)) or args.device < 0 or args.warmup < 0 or args.repeats < 1 or args.timeout <= 0:
         p.error('invalid tokens/device/warmup/repeats/timeout')
-    if args.suite and args.tokens != 128:
-        p.error('--suite and custom --tokens cannot be combined')
     directory = HERE / 'results' / datetime.now().strftime('%y%m%d_%H%M%S_%f')
     directory.mkdir(parents=True, exist_ok=False)
     env = os.environ.copy()
     env['PYTHONPATH'] = str(REPO / 'python') + os.pathsep + env.get('PYTHONPATH', '')
     env['PYTHONUNBUFFERED'] = '1'
-    sizes = [128, 1024, 4096, 16384, 65536, 131072] if args.suite else (
-        [128, args.tokens] if args.tokens != 128 else [128])
+    sizes = case_sizes(args.tokens, args.smoke)
     status = dict(status='running', args=vars(args), cases=[])
     def save():
         (directory / 'status.json').write_text(json.dumps(status, indent=2) + '\n')

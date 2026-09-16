@@ -2,7 +2,7 @@
 
 ## 当前补充：原生 HiCache L2→L1（2026-09-16）
 
-新增 `workspace/hicache_l2_bench/`，独立单机/单 NPU，无 Mooncake/L3。复用官方 NPU MLA pool、pinned Host pool、HiRadixCache 和 controller；分别测每次 8 页纯搬运、整请求纯搬运、实际 L2 命中的匹配/加载/提交/等待/完成维护。按阶段记录同一次 wall-clock 样本，不用中位数相减估算管理开销。单个连续 Host-only 前缀、无淘汰压力，不代表真实 server 调度或 L3 管理性能。先 128-token 冒烟，再扩大规模；脚本当前待远端 NPU 验证，运行命令与计时边界见新目录 README。历史 staging 数据保留，后续研究分析不再纳入 staging。流水不作为本轮前置任务。
+新增 `workspace/hicache_l2_bench/`，独立单机/单 NPU，无 Mooncake/L3。复用官方 NPU MLA pool、pinned Host pool、HiRadixCache 和 controller；仅测整请求纯搬运 `copy_whole` 和实际 L2 命中的 `hicache_load`（匹配/加载/提交/等待/完成维护），新测试不再设置固定页数拆批。默认一条命令先冒烟，再自动跑全部五档并保存结果。按阶段记录同一次 wall-clock 样本，不用中位数相减估算管理开销。单个连续 Host-only 前缀、无淘汰压力，不代表真实 server 调度或 L3 管理性能。先 128-token 冒烟，再扩大规模；脚本当前待远端 NPU 验证，运行命令与计时边界见新目录 README。历史 staging 数据保留，后续研究分析不再纳入 staging。流水不作为本轮前置任务。
 
 ## 任务
 
