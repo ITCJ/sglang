@@ -1,84 +1,65 @@
-# A3 MLA KV 传输路径测试
+# A3 MLA KV 整请求传输测试
 
-本目录的可行性和性能脚本统一使用非默认端口：master RPC 为 `19271`，管理/metrics 为 `19273`，集中定义在 `bench_ports.py`。两端更新代码后，原启动命令不变。非默认端口仍可能被占用；若冲突，修改该文件并同步两端，不停止其他任务的服务。这两个配置只控制 master 的监听端口。
+本性能套件不设置固定页数的拆批上限。每次提交完整请求，预热和计时也以完整请求为单位。JSON 标记 `measurement_protocol=whole_request_v2`，不可与旧的逐批累加样本混用。
 
-独立于模型和 HiCache，比较同一份 BF16 MLA KV 写入同一组 NPU L1 page 的耗时：
+## 路径与计时
 
-| 输出中的路径 | 计时范围 |
+| 路径 | 一次样本的计时范围 |
 | --- | --- |
-| A：`L2->L1` | 数据已在最终 ADXL Host L2，经 Ascend 搬运 kernel 写入 L1 |
-| B：`L3->Host staging->L2->L1` | 整页读入额外 ADXL Host 暂存，拷贝 KV/RoPE 到最终 L2，再搬到 L1 |
-| C：`L3->L2->L1` | 多目标读取直接写入最终 L2 的 KV/RoPE，再搬到 L1 |
+| `L2-L1_SGLKernel` | L2 已准备好，一次提交完整请求到 L1，等待 NPU 完成 |
+| `L3-L2-L1_Mooncake` | 一次提交全部 page keys，完整读取到最终 L2，再一次提交 L2→L1 并同步 |
+| `L3-L2_Mooncake` | 一次提交全部 page keys，完整读取到最终 L2，保留统一末尾同步 |
 
-性能脚本固定只测 A/B/C，L3 直接到 NPU 的路径已禁用，不申请或注册 NPU 接收暂存区。原 `--skip-direct` 参数仅为兼容旧命令保留，不改变行为。
+不再采集 staging 路径。仍是一页一个 Store key，没有聚合对象；接口内部如何调度由库决定，脚本不设置固定页数切分，也不在接口失败时悄悄拆小重试。中转先完成整请求读取再加载 L1，不增加流水。
 
-数据按 DeepSeek V3.1 的 61 层、每页 128 token、BF16、每 token 512 维压缩 KV + 64 维 RoPE 构造。一页一个 Store 对象（8994816 bytes），三种方式统一使用“整页 KV 后接整页 RoPE”的排列和 `-split` key 前缀。Host L2 和 NPU L1 各自将 512/64 分别存入两个缓冲区；这里的 `v_buffer` 是 RoPE，不是传统注意力里单独的 V。
+数据为 61 层 BF16 MLA，128 tokens/page，512 维压缩 KV + 64 维 RoPE（v_buffer 是 RoPE）。L2 为 KV/RoPE 分离的 page-first，L1 为 layer-first；每页 8,994,816 bytes。保留连续/确定性分散 L1 映射，L3→L2 单段的 L2 地址组织不随该标签变化。
 
-远端不能复制命令：先在两端仓库各手输一次 `git pull --ff-only`。claim 设备之前，分别手输一条不初始化 NPU 的命令；脚本会打印 commit，需确认两端与交接的 commit 相同：
+每路径完整请求预热 2 次、采样 10 次。每次样本是实际开始到完成的 wall time，不累加独立批次采样。准备、清零、地址列表构造和逐页校验均在计时外；每次执行后校验。CSV median_ms/p95_ms 为 ms，JSON samples_s 为秒，effective_gbps 实际单位为十进制 GB/s。10 样本 nearest-rank P95 即最大值。
 
-```bash
-python3 workspace/kv_path_bench/preclaim_check.py store
-python3 workspace/kv_path_bench/preclaim_check.py client
+## 内存
+
+最终 ADXL L2 和 NPU L1 都容纳完整请求（各含一个保留页），没有额外 Host staging。128K 时各约 8.59 GiB。客户端 Store 内部接收池按请求向上取整至 GiB 并预留空间（128K 为 9 GiB），通过 BufferPool 借用完整 L2；不继续使用旧的固定小接收池。客户端默认按池大小设置 fabric_memory.max_capacity；已有环境变量不足时明确失败，不覆盖用户设置。性能未在新口径下远端验证，尤其需要验证大池与完整请求提交支持。
+
+## 一次运行
+
+两端同一提交，设备空闲、自己的模型及其他性能实验停止。先更新两端：
+
+```sh
+git pull --ff-only
+git log -1 --oneline
 ```
 
-两行分别在 Store 端、客户端运行，不是在一台机器上连续运行。看到 `PRECLAIM_OK` 才继续。此检查不连接两端、不验证 Fabric，也不替代 claim 后的小规模传输测试。仓库不保存真实 IP、容器名和凭据。
+Store 端准备完整数据并保持运行：
 
-## 三种路径性能测试
-
-### 一次跑完当前全部项目
-
-两端拉取同一提交，设备已可用、模型已停止。Store 一次准备最大规模，保持运行：
-
-```bash
+```sh
 python3 workspace/kv_path_bench/feasibility_store.py <STORE_IP> max --direct-l2
 ```
 
-等 S1 后，客户端只运行一次：
+等 `S1`，客户端运行：
 
-```bash
+```sh
 python3 workspace/kv_path_bench/performance_suite.py <CLIENT_IP> <STORE_IP>
 ```
 
-自动先跑 128-token 冒烟（三条路径各一次），再测 1K、4K、16K、64K、128K × 连续/分散 L1 索引 × A/B/C，共 30 个正式项目。每个配置启动独立客户端进程，退出后释放内存，Store 无需重启。每个批次/路径预热 2 次、采样 10 次，规则与下面单次测试一致。这里的分散是确定性索引映射，不是分配器真实碎片；也不包含流水重叠或已禁用的 NPU 直达。
+自动先 128-token 冒烟（0 次预热、1 次采样），再测 1K/4K/16K/64K/128K × 两种布局 × 三路径，共 30 条正式结果；失败立即停止。每档独立进程，默认超时 1800 秒，可 `--timeout` 调整。成功为 `ALL_OK`。结束后 Store 端 Ctrl+C，客户端结束释放资源；客户端 Ctrl+C 只终止其自行启动的进程组。
 
-屏幕先输出 R0～R10 表示当前配置，再输出 `T1024C A=… B=… C=…` 等一行结果（C/S 表示连续/分散，数值为毫秒）；最后 ALL_OK 表示全部完成。失败为 `X编号 F码` 或 `X编号 TIMEOUT`，立即停止后续配置，已完成结果保留。默认每个配置最多 600 秒（可用 `--timeout` 调整，不是预计耗时）；Ctrl+C 会强制结束本次启动的客户端子进程组，输出 `X编号 STOP`，不会停止其他任务。结束后 Store 端 Ctrl+C。
+结果位于 `results/YYMMDD_HHMMSS/`：summary.json/csv、cli.log、各档 JSON 和日志。失败回报 `X编号 F码` 与对应日志末尾；例如第一组：
 
-每次运行的全部结果保存在仓库的 `workspace/kv_path_bench/results/YYMMDD_HHMMSS/`，例如 `260914_180900/`，使用客户端本地时间。目录内 `summary.json` / `summary.csv` 是汇总，`cli.log` 保存终端输出，各配置的 JSON 和详细日志也在同一目录。每组完成即保存，失败保留已有结果；同秒重启不会覆盖旧目录。结果目录不提交 Git。客户端可用 `--device`、`--warmup`、`--repeats` 调整，默认无须增加参数。
-
-单位：终端 A/B/C 数值及汇总 CSV 的 `median_ms`、`p95_ms` 为毫秒（ms）；JSON 的 `median_s`、`p95_s`、`samples_s`、`batch_samples_s` 为秒（s）。`effective_gbps` 实际为 GB/s（十进制字节/秒，不是 Gbit/s）。
-
-### 单独测一档
-
-两端使用同一环境和提交，设备已可用、模型已停止。先测 small。Store 端运行（旧的非 direct-l2 Store 需先 Ctrl+C 停止）：
-
-```bash
-python3 workspace/kv_path_bench/feasibility_store.py <STORE_IP> small --direct-l2
+```sh
+tail -n 35 workspace/kv_path_bench/results/<RUN_ID>/128-contiguous.log
 ```
 
-看到 S0 后，在客户端运行：
+单独一档：
 
-```bash
-python3 workspace/kv_path_bench/kv_transfer_bench.py <CLIENT_IP> <STORE_IP> small
+```sh
+python3 workspace/kv_path_bench/kv_transfer_bench.py <CLIENT_IP> <STORE_IP> --tokens 1024 --layout contiguous
 ```
 
-成功只打印一行，例如 `T128S A=1.000 B=2.000 C=1.500`：T 后是 token 数，C/S 表示连续/分散，A/B/C 是三条路径的累加批次耗时中位数，单位毫秒；这仅为格式示例，不是实测数据。回报这一行即可。详细结果写入 `/tmp/a3-kv-perf-128.json`，底层日志写入 `/tmp/a3-kv-perf-128.log`。失败输出 F2（L1/Store 初始化）、F3（Host 分配）、F5（路径执行/校验）、F9（其他），日志中记录路径和批次。单次默认分散，可用 `--layout contiguous` 改为连续。
+端口集中在 bench_ports.py，master RPC 19271、管理/metrics 19273。依赖 torch/torch_npu/mooncake.store.BufferPool/sgl_kernel_npu。ADXL Host 分配仍不同于原生 HiCache pinned Host；不能把结果宣称为原生 server 性能或已确认物理 UB 带宽。
 
-small 成功后结束 Store，两端把 `small` 改成 `max`，等 Store S1 后再运行客户端；结果为 `T131072 ...`，文件名中的 128 改为 131072。若对应规模的 direct-l2 Store 已在运行，无需重启。每轮结束后 Store Ctrl+C；失败不扩大规模。
+## 历史结果
 
-比较口径：
-
-- 三种方式使用同一块最终 ADXL L2、相同对象、最多 8 页的批次和同一组非连续 L1 目标地址。B 也改为相同对象顺序及 ADXL L2，以隔离额外暂存拷贝的影响；它不再沿用旧可行性脚本的交错对象和 pinned L2。
-- 每个批次、每条路径预热 2 次，记录 10 次（可用 `--warmup` / `--repeats` 修改），批次间轮换 A/B/C 顺序。A 的本地数据准备、各路径清零和地址列表构造在计时外；接收、B 的额外 CPU 拷贝、L2→L1 调用和批次末尾 NPU 同步在计时内。每条路径每批最后一次执行后都逐页校验 L1。
-- 第 r 个总样本是所有批次第 r 次计时之和。JSON 保存批次原始样本、累加样本、中位数、P95、逻辑 KV bytes / 中位数得到的有效 GB/s、L1/L2/额外暂存大小。这是逐批预热的串行搬运比较，不是连续请求延迟、模型吞吐或物理链路带宽；没有流水重叠。
-- max 保留完整 128K L1（约 8.6 GiB），L2 最多 9 页（含保留页），额外 Host 暂存最多 8 页，两者从同一个 1 GiB Store 内部缓冲池借用。所有路径测试期间两块 Host 内存都保留，分配和释放不计时。
-
-两端需有 `torch`、`torch_npu`、`mooncake.store.BufferPool`，客户端还需 `sgl_kernel_npu`。旧 `--local-ip`、`--master-ip`、`--tokens` 入口仍可用；自选容量时 Store 也需准备相同容量的 split 对象。结果不单独证明实际使用了 UB 物理链路。
-
-本地无需 NPU 的数据布局检查：
-
-```bash
-python3 -m unittest discover -s workspace/kv_path_bench -p 'test_*.py'
-```
+`260915_110547` 的 40 条正式性能结果及其比较结论已撤回，保留文件仅供追溯，等待整请求重测。旧一页/可行性检查不是性能基线。
 
 ## 可行性验证（不计时）
 
@@ -106,7 +87,7 @@ python3 workspace/kv_path_bench/feasibility_check.py <CLIENT_IP> <STORE_IP> smal
 
 Python、底层库和子进程的标准输出/错误均写入日志；终端只显示短结果码。
 
-可行性脚本用 `mooncake.store.BufferPool` 从 `setup()` 已注册的 1 GiB ADXL Host 缓冲区借用接收暂存区（最多 8 页），不再额外分配并注册 Host 内存。测试结束先归还缓冲区再关闭 Store；该接口已核对官方 `v0.3.12.post1` 源码。
+可行性脚本用 `mooncake.store.BufferPool` 从 `setup()` 已注册的 1 GiB ADXL Host 缓冲区借用接收暂存区（可行性检查的有限接收缓冲），不再额外分配并注册 Host 内存。测试结束先归还缓冲区再关闭 Store；该接口已核对官方 `v0.3.12.post1` 源码。
 
 claim 设备、停止模型后，先在 Store 端运行（出现 `S0` 后保持运行），再在客户端运行：
 
@@ -115,12 +96,15 @@ python3 workspace/kv_path_bench/feasibility_store.py <STORE_IP> small
 python3 workspace/kv_path_bench/feasibility_check.py <CLIENT_IP> <STORE_IP> small
 ```
 
-客户端返回 `P0` 后在 Store 端按 Ctrl+C。最大规模时，两端把命令末尾的 `small` 改成 `max`，Store 端等 `S1`、客户端等 `P1`，然后再次 Ctrl+C。小规模是一页连续地址，最大规模是完整 128K 分散地址；每组只验证两条远端路径各一次，不采性能样本。最大规模在 Store 端申请 10 GiB segment、设置 `fabric_memory.max_capacity=16`，客户端保留约 8.6 GiB L1、每批接收 8 页。
+客户端返回 `P0` 后在 Store 端按 Ctrl+C。最大规模时，两端把命令末尾的 `small` 改成 `max`，Store 端等 `S1`、客户端等 `P1`，然后再次 Ctrl+C。小规模是一页连续地址，最大规模是完整 128K 分散地址；每组只验证两条远端路径各一次，不采性能样本。最大规模在 Store 端申请 10 GiB segment、设置 `fabric_memory.max_capacity=16`，客户端保留约 8.6 GiB L1、使用有限接收缓冲循环校验。
 
 失败只需回报终端上最后出现的短码：`F1` Store 启动或准备数据失败；`F2` 客户端 L1 分配或 Store 初始化失败；`F3` Host 暂存分配/注册失败；`F4` NPU 注册失败；`F5` Host 中转读取/校验失败；`F6` NPU 暂存读取/校验失败；`F9` 其他错误。详细输出自动写入 `/tmp/a3-kv-feasibility-{store,client}-{small,max}.log`；不用手工查日志、抄日志或输入 `tail` 命令。失败后 Ctrl+C 结束 Store，不继续扩大规模。
 
 成功短码只证明数据路径正确，UB 实际传输仍需另查日志或计数器。这里和性能脚本的分散模式均为确定性的非连续 page 索引映射，不代表分配器长期运行后的真实碎片状态。
 
-## 路径命名
 
-新结果和终端全部使用语义名称，详见 [新旧命名对应表](PATH_NAMES.md)。套件新增 `L3-L2_Mooncake`，与原三条路径一起测，共 40 项正式测量。单段只计直接读入最终 L2 的调用与同步，Host 内容校验在计时外。上文 A/B/C 和 T 后缀为历史结果格式，当前输出例如 `tokens=1024 layout=contiguous L3-L2_Mooncake=1.000 ms`。命令、结果目录与 `cli.log` 不变。
+## 本地检查
+
+```sh
+python3 -m unittest discover -s workspace/kv_path_bench -p 'test_*.py'
+```

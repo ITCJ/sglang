@@ -29,9 +29,9 @@ class SuiteTest(unittest.TestCase):
         layout = command[command.index("--layout") + 1]
         destination = Path(command[command.index("--output") + 1])
         destination.write_text(json.dumps({
-            "status": "ok", "tokens": tokens, "layout": layout,
+            "status": "ok", "measurement_protocol": "whole_request_v2", "tokens": tokens, "layout": layout,
             "paths": [{"path": suite.PATH_NAMES[c], "correct": True, "median_s": 0.01,
-                       "p95_s": 0.02, "effective_gbps": 1} for c in "ABCM"],
+                       "p95_s": 0.02, "effective_gbps": 1} for c in "ACM"],
         }))
         return 0, "native noise should not reach terminal\n"
 

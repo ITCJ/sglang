@@ -1,6 +1,6 @@
 # Research Status
 
-Updated: 2026-09-14.
+Updated: 2026-09-16.
 
 ## Goal
 
@@ -56,3 +56,12 @@ implementation. It cannot by itself establish that native HiCache is slow or
 that a new cache manager is better. Any future HiCache Fabric adaptation must
 be identified as an adaptation and compared with the same underlying transfer
 capabilities.
+
+## Performance measurement revision
+
+The 80 formal rows from kv_path_bench/260915_110547 and
+fabric_direct_bench/260915_104705 are withdrawn from performance analysis.
+Reruns use whole-request submission and wall-clock samples, without a fixed
+page batching requirement or sums of independently warmed batches. Staging is
+excluded. These reruns are not yet validated on the remote NPU. Native HiCache
+L2-only work is handled separately; see kv-path-plan.md for ownership and scope.

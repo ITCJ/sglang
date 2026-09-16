@@ -82,7 +82,7 @@ def run_suite(args, run_dir, run_case=execute_case):
 
 
 def _run_suite(args, run_dir, run_case):
-    result = {"status": "running", "run_dir": str(run_dir), "cases": []}
+    result = {"status": "running", "measurement_protocol": "whole_request_v2", "run_dir": str(run_dir), "cases": []}
     save_summary(result, run_dir)
     script = Path(__file__).with_name("kv_transfer_bench.py")
     for index, (tokens, layout, smoke) in enumerate(cases()):
@@ -106,9 +106,10 @@ def _run_suite(args, run_dir, run_case):
                 failure = codes[-1] if codes else "F9"
                 raise RuntimeError(f"child exit={rc}")
             data = json.loads(output.read_text())
-            if (data.get("status") != "ok" or data.get("tokens") != tokens
+            if (data.get("measurement_protocol") != "whole_request_v2"
+                    or data.get("status") != "ok" or data.get("tokens") != tokens
                     or data.get("layout") != layout
-                    or [path["path"] for path in data.get("paths", [])] != [PATH_NAMES[c] for c in "ABCM"]
+                    or [path["path"] for path in data.get("paths", [])] != [PATH_NAMES[c] for c in "ACM"]
                     or not all(path.get("correct") is True for path in data["paths"])):
                 raise RuntimeError("missing or invalid successful result")
             result["cases"].append({"tokens": tokens, "layout": layout, "smoke": smoke, "result": data})
@@ -139,7 +140,7 @@ def main():
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--repeats", type=int, default=10)
-    parser.add_argument("--timeout", type=float, default=600, help="maximum seconds per configuration")
+    parser.add_argument("--timeout", type=float, default=1800, help="maximum seconds per configuration")
     args = parser.parse_args()
     if args.device < 0 or args.warmup < 0 or args.repeats < 1 or args.timeout <= 0:
         parser.error("invalid device, warmup, repeats or timeout")

@@ -4,7 +4,7 @@
 
 ## 目标与边界
 
-让 `feasibility_check.py` 的 `L3->NPU staging->L1` 路径通过 small，再通过 max。网络接收目标必须实际位于 NPU HBM，不能改成 Host 中转后宣称直达成功。保留 BF16 MLA 的 61 层、128-token page、512 维压缩 KV + 64 维 RoPE；L1 保持两个分离缓冲区。暂存区最多 8 页，循环复用；max 是完整 128K L1、非连续 page 映射。
+让 `feasibility_check.py` 的 `L3->NPU staging->L1` 路径通过 small，再通过 max。网络接收目标必须实际位于 NPU HBM，不能改成 Host 中转后宣称直达成功。保留 BF16 MLA 的 61 层、128-token page、512 维压缩 KV + 64 维 RoPE；L1 保持两个分离缓冲区。历史可行性脚本使用有限暂存区循环复用（不作为性能测试要求）；max 是完整 128K L1、非连续 page 映射。
 
 ## 已知事实
 

@@ -19,8 +19,8 @@ class DirectCheckTests(unittest.TestCase):
         rope_total = check.LAYERS * (count + 1) * rope_width
         for layout in ("contiguous", "scattered"):
             slots = []
-            for batch in make_batches(count, 8, layout):
-                self.assertLessEqual(len(batch["pages"]), 8)
+            for batch in make_batches(count, layout=layout):
+                self.assertEqual(len(batch["pages"]), count)
                 for page, slot in zip(batch["pages"], batch["slots"]):
                     slots.append(slot)
                     src, dst, sizes = check.transfer_plan(page * check.PAGE_BYTES, 0, k_total, count, slot)

@@ -155,7 +155,7 @@ def worker(args):
             raise RuntimeError("bm.create2 returned no handle")
         check_rc(handle.join(), "BM join")
         joined = True
-        if handle.local_mem_size(bm.BmMemType.HOST) < PAGE_BYTES * (1024 if args.performance else 1):
+        if handle.local_mem_size(bm.BmMemType.HOST) < PAGE_BYTES * (1025 if args.performance else 1):
             raise RuntimeError("BM Host pool is smaller than the workload")
         if handle.local_mem_size(bm.BmMemType.DEVICE) != 0:
             raise RuntimeError("unexpected HBM contribution: experiment requires a Host source")

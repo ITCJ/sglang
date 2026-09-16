@@ -9,7 +9,8 @@ class PerformanceTest(unittest.TestCase):
             batches = make_batches(count)
             self.assertEqual([p for b in batches for p in b["pages"]], list(range(count)))
             self.assertEqual(sorted(s for b in batches for s in b["slots"]), list(range(1, count + 1)))
-            self.assertTrue(all(1 <= len(b["pages"]) <= 8 for b in batches))
+            self.assertEqual(len(batches), 1)
+            self.assertEqual(len(batches[0]["pages"]), count)
         self.assertNotEqual(make_batches(1024)[0]["slots"], list(range(1, 9)))
         self.assertEqual(
             [s for b in make_batches(1024, layout="contiguous") for s in b["slots"]],
@@ -39,13 +40,26 @@ class PerformanceTest(unittest.TestCase):
         self.assertEqual(samples, [5, 5, 5])
         self.assertEqual(calls, ["prepare", "sync", "transfer", "sync"] * 5)
 
-    def test_workload_samples_sum_batches_before_statistics(self):
-        result = summarize("B", [[1, 3, 2], [9, 2, 4]], 12_000_000_000, 128)
+    def test_whole_request_samples_are_not_summed(self):
+        result = summarize("C", [10, 5, 6], 12_000_000_000)
         self.assertEqual(result["samples_s"], [10, 5, 6])
         self.assertEqual(result["median_s"], 6)
         self.assertEqual(result["p95_s"], 10)
         self.assertEqual(result["effective_gbps"], 2)
-        self.assertEqual(result["host_staging_bytes"], 128)
+        self.assertEqual(result["measurement_protocol"], "whole_request_v2")
+
+    def test_validation_is_outside_timing_and_runs_each_iteration(self):
+        now = [0]
+        checked = []
+        def action():
+            now[0] += 3
+        def validate():
+            checked.append(True)
+            now[0] += 1000
+        values = measure_batch(action, lambda: None, lambda: None, 2, 10,
+                               clock=lambda: now[0], validate=validate)
+        self.assertEqual(values, [3] * 10)
+        self.assertEqual(len(checked), 12)
 
 
 if __name__ == "__main__":

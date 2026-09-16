@@ -10,7 +10,7 @@ from kv_transfer_bench import make_batches
 class FabricPathsTest(unittest.TestCase):
     def test_l2_scatter_composes_to_identical_direct_transfer(self):
         for layout in ("contiguous", "scattered"):
-            for batch in make_batches(32, 8, layout):
+            for batch in make_batches(32, layout=layout):
                 plans = perf.batch_plans(batch, 1 << 40, 2 << 40, 3 << 40, 4 << 40, 32)
                 read_src, read_dst, read_sizes = plans["read"]
                 local_src, targets, sizes = plans["local"]
@@ -25,7 +25,28 @@ class FabricPathsTest(unittest.TestCase):
                     self.assertEqual(matches, [direct])
                 for dst, size in zip(read_dst, read_sizes):
                     self.assertGreater(dst, 2 << 40)
-                    self.assertLessEqual(dst + size, (2 << 40) + perf.L2_BYTES)
+                    self.assertLessEqual(dst + size, (2 << 40) + perf.l2_bytes(32))
+
+    def test_max_request_is_one_submission_per_leg_with_full_l2_capacity(self):
+        count = 1024
+        request, = make_batches(count, layout="contiguous")
+        base = 2 << 40
+        plans = perf.batch_plans(request, 1 << 40, base, 3 << 40, 4 << 40, count)
+        self.assertEqual(len(plans["read"][0]), count * 2)
+        self.assertEqual(len(plans["local"][0]), count * check.LAYERS * 2)
+        self.assertEqual(sum(plans["read"][2]), count * check.PAGE_BYTES)
+        spans = sorted(zip(plans["read"][1], plans["read"][2]))
+        for (start, size), (next_start, _) in zip(spans, spans[1:]):
+            self.assertLessEqual(start + size, next_start)
+        self.assertEqual(spans[-1][0] + spans[-1][1], base + perf.l2_bytes(count))
+        handle = Mock()
+        handle.copy_data_batch.return_value = handle.wait.return_value = 0
+        bm = SimpleNamespace(BmCopyType=SimpleNamespace(G2G=1, GH2L=2))
+        perf.run_path("F", handle, bm, plans)
+        calls = handle.copy_data_batch.call_args_list
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0].args[3], count * 2)
+        self.assertEqual(calls[1].args[3], count * check.LAYERS * 2)
 
     def test_timed_paths_have_only_required_transfers_and_waits(self):
         bm = SimpleNamespace(BmCopyType=SimpleNamespace(G2G="host-host", GH2L="host-npu"))

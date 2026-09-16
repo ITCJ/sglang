@@ -1,25 +1,54 @@
-# Host → NPU 直达验证与性能实验
+# MemFabric 整请求传输实验
 
-## 自动性能实验
+性能测试采用 `whole_request_v2`：脚本不设置固定页数拆批，每条路径一次提交完整请求所需的对象/地址列表。每个样本是真实的整请求完成时间，不再累加独立批次的测量。
 
-当前更新：增加 `L3-L2_MemFabric` 单段，和原三路径一起自动测，共 40 项正式测量。单段计时只有 G2G 与 BM wait（保留统一末尾同步），计时外经本地 GH2L 读出最终 L2 并校验；不把校验的 L2→L1 计入耗时。每轮先清空 L2，避免旧数据掩盖漏写。终端、CSV、JSON、各路径文件名统一使用完整语义名称，不再输出路径短码；下文 E/F/D 仅用于历史对应。命令和结果目录不变。单段的两种布局沿用套件标签，实际 L2 地址组织相同。
+| 路径 | 计时内操作 |
+| --- | --- |
+| `L2-L1_MemFabric` | 本地 L2 已准备，一次整请求 GH2L + wait |
+| `L3-L2-L1_MemFabric` | 一次整请求 G2G + wait，再一次整请求 GH2L + wait |
+| `L3-L1_MemFabric` | 远端 Host 直接到最终 L1，一次整请求 GH2L + wait |
+| `L3-L2_MemFabric` | 远端 Host 到本地最终 L2，一次整请求 G2G + wait |
 
-在已通过一页验证的同一环境运行。两端使用相同模式，先源端，看到 `FR` 再启动客户端：
+均包含末尾 NPU 同步。中转路径先完成全部读取再加载 L1，不增加流水。接口内部调度由 MF 决定；若完整地址列表超过接口限制，报错停止，不静默缩成小批次。
+
+数据为 61 层、BF16、128-token page、512+64 维 MLA KV。源一页全部 KV 后接 RoPE，最终 Host L2 为分离 KV/RoPE 的 page-first，NPU L1 为 layer-first。连续/分散标签只描述 L1 映射，单段到 L2 的地址组织相同。
+
+每路径按完整请求预热 2 次、采样 10 次；一页冒烟不预热只执行一次。地址构造、清零、准备和校验在计时外，每轮均校验。L3→L2 单段通过计时外 GH2L 读出验证。清零使用一页大小的 CPU scratch 循环写入，这不是计时内的数据传输拆批。
+
+两端各保留 10 GiB BM Host 池，客户端最终 L2 随请求扩展，128K 时约 8.59 GiB（含保留页），NPU L1 同量。没有额外完整请求大小的 CPU 零缓冲。直达路径不使用 L2，但同套件仍保留该 Host 池以统一初始化环境。与旧小 L2 版本相比，实际使用的 Host 内存更多。新口径尚需远端验证。
+
+## 执行
+
+设备空闲，自己的模型及其他性能测试停止，两端同一提交且 memfabric_hybrid/BM 可用。先在两端更新并核对：
+
+```sh
+git pull --ff-only
+git log -1 --oneline
+```
+
+源端：
 
 ```sh
 python3 workspace/fabric_direct_bench/check.py source <SOURCE_IP> --performance
+```
+
+等 `FR` 后，客户端：
+
+```sh
 python3 workspace/fabric_direct_bench/check.py client <CLIENT_IP> <SOURCE_IP> --performance
 ```
 
-一次完成三路径一页冒烟，以及 1K、4K、16K、64K、128K × 连续/分散布局 × 三路径，共 30 项正式测量。命名见 [新旧对应表](../kv_path_bench/PATH_NAMES.md)：E=`L2-L1_MemFabric`，F=`L3-L2-L1_MemFabric`，D=`L3-L1_MemFabric`。默认每批最多 8 页、预热 2 次、测量 10 次，逐批轮换三路径顺序；与 A/B/C 一样将各批对应采样相加，再取中位数/P95，不是连续端到端请求耗时。
+自动先一页校验，再跑 1K/4K/16K/64K/128K × 连续/分散 × 四路径，共 40 条正式结果。失败即停止。成功为客户端 `FP`、源端 `FD`，结束自动清理；Ctrl+C 仅结束自己的工作进程。默认整套超时 3600 秒，可 `--timeout` 调整。
 
-E 的本地 L2 在计时前填好，计时只有本地 GH2L；F 计时包括远端到本地 L2 的 G2G、等待、本地 GH2L、等待；D 直接 GH2L。各路径都包含末尾 NPU 同步。分配、地址列表构造、源准备、清零、逐页校验不计时。F 每轮计时前清空 L2，防止误用前一路径的旧数据；每条路径结束分别校验 L1。新接口是 1.1.5 提供的候选用法，尚需远端验证，失败即停止扩大。源按页连续分配属于本实验的分配选择，不声称模拟 Mooncake 分配碎片。
+失败在相应端运行：
 
-两端各贡献 10 GiB BM Host 池，客户端从自己的池中使用 9 页容量作为最终 L2（含保留页，独立的 page-first KV/RoPE，约 77.2 MiB），不是额外 staging；另有同容量 CPU 零缓冲用于计时外清零。源一次准备完整 128K 数据。客户端最大 L1 约 8.59 GiB；初始化/库内部额外资源不含在这些容量中。不要与自己的 A/B/C 实验同时运行。
+```sh
+python3 workspace/fabric_direct_bench/check.py client --diagnose
+```
 
-两端各自在 `workspace/fabric_direct_bench/results/YYMMDD_HHMMSS/` 保存 `cli.log`、`native.log`、`status.json`；客户端另有 `summary.json`、`summary.csv`、各组各路径 JSON，`path` 使用完整语义名称，`code` 保留短码。时间戳为本机时间，组间实时保存；最终成功仍是客户端 `FP`、源端 `FD`。终端 E/F/D 值和 CSV 耗时单位 ms，JSON `_s` 字段为秒，带宽为 GB/s。结果不提交 Git。
+源端把 client 换成 source。回报短码和诊断信息。结果位于 `results/YYMMDD_HHMMSS/`，包含 cli/native 日志、status.json、客户端汇总与每条路径 JSON。CSV 耗时为 ms，JSON samples_s 为秒，带宽为十进制 GB/s。10 样本 P95 为最大值。
 
-Ctrl+C 终止自己的工作进程组；性能模式总超时默认 3600 秒（是防挂死上限，不是预计耗时），可用 `--timeout` 调整。失败回报短码；诊断命令仍为 `python3 workspace/fabric_direct_bench/check.py client --diagnose`。未完成的组不会冒充成功，已完成的组保留。绕过 Store 的 D 不含 Store 管理开销，需与 A/B/C 分开标识。
+`260915_104705` 的全部 40 条正式性能结果及比较结论已撤回，文件仅作历史记录。旧结果不能混入整请求性能分析。新结果只说明具体传输实现下的路径成本，不代表 server TTFT 或物理链路上限。
 
 ## 一页验证
 
