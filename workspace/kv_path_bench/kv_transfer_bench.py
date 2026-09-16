@@ -43,7 +43,7 @@ def make_batches(count: int, batch_pages: int | None = None, layout: str = "scat
     ]
 
 
-def measure_batch(action, prepare, synchronize, warmup, repeats, clock=time.perf_counter, validate=lambda: None):
+def measure_batch(action, prepare, synchronize, warmup, repeats, clock=time.perf_counter, validate=None):
     """Exclude input/reset preparation; include completion of each complete action."""
     samples = []
     for iteration in range(warmup + repeats):
@@ -53,19 +53,20 @@ def measure_batch(action, prepare, synchronize, warmup, repeats, clock=time.perf
         action()
         synchronize()
         elapsed = clock() - start
-        validate()
+        if validate is not None:
+            validate()
         if iteration >= warmup:
             samples.append(elapsed)
     return samples
 
 
-def summarize(code: str, samples: list[float], nbytes: int) -> dict:
+def summarize(code: str, samples: list[float], nbytes: int, validate: bool = False) -> dict:
     median = statistics.median(samples)
     return {
         "path": PATHS[code], "median_s": median,
         "p95_s": sorted(samples)[math.ceil(0.95 * len(samples)) - 1],
         "effective_gbps": nbytes / median / 1e9,
-        "samples_s": samples, "correct": True,
+        "samples_s": samples, "validation_enabled": validate, "correct": True if validate else None,
         "measurement_protocol": "whole_request_v2",
     }
 
@@ -84,6 +85,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--log", type=Path)
     parser.add_argument("--layout", choices=("contiguous", "scattered"), default="scattered")
+    parser.add_argument("--validate", action="store_true", help="validate all KV bytes after every iteration (default: off)")
     parser.add_argument("--warmup", type=int, default=WARMUP)
     parser.add_argument("--repeats", type=int, default=REPEATS)
     parser.add_argument("--skip-direct", action="store_true", help=argparse.SUPPRESS)
@@ -124,7 +126,7 @@ def main() -> int:
         "layout": args.layout,
         "bytes": count * PAGE_BYTES, "request_pages": count,
         "measurement_protocol": "whole_request_v2",
-        "warmup": args.warmup, "repeats": args.repeats,
+        "warmup": args.warmup, "repeats": args.repeats, "validation_enabled": args.validate,
         "object_layout": "one key per page: all compressed KV, then all RoPE",
         "l2_layout": "page,layer,token,1,dim; separate KV/RoPE in ADXL Host buffer",
         "l1_layout": "layer,page,token,1,dim; separate KV/RoPE",
@@ -227,8 +229,8 @@ def main() -> int:
                         raise RuntimeError("reserved L1 page overwritten")
 
             samples = measure_batch(lambda: run_path(code), prepare, torch.npu.synchronize,
-                                    args.warmup, args.repeats, validate=validate)
-            result["paths"].append(summarize(code, samples, count * PAGE_BYTES))
+                                    args.warmup, args.repeats, validate=validate if args.validate else None)
+            result["paths"].append(summarize(code, samples, count * PAGE_BYTES, validate=args.validate))
         result["status"] = "ok"
     except Exception as exc:
         result.update(status="failed", stage=stage, error=repr(exc))

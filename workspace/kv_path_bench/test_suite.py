@@ -11,12 +11,12 @@ import performance_suite as suite
 
 
 class SuiteTest(unittest.TestCase):
-    def run_with(self, fake):
+    def run_with(self, fake, validate=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             output = io.StringIO()
             args = SimpleNamespace(client_ip="client", store_ip="store", device=0,
-                                   warmup=2, repeats=10, timeout=600)
+                                   warmup=2, repeats=10, timeout=600, validate=validate)
             with contextlib.redirect_stdout(output):
                 rc = suite.run_suite(args, root, run_case=fake)
             self.assertEqual((root / "cli.log").read_text(), output.getvalue())
@@ -30,7 +30,8 @@ class SuiteTest(unittest.TestCase):
         destination = Path(command[command.index("--output") + 1])
         destination.write_text(json.dumps({
             "status": "ok", "measurement_protocol": "whole_request_v2", "tokens": tokens, "layout": layout,
-            "paths": [{"path": suite.PATH_NAMES[c], "correct": True, "median_s": 0.01,
+            "paths": [{"path": suite.PATH_NAMES[c], "correct": True if "--validate" in command else None,
+                       "validation_enabled": "--validate" in command, "median_s": 0.01,
                        "p95_s": 0.02, "effective_gbps": 1} for c in "ACM"],
         }))
         return 0, "native noise should not reach terminal\n"
@@ -45,6 +46,8 @@ class SuiteTest(unittest.TestCase):
         rc, terminal, result = self.run_with(fake)
         self.assertEqual(rc, 0)
         self.assertEqual(len(commands), 11)
+        self.assertTrue(all("--validate" not in command for command in commands))
+        self.assertIsNone(result["cases"][0]["result"]["paths"][0]["correct"])
         self.assertEqual(commands[0][commands[0].index("--repeats") + 1], "1")
         self.assertEqual(len([c for c in result["cases"] if not c["smoke"]]), 10)
         self.assertEqual(result["status"], "ok")
@@ -52,6 +55,16 @@ class SuiteTest(unittest.TestCase):
         self.assertNotIn("native noise", terminal)
         self.assertIn("L3-L2_Mooncake=10.000 ms", terminal)
         self.assertNotIn("A=", terminal)
+
+    def test_validation_opt_in_is_forwarded_to_every_case(self):
+        commands = []
+        def fake(command, timeout):
+            commands.append(command)
+            return self.success(command, timeout)
+        rc, _, result = self.run_with(fake, validate=True)
+        self.assertEqual(rc, 0)
+        self.assertTrue(result["validation_enabled"])
+        self.assertTrue(all("--validate" in command for command in commands))
 
     def test_failure_keeps_previous_results_and_stops(self):
         calls = 0

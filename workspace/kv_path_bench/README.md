@@ -14,7 +14,7 @@
 
 数据为 61 层 BF16 MLA，128 tokens/page，512 维压缩 KV + 64 维 RoPE（v_buffer 是 RoPE）。L2 为 KV/RoPE 分离的 page-first，L1 为 layer-first；每页 8,994,816 bytes。保留连续/确定性分散 L1 映射，L3→L2 单段的 L2 地址组织不随该标签变化。
 
-每路径完整请求预热 2 次、采样 10 次。每次样本是实际开始到完成的 wall time，不累加独立批次采样。准备、清零、地址列表构造和逐页校验均在计时外；每次执行后校验。CSV median_ms/p95_ms 为 ms，JSON samples_s 为秒，effective_gbps 实际单位为十进制 GB/s。10 样本 nearest-rank P95 即最大值。
+每路径完整请求预热 2 次、采样 10 次。每次样本是实际开始到完成的 wall time，不累加独立批次采样。准备、清零和地址列表构造均在计时外。性能模式默认关闭数据校验（含冒烟）；客户端套件或单档命令加 `--validate` 才会每轮在计时外逐页逐字节校验。关闭校验仍检查接口返回值并同步完成，JSON 记录 `validation_enabled=false`、`correct=null`，不宣称内容正确。CSV median_ms/p95_ms 为 ms，JSON samples_s 为秒，effective_gbps 实际单位为十进制 GB/s。10 样本 nearest-rank P95 即最大值。
 
 ## 内存
 
@@ -41,7 +41,7 @@ python3 workspace/kv_path_bench/feasibility_store.py <STORE_IP> max --direct-l2
 python3 workspace/kv_path_bench/performance_suite.py <CLIENT_IP> <STORE_IP>
 ```
 
-自动先 128-token 冒烟（0 次预热、1 次采样），再测 1K/4K/16K/64K/128K × 两种布局 × 三路径，共 30 条正式结果；失败立即停止。每档独立进程，默认超时 1800 秒，可 `--timeout` 调整。成功为 `ALL_OK`。结束后 Store 端 Ctrl+C，客户端结束释放资源；客户端 Ctrl+C 只终止其自行启动的进程组。
+自动先 128-token 冒烟（0 次预热、1 次采样），再测 1K/4K/16K/64K/128K × 两种布局 × 三路径，共 30 条正式结果；失败立即停止。每档独立进程，默认超时 1800 秒，可 `--timeout` 调整。成功为 `ALL_OK`，默认仅表示运行完成，启用 `--validate` 后才包含数据校验通过。独立可行性检查仍始终校验。结束后 Store 端 Ctrl+C，客户端结束释放资源；客户端 Ctrl+C 只终止其自行启动的进程组。
 
 结果位于 `results/YYMMDD_HHMMSS/`：summary.json/csv、cli.log、各档 JSON 和日志。失败回报 `X编号 F码` 与对应日志末尾；例如第一组：
 

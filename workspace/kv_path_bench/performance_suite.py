@@ -82,7 +82,7 @@ def run_suite(args, run_dir, run_case=execute_case):
 
 
 def _run_suite(args, run_dir, run_case):
-    result = {"status": "running", "measurement_protocol": "whole_request_v2", "run_dir": str(run_dir), "cases": []}
+    result = {"status": "running", "measurement_protocol": "whole_request_v2", "run_dir": str(run_dir), "validation_enabled": args.validate, "cases": []}
     save_summary(result, run_dir)
     script = Path(__file__).with_name("kv_transfer_bench.py")
     for index, (tokens, layout, smoke) in enumerate(cases()):
@@ -95,6 +95,8 @@ def _run_suite(args, run_dir, run_case):
             "--warmup", "0" if smoke else str(args.warmup),
             "--repeats", "1" if smoke else str(args.repeats),
         ]
+        if args.validate:
+            command.append("--validate")
         print(f"Running tokens={tokens} layout={layout}", flush=True)
         failure = "F9"
         try:
@@ -110,7 +112,10 @@ def _run_suite(args, run_dir, run_case):
                     or data.get("status") != "ok" or data.get("tokens") != tokens
                     or data.get("layout") != layout
                     or [path["path"] for path in data.get("paths", [])] != [PATH_NAMES[c] for c in "ACM"]
-                    or not all(path.get("correct") is True for path in data["paths"])):
+                    or not all(path.get("validation_enabled") is args.validate
+                               and "correct" in path
+                               and path["correct"] is (True if args.validate else None)
+                               for path in data["paths"])):
                 raise RuntimeError("missing or invalid successful result")
             result["cases"].append({"tokens": tokens, "layout": layout, "smoke": smoke, "result": data})
             for path in data["paths"]:
@@ -138,6 +143,7 @@ def main():
     parser.add_argument("client_ip")
     parser.add_argument("store_ip")
     parser.add_argument("--device", type=int, default=0)
+    parser.add_argument("--validate", action="store_true", help="validate all KV bytes after every iteration, including smoke (default: off)")
     parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--repeats", type=int, default=10)
     parser.add_argument("--timeout", type=float, default=1800, help="maximum seconds per configuration")

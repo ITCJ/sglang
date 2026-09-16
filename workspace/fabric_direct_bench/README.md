@@ -13,7 +13,7 @@
 
 数据为 61 层、BF16、128-token page、512+64 维 MLA KV。源一页全部 KV 后接 RoPE，最终 Host L2 为分离 KV/RoPE 的 page-first，NPU L1 为 layer-first。连续/分散标签只描述 L1 映射，单段到 L2 的地址组织相同。
 
-每路径按完整请求预热 2 次、采样 10 次；一页冒烟不预热只执行一次。地址构造、清零、准备和校验在计时外，每轮均校验。L3→L2 单段通过计时外 GH2L 读出验证。清零使用一页大小的 CPU scratch 循环写入，这不是计时内的数据传输拆批。
+每路径按完整请求预热 2 次、采样 10 次；一页冒烟不预热只执行一次。地址构造、清零和准备在计时外。性能模式默认关闭数据校验（含一页冒烟）；客户端加 `--validate` 才会每轮在计时外逐字节校验，此时 L3→L2 单段通过额外的计时外 GH2L 读出验证。关闭校验仍检查接口返回值并等待传输完成，JSON 记录 `validation_enabled=false`、`correct=null`，不宣称内容正确。清零使用一页大小的 CPU scratch 循环写入，这不是计时内的数据传输拆批。
 
 两端各保留 10 GiB BM Host 池，客户端最终 L2 随请求扩展，128K 时约 8.59 GiB（含保留页），NPU L1 同量。没有额外完整请求大小的 CPU 零缓冲。直达路径不使用 L2，但同套件仍保留该 Host 池以统一初始化环境。与旧小 L2 版本相比，实际使用的 Host 内存更多。新口径尚需远端验证。
 
@@ -38,7 +38,7 @@ python3 workspace/fabric_direct_bench/check.py source <SOURCE_IP> --performance
 python3 workspace/fabric_direct_bench/check.py client <CLIENT_IP> <SOURCE_IP> --performance
 ```
 
-自动先一页校验，再跑 1K/4K/16K/64K/128K × 连续/分散 × 四路径，共 40 条正式结果。失败即停止。成功为客户端 `FP`、源端 `FD`，结束自动清理；Ctrl+C 仅结束自己的工作进程。默认整套超时 3600 秒，可 `--timeout` 调整。
+自动先一页冒烟，再跑 1K/4K/16K/64K/128K × 连续/分散 × 四路径，共 40 条正式结果。失败即停止。成功为客户端 `FP`、源端 `FD`，结束自动清理；Ctrl+C 仅结束自己的工作进程。默认整套超时 3600 秒，可 `--timeout` 调整。
 
 失败在相应端运行：
 
@@ -48,7 +48,7 @@ python3 workspace/fabric_direct_bench/check.py client --diagnose
 
 源端把 client 换成 source。回报短码和诊断信息。结果位于 `results/YYMMDD_HHMMSS/`，包含 cli/native 日志、status.json、客户端汇总与每条路径 JSON。CSV 耗时为 ms，JSON samples_s 为秒，带宽为十进制 GB/s。10 样本 P95 为最大值。
 
-`260915_104705` 的全部 40 条正式性能结果及比较结论已撤回，文件仅作历史记录。旧结果不能混入整请求性能分析。新结果只说明具体传输实现下的路径成本，不代表 server TTFT 或物理链路上限。
+`260915_104705` 的全部 40 条正式性能结果及比较结论已撤回，文件仅作历史记录。旧结果不能混入整请求性能分析。`FP` / `FD` 在性能默认模式只表示运行完成，启用 `--validate` 后才包含数据校验通过。独立的一页正确性检查（不加 `--performance`）仍始终校验。新结果只说明具体传输实现下的路径成本，不代表 server TTFT 或物理链路上限。
 
 ## 一页验证
 

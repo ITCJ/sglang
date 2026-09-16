@@ -308,6 +308,7 @@ def main():
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--timeout", type=int, default=None)
     parser.add_argument("--performance", action="store_true")
+    parser.add_argument("--validate", action="store_true", help="validate every performance iteration (default: off; standalone correctness check always validates)")
     parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--repeats", type=int, default=10)
     parser.add_argument("--run-dir", type=Path, help=argparse.SUPPRESS)

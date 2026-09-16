@@ -47,6 +47,9 @@ class PerformanceTest(unittest.TestCase):
         self.assertEqual(result["p95_s"], 10)
         self.assertEqual(result["effective_gbps"], 2)
         self.assertEqual(result["measurement_protocol"], "whole_request_v2")
+        self.assertFalse(result["validation_enabled"])
+        self.assertIsNone(result["correct"])
+        self.assertTrue(summarize("C", [1], 1, validate=True)["correct"])
 
     def test_validation_is_outside_timing_and_runs_each_iteration(self):
         now = [0]

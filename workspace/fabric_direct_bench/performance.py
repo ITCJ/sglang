@@ -111,12 +111,13 @@ def run_client(handle, bm, torch, source_gva, args):
 
             request_samples[code] = measure_batch(
                 lambda: run_path(code, handle, bm, plans), prepare, torch.npu.synchronize,
-                0 if smoke else args.warmup, 1 if smoke else args.repeats, validate=validate)
+                0 if smoke else args.warmup, 1 if smoke else args.repeats, validate=validate if args.validate else None)
         for code in FABRIC_CODES:
             samples = request_samples[code]
             median = statistics.median(samples)
             case = dict(tokens=tokens, layout=layout, smoke=smoke,
-                    path=PATH_NAMES[code], correct=True, l2_bytes=l2_bytes(count) if code != "D" else 0,
+                    path=PATH_NAMES[code], validation_enabled=args.validate,
+                    correct=True if args.validate else None, l2_bytes=l2_bytes(count) if code != "D" else 0,
                     allocated_l2_bytes=l2_bytes(count), measurement_protocol="whole_request_v2",
                     request_pages=count, timing="one synchronized whole-request wall time per sample",
                     bytes=count * PAGE_BYTES, median_s=median,
