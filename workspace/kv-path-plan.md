@@ -19,6 +19,14 @@
 
 运行与清理见 [Mooncake 套件](kv_path_bench/README.md) 和 [MF 套件](fabric_direct_bench/README.md)。所有实验和测试只在用户的远端执行环境运行。
 
+三套实验完成后，在保存结果的远端仓库运行：
+
+```sh
+python3 workspace/collect_latest_bench_results.py
+```
+
+脚本分别选择三个 `results/` 目录中名称最新的 run，严格读取该 run 的 `summary.csv`，并输出统一字段的 `workspace/latest_bench_summary.csv`。若最新 run 没有 `summary.csv`，脚本报错，不会静默回退到旧结果。可用 `--output <PATH>` 改变输出位置。
+
 ## 性能结果状态
 
 2026-09-15 的 kv_path_bench/260915_110547 与 fabric_direct_bench/260915_104705 共 80 条正式性能结果整体标记为无效，已由 2026-09-16 最新结果替代。原图和数据保留追溯，不继续引用其倍数、带宽或架构性能结论。功能验证与性能结论分开记录。
