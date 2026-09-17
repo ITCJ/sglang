@@ -946,7 +946,8 @@ class SparseKVCacheManager:
         # victim selection, slot-map point updates, reverse-map updates, and
         # full LRU pair writeback. The returned victims stay aligned with top-k.
         with torch.npu.stream(self._materialize_slot_map_stream):
-            _wait_stream_event(self._materialize_slot_map_stream, copy_ready)
+            _wait_stream_event(self._materialize_refill_stream, self.hit_done)
+            _wait_stream_event(self._materialize_refill_stream, self.miss_done)
             victim_slots = fused_timestamp_lru_metadata_update(
                 self.device_slot_map[layer_idx],
                 slot_lookup_req_indices,
@@ -962,6 +963,7 @@ class SparseKVCacheManager:
         # Hits already occupy stable physical slots. Refill waits until the
         # host miss copy and fused victim plan are both available.
         with torch.npu.stream(self._materialize_refill_stream):
+            _wait_stream_event(self._materialize_refill_stream, self.hit_done)
             _wait_stream_event(self._materialize_refill_stream, self.miss_done)
             _wait_stream_event(self._materialize_refill_stream, self.slot_map_done)
             miss_refill_src_index = (
