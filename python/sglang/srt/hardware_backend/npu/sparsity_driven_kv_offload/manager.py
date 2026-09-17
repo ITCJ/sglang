@@ -1049,7 +1049,7 @@ class SparseKVCacheManager:
                 miss_refill_valid_mask,
                 2,
                 2,
-                block_dim=24,
+                block_dim=48,
             )
 
 
