@@ -31,6 +31,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _record_stream_event(stream, event) -> None:
+    if hasattr(stream, "record_event"):
+        stream.record_event(event)
+    else:
+        event.record(stream)
+
+
+def _wait_stream_event(stream, event) -> None:
+    if hasattr(stream, "wait_event"):
+        stream.wait_event(event)
+    else:
+        event.wait(stream)
+
+
 def normalize_batch_topk_indices(topk_indices: torch.Tensor) -> torch.Tensor:
     """Normalize DSA top-k indices to [batch, topk] for compact KV copies."""
     if topk_indices.dim() == 2:
@@ -101,6 +115,22 @@ class SparseKVCacheManager:
         )
         self.store_dtype = self.paged_kv_cache.store_dtype
         self.layer_num = self.paged_kv_cache.layer_num
+
+        # Only the independent hit and miss copies use side streams. Events are
+        # persistent and layer-local so graph capture never depends on a
+        # short-lived event or reuses one event across different layers.
+        self._materialize_d2d_hit_stream = torch.npu.Stream()
+        self._materialize_h2d_miss_stream = torch.npu.Stream()
+        self._materialize_copy_ready = [
+            torch.npu.Event() for _ in range(self.layer_num)
+        ]
+        self._materialize_hit_done = [
+            torch.npu.Event() for _ in range(self.layer_num)
+        ]
+        self._materialize_miss_done = [
+            torch.npu.Event() for _ in range(self.layer_num)
+        ]
+
         # device KV buffer
         try:
             with memory_saver_adapter.region(GPU_MEMORY_TYPE_KV_CACHE):
@@ -836,10 +866,8 @@ class SparseKVCacheManager:
             )
             token_on_device = token_on_device.to(torch.bool) & valid_topk_mask
 
-            # Build all copy indices and execute the complete materialization
-            # pipeline on the caller stream. Keeping hit, miss, metadata update,
-            # and refill on one stream gives NPUGraph a single explicit order and
-            # avoids captured cross-stream event dependencies.
+            # Build copy indices on the caller stream before releasing the two
+            # independent copies to their side streams.
             hit_src_index, hit_dst_index, hit_valid_mask = _build_hit_src_dst_index(
                 token_on_device,
                 device_token_pos,
@@ -886,7 +914,16 @@ class SparseKVCacheManager:
                 * self.sparse_context_len
             )
 
-            # Copy device-cache hits into the selected KV buffer.
+            _record_stream_event(
+                stream, self._materialize_copy_ready[layer_idx]
+            )
+
+        # Copy device-cache hits into the selected KV buffer.
+        with torch.npu.stream(self._materialize_d2d_hit_stream):
+            _wait_stream_event(
+                self._materialize_d2d_hit_stream,
+                self._materialize_copy_ready[layer_idx],
+            )
             unidex_copy_inplace(
                 self.device_kv_buffer[layer_idx],
                 selected_kv_buffer,
@@ -897,8 +934,17 @@ class SparseKVCacheManager:
                 2,  #
                 block_dim=24,
             )
+            _record_stream_event(
+                self._materialize_d2d_hit_stream,
+                self._materialize_hit_done[layer_idx],
+            )
 
-            # Copy host shared-memory misses into the selected KV buffer.
+        # Copy host shared-memory misses into the selected KV buffer.
+        with torch.npu.stream(self._materialize_h2d_miss_stream):
+            _wait_stream_event(
+                self._materialize_h2d_miss_stream,
+                self._materialize_copy_ready[layer_idx],
+            )
             unidex_copy_inplace(
                 self.host_kv_buffer[layer_idx],
                 selected_kv_buffer,
@@ -910,6 +956,16 @@ class SparseKVCacheManager:
                 block_dim=24,
                 src_ptr=self.dev_ptr_list[layer_idx],
             )
+            _record_stream_event(
+                self._materialize_h2d_miss_stream,
+                self._materialize_miss_done[layer_idx],
+            )
+
+        with torch.npu.stream(stream):
+            # Join both copies back to the caller stream. Metadata update,
+            # refill, and attention remain ordered on this stream.
+            _wait_stream_event(stream, self._materialize_hit_done[layer_idx])
+            _wait_stream_event(stream, self._materialize_miss_done[layer_idx])
 
             # One AIV owns one request row and fuses timestamp aging, hit reset,
             # victim selection, slot-map point updates, reverse-map updates, and
