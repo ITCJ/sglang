@@ -22,7 +22,7 @@ OUTPUT_COLUMNS = (
     "p95_ms",
     "effective_gbps",
 )
-ROWS_PER_PAGE = 60
+ROWS_PER_PAGE = 55
 
 
 def latest_summary(repo: Path, relative_results: Path) -> Path:
