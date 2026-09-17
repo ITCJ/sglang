@@ -1,5 +1,7 @@
 # A3 MLA KV 整请求传输测试
 
+> 最新结果：用户于 2026-09-16 提供的截图已归档到 [results/260916_174640](results/260916_174640/EXTRACTION.md)，跨实验结论见 [最新分析](../bench_analysis/260916/analysis.md)。本次三组为当前基准，旧性能结果无效。截图未包含远端 commit、实际命令或校验开关；正文中“尚需远端验证”是交付时状态，不能用汇总截图替代数据正确性证明。
+
 本性能套件不设置固定页数的拆批上限。每次提交完整请求，预热和计时也以完整请求为单位。JSON 标记 `measurement_protocol=whole_request_v2`，不可与旧的逐批累加样本混用。
 
 ## 路径与计时
@@ -12,15 +14,15 @@
 
 不再采集 staging 路径。仍是一页一个 Store key，没有聚合对象；接口内部如何调度由库决定，脚本不设置固定页数切分，也不在接口失败时悄悄拆小重试。中转先完成整请求读取再加载 L1，不增加流水。
 
-数据为 61 层 BF16 MLA，128 tokens/page，512 维压缩 KV + 64 维 RoPE（v_buffer 是 RoPE）。L2 为 KV/RoPE 分离的 page-first，L1 为 layer-first；每页 8,994,816 bytes。保留连续/确定性分散 L1 映射，L3→L2 单段的 L2 地址组织不随该标签变化。
+数据为 61 层 BF16 MLA，128 tokens/page，512 维压缩 KV + 64 维 RoPE（v_buffer 是 RoPE）。L2 为 KV/RoPE 分离的 page-first，L1 为 layer-first；每页 8,994,816 bytes。真正离散模式在 L2 和 L1 都使用 `1,3,5,...` 物理 slots，每个有效 page 之间保留一个完整 page 大小的空洞，page 内部仍连续；`L3→L2` 因而也有独立的离散语义。旧结果中的 scattered 只是连续物理页集合上的置换，不作为本轮离散结果。
 
 每路径完整请求预热 2 次、采样 10 次。每次样本是实际开始到完成的 wall time，不累加独立批次采样。准备、清零和地址列表构造均在计时外。性能模式默认关闭数据校验（含冒烟）；客户端套件或单档命令加 `--validate` 才会每轮在计时外逐页逐字节校验。关闭校验仍检查接口返回值并同步完成，JSON 记录 `validation_enabled=false`、`correct=null`，不宣称内容正确。CSV median_ms/p95_ms 为 ms，JSON samples_s 为秒，effective_gbps 实际单位为十进制 GB/s。10 样本 nearest-rank P95 即最大值。
 
 ## 内存
 
-最终 ADXL L2 和 NPU L1 都容纳完整请求（各含一个保留页），没有额外 Host staging。128K 时各约 8.59 GiB。客户端 Store 内部接收池按请求向上取整至 GiB 并预留空间（128K 为 9 GiB），通过 BufferPool 借用完整 L2；不继续使用旧的固定小接收池。客户端默认按池大小设置 fabric_memory.max_capacity；已有环境变量不足时明确失败，不覆盖用户设置。性能未在新口径下远端验证，尤其需要验证大池与完整请求提交支持。
+最终 ADXL L2 和 NPU L1 都容纳完整请求，没有额外 Host staging。128K 连续布局各约 8.59 GiB，离散布局各约 17.16 GiB。客户端 Store 内部接收池按物理布局向上取整至 GiB 并预留空间，通过 BufferPool 借用完整 L2；客户端默认按池大小设置 `fabric_memory.max_capacity`，已有环境变量不足时明确失败，不覆盖用户设置。
 
-## 一次运行
+## 聚合运行
 
 两端同一提交，设备空闲、自己的模型及其他性能实验停止。先更新两端：
 
@@ -35,13 +37,19 @@ Store 端准备完整数据并保持运行：
 python3 workspace/kv_path_bench/feasibility_store.py <STORE_IP> max --direct-l2
 ```
 
-等 `S1`，客户端运行：
+等 `S1`。需要在开头增加一次小规模传输与逐字节校验时运行：
+
+```sh
+python3 workspace/kv_path_bench/performance_suite.py <CLIENT_IP> <STORE_IP> --preflight-validate
+```
+
+该入口先运行一次 4K scatter、0 预热、1 次采样并校验；通过后自动继续完整性能矩阵，性能部分不校验。校验失败会停止。若不需要开头校验，直接运行：
 
 ```sh
 python3 workspace/kv_path_bench/performance_suite.py <CLIENT_IP> <STORE_IP>
 ```
 
-自动先 128-token 冒烟（0 次预热、1 次采样），再测 1K/4K/16K/64K/128K × 两种布局 × 三路径，共 30 条正式结果；失败立即停止。每档独立进程，默认超时 1800 秒，可 `--timeout` 调整。成功为 `ALL_OK`，默认仅表示运行完成，启用 `--validate` 后才包含数据校验通过。独立可行性检查仍始终校验。结束后 Store 端 Ctrl+C，客户端结束释放资源；客户端 Ctrl+C 只终止其自行启动的进程组。
+性能套件随后自动跑 128-token 冒烟和 1K/4K/16K/64K/128K × 两种布局 × 三路径，共 30 条正式结果；失败立即停止。每档独立进程，默认超时 1800 秒。`--validate` 仍保留为整套逐轮校验的诊断选项，不能与 `--preflight-validate` 同时使用。成功标志为 `ALL_OK`。结束后 Store 端 Ctrl+C。
 
 结果位于 `results/YYMMDD_HHMMSS/`：summary.json/csv、cli.log、各档 JSON 和日志。失败回报 `X编号 F码` 与对应日志末尾；例如第一组：
 
@@ -101,10 +109,3 @@ python3 workspace/kv_path_bench/feasibility_check.py <CLIENT_IP> <STORE_IP> smal
 失败只需回报终端上最后出现的短码：`F1` Store 启动或准备数据失败；`F2` 客户端 L1 分配或 Store 初始化失败；`F3` Host 暂存分配/注册失败；`F4` NPU 注册失败；`F5` Host 中转读取/校验失败；`F6` NPU 暂存读取/校验失败；`F9` 其他错误。详细输出自动写入 `/tmp/a3-kv-feasibility-{store,client}-{small,max}.log`；不用手工查日志、抄日志或输入 `tail` 命令。失败后 Ctrl+C 结束 Store，不继续扩大规模。
 
 成功短码只证明数据路径正确，UB 实际传输仍需另查日志或计数器。这里和性能脚本的分散模式均为确定性的非连续 page 索引映射，不代表分配器长期运行后的真实碎片状态。
-
-
-## 本地检查
-
-```sh
-python3 -m unittest discover -s workspace/kv_path_bench -p 'test_*.py'
-```

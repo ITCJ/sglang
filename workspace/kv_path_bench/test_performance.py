@@ -1,6 +1,6 @@
 import unittest
 
-from kv_transfer_bench import make_batches, measure_batch, summarize
+from kv_transfer_bench import make_batches, measure_batch, physical_page_slots, summarize
 
 
 class PerformanceTest(unittest.TestCase):
@@ -8,7 +8,8 @@ class PerformanceTest(unittest.TestCase):
         for count in (1, 9, 137, 1024):
             batches = make_batches(count)
             self.assertEqual([p for b in batches for p in b["pages"]], list(range(count)))
-            self.assertEqual(sorted(s for b in batches for s in b["slots"]), list(range(1, count + 1)))
+            self.assertEqual(sorted(s for b in batches for s in b["slots"]),
+                             list(range(1, count * 2, 2)))
             self.assertEqual(len(batches), 1)
             self.assertEqual(len(batches[0]["pages"]), count)
         self.assertNotEqual(make_batches(1024)[0]["slots"], list(range(1, 9)))
@@ -16,6 +17,8 @@ class PerformanceTest(unittest.TestCase):
             [s for b in make_batches(1024, layout="contiguous") for s in b["slots"]],
             list(range(1, 1025)),
         )
+        self.assertEqual(physical_page_slots(1024, "contiguous"), 1025)
+        self.assertEqual(physical_page_slots(1024, "scattered"), 2048)
 
     def test_timing_excludes_preparation_and_includes_completion(self):
         now = 0

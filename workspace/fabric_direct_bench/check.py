@@ -26,6 +26,9 @@ STORE_PORT = 19571
 CONTROL_PORT = 19573
 NIC_PORT = 19575
 POOL_BYTES = 1 << 30
+PERFORMANCE_POOL_BYTES = 28 * POOL_BYTES
+MAX_PERFORMANCE_PAGES = 131072 // PAGE_SIZE
+SCATTER_SOURCE_BASE = MAX_PERFORMANCE_PAGES * PAGE_BYTES
 PROTOCOL = "a3-bm-host-to-l1-v2"
 
 
@@ -68,7 +71,9 @@ def worker(args):
     source = role == "source"
     source_ip = args.local_ip if source else args.source_ip
     rank = 0 if source else 1
-    pool_bytes = 10 * POOL_BYTES if args.performance else POOL_BYTES
+    # Holds a contiguous 128K source plus a disjoint gapped 128K source, or the
+    # client's 2048-slot scattered L2 pool.
+    pool_bytes = PERFORMANCE_POOL_BYTES if args.performance else POOL_BYTES
     logfile = args.run_dir / "native.log" if args.run_dir else Path(f"/tmp/a3-fabric-{role}.log")
     enable_log("fabric", role, path=logfile)
     result = {
@@ -125,12 +130,18 @@ def worker(args):
             connection = socket.create_connection((source_ip, CONTROL_PORT), timeout=30)
         connection.settimeout(args.timeout)
         reader = connection.makefile("rb")
-        send(connection, "HELLO", protocol=PROTOCOL, rank=rank, performance=args.performance)
+        send(connection, "HELLO", protocol=PROTOCOL, rank=rank, performance=args.performance,
+             tokens=args.tokens, layout=args.layout,
+             preflight_validate=args.preflight_validate)
         hello = receive(reader, "HELLO")
         if hello.get("protocol") != PROTOCOL or hello.get("rank") != 1 - rank:
             raise RuntimeError("peer protocol or rank mismatch")
         if hello.get("performance", False) != args.performance:
             raise RuntimeError("both ends must use the same performance mode")
+        if args.performance and (hello.get("tokens") != args.tokens
+                                 or hello.get("layout") != args.layout
+                                 or hello.get("preflight_validate", False) != args.preflight_validate):
+            raise RuntimeError("both ends must use the same performance case selection")
 
         code, stage = "F3", "BM initialize, allocate Host pool and join"
         torch.npu.set_device(args.device)
@@ -155,7 +166,8 @@ def worker(args):
             raise RuntimeError("bm.create2 returned no handle")
         check_rc(handle.join(), "BM join")
         joined = True
-        if handle.local_mem_size(bm.BmMemType.HOST) < PAGE_BYTES * (1025 if args.performance else 1):
+        required_pages = 3 * MAX_PERFORMANCE_PAGES if args.performance else 1
+        if handle.local_mem_size(bm.BmMemType.HOST) < PAGE_BYTES * required_pages:
             raise RuntimeError("BM Host pool is smaller than the workload")
         if handle.local_mem_size(bm.BmMemType.DEVICE) != 0:
             raise RuntimeError("unexpected HBM contribution: experiment requires a Host source")
@@ -165,11 +177,17 @@ def worker(args):
             gva = handle.peer_rank_ptr(0, bm.BmMemType.HOST)
             if not gva:
                 raise RuntimeError("source Host GVA is null")
-            for page in range(1024 if args.performance else 1):
+            for page in range(MAX_PERFORMANCE_PAGES if args.performance else 1):
                 payload = bytearray(split_page_payload(page))
                 tensor = torch.frombuffer(payload, dtype=torch.uint8)
                 check_rc(handle.copy_data(tensor.data_ptr(), gva + page * PAGE_BYTES, PAGE_BYTES, bm.BmCopyType.H2GH, 0), "H2GH fill")
                 check_rc(handle.wait(), "source BM wait")
+                if args.performance:
+                    scatter_offset = SCATTER_SOURCE_BASE + (1 + 2 * page) * PAGE_BYTES
+                    check_rc(handle.copy_data(tensor.data_ptr(), gva + scatter_offset,
+                                              PAGE_BYTES, bm.BmCopyType.H2GH, 0),
+                             "H2GH scatter fill")
+                    check_rc(handle.wait(), "source BM scatter wait")
             send(connection, "READY", page_bytes=PAGE_BYTES, memory="HOST")
             print_result("FS")
             code, stage = "F2", "wait for client verification and cleanup"
@@ -308,13 +326,22 @@ def main():
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--timeout", type=int, default=None)
     parser.add_argument("--performance", action="store_true")
+    parser.add_argument("--tokens", type=int, help="run one performance size instead of the full matrix")
+    parser.add_argument("--layout", choices=("contiguous", "scattered"), default="scattered",
+                        help="layout for --tokens (full matrix still runs both)")
     parser.add_argument("--validate", action="store_true", help="validate every performance iteration (default: off; standalone correctness check always validates)")
+    parser.add_argument("--preflight-validate", action="store_true",
+                        help="validate one 4K scattered case before the unvalidated performance matrix")
     parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--repeats", type=int, default=10)
     parser.add_argument("--run-dir", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--diagnose", action="store_true")
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.validate and args.preflight_validate:
+        parser.error("--validate and --preflight-validate are mutually exclusive")
+    if args.preflight_validate and (not args.performance or args.tokens is not None):
+        parser.error("--preflight-validate requires the full --performance suite")
     args.timeout = args.timeout if args.timeout is not None else (3600 if args.performance else 180)
     if args.diagnose:
         path = Path(f"/tmp/a3-fabric-{args.role}.json")
@@ -330,6 +357,9 @@ def main():
         parser.error("client and source must use distinct node IPs")
     if args.device < 0 or args.timeout <= 0 or args.warmup < 0 or args.repeats < 1:
         parser.error("device must be nonnegative and timeout positive")
+    if args.tokens is not None and (not args.performance or args.tokens < PAGE_SIZE
+                                    or args.tokens > 131072 or args.tokens % PAGE_SIZE):
+        parser.error("--tokens requires --performance and a multiple of 128 up to 131072")
     if args.worker:
         return worker(args)
     if args.performance:

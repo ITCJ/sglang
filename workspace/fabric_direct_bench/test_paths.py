@@ -4,14 +4,15 @@ from unittest.mock import Mock
 
 import check  # Adds the sibling benchmark helpers to the import path.
 import performance as perf
-from kv_transfer_bench import make_batches
+from kv_transfer_bench import make_batches, physical_page_slots
 
 
 class FabricPathsTest(unittest.TestCase):
     def test_l2_scatter_composes_to_identical_direct_transfer(self):
         for layout in ("contiguous", "scattered"):
             for batch in make_batches(32, layout=layout):
-                plans = perf.batch_plans(batch, 1 << 40, 2 << 40, 3 << 40, 4 << 40, 32)
+                slots = physical_page_slots(32, layout)
+                plans = perf.batch_plans(batch, 1 << 40, 2 << 40, 3 << 40, 4 << 40, slots)
                 read_src, read_dst, read_sizes = plans["read"]
                 local_src, targets, sizes = plans["local"]
                 direct_src, direct_targets, direct_sizes = plans["direct"]
@@ -25,20 +26,21 @@ class FabricPathsTest(unittest.TestCase):
                     self.assertEqual(matches, [direct])
                 for dst, size in zip(read_dst, read_sizes):
                     self.assertGreater(dst, 2 << 40)
-                    self.assertLessEqual(dst + size, (2 << 40) + perf.l2_bytes(32))
+                    self.assertLessEqual(dst + size, (2 << 40) + perf.l2_bytes(slots))
 
     def test_max_request_is_one_submission_per_leg_with_full_l2_capacity(self):
         count = 1024
         request, = make_batches(count, layout="contiguous")
+        physical_slots = physical_page_slots(count, "contiguous")
         base = 2 << 40
-        plans = perf.batch_plans(request, 1 << 40, base, 3 << 40, 4 << 40, count)
+        plans = perf.batch_plans(request, 1 << 40, base, 3 << 40, 4 << 40, physical_slots)
         self.assertEqual(len(plans["read"][0]), count * 2)
         self.assertEqual(len(plans["local"][0]), count * check.LAYERS * 2)
         self.assertEqual(sum(plans["read"][2]), count * check.PAGE_BYTES)
         spans = sorted(zip(plans["read"][1], plans["read"][2]))
         for (start, size), (next_start, _) in zip(spans, spans[1:]):
             self.assertLessEqual(start + size, next_start)
-        self.assertEqual(spans[-1][0] + spans[-1][1], base + perf.l2_bytes(count))
+        self.assertEqual(spans[-1][0] + spans[-1][1], base + perf.l2_bytes(physical_slots))
         handle = Mock()
         handle.copy_data_batch.return_value = handle.wait.return_value = 0
         bm = SimpleNamespace(BmCopyType=SimpleNamespace(G2G=1, GH2L=2))

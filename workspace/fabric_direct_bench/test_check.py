@@ -15,25 +15,28 @@ class DirectCheckTests(unittest.TestCase):
         count = 1024
         k_width = check.PAGE_SIZE * check.K_DIM * 2
         rope_width = check.PAGE_SIZE * check.ROPE_DIM * 2
-        k_total = check.LAYERS * (count + 1) * k_width
-        rope_total = check.LAYERS * (count + 1) * rope_width
         for layout in ("contiguous", "scattered"):
+            physical_slots = count + 1 if layout == "contiguous" else count * 2
+            k_total = check.LAYERS * physical_slots * k_width
+            rope_total = check.LAYERS * physical_slots * rope_width
             slots = []
             for batch in make_batches(count, layout=layout):
                 self.assertEqual(len(batch["pages"]), count)
                 for page, slot in zip(batch["pages"], batch["slots"]):
                     slots.append(slot)
-                    src, dst, sizes = check.transfer_plan(page * check.PAGE_BYTES, 0, k_total, count, slot)
+                    src, dst, sizes = check.transfer_plan(page * check.PAGE_BYTES, 0, k_total, physical_slots - 1, slot)
                     self.assertEqual(sum(sizes), check.PAGE_BYTES)
                     for i, (start, target, size) in enumerate(zip(src, dst, sizes)):
                         self.assertGreaterEqual(start, page * check.PAGE_BYTES)
                         self.assertLessEqual(start + size, (page + 1) * check.PAGE_BYTES)
                         layer = i // 2
-                        expected = ((layer * (count + 1) + slot) * k_width if i % 2 == 0
-                                    else k_total + (layer * (count + 1) + slot) * rope_width)
+                        expected = ((layer * physical_slots + slot) * k_width if i % 2 == 0
+                                    else k_total + (layer * physical_slots + slot) * rope_width)
                         self.assertEqual(target, expected)
                         self.assertLessEqual(target + size, k_total if i % 2 == 0 else k_total + rope_total)
-            self.assertEqual(sorted(slots), list(range(1, count + 1)))
+            expected_slots = (list(range(1, count + 1)) if layout == "contiguous"
+                              else list(range(1, count * 2, 2)))
+            self.assertEqual(sorted(slots), expected_slots)
 
     def test_page_scatter_preserves_reserved_slots(self):
         source = check.split_page_payload(0)

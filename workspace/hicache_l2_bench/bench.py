@@ -19,6 +19,21 @@ ROPE_DIM = 64
 BYTES_PER_TOKEN = LAYERS * (K_DIM + ROPE_DIM) * 2
 
 
+def page_order(count, scatter=False):
+    """Logical-page order used by both Host and device pools."""
+    if count < 1:
+        raise ValueError('page count must be positive')
+    return list(range(count))
+
+
+def page_slots(count, scatter=False, reserved_zero=True):
+    """Physical page slots; scattered pages are separated by page-sized gaps."""
+    order = page_order(count, scatter)
+    base = 1 if reserved_zero else 0
+    step = 2 if scatter else 1
+    return [base + step * page for page in order]
+
+
 def summarize(samples, nbytes):
     result = {}
     for key in samples[0]:
@@ -56,13 +71,14 @@ def run(args):
             hicache_ratio=1.0, hicache_size=0,
         )
         set_global_server_args_for_scheduler(server_args)
+        physical_tokens = args.tokens * (2 if args.scatter else 1)
         pool = NPUMLATokenToKVPool(
-            size=args.tokens, page_size=PAGE_SIZE, dtype=torch.bfloat16,
+            size=physical_tokens, page_size=PAGE_SIZE, dtype=torch.bfloat16,
             kv_lora_rank=K_DIM, qk_rope_head_dim=ROPE_DIM, layer_num=LAYERS,
             device='npu', enable_memory_saver=False,
         )
         allocator = PagedTokenToKVPoolAllocator(
-            size=args.tokens, page_size=PAGE_SIZE, dtype=torch.bfloat16,
+            size=physical_tokens, page_size=PAGE_SIZE, dtype=torch.bfloat16,
             device='npu', kvcache=pool, need_sort=False,
         )
         cache = HiRadixCache(CacheInitParams(
@@ -79,6 +95,14 @@ def run(args):
         if not all(pinned.values()):
             raise RuntimeError(f'official Host pool is not reported pinned: {pinned}')
         pages = args.tokens // PAGE_SIZE
+        layout = 'scattered' if args.scatter else 'contiguous'
+        l1_slots = page_slots(pages, args.scatter, reserved_zero=True)
+        l2_slots = page_slots(pages, args.scatter, reserved_zero=False)
+        free_page_order = torch.tensor(l1_slots, dtype=allocator.free_pages.dtype,
+                                       device=allocator.free_pages.device)
+        host_free_order = torch.tensor(
+            [slot * PAGE_SIZE + token for slot in l2_slots for token in range(PAGE_SIZE)],
+            dtype=host.free_slots.dtype)
         key = RadixKey(array('q', range(args.tokens)))
         host_indices = None
         initialized_slots = None
@@ -90,6 +114,10 @@ def run(args):
                 raise RuntimeError('previous load was not fully acknowledged')
             cache.reset()
             allocator.clear()
+            # Fixture only: both direct and managed use the real allocator.alloc().
+            # Set the same free-page order before either path, outside timing.
+            allocator.free_pages = free_page_order.clone()
+            host.free_slots = host_free_order.clone()
             host_indices = host.alloc(args.tokens)
             if host_indices is None:
                 raise RuntimeError('Host allocation failed')
@@ -98,6 +126,9 @@ def run(args):
                 raise RuntimeError('Host allocator reset changed the fixture mapping')
             if initialized_slots is None:
                 # Deterministic page/layer/token/component-dependent bytes, bounded scratch.
+                if args.validate:
+                    host.k_buffer.zero_()
+                    host.v_buffer.zero_()
                 for page, slot in enumerate(host_indices[::PAGE_SIZE].tolist()):
                     hp = slot // PAGE_SIZE
                     for buf, dim, salt in ((host.k_buffer, K_DIM, 0),
@@ -127,6 +158,16 @@ def run(args):
                         raise RuntimeError(f'KV mismatch host={hs} device={ds}')
             if torch.count_nonzero(pool.k_buffer[:, 0]).item() or torch.count_nonzero(pool.v_buffer[:, 0]).item():
                 raise RuntimeError('reserved NPU page overwritten')
+            if args.scatter and pages > 1:
+                l1_guards = torch.tensor(list(range(2, pages * 2 + 1, 2)),
+                                         dtype=torch.int64, device='npu')
+                if (torch.count_nonzero(pool.k_buffer[:, l1_guards]).item()
+                        or torch.count_nonzero(pool.v_buffer[:, l1_guards]).item()):
+                    raise RuntimeError('unused NPU guard page overwritten')
+                l2_guards = list(range(1, pages * 2, 2))
+                if (torch.count_nonzero(host.k_buffer[l2_guards]).item()
+                        or torch.count_nonzero(host.v_buffer[l2_guards]).item()):
+                    raise RuntimeError('unused Host guard page overwritten')
 
         def direct():
             # Allocation and CPU index preparation are outside pure-copy timing.
@@ -182,7 +223,10 @@ def run(args):
                 versions[pkg] = metadata.version(pkg)
             except metadata.PackageNotFoundError:
                 versions[pkg] = 'unknown'
-        result = dict(status='running', tokens=args.tokens, layout='contiguous',
+        result = dict(status='running', tokens=args.tokens, layout=layout,
+                      l1_slots=l1_slots, l2_slots=l2_slots,
+                      physical_tokens=physical_tokens,
+                      mapping_version='page_gap_v2',
                       bytes=args.tokens * BYTES_PER_TOKEN, warmup=args.warmup,
                       repeats=args.repeats, layers=LAYERS, page_size=PAGE_SIZE,
                       validation_enabled=args.validate, correct=None,
@@ -206,6 +250,10 @@ def run(args):
             for name in names[offset:] + names[:offset]:
                 prepare()
                 indices, sample = actions[name]()
+                # Cheap mapping check, not a KV readback; excluded from timing.
+                actual_slots = (indices[::PAGE_SIZE] // PAGE_SIZE).cpu().tolist()
+                if actual_slots != l1_slots:
+                    raise RuntimeError(f'{name} allocated unexpected L1 page mapping')
                 if args.validate:
                     validate(indices)
                 if iteration >= args.warmup:
@@ -218,13 +266,13 @@ def run(args):
         save()
         with args.output.with_suffix('.csv').open('w') as f:
             writer = csv.writer(f)
-            writer.writerow(('tokens','path','metric','median_ms','p95_ms'))
+            writer.writerow(('tokens','layout','path','metric','median_ms','p95_ms'))
             for name, stats in result['summary'].items():
                 for metric, values in stats.items():
                     if isinstance(values, dict):
-                        writer.writerow((args.tokens,name,metric,values['median_ms'],values['p95_ms']))
+                        writer.writerow((args.tokens,layout,name,metric,values['median_ms'],values['p95_ms']))
         for name, stats in result['summary'].items():
-            print(f"tokens={args.tokens} {name}={stats['total_s']['median_ms']:.3f} ms "
+            print(f"tokens={args.tokens} layout={layout} {name}={stats['total_s']['median_ms']:.3f} ms "
                   f"{stats['effective_GBps']:.3f} GB/s", flush=True)
         print('L2_OK', flush=True)
     finally:
@@ -237,6 +285,7 @@ def run(args):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--tokens', type=int, default=128)
+    p.add_argument('--scatter', action='store_true', help='use page-sized gaps in both L2 and L1 mappings')
     p.add_argument('--device', type=int, default=0)
     p.add_argument('--validate', action='store_true', help='validate all KV bytes after every iteration (default: off)')
     p.add_argument('--warmup', type=int, default=2)

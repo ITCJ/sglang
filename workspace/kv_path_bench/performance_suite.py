@@ -35,9 +35,10 @@ class Tee:
         self.logfile.flush()
 
 
-def cases():
-    return [(128, "contiguous", True)] + [
-        (tokens, layout, False) for tokens in CAPACITIES for layout in LAYOUTS
+def cases(preflight_validate=False):
+    preflight = [(4096, "scattered", False, True)] if preflight_validate else []
+    return preflight + [(128, "contiguous", True, False)] + [
+        (tokens, layout, False, False) for tokens in CAPACITIES for layout in LAYOUTS
     ]
 
 
@@ -82,22 +83,27 @@ def run_suite(args, run_dir, run_case=execute_case):
 
 
 def _run_suite(args, run_dir, run_case):
-    result = {"status": "running", "measurement_protocol": "whole_request_v2", "run_dir": str(run_dir), "validation_enabled": args.validate, "cases": []}
+    result = {"status": "running", "measurement_protocol": "whole_request_v2",
+              "run_dir": str(run_dir), "validation_enabled": args.validate,
+              "preflight_validation_requested": args.preflight_validate,
+              "preflight": None, "cases": []}
     save_summary(result, run_dir)
     script = Path(__file__).with_name("kv_transfer_bench.py")
-    for index, (tokens, layout, smoke) in enumerate(cases()):
-        output = run_dir / f"{tokens}-{layout}.json"
-        log = run_dir / f"{tokens}-{layout}.log"
+    for index, (tokens, layout, smoke, preflight) in enumerate(cases(args.preflight_validate)):
+        prefix = "preflight-" if preflight else ""
+        output = run_dir / f"{prefix}{tokens}-{layout}.json"
+        log = run_dir / f"{prefix}{tokens}-{layout}.log"
+        case_validate = True if preflight else args.validate
         command = [
             sys.executable, str(script), args.client_ip, args.store_ip,
             "--tokens", str(tokens), "--layout", layout,
             "--device", str(args.device), "--output", str(output), "--log", str(log),
-            "--warmup", "0" if smoke else str(args.warmup),
-            "--repeats", "1" if smoke else str(args.repeats),
+            "--warmup", "0" if smoke or preflight else str(args.warmup),
+            "--repeats", "1" if smoke or preflight else str(args.repeats),
         ]
-        if args.validate:
+        if case_validate:
             command.append("--validate")
-        print(f"Running tokens={tokens} layout={layout}", flush=True)
+        print(f"Running kind={'preflight' if preflight else 'performance'} tokens={tokens} layout={layout}", flush=True)
         failure = "F9"
         try:
             rc, terminal = run_case(command, args.timeout)
@@ -112,12 +118,17 @@ def _run_suite(args, run_dir, run_case):
                     or data.get("status") != "ok" or data.get("tokens") != tokens
                     or data.get("layout") != layout
                     or [path["path"] for path in data.get("paths", [])] != [PATH_NAMES[c] for c in "ACM"]
-                    or not all(path.get("validation_enabled") is args.validate
+                    or not all(path.get("validation_enabled") is case_validate
                                and "correct" in path
-                               and path["correct"] is (True if args.validate else None)
+                               and path["correct"] is (True if case_validate else None)
                                for path in data["paths"])):
                 raise RuntimeError("missing or invalid successful result")
-            result["cases"].append({"tokens": tokens, "layout": layout, "smoke": smoke, "result": data})
+            if preflight:
+                result["preflight"] = {"status": "ok", "tokens": tokens,
+                                       "layout": layout, "result": data}
+            else:
+                result["cases"].append({"tokens": tokens, "layout": layout,
+                                        "smoke": smoke, "result": data})
             for path in data["paths"]:
                 print(f"tokens={tokens} layout={layout} {path['path']}={path['median_s'] * 1000:.3f} ms", flush=True)
         except (Exception, KeyboardInterrupt) as exc:
@@ -126,7 +137,8 @@ def _run_suite(args, run_dir, run_case):
             elif isinstance(exc, subprocess.TimeoutExpired):
                 failure = "TIMEOUT"
             result.update(status="stopped" if failure == "STOP" else "failed",
-                          failed_case=index, failed_tokens=tokens, failed_layout=layout,
+                          failed_case=index, failed_kind="preflight" if preflight else "performance",
+                          failed_tokens=tokens, failed_layout=layout,
                           failure_code=failure, error=repr(exc))
             save_summary(result, run_dir)
             print(f"X{index} {failure}", flush=True)
@@ -144,10 +156,14 @@ def main():
     parser.add_argument("store_ip")
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--validate", action="store_true", help="validate all KV bytes after every iteration, including smoke (default: off)")
+    parser.add_argument("--preflight-validate", action="store_true",
+                        help="validate one 4K scattered case before the unvalidated performance matrix")
     parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--repeats", type=int, default=10)
     parser.add_argument("--timeout", type=float, default=1800, help="maximum seconds per configuration")
     args = parser.parse_args()
+    if args.validate and args.preflight_validate:
+        parser.error("--validate and --preflight-validate are mutually exclusive")
     if args.device < 0 or args.warmup < 0 or args.repeats < 1 or args.timeout <= 0:
         parser.error("invalid device, warmup, repeats or timeout")
     run_dir = RESULTS / datetime.now().strftime("%y%m%d_%H%M%S")

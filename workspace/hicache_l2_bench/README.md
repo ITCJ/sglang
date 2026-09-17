@@ -1,5 +1,7 @@
 # 单实例原生 HiCache L2→L1 测试
 
+> 最新结果：用户于 2026-09-16 提供的截图已归档到 [results/260916_162313_897656](results/260916_162313_897656/EXTRACTION.md)，跨实验结论见 [最新分析](../bench_analysis/260916/analysis.md)。本次三组为当前基准，旧性能结果无效。截图未包含远端 commit、实际命令或校验开关；正文中“尚需远端验证”是交付时状态，不能用汇总截图替代数据正确性证明。
+
 目的：先判断官方 pinned Host L2 上的搬运性能，同时记录真实 HiCache 加载的管理阶段。无 Mooncake、MF、L3、模型权重或推理。使用当前 checkout 的 SGLang 源码，单进程/单 NPU/TP=1，临时文件初始化单 rank Gloo，不占用 rendezvous TCP 端口。
 
 ## 测什么
@@ -13,7 +15,11 @@
 
 `copy_whole` 经 `load_to_device_per_layer(..., layer_id=0, io_backend=kernel_ascend)` 调用 SGLKernel；Ascend MLA 在第 0 层调用时搬运全部层。`hicache_load` 由真实 controller 遍历层接口及记录事件，不改变生产代码。
 
-默认模拟 DeepSeek V3.1 MLA：61 层、BF16、128 tokens/page、压缩 KV 512 + RoPE 64。只测连续地址。所有组的 Host/NPU 池、有效页映射和数据相同；第 0 个 NPU page 保留，启用校验时检查其未被覆盖。Host 池按官方分配器从第 0 页分配，不强行模拟旧实验的 Host 保留页。
+默认模拟 DeepSeek V3.1 MLA：61 层、BF16、128 tokens/page、压缩 KV 512 + RoPE 64。默认测试连续和真正离散两种 L2/L1 页映射。同一映射下，纯搬运和真实 HiCache 加载使用相同的 Host/NPU 池配置、有效页映射和数据；第 0 个 NPU page 保留。
+
+离散模式将物理池扩大为两倍：Host L2 使用 page slots `0,2,4,...`，NPU L1 使用 `1,3,5,...`，因此每两个有效 page 之间都有一个完整 page 大小的空洞，而每个 page 内的 128 tokens 仍连续。每轮在计时外设置真实 Host/NPU allocator 的 free list，两条路径仍由真实 `alloc()` 分配。逐字节校验同时检查有效数据、NPU 保留页以及 L2/L1 空洞未被覆盖。JSON 记录两层实际 slots、物理容量和 `mapping_version=page_gap_v2`。这是确定性空洞布局，不模拟长期运行的随机碎片。
+
+128-token 单页只能作为启动冒烟，不能验证 page 之间的空洞；1K 的 L1 slots 为 `[1,3,5,7,9,11,13,15]`。三套实验统一使用该定义。旧结果中的 `scattered` 仅为连续物理页集合上的顺序置换，不作为本轮真正离散结果。
 
 每组每轮前清零目标 NPU，重置分配器及树，构造一个完整 Host-only 前缀。Host KV 根据 page/layer/token/component 生成；性能模式默认关闭数据校验（含 128-token 冒烟）；加 `--validate` 才会每轮计时后逐页逐字节校验并检查保留页。JSON 记录 `validation_enabled`，未校验时 `correct=null`，全部校验通过才为 `true`。构造、清零、校验和原始样本写盘均不计时。预热和采样按整个请求执行，两组轮换顺序，默认预热 2 次、采样 10 次。128-token 冒烟各执行一次，不用于稳定性判断。
 
@@ -46,26 +52,28 @@ git log -1 --oneline
 python3 workspace/hicache_l2_bench/run.py
 ```
 
-**默认命令一次完成全部测试**：128-token 冒烟通过后自动测全部五档，每档输出两组结果并实时保存。无需手工切换 tokens。`--suite` 是同样行为的显式写法。成功标志为 `L2_ALL_OK`，默认只表示运行完成，启用 `--validate` 后才包含数据校验通过。
+**默认命令一次完成全部测试**：两种布局的 128-token 冒烟通过后自动测全部五档 × 两种布局，每个组合输出两条路径并实时保存，共 20 条正式路径结果。无需手工切换 tokens。`--suite` 是同样行为的显式写法。成功标志为 `L2_ALL_OK`，默认只表示运行完成，启用 `--validate` 后才包含数据校验通过。
 
-新实验或新环境开始时，先手动执行正确性检查：
+如需在性能套件开头增加一次小规模传输与数据校验，使用聚合入口：
 
 ```sh
-python3 workspace/hicache_l2_bench/run.py --smoke --validate
+python3 workspace/hicache_l2_bench/run.py --preflight-validate
 ```
 
-通过后按默认命令测性能，无需每组重复校验。需要整套逐轮校验时使用 `run.py --validate`。关闭数据校验仍保留 pinned 状态、分配、命中、完成事件及 ack 状态检查。
+它先运行一次 4K scatter、0 预热、1 次采样并逐字节校验；通过后自动继续完整的连续+离散性能矩阵，性能部分不校验。校验失败会立即停止，不会启动性能矩阵。不需要开头校验时直接运行默认命令。`--validate` 仍保留为整套逐轮校验的诊断选项，不能与 `--preflight-validate` 同时使用。关闭数据校验仍保留 pinned 状态、分配映射、命中、完成事件及 ack 状态检查。
 
-只运行冒烟或重跑某档时，可使用：
+只测离散（全部五档），或运行冒烟/单档时，可使用：
 
 ```sh
+python3 workspace/hicache_l2_bench/run.py --scatter
 python3 workspace/hicache_l2_bench/run.py --smoke
 python3 workspace/hicache_l2_bench/run.py --tokens 1024
+python3 workspace/hicache_l2_bench/run.py --tokens 16384 --scatter
 ```
 
-旧版一页冒烟已由用户回报通过；本次整任务/默认全量入口改动仍需远端验证。
+已有连续布局结果保留；新增离散模式及 runner 均需在远端执行环境验证。
 
-套件先冒烟，再测 1K/4K/16K/64K/128K，每档独立进程。128K 的 Host 和 NPU KV 池各约 8.59 GiB（不含库额外资源）；比旧的有限页 L2 测试占用更多 Host 内存。默认每档超时 1800 秒，是防挂死上限。可传 `--device N --warmup 2 --repeats 10 --timeout 1800`。
+套件先冒烟，再测 1K/4K/16K/64K/128K，每个规模/布局组合独立进程。128K 连续布局的 Host/NPU KV 池各约 8.59 GiB，离散布局各约 17.16 GiB（均不含库额外资源）。默认每档超时 1800 秒，是防挂死上限。可传 `--device N --warmup 2 --repeats 10 --timeout 1800`。
 
 失败停止后续规模。诊断只需一条命令：
 
@@ -73,13 +81,6 @@ python3 workspace/hicache_l2_bench/run.py --tokens 1024
 python3 workspace/hicache_l2_bench/run.py --diagnose
 ```
 
-回报 `L2_FAIL` 行及诊断输出的最后 35 行。结果保存于本目录 `results/<timestamp>/`：`cli.log`、`status.json`、各档日志/原始 JSON/CSV、`summary.csv`。有效带宽为十进制 GB/s；默认 10 样本的 nearest-rank P95 是最大值。JSON 记录提交、导入源码位置、库版本、实际池容量和 pinned 状态；CANN/驱动/镜像版本应随实验回报，不能从 torch 版本推断。
+回报 `L2_FAIL` 行及诊断输出的最后 35 行。结果保存于本目录 `results/<timestamp>/`：`cli.log`、`status.json`、各组合的 `case-<tokens>-<layout>.log/.json/.csv`、`summary.csv`。CSV 和终端包含 `layout`，两种布局不会覆盖；旧版连续结果文件保持原样。有效带宽为十进制 GB/s；默认 10 样本的 nearest-rank P95 是最大值。JSON 记录提交、导入源码位置、库版本、实际池容量和 pinned 状态；CANN/驱动/镜像版本应随实验回报，不能从 torch 版本推断。
 
 退出或 Ctrl+C 时 runner 回收自己启动的子进程组；无常驻服务要手工停止。每档进程结束释放内存。失败日志保留，不自动安装或修改环境。
-
-## 本地检查（无需 torch/NPU）
-
-```sh
-python3 -m unittest discover -s workspace/hicache_l2_bench -p 'test_*.py'
-python3 -m py_compile workspace/hicache_l2_bench/bench.py workspace/hicache_l2_bench/run.py
-```

@@ -11,12 +11,13 @@ import performance_suite as suite
 
 
 class SuiteTest(unittest.TestCase):
-    def run_with(self, fake, validate=False):
+    def run_with(self, fake, validate=False, preflight_validate=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             output = io.StringIO()
             args = SimpleNamespace(client_ip="client", store_ip="store", device=0,
-                                   warmup=2, repeats=10, timeout=600, validate=validate)
+                                   warmup=2, repeats=10, timeout=600, validate=validate,
+                                   preflight_validate=preflight_validate)
             with contextlib.redirect_stdout(output):
                 rc = suite.run_suite(args, root, run_case=fake)
             self.assertEqual((root / "cli.log").read_text(), output.getvalue())
@@ -65,6 +66,20 @@ class SuiteTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertTrue(result["validation_enabled"])
         self.assertTrue(all("--validate" in command for command in commands))
+
+    def test_preflight_validation_is_one_case_then_unvalidated_matrix(self):
+        commands = []
+        def fake(command, timeout):
+            commands.append(command)
+            return self.success(command, timeout)
+        rc, _, result = self.run_with(fake, preflight_validate=True)
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(commands), 12)
+        self.assertIn("--validate", commands[0])
+        self.assertEqual(commands[0][commands[0].index("--tokens") + 1], "4096")
+        self.assertEqual(commands[0][commands[0].index("--layout") + 1], "scattered")
+        self.assertTrue(all("--validate" not in command for command in commands[1:]))
+        self.assertEqual(result["preflight"]["status"], "ok")
 
     def test_failure_keeps_previous_results_and_stops(self):
         calls = 0

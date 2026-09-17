@@ -26,18 +26,31 @@ from path_names import PATH_NAMES
 PATHS = {code: PATH_NAMES[code] for code in "ACM"}
 
 
+def physical_page_slots(count: int, layout: str) -> int:
+    """Number of addressable slots, including reserved slot zero."""
+    if count < 1:
+        raise ValueError("page counts must be positive")
+    if layout == "contiguous":
+        return count + 1
+    if layout == "scattered":
+        return count * 2
+    raise ValueError(f"unknown layout: {layout}")
+
+
 def make_batches(count: int, batch_pages: int | None = None, layout: str = "scattered") -> list[dict]:
-    """Default to one whole request; explicit sizes only for layout helper tests."""
+    """Build logical pages and physical slots; scattered slots have page-sized gaps."""
     batch_pages = count if batch_pages is None else batch_pages
     if count < 1 or batch_pages < 1:
         raise ValueError("page counts must be positive")
-    stride = 137 if layout == "scattered" else 1
-    while math.gcd(stride, count) != 1:
-        stride += 1
+    if layout not in ("contiguous", "scattered"):
+        raise ValueError(f"unknown layout: {layout}")
+    slots = [1 + (2 * page if layout == "scattered" else page)
+             for page in range(count)]
     return [
         {
             "pages": list(range(start, min(start + batch_pages, count))),
-            "slots": [1 + (page * stride) % count for page in range(start, min(start + batch_pages, count))],
+            "slots": slots[start:min(start + batch_pages, count)],
+            "layout": layout,
         }
         for start in range(0, count, batch_pages)
     ]
@@ -108,12 +121,12 @@ def main() -> int:
 
 
     count = tokens // PAGE_SIZE
-    batch = count
+    physical_slots = physical_page_slots(count, args.layout)
     k_page_elements = LAYERS * PAGE_SIZE * K_DIM
     k_page_bytes = k_page_elements * 2
     rope_page_bytes = PAGE_BYTES - k_page_bytes
-    host_shape = (batch + 1, LAYERS, PAGE_SIZE, 1)
-    l2_bytes = (batch + 1) * PAGE_BYTES
+    host_shape = (physical_slots, LAYERS, PAGE_SIZE, 1)
+    l2_bytes = physical_slots * PAGE_BYTES
     local_buffer_bytes = max(GIB, math.ceil((l2_bytes + PAGE_BYTES) / GIB) * GIB)
     capacity = max(4, math.ceil(local_buffer_bytes / GIB) + 2)
     os.environ.setdefault("ASCEND_GLOBAL_RESOURCE_CONFIG", json.dumps({"fabric_memory.max_capacity": capacity}))
@@ -131,11 +144,14 @@ def main() -> int:
         "l2_layout": "page,layer,token,1,dim; separate KV/RoPE in ADXL Host buffer",
         "l1_layout": "layer,page,token,1,dim; separate KV/RoPE",
         "l1_slots": [slot for item in batches for slot in item["slots"]],
+        "l2_slots": [slot for item in batches for slot in item["slots"]],
+        "mapping_version": "page_gap_v2",
         "timing": "one synchronized whole-request wall time per sample",
         "path_order": "A/C/M; each path warmed as a complete request",
         "l2_bytes": l2_bytes, "allocated_host_staging_bytes": 0,
         "store_local_buffer_bytes": local_buffer_bytes,
-        "l1_bytes": (count + 1) * PAGE_BYTES,
+        "physical_page_slots": physical_slots,
+        "l1_bytes": physical_slots * PAGE_BYTES,
         "disabled_paths": ["L3->NPU staging->L1"], "paths": [],
         "commit": subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"], cwd=Path(__file__).parent,
@@ -154,8 +170,8 @@ def main() -> int:
 
         failure, stage = "F2", "L1 allocation and Store setup"
         torch.npu.set_device(args.device)
-        device_k = torch.empty((LAYERS, count + 1, PAGE_SIZE, 1, K_DIM), dtype=torch.bfloat16, device="npu")
-        device_rope = torch.empty((LAYERS, count + 1, PAGE_SIZE, 1, ROPE_DIM), dtype=torch.bfloat16, device="npu")
+        device_k = torch.empty((LAYERS, physical_slots, PAGE_SIZE, 1, K_DIM), dtype=torch.bfloat16, device="npu")
+        device_rope = torch.empty((LAYERS, physical_slots, PAGE_SIZE, 1, ROPE_DIM), dtype=torch.bfloat16, device="npu")
         store = MooncakeDistributedStore()
         rc = store.setup(local_ip, "P2PHANDSHAKE", 0, local_buffer_bytes, "ascend", "", f"{master_ip}:{args.port}")
         if rc != 0:
@@ -171,16 +187,18 @@ def main() -> int:
             return torch.frombuffer(backing, dtype=torch.bfloat16)
 
         l2 = host_tensor(l2_bytes)
-        k_elements = (batch + 1) * k_page_elements
+        k_elements = physical_slots * k_page_elements
         host_k = l2[:k_elements].view(*host_shape, K_DIM)
         host_rope = l2[k_elements:].view(*host_shape, ROPE_DIM)
         item = batches[0]
         pages, slots = item["pages"], item["slots"]
-        host_indices = torch.arange(PAGE_SIZE, (count + 1) * PAGE_SIZE, dtype=torch.int64)
+        host_indices = torch.tensor(
+            [slot * PAGE_SIZE + token for slot in slots for token in range(PAGE_SIZE)],
+            dtype=torch.int64)
         device_indices = torch.tensor(
             [slot * PAGE_SIZE + token for slot in slots for token in range(PAGE_SIZE)],
             dtype=torch.int64)
-        target_ptrs = [[host_k[i + 1].data_ptr(), host_rope[i + 1].data_ptr()] for i in pages]
+        target_ptrs = [[host_k[slot].data_ptr(), host_rope[slot].data_ptr()] for slot in slots]
         target_sizes = [[k_page_bytes, rope_page_bytes] for _ in pages]
 
         def expected(page):
@@ -203,8 +221,9 @@ def main() -> int:
             if code == "A":
                 for page in pages:
                     packed = expected(page)
-                    host_k[page + 1].copy_(packed[:k_page_elements].view_as(host_k[page + 1]))
-                    host_rope[page + 1].copy_(packed[k_page_elements:].view_as(host_rope[page + 1]))
+                    slot = slots[page]
+                    host_k[slot].copy_(packed[:k_page_elements].view_as(host_k[slot]))
+                    host_rope[slot].copy_(packed[k_page_elements:].view_as(host_rope[slot]))
 
             def prepare():
                 device_k.zero_()
@@ -215,18 +234,26 @@ def main() -> int:
 
             def validate():
                 if code == "M":
-                    for page in pages:
+                    for page, slot in zip(pages, slots):
                         packed = expected(page)
                         for actual, reference in (
-                            (host_k[page + 1].reshape(-1), packed[:k_page_elements]),
-                            (host_rope[page + 1].reshape(-1), packed[k_page_elements:])):
+                            (host_k[slot].reshape(-1), packed[:k_page_elements]),
+                            (host_rope[slot].reshape(-1), packed[k_page_elements:])):
                             if not torch.equal(actual.view(torch.uint8), reference.view(torch.uint8)):
                                 raise RuntimeError("L2 content mismatch")
+                    guards = [slot for slot in range(physical_slots) if slot not in set(slots)]
+                    if (torch.count_nonzero(host_k[guards]).item()
+                            or torch.count_nonzero(host_rope[guards]).item()):
+                        raise RuntimeError("unused L2 guard page overwritten")
                 else:
                     for page, slot in zip(pages, slots):
                         check_page(device_k, device_rope, slot, page, torch)
                     if torch.count_nonzero(device_k[:, 0]).item() or torch.count_nonzero(device_rope[:, 0]).item():
                         raise RuntimeError("reserved L1 page overwritten")
+                    guards = [slot for slot in range(physical_slots) if slot not in set(slots)]
+                    if (torch.count_nonzero(device_k[:, guards]).item()
+                            or torch.count_nonzero(device_rope[:, guards]).item()):
+                        raise RuntimeError("unused L1 guard page overwritten")
 
             samples = measure_batch(lambda: run_path(code), prepare, torch.npu.synchronize,
                                     args.warmup, args.repeats, validate=validate if args.validate else None)
