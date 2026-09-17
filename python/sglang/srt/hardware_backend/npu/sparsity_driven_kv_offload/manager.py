@@ -31,20 +31,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _record_stream_event(stream, event) -> None:
-    if hasattr(stream, "record_event"):
-        stream.record_event(event)
-    else:
-        event.record(stream)
-
-
-def _wait_stream_event(stream, event) -> None:
-    if hasattr(stream, "wait_event"):
-        stream.wait_event(event)
-    else:
-        event.wait(stream)
-
-
 def normalize_batch_topk_indices(topk_indices: torch.Tensor) -> torch.Tensor:
     """Normalize DSA top-k indices to [batch, topk] for compact KV copies."""
     if topk_indices.dim() == 2:
@@ -115,16 +101,6 @@ class SparseKVCacheManager:
         )
         self.store_dtype = self.paged_kv_cache.store_dtype
         self.layer_num = self.paged_kv_cache.layer_num
-        self._materialize_d2d_hit_stream = torch.npu.Stream()
-        self._materialize_h2d_miss_stream = torch.npu.Stream()
-        self._materialize_refill_stream = torch.npu.Stream()
-        self._materialize_slot_map_stream = torch.npu.Stream()
-
-        self.hit_done = torch.npu.Event()
-        self.miss_done = torch.npu.Event()
-        self.refill_done = torch.npu.Event()
-        self.slot_map_done = torch.npu.Event()
-
         # device KV buffer
         try:
             with memory_saver_adapter.region(GPU_MEMORY_TYPE_KV_CACHE):
@@ -860,8 +836,10 @@ class SparseKVCacheManager:
             )
             token_on_device = token_on_device.to(torch.bool) & valid_topk_mask
 
-            # Build copy indices on the main stream, then protect their use on
-            # the hit and miss streams with copy_ready.
+            # Build all copy indices and execute the complete materialization
+            # pipeline on the caller stream. Keeping hit, miss, metadata update,
+            # and refill on one stream gives NPUGraph a single explicit order and
+            # avoids captured cross-stream event dependencies.
             hit_src_index, hit_dst_index, hit_valid_mask = _build_hit_src_dst_index(
                 token_on_device,
                 device_token_pos,
@@ -908,12 +886,7 @@ class SparseKVCacheManager:
                 * self.sparse_context_len
             )
 
-            copy_ready = torch.npu.Event()
-            _record_stream_event(stream, copy_ready)
-
-        # Copy device-cache hits into the selected KV buffer.
-        with torch.npu.stream(self._materialize_d2d_hit_stream):
-            _wait_stream_event(self._materialize_d2d_hit_stream, copy_ready)
+            # Copy device-cache hits into the selected KV buffer.
             unidex_copy_inplace(
                 self.device_kv_buffer[layer_idx],
                 selected_kv_buffer,
@@ -924,11 +897,8 @@ class SparseKVCacheManager:
                 2,  #
                 block_dim=24,
             )
-            _record_stream_event(self._materialize_d2d_hit_stream, self.hit_done)
 
-        # Copy host shared-memory misses into the selected KV buffer.
-        with torch.npu.stream(self._materialize_h2d_miss_stream):
-            _wait_stream_event(self._materialize_h2d_miss_stream, copy_ready)
+            # Copy host shared-memory misses into the selected KV buffer.
             unidex_copy_inplace(
                 self.host_kv_buffer[layer_idx],
                 selected_kv_buffer,
@@ -940,14 +910,10 @@ class SparseKVCacheManager:
                 block_dim=24,
                 src_ptr=self.dev_ptr_list[layer_idx],
             )
-            _record_stream_event(self._materialize_h2d_miss_stream, self.miss_done)
 
-        # One AIV owns one request row and fuses timestamp aging, hit reset,
-        # victim selection, slot-map point updates, reverse-map updates, and
-        # full LRU pair writeback. The returned victims stay aligned with top-k.
-        with torch.npu.stream(self._materialize_slot_map_stream):
-            _wait_stream_event(self._materialize_slot_map_stream, self.hit_done)
-            _wait_stream_event(self._materialize_slot_map_stream, self.miss_done)
+            # One AIV owns one request row and fuses timestamp aging, hit reset,
+            # victim selection, slot-map point updates, reverse-map updates, and
+            # full LRU pair writeback. The returned victims stay aligned with top-k.
             victim_slots = fused_timestamp_lru_metadata_update(
                 self.device_slot_map[layer_idx],
                 slot_lookup_req_indices,
@@ -958,14 +924,9 @@ class SparseKVCacheManager:
                 self.device_slot_tokens[layer_idx],
                 max_context_len=self.max_context_len,
             )
-            _record_stream_event(self._materialize_slot_map_stream, self.slot_map_done)
 
-        # Hits already occupy stable physical slots. Refill waits until the
-        # host miss copy and fused victim plan are both available.
-        with torch.npu.stream(self._materialize_refill_stream):
-            _wait_stream_event(self._materialize_refill_stream, self.hit_done)
-            _wait_stream_event(self._materialize_refill_stream, self.miss_done)
-            _wait_stream_event(self._materialize_refill_stream, self.slot_map_done)
+            # Hits already occupy stable physical slots. In stream order, refill
+            # starts after the host miss copy and fused victim plan are complete.
             miss_refill_src_index = (
                 current_buffer_offsets + topk_slot_ids
             ).reshape(-1).contiguous()
@@ -983,7 +944,6 @@ class SparseKVCacheManager:
                 2,
                 block_dim=24,
             )
-            _record_stream_event(self._materialize_refill_stream, self.refill_done)
 
 
 _global_sparse_kv_manager: Optional[SparseKVCacheManager] = None
