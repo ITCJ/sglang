@@ -23,6 +23,17 @@ def is_sparsity_driven_kv_offload_requested() -> bool:
     return get_bool_env_var(_ENABLE_ENV_VAR)
 
 
+def _mode_value(disaggregation_mode) -> str:
+    return getattr(disaggregation_mode, "value", str(disaggregation_mode))
+
+
+def should_keep_native_kv_cache_for_sparse_pd_prefill(server_args: ServerArgs) -> bool:
+    return (
+        _mode_value(getattr(server_args, "disaggregation_mode", None)) == "prefill"
+        and getattr(server_args, "disaggregation_transfer_backend", None) == "ascend"
+    )
+
+
 def is_sparsity_driven_kv_offload_enabled(
     *,
     model_config: ModelConfig,
@@ -94,6 +105,8 @@ def get_sparsity_driven_kv_offload_cell_size(
         server_args=server_args,
         use_mla_backend=use_mla_backend,
     ):
+        return None
+    if should_keep_native_kv_cache_for_sparse_pd_prefill(server_args):
         return None
 
     index_head_dim = get_sparsity_driven_kv_offload_index_head_dim(

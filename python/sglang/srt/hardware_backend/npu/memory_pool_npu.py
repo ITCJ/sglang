@@ -5,6 +5,7 @@ import torch
 from sglang.srt.constants import GPU_MEMORY_TYPE_KV_CACHE
 from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config import (
     is_sparsity_driven_kv_offload_requested,
+    should_keep_native_kv_cache_for_sparse_pd_prefill,
 )
 from sglang.srt.mem_cache.memory_pool import (
     MHATokenToKVPool,
@@ -30,10 +31,7 @@ def _should_keep_native_kv_cache_for_sparse_pd_prefill() -> bool:
     except Exception:
         return False
 
-    return (
-        getattr(server_args, "disaggregation_mode", None) == "prefill"
-        and getattr(server_args, "disaggregation_transfer_backend", None) == "ascend"
-    )
+    return should_keep_native_kv_cache_for_sparse_pd_prefill(server_args)
 
 
 def _should_use_sparse_pd_decode_transfer_buffers() -> bool:
