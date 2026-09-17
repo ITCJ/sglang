@@ -170,8 +170,7 @@ def forward_sparsity_driven_kv_offload(
             device=backend.device,
         )
         (
-            hit_done,
-            miss_done,
+            copy_done,
             metadata_update_done,
             victim_slots,
             miss_refill_src_index,
@@ -181,11 +180,10 @@ def forward_sparsity_driven_kv_offload(
             layer, forward_batch, topk_indices, selected_kv_buffer, stream
         )
 
-        # Both selected-KV copies must finish before sparse-attention
+        # The serialized hit/miss copies must finish before sparse-attention
         # preparation starts. The metadata-update stream begins the fused update
         # from the same boundary and overlaps the preparation work below.
-        _wait_stream_event(stream, hit_done)
-        _wait_stream_event(stream, miss_done)
+        _wait_stream_event(stream, copy_done)
 
         topk_valid = topk_2d >= 0
         if forward_batch.seq_lens is not None:

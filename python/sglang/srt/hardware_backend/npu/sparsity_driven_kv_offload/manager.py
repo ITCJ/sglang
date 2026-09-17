@@ -83,8 +83,7 @@ class SparseKVCacheManager:
             enable=enable_memory_saver
         )
 
-        # Include the padding row because real request IDs can equal the
-        # configured capacity when row 0 is reserved for graph padding.
+        # Number of addressable request rows. Valid request IDs start at zero.
         self.size = int(req_to_token_pool.req_to_token.shape[0])
         self.max_context_len = req_to_token_pool.max_context_len
         self.sparse_context_len = int(sparse_context_len)
@@ -118,21 +117,19 @@ class SparseKVCacheManager:
         self.layer_num = self.paged_kv_cache.layer_num
         self._log_cache_stats = envs.SGLANG_NPU_LOG_SPARSE_KV_CACHE_STATS.get()
 
-        # Hit and miss copies run independently. A third side stream waits for
-        # both copies and performs only the metadata update while the caller
-        # stream prepares sparse attention. Refill remains on the caller stream
-        # so selected_kv_buffer is never consumed from two streams concurrently
-        # during NPU graph capture. Events are persistent and layer-local.
-        self._materialize_d2d_hit_stream = torch.npu.Stream()
-        self._materialize_h2d_miss_stream = torch.npu.Stream()
+        # Hit and miss copies run serially on one 48-AIV side stream. This lets
+        # each copy use the full device and avoids resource contention when the
+        # hit and miss workloads are imbalanced. A second side stream performs
+        # only the metadata update while the caller stream prepares sparse
+        # attention. Refill remains on the caller stream so selected_kv_buffer
+        # is never consumed from two streams concurrently during NPU graph
+        # capture. Events are persistent and layer-local.
+        self._materialize_copy_stream = torch.npu.Stream()
         self._materialize_metadata_update_stream = torch.npu.Stream()
         self._materialize_copy_ready = [
             torch.npu.Event() for _ in range(self.layer_num)
         ]
-        self._materialize_hit_done = [
-            torch.npu.Event() for _ in range(self.layer_num)
-        ]
-        self._materialize_miss_done = [
+        self._materialize_copy_done = [
             torch.npu.Event() for _ in range(self.layer_num)
         ]
         self._materialize_metadata_update_done = [
@@ -144,7 +141,8 @@ class SparseKVCacheManager:
             with memory_saver_adapter.region(GPU_MEMORY_TYPE_KV_CACHE):
                 # Physical cache slots are stable. LRU ordering is maintained
                 # separately in device_lru_slots so hits never need a writeback.
-                # The padded slot 0 is used for writing dummy outputs from padded tokens.
+                # Request IDs start at row 0. Invalid requests are masked before
+                # any device-cache row is accessed.
                 self.device_kv_buffer: list[torch.Tensor] = [
                     torch.empty(
                         (
@@ -163,7 +161,7 @@ class SparseKVCacheManager:
 
         try:
             with memory_saver_adapter.region(GPU_MEMORY_TYPE_KV_CACHE):
-                # Reserve the last row for padded requests and ensure token index
+                # Reserve the last row for invalid requests and ensure token index
                 # `max_context_len` is a valid sentinel column for masked writes.
                 # The row width is also aligned to eight int32 values (32 bytes).
                 self.device_slot_map: list[torch.Tensor] = [
@@ -218,7 +216,7 @@ class SparseKVCacheManager:
 
         # Host KV buffer
         # [bs, ctx_len, head_num, head_dim] for each layer
-        # The padded slot 0 is used for writing dummy outputs from padded tokens.
+        # Invalid requests are masked before the host KV buffer is addressed.
         self.host_kv_buffer: list[torch.Tensor] = []
         self.host_ptr_list: list[int] = []
         self.dev_ptr_list: list[int] = []
@@ -810,7 +808,6 @@ class SparseKVCacheManager:
     ) -> tuple[
         torch.npu.Event,
         torch.npu.Event,
-        torch.npu.Event,
         torch.Tensor,
         torch.Tensor,
         torch.Tensor,
@@ -882,8 +879,8 @@ class SparseKVCacheManager:
             )
             token_on_device = token_on_device.to(torch.bool) & valid_topk_mask
 
-            # Build copy indices on the caller stream before releasing the two
-            # independent copies to their side streams.
+            # Build copy indices on the caller stream before releasing the
+            # serialized copies to their side stream.
             hit_src_index, hit_dst_index, hit_valid_mask = _build_hit_src_dst_index(
                 token_on_device,
                 device_token_pos,
@@ -902,8 +899,7 @@ class SparseKVCacheManager:
             )
 
             # Accumulate on-device counters as part of graph capture/replay.
-            # Request slot 0 is graph padding and must not contribute stats.
-            stats_valid_mask = valid_topk_mask & req_pool_indices.ne(0).unsqueeze(1)
+            stats_valid_mask = valid_topk_mask
             request_stats = torch.stack(
                 (
                     (token_on_device & stats_valid_mask).sum(
@@ -938,10 +934,12 @@ class SparseKVCacheManager:
                 stream, self._materialize_copy_ready[layer_idx]
             )
 
-        # Copy device-cache hits into the selected KV buffer.
-        with torch.npu.stream(self._materialize_d2d_hit_stream):
+        # Copy device-cache hits first, then host misses. Both copies use all
+        # 48 AIVs and are serialized on one stream so an imbalanced pair does
+        # not leave half of the AIVs idle behind the join boundary.
+        with torch.npu.stream(self._materialize_copy_stream):
             _wait_stream_event(
-                self._materialize_d2d_hit_stream,
+                self._materialize_copy_stream,
                 self._materialize_copy_ready[layer_idx],
             )
             unidex_copy_inplace(
@@ -952,18 +950,7 @@ class SparseKVCacheManager:
                 hit_valid_mask,
                 2,
                 2,  #
-                block_dim=24,
-            )
-            _record_stream_event(
-                self._materialize_d2d_hit_stream,
-                self._materialize_hit_done[layer_idx],
-            )
-
-        # Copy host shared-memory misses into the selected KV buffer.
-        with torch.npu.stream(self._materialize_h2d_miss_stream):
-            _wait_stream_event(
-                self._materialize_h2d_miss_stream,
-                self._materialize_copy_ready[layer_idx],
+                block_dim=48,
             )
             unidex_copy_inplace(
                 self.host_kv_buffer[layer_idx],
@@ -973,12 +960,12 @@ class SparseKVCacheManager:
                 miss_valid_mask,
                 2,
                 2,
-                block_dim=24,
+                block_dim=48,
                 src_ptr=self.dev_ptr_list[layer_idx],
             )
             _record_stream_event(
-                self._materialize_h2d_miss_stream,
-                self._materialize_miss_done[layer_idx],
+                self._materialize_copy_stream,
+                self._materialize_copy_done[layer_idx],
             )
 
         # Only metadata update uses the side stream. In graph mode, consuming
@@ -987,11 +974,7 @@ class SparseKVCacheManager:
         with torch.npu.stream(self._materialize_metadata_update_stream):
             _wait_stream_event(
                 self._materialize_metadata_update_stream,
-                self._materialize_hit_done[layer_idx],
-            )
-            _wait_stream_event(
-                self._materialize_metadata_update_stream,
-                self._materialize_miss_done[layer_idx],
+                self._materialize_copy_done[layer_idx],
             )
 
             # One AIV owns one request row and fuses timestamp aging, hit reset,
@@ -1014,8 +997,7 @@ class SparseKVCacheManager:
             )
 
         return (
-            self._materialize_hit_done[layer_idx],
-            self._materialize_miss_done[layer_idx],
+            self._materialize_copy_done[layer_idx],
             self._materialize_metadata_update_done[layer_idx],
             victim_slots,
             miss_refill_src_index,
