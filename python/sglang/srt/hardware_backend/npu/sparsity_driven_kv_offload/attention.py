@@ -173,14 +173,17 @@ def forward_sparsity_driven_kv_offload(
             hit_done,
             miss_done,
             metadata_update_done,
+            victim_slots,
+            miss_refill_src_index,
+            request_cache_offsets,
+            miss_refill_valid_mask,
         ) = sparse_kv_manager.materialize_selected_kv(
             layer, forward_batch, topk_indices, selected_kv_buffer, stream
         )
 
         # Both selected-KV copies must finish before sparse-attention
-        # preparation starts. The metadata-update stream begins fused metadata
-        # update and refill from the same boundary and overlaps the preparation
-        # work below.
+        # preparation starts. The metadata-update stream begins the fused update
+        # from the same boundary and overlaps the preparation work below.
         _wait_stream_event(stream, hit_done)
         _wait_stream_event(stream, miss_done)
 
@@ -263,9 +266,19 @@ def forward_sparsity_driven_kv_offload(
             rope_head_dim,
         )
 
-        # Metadata update and refill must be visible before sparse attention and
-        # before this layer advances to the next decode step.
+        # Wait for the victim plan, then refill on this caller stream. Keeping
+        # refill here prevents selected_kv_buffer from being consumed by both
+        # the caller and metadata streams during NPU graph capture.
         _wait_stream_event(stream, metadata_update_done)
+        sparse_kv_manager.refill_selected_kv(
+            layer,
+            selected_kv_buffer,
+            victim_slots,
+            miss_refill_src_index,
+            request_cache_offsets,
+            miss_refill_valid_mask,
+            stream,
+        )
 
         ret = torch_npu.npu_sparse_flash_attention(
             q_nope_sfa,
