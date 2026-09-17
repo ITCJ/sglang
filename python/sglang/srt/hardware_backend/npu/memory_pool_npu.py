@@ -22,6 +22,34 @@ if is_npu():
     import torch_npu
 
 
+def _should_keep_native_kv_cache_for_sparse_pd_prefill() -> bool:
+    try:
+        from sglang.srt.runtime_context import get_server_args
+
+        server_args = get_server_args()
+    except Exception:
+        return False
+
+    return (
+        getattr(server_args, "disaggregation_mode", None) == "prefill"
+        and getattr(server_args, "disaggregation_transfer_backend", None) == "ascend"
+    )
+
+
+def _should_use_sparse_pd_decode_transfer_buffers() -> bool:
+    try:
+        from sglang.srt.runtime_context import get_server_args
+
+        server_args = get_server_args()
+    except Exception:
+        return False
+
+    return (
+        getattr(server_args, "disaggregation_mode", None) == "decode"
+        and getattr(server_args, "disaggregation_transfer_backend", None) == "ascend"
+    )
+
+
 def _init_npu_conv_state(
     conv_state_in, conv_state_shape, speculative_num_draft_tokens: Optional[int] = None
 ):
@@ -318,10 +346,18 @@ class NPUMLATokenToKVPool(MLATokenToKVPool):
         self.kv_lora_rank = kv_lora_rank
         self.qk_rope_head_dim = qk_rope_head_dim
         self.index_head_dim = index_head_dim
-        self.enable_sparsity_driven_kv_offload = (
+        self.sparsity_driven_kv_offload_requested = (
             is_sparsity_driven_kv_offload_requested()
         )
-        if self.enable_sparsity_driven_kv_offload and self.index_head_dim is None:
+        self.keep_native_kv_cache = (
+            self.sparsity_driven_kv_offload_requested
+            and _should_keep_native_kv_cache_for_sparse_pd_prefill()
+        )
+        self.enable_sparsity_driven_kv_offload = (
+            self.sparsity_driven_kv_offload_requested
+            and not self.keep_native_kv_cache
+        )
+        if self.sparsity_driven_kv_offload_requested and self.index_head_dim is None:
             raise ValueError("Sparsity-driven KV offload requires an index KV cache.")
 
         self.custom_mem_pool = None
@@ -442,6 +478,45 @@ class NPUMLATokenToKVPool(MLATokenToKVPool):
 
     # for disagg
     def get_contiguous_buf_infos(self):
+        if (
+            self.sparsity_driven_kv_offload_requested
+            and _should_use_sparse_pd_decode_transfer_buffers()
+        ):
+            if getattr(self, "index_k_buffer", None) is None:
+                raise RuntimeError(
+                    "Sparse KV PD decode transfer requires native NPU MLA "
+                    "index_k_buffer for DSA top-k."
+                )
+            from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.manager import (
+                get_sparse_kv_manager,
+            )
+
+            sparse_kv_manager = get_sparse_kv_manager()
+            if sparse_kv_manager is None:
+                raise RuntimeError(
+                    "Sparse KV PD decode transfer requires SparseKVCacheManager "
+                    "before registering decode transfer buffers."
+                )
+            sparse_kv_manager.ensure_pd_decode_staging_buffers(
+                slot_count=1,
+                page_size=self.page_size,
+            )
+            kv_data_ptrs, kv_data_lens, kv_item_lens = (
+                sparse_kv_manager.get_pd_decode_transfer_buf_infos(
+                    page_size=self.page_size,
+                )
+            )
+            kv_data_ptrs += [
+                self.index_k_buffer[i].data_ptr() for i in range(self.layer_num)
+            ]
+            kv_data_lens += [
+                self.index_k_buffer[i].nbytes for i in range(self.layer_num)
+            ]
+            kv_item_lens += [
+                self.index_k_buffer[i][0].nbytes for i in range(self.layer_num)
+            ]
+            return kv_data_ptrs, kv_data_lens, kv_item_lens
+
         self._raise_if_native_kv_cache_disabled()
         # MLA has only one kv_buffer, so only the information of this buffer needs to be returned.
         kv_data_ptrs = [self.k_buffer[i].data_ptr() for i in range(self.layer_num)] + [

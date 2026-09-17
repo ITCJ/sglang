@@ -65,23 +65,24 @@ class AscendKVManager(MooncakeKVManager):
                 page_size=args.page_size,
                 slot_count=1,
             )
-            kv_data_ptrs, kv_data_lens, kv_item_lens = (
-                sparse_kv_manager.get_pd_decode_transfer_buf_infos(
-                    page_size=args.page_size,
+            expected_entries = sparse_kv_manager.layer_num * 3
+            if len(args.kv_data_ptrs) != expected_entries:
+                raise RuntimeError(
+                    "Ascend sparse KV PD decode expects transfer buffers in "
+                    "K-staging/V-staging/native-index-K groups, got "
+                    f"{len(args.kv_data_ptrs)} entries for "
+                    f"{sparse_kv_manager.layer_num} layers."
                 )
-            )
-            args.kv_data_ptrs = kv_data_ptrs
-            args.kv_data_lens = kv_data_lens
-            args.kv_item_lens = kv_item_lens
-            args.kv_buf_groups = 2
+            args.kv_buf_groups = 3
             args.kv_layer_ids = list(
                 range(
                     sparse_kv_manager.start_layer,
                     sparse_kv_manager.start_layer + sparse_kv_manager.layer_num,
                 )
-            ) * 2
+            ) * 3
             logger.info(
-                "Ascend sparse KV PD decode uses HBM staging buffers for transfer: "
+                "Ascend sparse KV PD decode uses K/V HBM staging plus native "
+                "index-K buffers for transfer: "
                 "entries=%s, page_size=%s",
                 len(args.kv_data_ptrs),
                 args.page_size,
@@ -133,10 +134,10 @@ class AscendKVManager(MooncakeKVManager):
         total_kv_layers = getattr(self.kv_args, "total_kv_layers", 0)
         src_layers = len(src_kv_ptrs) // kv_buf_groups
 
-        # Temporary sparse-PD path: NPU MLA prefill exposes split K/V/index-K
-        # native buffers, while decode registers split K/V staging buffers. The
-        # index-K group is not part of sparse host KV, so only pair the first two
-        # source groups with the two decode staging groups.
+        # Backward-compatible temporary sparse-PD path: older decode workers
+        # registered only split K/V staging buffers. Newer workers register
+        # K/V staging plus native index-K, so the standard 3-group path below
+        # handles them.
         if (
             kv_buf_groups == 3
             and len(dst_kv_ptrs) != len(src_kv_ptrs)
@@ -208,15 +209,27 @@ class AscendKVManager(MooncakeKVManager):
         dst_layer_ids: Optional[List[int]] = None,
         dst_device_kv_indices: Optional[npt.NDArray[np.int32]] = None,
     ):
-        if dst_device_kv_indices is not None:
+        kv_buf_groups = getattr(self.kv_args, "kv_buf_groups", 1)
+        use_sparse_pd_split_indices = (
+            dst_device_kv_indices is not None
+            and self.is_mla_backend
+            and kv_buf_groups == 3
+        )
+        if dst_device_kv_indices is not None and not use_sparse_pd_split_indices:
             raise NotImplementedError(
-                "Ascend KV transfer does not support separate device KV indices."
+                "Ascend KV transfer only supports separate device KV indices "
+                "for sparse PD MLA K/V staging plus native index-K."
             )
 
         # Group by indices
         prefill_kv_blocks, dst_kv_blocks = group_concurrent_contiguous(
             prefill_kv_indices, dst_kv_indices
         )
+        device_prefill_kv_blocks, device_dst_kv_blocks = (None, None)
+        if use_sparse_pd_split_indices:
+            device_prefill_kv_blocks, device_dst_kv_blocks = (
+                group_concurrent_contiguous(prefill_kv_indices, dst_device_kv_indices)
+            )
 
         if self.pp_size > 1:
             if self.is_mla_backend:
@@ -225,6 +238,7 @@ class AscendKVManager(MooncakeKVManager):
                 )
                 layers_params = [
                     (
+                        layer_id,
                         src_kv_ptrs[layer_id],
                         sliced_dst_kv_ptrs[layer_id],
                         self.kv_args.kv_item_lens[layer_id],
@@ -242,6 +256,7 @@ class AscendKVManager(MooncakeKVManager):
 
                 layers_params = [
                     (
+                        layer_id,
                         src_k_ptrs[layer_id],
                         dst_k_ptrs[layer_id],
                         self.kv_args.kv_item_lens[layer_id],
@@ -249,6 +264,7 @@ class AscendKVManager(MooncakeKVManager):
                     for layer_id in range(layers_current_pp_stage)
                 ] + [
                     (
+                        layers_current_pp_stage + layer_id,
                         src_v_ptrs[layer_id],
                         dst_v_ptrs[layer_id],
                         self.kv_args.kv_item_lens[layers_current_pp_stage + layer_id],
@@ -259,6 +275,7 @@ class AscendKVManager(MooncakeKVManager):
             num_layers = len(self.kv_args.kv_data_ptrs)
             layers_params = [
                 (
+                    layer_id,
                     self.kv_args.kv_data_ptrs[layer_id],
                     dst_kv_ptrs[layer_id],
                     self.kv_args.kv_item_lens[layer_id],
@@ -267,10 +284,24 @@ class AscendKVManager(MooncakeKVManager):
             ]
 
         def set_transfer_blocks(
-            src_ptr: int, dst_ptr: int, item_len: int
+            src_ptr: int,
+            dst_ptr: int,
+            item_len: int,
+            use_device_indices: bool = False,
         ) -> List[Tuple[int, int, int]]:
+            current_prefill_blocks = prefill_kv_blocks
+            current_dst_blocks = dst_kv_blocks
+            if use_device_indices:
+                current_prefill_blocks = device_prefill_kv_blocks
+                current_dst_blocks = device_dst_kv_blocks
+                if current_prefill_blocks is None or current_dst_blocks is None:
+                    raise RuntimeError(
+                        "Sparse PD index-K transfer requires device KV indices."
+                    )
             transfer_blocks = []
-            for prefill_index, decode_index in zip(prefill_kv_blocks, dst_kv_blocks):
+            for prefill_index, decode_index in zip(
+                current_prefill_blocks, current_dst_blocks
+            ):
                 src_addr = src_ptr + int(prefill_index[0]) * item_len
                 dst_addr = dst_ptr + int(decode_index[0]) * item_len
                 length = item_len * len(prefill_index)
@@ -278,26 +309,61 @@ class AscendKVManager(MooncakeKVManager):
             return transfer_blocks
 
         # Worker function for processing a single layer
-        def process_layer(src_ptr: int, dst_ptr: int, item_len: int) -> int:
-            transfer_blocks = set_transfer_blocks(src_ptr, dst_ptr, item_len)
+        def process_layer(
+            layer_idx: int,
+            total_layer_entries: int,
+            src_ptr: int,
+            dst_ptr: int,
+            item_len: int,
+        ) -> int:
+            transfer_blocks = set_transfer_blocks(
+                src_ptr,
+                dst_ptr,
+                item_len,
+                _use_device_indices_for_layer(layer_idx, total_layer_entries),
+            )
             return self._transfer_data(mooncake_session_id, transfer_blocks)
 
         # Worker function for processing all layers in a batch
-        def process_layers(layers_params: List[Tuple[int, int, int]]) -> int:
+        def process_layers(layers_params: List[Tuple[int, int, int, int]]) -> int:
             transfer_blocks = []
-            for src_ptr, dst_ptr, item_len in layers_params:
-                transfer_blocks.extend(set_transfer_blocks(src_ptr, dst_ptr, item_len))
+            total_layer_entries = len(layers_params)
+            for layer_idx, src_ptr, dst_ptr, item_len in layers_params:
+                transfer_blocks.extend(
+                    set_transfer_blocks(
+                        src_ptr,
+                        dst_ptr,
+                        item_len,
+                        _use_device_indices_for_layer(layer_idx, total_layer_entries),
+                    )
+                )
             return self._transfer_data(mooncake_session_id, transfer_blocks)
+
+        def _use_device_indices_for_layer(
+            layer_idx: int,
+            total_layer_entries: int,
+        ) -> bool:
+            if not use_sparse_pd_split_indices:
+                return False
+            if total_layer_entries % kv_buf_groups != 0:
+                raise RuntimeError(
+                    "Sparse PD transfer entries are not divisible by "
+                    f"kv_buf_groups={kv_buf_groups}: {total_layer_entries}."
+                )
+            layers_per_group = total_layer_entries // kv_buf_groups
+            return int(layer_idx) >= 2 * layers_per_group
 
         if self.enable_custom_mem_pool:
             futures = [
                 executor.submit(
                     process_layer,
+                    layer_idx,
+                    len(layers_params),
                     src_ptr,
                     dst_ptr,
                     item_len,
                 )
-                for (src_ptr, dst_ptr, item_len) in layers_params
+                for (layer_idx, src_ptr, dst_ptr, item_len) in layers_params
             ]
             for future in concurrent.futures.as_completed(futures):
                 status = future.result()
@@ -367,14 +433,17 @@ class AscendKVReceiver(MooncakeKVReceiver):
         if staging is not None and getattr(self, "bootstrap_infos", None) is not None:
             if device_kv_indices is not None:
                 raise RuntimeError(
-                    "Ascend sparse KV PD does not support extra device KV indices."
+                    "Ascend sparse KV PD owns device KV indices for native "
+                    "index-K transfer."
                 )
+            native_kv_indices = np.asarray(kv_indices, dtype=np.int32)
             kv_indices = staging.rewrite_dst_indices(
                 self.bootstrap_room,
-                np.asarray(kv_indices, dtype=np.int32),
+                native_kv_indices,
                 decode_prefix_len=decode_prefix_len or 0,
                 wait_for_slot=True,
             )
+            device_kv_indices = native_kv_indices
 
         return super().send_metadata(
             kv_indices,
