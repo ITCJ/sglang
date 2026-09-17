@@ -8,6 +8,7 @@ import torch
 import torch_npu
 
 from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.manager import (
+    _wait_stream_event,
     normalize_batch_topk_indices,
 )
 from sglang.srt.layers.attention.dsa.utils import is_dsa_enable_prefill_cp
@@ -168,13 +169,20 @@ def forward_sparsity_driven_kv_offload(
             dtype=k.dtype,
             device=backend.device,
         )
-        sparse_kv_manager.materialize_selected_kv(
+        (
+            hit_done,
+            miss_done,
+            metadata_update_done,
+        ) = sparse_kv_manager.materialize_selected_kv(
             layer, forward_batch, topk_indices, selected_kv_buffer, stream
         )
 
-        selected_k_nope, selected_k_rope = selected_kv_buffer.split(
-            [nope_head_dim, rope_head_dim], dim=-1
-        )
+        # Both selected-KV copies must finish before sparse-attention
+        # preparation starts. The metadata-update stream begins fused metadata
+        # update and refill from the same boundary and overlaps the preparation
+        # work below.
+        _wait_stream_event(stream, hit_done)
+        _wait_stream_event(stream, miss_done)
 
         topk_valid = topk_2d >= 0
         if forward_batch.seq_lens is not None:
@@ -223,6 +231,10 @@ def forward_sparsity_driven_kv_offload(
         q_rope_sfa = q_pe.view(
             batch_size, 1, padded_query_heads, rope_head_dim
         ).contiguous()
+
+        selected_k_nope, selected_k_rope = selected_kv_buffer.split(
+            [nope_head_dim, rope_head_dim], dim=-1
+        )
         k_nope_sfa = selected_k_nope.contiguous()
         k_rope_sfa = selected_k_rope.contiguous()
 
@@ -250,6 +262,10 @@ def forward_sparsity_driven_kv_offload(
             num_kv_heads,
             rope_head_dim,
         )
+
+        # Metadata update and refill must be visible before sparse attention and
+        # before this layer advances to the next decode step.
+        _wait_stream_event(stream, metadata_update_done)
 
         ret = torch_npu.npu_sparse_flash_attention(
             q_nope_sfa,

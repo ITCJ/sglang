@@ -116,11 +116,12 @@ class SparseKVCacheManager:
         self.store_dtype = self.paged_kv_cache.store_dtype
         self.layer_num = self.paged_kv_cache.layer_num
 
-        # Only the independent hit and miss copies use side streams. Events are
-        # persistent and layer-local so graph capture never depends on a
-        # short-lived event or reuses one event across different layers.
+        # Hit and miss copies run independently. A third side stream waits for
+        # both copies, then performs metadata update and refill while the caller
+        # stream prepares sparse attention. Events are persistent and layer-local.
         self._materialize_d2d_hit_stream = torch.npu.Stream()
         self._materialize_h2d_miss_stream = torch.npu.Stream()
+        self._materialize_metadata_update_stream = torch.npu.Stream()
         self._materialize_copy_ready = [
             torch.npu.Event() for _ in range(self.layer_num)
         ]
@@ -128,6 +129,9 @@ class SparseKVCacheManager:
             torch.npu.Event() for _ in range(self.layer_num)
         ]
         self._materialize_miss_done = [
+            torch.npu.Event() for _ in range(self.layer_num)
+        ]
+        self._materialize_metadata_update_done = [
             torch.npu.Event() for _ in range(self.layer_num)
         ]
 
@@ -799,7 +803,7 @@ class SparseKVCacheManager:
         topk_indices: torch.Tensor,
         selected_kv_buffer: torch.Tensor,
         stream: torch.npu.Stream,
-    ) -> None:
+    ) -> tuple[torch.npu.Event, torch.npu.Event, torch.npu.Event]:
         """Materialize top-k KV and update a non-moving physical-slot LRU."""
         layer_idx = layer.layer_id - self.start_layer
         stream = stream if stream is not None else torch.npu.current_stream()
@@ -961,11 +965,17 @@ class SparseKVCacheManager:
                 self._materialize_miss_done[layer_idx],
             )
 
-        with torch.npu.stream(stream):
-            # Join both copies back to the caller stream. Metadata update,
-            # refill, and attention remain ordered on this stream.
-            _wait_stream_event(stream, self._materialize_hit_done[layer_idx])
-            _wait_stream_event(stream, self._materialize_miss_done[layer_idx])
+        # Metadata update and refill use their own stream so they can overlap
+        # with sparse-attention preparation on the caller stream.
+        with torch.npu.stream(self._materialize_metadata_update_stream):
+            _wait_stream_event(
+                self._materialize_metadata_update_stream,
+                self._materialize_hit_done[layer_idx],
+            )
+            _wait_stream_event(
+                self._materialize_metadata_update_stream,
+                self._materialize_miss_done[layer_idx],
+            )
 
             # One AIV owns one request row and fuses timestamp aging, hit reset,
             # victim selection, slot-map point updates, reverse-map updates, and
@@ -1000,6 +1010,17 @@ class SparseKVCacheManager:
                 2,
                 block_dim=24,
             )
+
+            _record_stream_event(
+                self._materialize_metadata_update_stream,
+                self._materialize_metadata_update_done[layer_idx],
+            )
+
+        return (
+            self._materialize_hit_done[layer_idx],
+            self._materialize_miss_done[layer_idx],
+            self._materialize_metadata_update_done[layer_idx],
+        )
 
 
 _global_sparse_kv_manager: Optional[SparseKVCacheManager] = None
