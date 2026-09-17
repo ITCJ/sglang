@@ -14,6 +14,7 @@ from sgl_kernel_npu.sparsity_driven_kv_offload import (
 )
 
 from sglang.srt.constants import GPU_MEMORY_TYPE_KV_CACHE
+from sglang.srt.environ import envs
 from sglang.srt.mem_cache.allocator import BaseTokenToKVPoolAllocator
 from sglang.srt.mem_cache.memory_pool import (
     MLATokenToKVPool,
@@ -115,6 +116,7 @@ class SparseKVCacheManager:
         )
         self.store_dtype = self.paged_kv_cache.store_dtype
         self.layer_num = self.paged_kv_cache.layer_num
+        self._log_cache_stats = envs.SGLANG_NPU_LOG_SPARSE_KV_CACHE_STATS.get()
 
         # Hit and miss copies run independently. A third side stream waits for
         # both copies and performs only the metadata update while the caller
@@ -345,7 +347,7 @@ class SparseKVCacheManager:
             req_pool_idx = req.req_pool_idx
             try:
                 if req_pool_idx is not None:
-                    if req.finished():
+                    if req.finished() and self._log_cache_stats:
                         self._report_request_cache_stats(req, req_pool_idx)
                     else:
                         self.reset_requests([req_pool_idx])
