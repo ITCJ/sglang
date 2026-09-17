@@ -3,6 +3,7 @@
 
 import argparse
 import csv
+import math
 from pathlib import Path
 
 
@@ -13,17 +14,15 @@ SUITES = (
 )
 OUTPUT_COLUMNS = (
     "experiment",
-    "run_id",
     "tokens",
-    "smoke",
     "layout",
     "path",
     "metric",
     "median_ms",
     "p95_ms",
     "effective_gbps",
-    "source_csv",
 )
+ROWS_PER_PAGE = 60
 
 
 def latest_summary(repo: Path, relative_results: Path) -> Path:
@@ -41,7 +40,7 @@ def latest_summary(repo: Path, relative_results: Path) -> Path:
     return summary
 
 
-def read_rows(experiment: str, summary: Path, repo: Path) -> list[dict[str, str]]:
+def read_rows(experiment: str, summary: Path) -> list[dict[str, str]]:
     with summary.open(newline="", encoding="utf-8-sig") as stream:
         reader = csv.DictReader(stream)
         required = {"tokens", "path", "median_ms", "p95_ms"}
@@ -52,19 +51,18 @@ def read_rows(experiment: str, summary: Path, repo: Path) -> list[dict[str, str]
             )
         rows = []
         for source in reader:
+            if source.get("smoke", "").strip().lower() in {"true", "1", "yes"}:
+                continue
             rows.append(
                 {
                     "experiment": experiment,
-                    "run_id": summary.parent.name,
                     "tokens": source.get("tokens", ""),
-                    "smoke": source.get("smoke", ""),
                     "layout": source.get("layout", ""),
                     "path": source.get("path", ""),
                     "metric": source.get("metric", "total_s"),
                     "median_ms": source.get("median_ms", ""),
                     "p95_ms": source.get("p95_ms", ""),
                     "effective_gbps": source.get("effective_gbps", ""),
-                    "source_csv": str(summary.relative_to(repo)),
                 }
             )
     return rows
@@ -76,7 +74,7 @@ def collect(repo: Path) -> tuple[list[dict[str, str]], list[Path]]:
     for experiment, relative_results in SUITES:
         summary = latest_summary(repo, relative_results)
         sources.append(summary)
-        rows.extend(read_rows(experiment, summary, repo))
+        rows.extend(read_rows(experiment, summary))
     return rows, sources
 
 
@@ -101,11 +99,19 @@ def main() -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=OUTPUT_COLUMNS)
-        writer.writeheader()
-        writer.writerows(rows)
+        page_count = max(1, math.ceil(len(rows) / ROWS_PER_PAGE))
+        for page_index in range(page_count):
+            start = page_index * ROWS_PER_PAGE
+            page_rows = rows[start : start + ROWS_PER_PAGE]
+            stream.write(f"# PAGE {page_index + 1}/{page_count}\n")
+            writer.writeheader()
+            writer.writerows(page_rows)
     for source in sources:
         print(f"SOURCE {source.relative_to(repo)}")
-    print(f"OUTPUT {args.output.resolve()} rows={len(rows)}")
+    print(
+        f"OUTPUT {args.output.resolve()} rows={len(rows)} "
+        f"pages={page_count} rows_per_page={ROWS_PER_PAGE}"
+    )
     return 0
 
 

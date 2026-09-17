@@ -25,7 +25,7 @@
 python3 workspace/collect_latest_bench_results.py
 ```
 
-脚本分别选择三个 `results/` 目录中名称最新的 run，严格读取该 run 的 `summary.csv`，并输出统一字段的 `workspace/latest_bench_summary.csv`。若最新 run 没有 `summary.csv`，脚本报错，不会静默回退到旧结果。可用 `--output <PATH>` 改变输出位置。
+脚本分别选择三个 `results/` 目录中名称最新的 run，严格读取该 run 的 `summary.csv`，并输出适合截图/OCR 的精简 `workspace/latest_bench_summary.csv`。CSV 只保留 `experiment,tokens,layout,path,metric,median_ms,p95_ms,effective_gbps`，过滤 smoke 行；run ID 和源文件路径只打印在终端。输出按 60 条数据分页，每页为 `# PAGE x/y`、重复表头和最多 60 条数据，正好不超过 62 行。若最新 run 没有 `summary.csv`，脚本报错，不会静默回退到旧结果。可用 `--output <PATH>` 改变输出位置。
 
 ## 性能结果状态
 
