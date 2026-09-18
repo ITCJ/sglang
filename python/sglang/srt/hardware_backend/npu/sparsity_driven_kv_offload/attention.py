@@ -169,21 +169,12 @@ def forward_sparsity_driven_kv_offload(
             dtype=k.dtype,
             device=backend.device,
         )
-        (
-            copy_done,
-            metadata_update_done,
-            victim_slots,
-            miss_refill_src_index,
-            request_cache_offsets,
-            miss_refill_valid_mask,
-        ) = sparse_kv_manager.materialize_selected_kv(
+        materialize_done = sparse_kv_manager.materialize_selected_kv(
             layer, forward_batch, topk_indices, selected_kv_buffer, stream
         )
 
-        # The serialized hit/miss copies must finish before sparse-attention
-        # preparation starts. The metadata-update stream begins the fused update
-        # from the same boundary and overlaps the preparation work below.
-        _wait_stream_event(stream, copy_done)
+        # Copy, metadata, and refill work proceeds on side streams while the
+        # caller prepares query shapes and sparse indices below.
 
         topk_valid = topk_2d >= 0
         if forward_batch.seq_lens is not None:
@@ -233,6 +224,10 @@ def forward_sparsity_driven_kv_offload(
             batch_size, 1, padded_query_heads, rope_head_dim
         ).contiguous()
 
+        # Refill reads selected_kv_buffer after both copy streams complete.
+        # Wait before split/contiguous launches their own reads on this stream,
+        # so graph capture never observes concurrent consumers of the buffer.
+        _wait_stream_event(stream, materialize_done)
         selected_k_nope, selected_k_rope = selected_kv_buffer.split(
             [nope_head_dim, rope_head_dim], dim=-1
         )
@@ -262,20 +257,6 @@ def forward_sparsity_driven_kv_offload(
             selected_kv_length,
             num_kv_heads,
             rope_head_dim,
-        )
-
-        # Wait for the victim plan, then refill on this caller stream. Keeping
-        # refill here prevents selected_kv_buffer from being consumed by both
-        # the caller and metadata streams during NPU graph capture.
-        _wait_stream_event(stream, metadata_update_done)
-        sparse_kv_manager.refill_selected_kv(
-            layer,
-            selected_kv_buffer,
-            victim_slots,
-            miss_refill_src_index,
-            request_cache_offsets,
-            miss_refill_valid_mask,
-            stream,
         )
 
         ret = torch_npu.npu_sparse_flash_attention(

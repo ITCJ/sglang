@@ -118,22 +118,24 @@ class SparseKVCacheManager:
         self.layer_num = self.paged_kv_cache.layer_num
         self._log_cache_stats = envs.SGLANG_NPU_LOG_SPARSE_KV_CACHE_STATS.get()
 
-        # Hit and miss copies run serially on one 48-AIV side stream. This lets
-        # each copy use the full device and avoids resource contention when the
-        # hit and miss workloads are imbalanced. A second side stream performs
-        # only the metadata update while the caller stream prepares sparse
-        # attention. Refill remains on the caller stream so selected_kv_buffer
-        # is never consumed from two streams concurrently during NPU graph
-        # capture. Events are persistent and layer-local.
-        self._materialize_copy_stream = torch.npu.Stream()
+        # Hit and miss copies use independent 24-AIV streams. The metadata
+        # stream joins both copies, updates the LRU metadata, and refills the
+        # device cache. The final event protects selected_kv_buffer from being
+        # split on the caller stream while refill is still reading it. Events
+        # are persistent and layer-local.
+        self._materialize_d2d_hit_stream = torch.npu.Stream()
+        self._materialize_h2d_miss_stream = torch.npu.Stream()
         self._materialize_metadata_update_stream = torch.npu.Stream()
         self._materialize_copy_ready = [
             torch.npu.Event() for _ in range(self.layer_num)
         ]
-        self._materialize_copy_done = [
+        self._materialize_hit_done = [
             torch.npu.Event() for _ in range(self.layer_num)
         ]
-        self._materialize_metadata_update_done = [
+        self._materialize_miss_done = [
+            torch.npu.Event() for _ in range(self.layer_num)
+        ]
+        self._materialize_done = [
             torch.npu.Event() for _ in range(self.layer_num)
         ]
 
@@ -806,14 +808,7 @@ class SparseKVCacheManager:
         topk_indices: torch.Tensor,
         selected_kv_buffer: torch.Tensor,
         stream: torch.npu.Stream,
-    ) -> tuple[
-        torch.npu.Event,
-        torch.npu.Event,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-    ]:
+    ) -> torch.npu.Event:
         """Materialize top-k KV and update a non-moving physical-slot LRU."""
         layer_idx = layer.layer_id - self.start_layer
         stream = stream if stream is not None else torch.npu.current_stream()
@@ -886,7 +881,7 @@ class SparseKVCacheManager:
             token_on_device = token_on_device.to(torch.bool) & valid_topk_mask
 
             # Build copy indices on the caller stream before releasing the
-            # serialized copies to their side stream.
+            # parallel copies and metadata work to their side streams.
             hit_src_index, hit_dst_index, hit_valid_mask = _build_hit_src_dst_index(
                 token_on_device,
                 device_token_pos,
@@ -940,12 +935,12 @@ class SparseKVCacheManager:
                 stream, self._materialize_copy_ready[layer_idx]
             )
 
-        # Copy device-cache hits first, then host misses. Both copies use all
-        # 48 AIVs and are serialized on one stream so an imbalanced pair does
-        # not leave half of the AIVs idle behind the join boundary.
-        with torch.npu.stream(self._materialize_copy_stream):
+        # Copy device-cache hits and host misses concurrently. Their destination
+        # masks are disjoint, and each stream uses 24 AIVs so both kernels can
+        # occupy the 48 available vector cores at the same time.
+        with torch.npu.stream(self._materialize_d2d_hit_stream):
             _wait_stream_event(
-                self._materialize_copy_stream,
+                self._materialize_d2d_hit_stream,
                 self._materialize_copy_ready[layer_idx],
             )
             unidex_copy_inplace(
@@ -956,7 +951,17 @@ class SparseKVCacheManager:
                 hit_valid_mask,
                 2,
                 2,  #
-                block_dim=48,
+                block_dim=24,
+            )
+            _record_stream_event(
+                self._materialize_d2d_hit_stream,
+                self._materialize_hit_done[layer_idx],
+            )
+
+        with torch.npu.stream(self._materialize_h2d_miss_stream):
+            _wait_stream_event(
+                self._materialize_h2d_miss_stream,
+                self._materialize_copy_ready[layer_idx],
             )
             unidex_copy_inplace(
                 self.host_kv_buffer[layer_idx],
@@ -966,21 +971,25 @@ class SparseKVCacheManager:
                 miss_valid_mask,
                 2,
                 2,
-                block_dim=48,
+                block_dim=24,
                 src_ptr=self.dev_ptr_list[layer_idx],
             )
             _record_stream_event(
-                self._materialize_copy_stream,
-                self._materialize_copy_done[layer_idx],
+                self._materialize_h2d_miss_stream,
+                self._materialize_miss_done[layer_idx],
             )
 
-        # Only metadata update uses the side stream. In graph mode, consuming
-        # selected_kv_buffer from both this stream and the caller stream can
-        # make its graph-pool lifetime ambiguous, even though both are reads.
+        # Join the two copy streams before using all available AIVs for metadata
+        # and refill. Same-stream order places refill strictly after the parallel
+        # metadata write and avoids oversubscribing AIVs during the two copies.
         with torch.npu.stream(self._materialize_metadata_update_stream):
             _wait_stream_event(
                 self._materialize_metadata_update_stream,
-                self._materialize_copy_done[layer_idx],
+                self._materialize_hit_done[layer_idx],
+            )
+            _wait_stream_event(
+                self._materialize_metadata_update_stream,
+                self._materialize_miss_done[layer_idx],
             )
 
             # Select victims per request, then distribute the sparse slot-map
@@ -1005,19 +1014,22 @@ class SparseKVCacheManager:
                 max_context_len=self.max_context_len,
             )
 
-            _record_stream_event(
+            self.refill_selected_kv(
+                layer,
+                selected_kv_buffer,
+                victim_slots,
+                miss_refill_src_index,
+                request_cache_offsets,
+                miss_refill_valid_mask,
                 self._materialize_metadata_update_stream,
-                self._materialize_metadata_update_done[layer_idx],
             )
 
-        return (
-            self._materialize_copy_done[layer_idx],
-            self._materialize_metadata_update_done[layer_idx],
-            victim_slots,
-            miss_refill_src_index,
-            request_cache_offsets,
-            miss_refill_valid_mask,
-        )
+            _record_stream_event(
+                self._materialize_metadata_update_stream,
+                self._materialize_done[layer_idx],
+            )
+
+        return self._materialize_done[layer_idx]
 
     def refill_selected_kv(
         self,
@@ -1029,7 +1041,7 @@ class SparseKVCacheManager:
         miss_refill_valid_mask: torch.Tensor,
         stream: torch.npu.Stream,
     ) -> None:
-        """Refill missed entries on the caller stream after metadata update."""
+        """Refill missed entries on the provided stream after metadata update."""
         layer_idx = layer.layer_id - self.start_layer
         stream = stream if stream is not None else torch.npu.current_stream()
 
