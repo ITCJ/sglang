@@ -121,24 +121,14 @@ class SparseKVCacheManager:
 
         # Hit and miss copies use independent 24-AIV streams. The metadata
         # stream joins both copies, updates the LRU metadata, and refills the
-        # device cache. The final event protects selected_kv_buffer from being
-        # split on the caller stream while refill is still reading it. Events
-        # are persistent and layer-local.
+        # device cache. The three events are reused across layers because each
+        # layer enqueues its waits before the next layer records them again.
         self._materialize_d2d_hit_stream = torch.npu.Stream()
         self._materialize_h2d_miss_stream = torch.npu.Stream()
         self._materialize_metadata_update_stream = torch.npu.Stream()
-        self._materialize_copy_ready = [
-            torch.npu.Event() for _ in range(self.layer_num)
-        ]
-        self._materialize_hit_done = [
-            torch.npu.Event() for _ in range(self.layer_num)
-        ]
-        self._materialize_miss_done = [
-            torch.npu.Event() for _ in range(self.layer_num)
-        ]
-        self._materialize_done = [
-            torch.npu.Event() for _ in range(self.layer_num)
-        ]
+        self._materialize_hit_done = torch.npu.Event()
+        self._materialize_miss_done = torch.npu.Event()
+        self._materialize_metadata_update_done = torch.npu.Event()
 
         # device KV buffer
         try:
@@ -822,7 +812,7 @@ class SparseKVCacheManager:
         topk_indices: torch.Tensor,
         selected_kv_buffer: torch.Tensor,
         stream: torch.npu.Stream,
-    ) -> torch.npu.Event:
+    ) -> None:
         """Materialize top-k KV and update a non-moving physical-slot LRU."""
         layer_idx = layer.layer_id - self.start_layer
         stream = stream if stream is not None else torch.npu.current_stream()
@@ -944,18 +934,12 @@ class SparseKVCacheManager:
             miss_refill_src_index = selected_kv_copy_indices
             miss_refill_valid_mask = miss_valid_mask
 
-            _record_stream_event(
-                stream, self._materialize_copy_ready[layer_idx]
-            )
-
         # Copy device-cache hits and host misses concurrently. Their destination
         # masks are disjoint, and each stream uses 24 AIVs so both kernels can
-        # occupy the 48 available vector cores at the same time.
+        # occupy the 48 available vector cores at the same time. wait_stream
+        # establishes the dependency on index construction on the caller stream.
+        self._materialize_d2d_hit_stream.wait_stream(stream)
         with torch.npu.stream(self._materialize_d2d_hit_stream):
-            _wait_stream_event(
-                self._materialize_d2d_hit_stream,
-                self._materialize_copy_ready[layer_idx],
-            )
             uindex_copy_optimized(
                 self.device_kv_buffer[layer_idx],
                 selected_kv_buffer,
@@ -968,14 +952,11 @@ class SparseKVCacheManager:
             )
             _record_stream_event(
                 self._materialize_d2d_hit_stream,
-                self._materialize_hit_done[layer_idx],
+                self._materialize_hit_done,
             )
 
+        self._materialize_h2d_miss_stream.wait_stream(stream)
         with torch.npu.stream(self._materialize_h2d_miss_stream):
-            _wait_stream_event(
-                self._materialize_h2d_miss_stream,
-                self._materialize_copy_ready[layer_idx],
-            )
             uindex_copy_optimized(
                 self.host_kv_buffer[layer_idx],
                 selected_kv_buffer,
@@ -989,7 +970,7 @@ class SparseKVCacheManager:
             )
             _record_stream_event(
                 self._materialize_h2d_miss_stream,
-                self._materialize_miss_done[layer_idx],
+                self._materialize_miss_done,
             )
 
         # Join the two copy streams before using all available AIVs for metadata
@@ -998,11 +979,11 @@ class SparseKVCacheManager:
         with torch.npu.stream(self._materialize_metadata_update_stream):
             _wait_stream_event(
                 self._materialize_metadata_update_stream,
-                self._materialize_hit_done[layer_idx],
+                self._materialize_hit_done,
             )
             _wait_stream_event(
                 self._materialize_metadata_update_stream,
-                self._materialize_miss_done[layer_idx],
+                self._materialize_miss_done,
             )
 
             # Select victims per request, then distribute the sparse slot-map
@@ -1027,38 +1008,6 @@ class SparseKVCacheManager:
                 max_context_len=self.max_context_len,
             )
 
-            self.refill_selected_kv(
-                layer,
-                selected_kv_buffer,
-                victim_slots,
-                miss_refill_src_index,
-                request_cache_offsets,
-                miss_refill_valid_mask,
-                self._materialize_metadata_update_stream,
-            )
-
-            _record_stream_event(
-                self._materialize_metadata_update_stream,
-                self._materialize_done[layer_idx],
-            )
-
-        return self._materialize_done[layer_idx]
-
-    def refill_selected_kv(
-        self,
-        layer: RadixAttention,
-        selected_kv_buffer: torch.Tensor,
-        victim_slots: torch.Tensor,
-        miss_refill_src_index: torch.Tensor,
-        request_cache_offsets: torch.Tensor,
-        miss_refill_valid_mask: torch.Tensor,
-        stream: torch.npu.Stream,
-    ) -> None:
-        """Refill missed entries on the provided stream after metadata update."""
-        layer_idx = layer.layer_id - self.start_layer
-        stream = stream if stream is not None else torch.npu.current_stream()
-
-        with torch.npu.stream(stream):
             miss_refill_dst_index = (
                 request_cache_offsets + victim_slots.to(torch.long)
             ).reshape(-1).contiguous()
@@ -1071,6 +1020,11 @@ class SparseKVCacheManager:
                 2,
                 2,
                 block_dim=48,
+            )
+
+            _record_stream_event(
+                self._materialize_metadata_update_stream,
+                self._materialize_metadata_update_done,
             )
 
 

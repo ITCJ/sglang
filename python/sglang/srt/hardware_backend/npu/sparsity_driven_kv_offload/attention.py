@@ -169,7 +169,7 @@ def forward_sparsity_driven_kv_offload(
             dtype=k.dtype,
             device=backend.device,
         )
-        materialize_done = sparse_kv_manager.materialize_selected_kv(
+        sparse_kv_manager.materialize_selected_kv(
             layer, forward_batch, topk_indices, selected_kv_buffer, stream
         )
 
@@ -227,7 +227,9 @@ def forward_sparsity_driven_kv_offload(
         # Refill reads selected_kv_buffer after both copy streams complete.
         # Wait before split/contiguous launches their own reads on this stream,
         # so graph capture never observes concurrent consumers of the buffer.
-        _wait_stream_event(stream, materialize_done)
+        _wait_stream_event(
+            stream, sparse_kv_manager._materialize_metadata_update_done
+        )
         selected_k_nope, selected_k_rope = selected_kv_buffer.split(
             [nope_head_dim, rope_head_dim], dim=-1
         )
