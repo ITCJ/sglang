@@ -255,8 +255,21 @@ class SparseKVCacheManager:
         self.device_token_pos_cpu = None
         self.current_req_indices_cpu = None
 
-        self._device_cache_slot_ids = torch.arange(
-            self.device_cache_capacity, dtype=torch.long, device=self.device
+        # Static flattened row addresses for selected_kv_buffer. The same
+        # addresses are used as the hit/miss copy destinations and the refill
+        # copy sources. Keeping the full request-capacity template avoids three
+        # arange/add/reshape sequences on every decode step; materialization
+        # only takes a view covering the current graph batch.
+        self._selected_kv_copy_indices = torch.arange(
+            self.size * self.sparse_context_len,
+            dtype=torch.long,
+            device=self.device,
+        )
+        self._slot_map_sentinel_req_indices = torch.full(
+            (self.size,), self.size, dtype=torch.long, device=self.device
+        )
+        self._zero_req_indices = torch.zeros(
+            self.size, dtype=torch.long, device=self.device
         )
         self._slot_map_width = (self.max_context_len // 8 + 1) * 8
 
@@ -820,21 +833,32 @@ class SparseKVCacheManager:
             # device_cache_row_indices: invalid -> 0 (masked by valid_topk_mask)
             req_pool_indices = forward_batch.req_pool_indices
             req_pool_indices = req_pool_indices.to(torch.long).contiguous()
+            request_count = req_pool_indices.numel()
+            if request_count > self.size:
+                raise RuntimeError(
+                    "Materialize batch exceeds the initialized copy-index capacity: "
+                    f"batch_size={request_count}, capacity={self.size}."
+                )
             valid_req_mask = (req_pool_indices >= 0) & (req_pool_indices < self.size)
             slot_map_row_indices = torch.where(
                 valid_req_mask,
                 req_pool_indices,
-                torch.full_like(req_pool_indices, self.size),
+                self._slot_map_sentinel_req_indices[:request_count],
             )
             device_cache_row_indices = torch.where(
                 valid_req_mask,
                 req_pool_indices,
-                torch.zeros_like(req_pool_indices),
+                self._zero_req_indices[:request_count],
             )
 
             # Normalize top-k indices and mask invalid requests and token IDs.
             topk_indices = normalize_batch_topk_indices(topk_indices)
             batch_size, topk_len = topk_indices.shape
+            if batch_size != request_count:
+                raise RuntimeError(
+                    "Top-k and request batch sizes differ: "
+                    f"topk_batch={batch_size}, request_batch={request_count}."
+                )
             if topk_len != 2048 or self.device_cache_capacity != 4096:
                 raise RuntimeError(
                     "The fused timestamp-LRU kernel currently requires "
@@ -883,12 +907,17 @@ class SparseKVCacheManager:
 
             # Build copy indices on the caller stream before releasing the
             # parallel copies and metadata work to their side streams.
+            selected_kv_copy_indices = self._selected_kv_copy_indices[
+                : batch_size * topk_len
+            ]
+            request_cache_offsets = device_cache_row_indices.unsqueeze(1) * (
+                self.device_cache_capacity
+            )
             hit_src_index, hit_dst_index, hit_valid_mask = _build_hit_src_dst_index(
                 token_on_device,
                 device_token_pos,
-                device_cache_row_indices,
-                self.device_cache_capacity,
-                self.sparse_context_len,
+                request_cache_offsets,
+                selected_kv_copy_indices,
             )
 
             host_miss_mask = (~token_on_device) & valid_topk_mask
@@ -897,19 +926,14 @@ class SparseKVCacheManager:
                 topk_indices,
                 device_cache_row_indices,
                 self.max_context_len,
-                self.sparse_context_len,
+                selected_kv_copy_indices,
             )
 
             # Accumulate on-device counters as part of graph capture/replay.
-            stats_valid_mask = valid_topk_mask
             request_stats = torch.stack(
                 (
-                    (token_on_device & stats_valid_mask).sum(
-                        dim=1, dtype=torch.int32
-                    ),
-                    ((~token_on_device) & stats_valid_mask).sum(
-                        dim=1, dtype=torch.int32
-                    ),
+                    token_on_device.sum(dim=1, dtype=torch.int32),
+                    host_miss_mask.sum(dim=1, dtype=torch.int32),
                 ),
                 dim=1,
             )
@@ -917,20 +941,8 @@ class SparseKVCacheManager:
                 0, device_cache_row_indices, request_stats
             )
 
-            topk_slot_ids = self._device_cache_slot_ids[:topk_len]
-            request_cache_offsets = device_cache_row_indices.unsqueeze(1) * (
-                self.device_cache_capacity
-            )
-            current_buffer_offsets = (
-                torch.arange(
-                    batch_size, dtype=torch.long, device=topk_indices.device
-                ).unsqueeze(1)
-                * self.sparse_context_len
-            )
-            miss_refill_src_index = (
-                current_buffer_offsets + topk_slot_ids
-            ).reshape(-1).contiguous()
-            miss_refill_valid_mask = host_miss_mask.reshape(-1).contiguous()
+            miss_refill_src_index = selected_kv_copy_indices
+            miss_refill_valid_mask = miss_valid_mask
 
             _record_stream_event(
                 stream, self._materialize_copy_ready[layer_idx]
@@ -1198,14 +1210,14 @@ def _build_lru_slot_plan(
 def _build_hit_src_dst_index(
     token_on_device: torch.Tensor,
     device_token_pos: torch.Tensor,
-    current_req_indices: torch.Tensor,
-    device_cache_capacity: int,
-    current_buffer_capacity: int,
+    request_cache_offsets: torch.Tensor,
+    flat_dst_index: torch.Tensor,
 ):
     """
     token_on_device: [bs, topk], bool
     device_token_pos: [bs, topk], int64 or int32
-    current_req_indices: [bs], int64
+    request_cache_offsets: [bs, 1], int64
+    flat_dst_index: [bs * topk], int64, initialized by the manager
 
     Return:
         src_index_full: [bs * topk], int64
@@ -1213,8 +1225,8 @@ def _build_hit_src_dst_index(
         valid_mask: [bs * topk], bool
 
     Flattening rule:
-        src row = req_id * device_cache_capacity + device_token_pos
-        dst row = batch_id * current_buffer_capacity + topk_pos
+        src row = request_cache_offsets[batch_id] + device_token_pos
+        dst row = flat_dst_index[batch_id, topk_pos]
     """
     if token_on_device.dim() != 2 or device_token_pos.dim() != 2:
         raise RuntimeError(
@@ -1226,46 +1238,29 @@ def _build_hit_src_dst_index(
             f"token_on_device and device_token_pos must have the same shape, got "
             f"{tuple(token_on_device.shape)} and {tuple(device_token_pos.shape)}"
         )
-    if current_req_indices.dim() != 1:
+    if request_cache_offsets.dim() != 2 or request_cache_offsets.shape[1] != 1:
         raise RuntimeError(
-            f"current_req_indices must be 1-D, got {current_req_indices.dim()}"
+            "request_cache_offsets must have shape [batch, 1], got "
+            f"{tuple(request_cache_offsets.shape)}"
         )
 
     bs, topk = token_on_device.shape
-    if current_req_indices.numel() != bs:
+    if request_cache_offsets.shape[0] != bs:
         raise RuntimeError(
-            f"current_req_indices length mismatch: "
-            f"{current_req_indices.numel()} vs batch {bs}"
+            "request_cache_offsets batch mismatch: "
+            f"{request_cache_offsets.shape[0]} vs batch {bs}"
         )
-    if device_cache_capacity <= 0:
+    if flat_dst_index.dim() != 1 or flat_dst_index.numel() != bs * topk:
         raise RuntimeError(
-            "device_cache_capacity must be positive, got "
-            f"{device_cache_capacity}"
+            "flat_dst_index must contain batch * topk entries, got "
+            f"shape={tuple(flat_dst_index.shape)}, expected={bs * topk}"
         )
-    if current_buffer_capacity <= 0:
-        raise RuntimeError(
-            "current_buffer_capacity must be positive, got "
-            f"{current_buffer_capacity}"
-        )
-
-    device = token_on_device.device
 
     valid_mask = token_on_device.reshape(-1).contiguous()
-
-    batch_offsets = (
-        torch.arange(bs, device=device, dtype=torch.int64).unsqueeze(1)
-        * current_buffer_capacity
-    )
-    topk_offsets = torch.arange(topk, device=device, dtype=torch.int64)
-    flat_dst_index_all = (batch_offsets + topk_offsets).reshape(-1).contiguous()
-
-    req_offsets = (
-        current_req_indices.to(torch.int64).unsqueeze(1) * device_cache_capacity
-    )
-    src_index_2d = req_offsets + device_token_pos.to(torch.int64)
+    src_index_2d = request_cache_offsets + device_token_pos.to(torch.int64)
     flat_src_index_all = src_index_2d.reshape(-1).contiguous()
 
-    return flat_src_index_all, flat_dst_index_all, valid_mask
+    return flat_src_index_all, flat_dst_index, valid_mask
 
 
 def _build_miss_src_dst_index(
@@ -1273,7 +1268,7 @@ def _build_miss_src_dst_index(
     topk_indices: torch.Tensor,
     current_req_indices: torch.Tensor,
     max_context_len: int,
-    current_buffer_capacity: int,
+    flat_dst_index: torch.Tensor,
 ):
     if token_from_host.dim() != 2 or topk_indices.dim() != 2:
         raise RuntimeError(
@@ -1294,27 +1289,19 @@ def _build_miss_src_dst_index(
             f"current_req_indices length mismatch: "
             f"{current_req_indices.numel()} vs batch {token_from_host.shape[0]}"
         )
-    if current_buffer_capacity <= 0:
+    bs, topk = token_from_host.shape
+    if flat_dst_index.dim() != 1 or flat_dst_index.numel() != bs * topk:
         raise RuntimeError(
-            "current_buffer_capacity must be positive, got "
-            f"{current_buffer_capacity}"
+            "flat_dst_index must contain batch * topk entries, got "
+            f"shape={tuple(flat_dst_index.shape)}, expected={bs * topk}"
         )
 
-    bs, topk = token_from_host.shape
-    device = token_from_host.device
-
-    valid_2d = token_from_host & (topk_indices >= 0) & (topk_indices < max_context_len)
-    valid_mask = valid_2d.reshape(-1).contiguous()
-
-    batch_offsets = (
-        torch.arange(bs, device=device, dtype=torch.int64).unsqueeze(1)
-        * current_buffer_capacity
-    )
-    topk_offsets = torch.arange(topk, device=device, dtype=torch.int64)
-    flat_dst_index_all = (batch_offsets + topk_offsets).reshape(-1).contiguous()
+    # materialize_selected_kv has already masked invalid requests and token
+    # positions before constructing token_from_host.
+    valid_mask = token_from_host.reshape(-1).contiguous()
 
     req_offsets = current_req_indices.to(torch.int64).unsqueeze(1) * max_context_len
     src_index_2d = req_offsets + topk_indices.to(torch.int64)
     flat_src_index_all = src_index_2d.reshape(-1).contiguous()
 
-    return flat_src_index_all, flat_dst_index_all, valid_mask
+    return flat_src_index_all, flat_dst_index, valid_mask
