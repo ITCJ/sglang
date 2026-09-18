@@ -11,6 +11,7 @@ from sgl_kernel_npu.sparsity_driven_kv_offload import (
     fused_timestamp_lru_metadata_update,
     parallel_lru_metadata_write,
     slot_map_lookup,
+    uindex_copy_optimized,
     unidex_copy_inplace,
 )
 
@@ -943,7 +944,7 @@ class SparseKVCacheManager:
                 self._materialize_d2d_hit_stream,
                 self._materialize_copy_ready[layer_idx],
             )
-            unidex_copy_inplace(
+            uindex_copy_optimized(
                 self.device_kv_buffer[layer_idx],
                 selected_kv_buffer,
                 hit_src_index,
@@ -963,7 +964,7 @@ class SparseKVCacheManager:
                 self._materialize_h2d_miss_stream,
                 self._materialize_copy_ready[layer_idx],
             )
-            unidex_copy_inplace(
+            uindex_copy_optimized(
                 self.host_kv_buffer[layer_idx],
                 selected_kv_buffer,
                 miss_src_index,
@@ -1049,7 +1050,7 @@ class SparseKVCacheManager:
             miss_refill_dst_index = (
                 request_cache_offsets + victim_slots.to(torch.long)
             ).reshape(-1).contiguous()
-            unidex_copy_inplace(
+            uindex_copy_optimized(
                 selected_kv_buffer,
                 self.device_kv_buffer[layer_idx],
                 miss_refill_src_index,
