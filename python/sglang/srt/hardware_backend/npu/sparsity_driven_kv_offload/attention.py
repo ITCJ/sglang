@@ -8,7 +8,6 @@ import torch
 import torch_npu
 
 from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.manager import (
-    _wait_stream_event,
     normalize_batch_topk_indices,
 )
 from sglang.srt.layers.attention.dsa.utils import is_dsa_enable_prefill_cp
@@ -173,8 +172,8 @@ def forward_sparsity_driven_kv_offload(
             layer, forward_batch, topk_indices, selected_kv_buffer, stream
         )
 
-        # Copy, metadata, and refill work proceeds on side streams while the
-        # caller prepares query shapes and sparse indices below.
+        # materialize_selected_kv overlaps only hit/miss copies. Metadata and
+        # refill are already ordered on this caller stream before preparation.
 
         topk_valid = topk_2d >= 0
         if forward_batch.seq_lens is not None:
@@ -224,12 +223,6 @@ def forward_sparsity_driven_kv_offload(
             batch_size, 1, padded_query_heads, rope_head_dim
         ).contiguous()
 
-        # Refill reads selected_kv_buffer after both copy streams complete.
-        # Wait before split/contiguous launches their own reads on this stream,
-        # so graph capture never observes concurrent consumers of the buffer.
-        _wait_stream_event(
-            stream, sparse_kv_manager._materialize_metadata_update_done
-        )
         selected_k_nope, selected_k_rope = selected_kv_buffer.split(
             [nope_head_dim, rope_head_dim], dim=-1
         )

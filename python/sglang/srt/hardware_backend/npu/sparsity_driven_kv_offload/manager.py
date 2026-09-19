@@ -118,16 +118,13 @@ class SparseKVCacheManager:
         self.layer_num = self.paged_kv_cache.layer_num
         self._log_cache_stats = envs.SGLANG_NPU_LOG_SPARSE_KV_CACHE_STATS.get()
 
-        # Hit and miss copies use independent 24-AIV streams. The metadata
-        # stream joins both copies, updates the LRU metadata, and refills the
-        # device cache. The three events are reused across layers because each
-        # layer enqueues its waits before the next layer records them again.
+        # Only hit and miss copies overlap on independent 24-AIV streams.
+        # Metadata update and refill run on the caller stream after both copies
+        # complete, which keeps the experiment isolated to hit/miss overlap.
         self._materialize_d2d_hit_stream = torch.npu.Stream()
         self._materialize_h2d_miss_stream = torch.npu.Stream()
-        self._materialize_metadata_update_stream = torch.npu.Stream()
         self._materialize_hit_done = torch.npu.Event()
         self._materialize_miss_done = torch.npu.Event()
-        self._materialize_metadata_update_done = torch.npu.Event()
 
         # device KV buffer
         try:
@@ -972,16 +969,15 @@ class SparseKVCacheManager:
                 self._materialize_miss_done,
             )
 
-        # Join the two copy streams before using all available AIVs for metadata
-        # and refill. Same-stream order places refill strictly after the parallel
-        # metadata write and avoids oversubscribing AIVs during the two copies.
-        with torch.npu.stream(self._materialize_metadata_update_stream):
+        # Join both copy streams on the caller stream. Everything below is
+        # serialized with caller-stream preparation and sparse attention.
+        with torch.npu.stream(stream):
             _wait_stream_event(
-                self._materialize_metadata_update_stream,
+                stream,
                 self._materialize_hit_done,
             )
             _wait_stream_event(
-                self._materialize_metadata_update_stream,
+                stream,
                 self._materialize_miss_done,
             )
 
@@ -1019,11 +1015,6 @@ class SparseKVCacheManager:
                 2,
                 2,
                 block_dim=48,
-            )
-
-            _record_stream_event(
-                self._materialize_metadata_update_stream,
-                self._materialize_metadata_update_done,
             )
 
 
