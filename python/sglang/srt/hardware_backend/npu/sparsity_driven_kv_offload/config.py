@@ -9,55 +9,48 @@ from sglang.srt.configs.model_config import (
     get_dsa_index_topk,
     is_deepseek_dsa,
 )
-from sglang.srt.utils import get_bool_env_var
+from sglang.srt.environ import envs
+from sglang.srt.runtime_context import attention_backends, get_disagg, get_schedule
 from sglang.srt.utils.common import is_npu
 
 if TYPE_CHECKING:
     from sglang.srt.configs.model_config import ModelConfig
-    from sglang.srt.server_args import ServerArgs
-
-_ENABLE_ENV_VAR = "SGLANG_ENABLE_SPARSITY_DRIVEN_KV_OFFLOAD"
 
 
-def is_sparsity_driven_kv_offload_requested() -> bool:
-    return get_bool_env_var(_ENABLE_ENV_VAR)
-
-
-def _mode_value(disaggregation_mode) -> str:
-    return getattr(disaggregation_mode, "value", str(disaggregation_mode))
-
-
-def should_keep_native_kv_cache_for_sparse_pd_prefill(server_args: ServerArgs) -> bool:
+def should_keep_native_kv_cache_for_sparse_pd_prefill() -> bool:
+    disagg = get_disagg()
     return (
-        _mode_value(getattr(server_args, "disaggregation_mode", None)) == "prefill"
-        and getattr(server_args, "disaggregation_transfer_backend", None) == "ascend"
+        disagg.disaggregation_mode == "prefill"
+        and disagg.disaggregation_transfer_backend == "ascend"
     )
 
 
 def is_sparsity_driven_kv_offload_enabled(
     *,
     model_config: ModelConfig,
-    server_args: ServerArgs,
     use_mla_backend: bool,
 ) -> bool:
-    if not is_sparsity_driven_kv_offload_requested():
+    if not envs.SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD.get():
         return False
 
+    prefill_attention_backend, decode_attention_backend = attention_backends()
     if not (
         is_npu()
-        and server_args.attention_backend == "ascend"
+        and prefill_attention_backend == "ascend"
+        and decode_attention_backend == "ascend"
         and use_mla_backend
         and is_deepseek_dsa(model_config.hf_config)
     ):
         raise ValueError(
-            f"{_ENABLE_ENV_VAR} requires an NPU DSA-family MLA model "
+            "SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD requires an NPU "
+            "DSA-family MLA model "
             "(for example DeepSeek V3.2 or GLM-5.x) using the Ascend MLA "
             "attention backend."
         )
-    if server_args.max_running_requests is None:
+    if get_schedule().max_running_requests is None:
         raise ValueError(
-            f"{_ENABLE_ENV_VAR} requires an explicit "
-            "--max-running-requests to bound the per-process host KV allocation."
+            "SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD requires max_running_requests "
+            "to be set to bound the per-process host KV allocation."
         )
     return True
 
@@ -95,18 +88,16 @@ def get_sparsity_driven_kv_offload_index_head_dim(
 def get_sparsity_driven_kv_offload_cell_size(
     *,
     model_config: ModelConfig,
-    server_args: ServerArgs,
     use_mla_backend: bool,
     num_layers: int,
     element_size: int,
 ) -> Optional[int]:
     if not is_sparsity_driven_kv_offload_enabled(
         model_config=model_config,
-        server_args=server_args,
         use_mla_backend=use_mla_backend,
     ):
         return None
-    if should_keep_native_kv_cache_for_sparse_pd_prefill(server_args):
+    if should_keep_native_kv_cache_for_sparse_pd_prefill():
         return None
 
     index_head_dim = get_sparsity_driven_kv_offload_index_head_dim(
