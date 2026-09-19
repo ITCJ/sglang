@@ -8,6 +8,7 @@ import torch
 import torch_npu
 
 from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.manager import (
+    _wait_stream_event,
     normalize_batch_topk_indices,
 )
 from sglang.srt.layers.attention.dsa.utils import is_dsa_enable_prefill_cp
@@ -168,12 +169,17 @@ def forward_sparsity_driven_kv_offload(
             dtype=k.dtype,
             device=backend.device,
         )
-        sparse_kv_manager.materialize_selected_kv(
+        (
+            victim_slots,
+            miss_refill_src_index,
+            request_cache_offsets,
+            miss_refill_valid_mask,
+        ) = sparse_kv_manager.materialize_selected_kv(
             layer, forward_batch, topk_indices, selected_kv_buffer, stream
         )
 
-        # materialize_selected_kv overlaps only hit/miss copies. Metadata and
-        # refill are already ordered on this caller stream before preparation.
+        # Both copies are complete here. Metadata update overlaps preparation
+        # below without consuming selected_kv_buffer.
 
         topk_valid = topk_2d >= 0
         if forward_batch.seq_lens is not None:
@@ -252,6 +258,21 @@ def forward_sparsity_driven_kv_offload(
             selected_kv_length,
             num_kv_heads,
             rope_head_dim,
+        )
+
+        # Wait for the victim plan, then refill on the caller stream. This keeps
+        # all post-copy selected_kv_buffer consumers on the caller stream.
+        _wait_stream_event(
+            stream, sparse_kv_manager._materialize_metadata_update_done
+        )
+        sparse_kv_manager.refill_selected_kv(
+            layer,
+            selected_kv_buffer,
+            victim_slots,
+            miss_refill_src_index,
+            request_cache_offsets,
+            miss_refill_valid_mask,
+            stream,
         )
 
         ret = torch_npu.npu_sparse_flash_attention(

@@ -118,13 +118,16 @@ class SparseKVCacheManager:
         self.layer_num = self.paged_kv_cache.layer_num
         self._log_cache_stats = envs.SGLANG_NPU_LOG_SPARSE_KV_CACHE_STATS.get()
 
-        # Only hit and miss copies overlap on independent 24-AIV streams.
-        # Metadata update and refill run on the caller stream after both copies
-        # complete, which keeps the experiment isolated to hit/miss overlap.
+        # Hit and miss copies overlap on independent 24-AIV streams. Metadata
+        # update runs on a third stream after both copies, while refill remains
+        # on the caller stream to keep selected_kv_buffer stream-local after
+        # the copy join.
         self._materialize_d2d_hit_stream = torch.npu.Stream()
         self._materialize_h2d_miss_stream = torch.npu.Stream()
+        self._materialize_metadata_update_stream = torch.npu.Stream()
         self._materialize_hit_done = torch.npu.Event()
         self._materialize_miss_done = torch.npu.Event()
+        self._materialize_metadata_update_done = torch.npu.Event()
 
         # device KV buffer
         try:
@@ -808,7 +811,7 @@ class SparseKVCacheManager:
         topk_indices: torch.Tensor,
         selected_kv_buffer: torch.Tensor,
         stream: torch.npu.Stream,
-    ) -> None:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Materialize top-k KV and update a non-moving physical-slot LRU."""
         layer_idx = layer.layer_id - self.start_layer
         stream = stream if stream is not None else torch.npu.current_stream()
@@ -969,15 +972,15 @@ class SparseKVCacheManager:
                 self._materialize_miss_done,
             )
 
-        # Join both copy streams on the caller stream. Everything below is
-        # serialized with caller-stream preparation and sparse attention.
-        with torch.npu.stream(stream):
+        # Metadata update starts after both copies and overlaps caller-stream
+        # sparse-attention preparation. It does not consume selected_kv_buffer.
+        with torch.npu.stream(self._materialize_metadata_update_stream):
             _wait_stream_event(
-                stream,
+                self._materialize_metadata_update_stream,
                 self._materialize_hit_done,
             )
             _wait_stream_event(
-                stream,
+                self._materialize_metadata_update_stream,
                 self._materialize_miss_done,
             )
 
@@ -1003,6 +1006,39 @@ class SparseKVCacheManager:
                 max_context_len=self.max_context_len,
             )
 
+            _record_stream_event(
+                self._materialize_metadata_update_stream,
+                self._materialize_metadata_update_done,
+            )
+
+        # The caller may prepare attention inputs after both copies complete.
+        # Metadata update proceeds independently on its side stream.
+        with torch.npu.stream(stream):
+            _wait_stream_event(stream, self._materialize_hit_done)
+            _wait_stream_event(stream, self._materialize_miss_done)
+
+        return (
+            victim_slots,
+            miss_refill_src_index,
+            request_cache_offsets,
+            miss_refill_valid_mask,
+        )
+
+    def refill_selected_kv(
+        self,
+        layer: RadixAttention,
+        selected_kv_buffer: torch.Tensor,
+        victim_slots: torch.Tensor,
+        miss_refill_src_index: torch.Tensor,
+        request_cache_offsets: torch.Tensor,
+        miss_refill_valid_mask: torch.Tensor,
+        stream: torch.npu.Stream,
+    ) -> None:
+        """Refill missed entries on the caller stream after metadata update."""
+        layer_idx = layer.layer_id - self.start_layer
+        stream = stream if stream is not None else torch.npu.current_stream()
+
+        with torch.npu.stream(stream):
             miss_refill_dst_index = (
                 request_cache_offsets + victim_slots.to(torch.long)
             ).reshape(-1).contiguous()
