@@ -244,10 +244,10 @@ def forward_sparsity_driven_kv_offload(
             rope_head_dim,
         )
 
-        # Wait for the victim plan, then refill on the caller stream. This keeps
-        # all post-copy selected_kv_buffer consumers on the caller stream.
+        # Refill can start as soon as victim selection completes. The following
+        # slot-map/reverse-map writes touch different buffers and overlap refill.
         _wait_stream_event(
-            stream, sparse_kv_manager._materialize_metadata_update_done
+            stream, sparse_kv_manager._materialize_victim_slot_select_done
         )
         sparse_kv_manager.refill_selected_kv(
             layer,
@@ -259,6 +259,11 @@ def forward_sparsity_driven_kv_offload(
             stream,
         )
 
+        # Keep the full metadata update ordered before attention/next-layer
+        # work while allowing it to overlap the refill above.
+        _wait_stream_event(
+            stream, sparse_kv_manager._materialize_metadata_update_done
+        )
         ret = torch_npu.npu_sparse_flash_attention(
             q_nope_sfa,
             k_nope_sfa,

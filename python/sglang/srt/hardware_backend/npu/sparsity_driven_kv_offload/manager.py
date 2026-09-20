@@ -127,6 +127,7 @@ class SparseKVCacheManager:
         self._materialize_metadata_update_stream = torch.npu.Stream()
         self._materialize_hit_done = torch.npu.Event()
         self._materialize_miss_done = torch.npu.Event()
+        self._materialize_victim_slot_select_done = torch.npu.Event()
         self._materialize_metadata_update_done = torch.npu.Event()
 
         # device KV buffer
@@ -1027,6 +1028,10 @@ class SparseKVCacheManager:
                 self.device_lru_slots[layer_idx],
                 self.device_lru_slot_stamps[layer_idx],
                 max_context_len=self.max_context_len,
+            )
+            _record_stream_event(
+                self._materialize_metadata_update_stream,
+                self._materialize_victim_slot_select_done,
             )
             parallel_lru_metadata_write(
                 self.device_slot_map[layer_idx],
