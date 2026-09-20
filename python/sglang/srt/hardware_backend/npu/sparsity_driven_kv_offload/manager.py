@@ -254,6 +254,30 @@ class SparseKVCacheManager:
             dtype=torch.long,
             device=self.device,
         )
+        # Static sparse-attention metadata templates. Materialization returns
+        # the dynamic validity mask/counts; attention applies them to these
+        # initialization-time tensors without rebuilding arange/full/ones.
+        self._compact_sparse_indices = torch.arange(
+            self.sparse_context_len,
+            dtype=torch.int32,
+            device=self.device,
+        ).view(1, 1, 1, self.sparse_context_len)
+        self._invalid_sparse_indices = torch.full(
+            (1, 1, 1, self.sparse_context_len),
+            -1,
+            dtype=torch.int32,
+            device=self.device,
+        )
+        self._decode_query_seq_lengths = torch.ones(
+            self.size,
+            dtype=torch.int32,
+            device=self.device,
+        )
+        self._zero_sparse_index = torch.zeros(
+            (self.size, 1, self.head_num),
+            dtype=torch.int32,
+            device=self.device,
+        )
         self._slot_map_sentinel_req_indices = torch.full(
             (self.size,), self.size, dtype=torch.long, device=self.device
         )
@@ -811,7 +835,14 @@ class SparseKVCacheManager:
         topk_indices: torch.Tensor,
         selected_kv_buffer: torch.Tensor,
         stream: torch.npu.Stream,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+    ]:
         """Materialize top-k KV and update a non-moving physical-slot LRU."""
         layer_idx = layer.layer_id - self.start_layer
         stream = stream if stream is not None else torch.npu.current_stream()
@@ -829,6 +860,10 @@ class SparseKVCacheManager:
                     f"batch_size={request_count}, capacity={self.size}."
                 )
             valid_req_mask = (req_pool_indices >= 0) & (req_pool_indices < self.size)
+            if forward_batch.seq_lens is not None:
+                valid_req_mask = valid_req_mask & (
+                    forward_batch.seq_lens[:request_count] > 0
+                )
             slot_map_row_indices = torch.where(
                 valid_req_mask,
                 req_pool_indices,
@@ -919,13 +954,10 @@ class SparseKVCacheManager:
             )
 
             # Accumulate on-device counters as part of graph capture/replay.
-            request_stats = torch.stack(
-                (
-                    token_on_device.sum(dim=1, dtype=torch.int32),
-                    host_miss_mask.sum(dim=1, dtype=torch.int32),
-                ),
-                dim=1,
-            )
+            hit_counts = token_on_device.sum(dim=1, dtype=torch.int32)
+            host_miss_counts = host_miss_mask.sum(dim=1, dtype=torch.int32)
+            valid_topk_counts = hit_counts + host_miss_counts
+            request_stats = torch.stack((hit_counts, host_miss_counts), dim=1)
             self._cache_stats[layer_idx].index_add_(
                 0, device_cache_row_indices, request_stats
             )
@@ -1022,6 +1054,8 @@ class SparseKVCacheManager:
             miss_refill_src_index,
             request_cache_offsets,
             miss_refill_valid_mask,
+            valid_topk_mask,
+            valid_topk_counts,
         )
 
     def refill_selected_kv(

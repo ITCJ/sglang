@@ -174,51 +174,35 @@ def forward_sparsity_driven_kv_offload(
             miss_refill_src_index,
             request_cache_offsets,
             miss_refill_valid_mask,
+            topk_valid,
+            valid_topk_counts,
         ) = sparse_kv_manager.materialize_selected_kv(
-            layer, forward_batch, topk_indices, selected_kv_buffer, stream
+            layer, forward_batch, topk_2d, selected_kv_buffer, stream
         )
 
         # Both copies are complete here. Metadata update overlaps preparation
         # below without consuming selected_kv_buffer.
 
-        topk_valid = topk_2d >= 0
-        if forward_batch.seq_lens is not None:
-            valid_rows = (forward_batch.seq_lens[:batch_size] > 0).view(batch_size, 1)
-            topk_valid = topk_valid & valid_rows
-
         actual_seq_lengths_kv = (
-            topk_valid.sum(dim=1)
-            .clamp(min=1, max=selected_kv_length)
+            valid_topk_counts.clamp(min=1, max=selected_kv_length)
             .to(device=q_nope.device, dtype=torch.int32)
             .contiguous()
         )
-        actual_seq_lengths_query = torch.ones(
-            batch_size, dtype=torch.int32, device=q_nope.device
-        ).contiguous()
+        actual_seq_lengths_query = sparse_kv_manager._decode_query_seq_lengths[
+            :batch_size
+        ]
 
-        compact_indices = (
-            torch.arange(selected_kv_length, device=q_nope.device, dtype=torch.int32)
-            .view(1, 1, 1, selected_kv_length)
-            .expand(batch_size, 1, num_kv_heads, selected_kv_length)
-            .clone()
-        )
-        compact_valid = topk_valid.view(batch_size, 1, 1, selected_kv_length).expand(
-            batch_size, 1, num_kv_heads, selected_kv_length
-        )
+        compact_valid = topk_valid.view(batch_size, 1, 1, selected_kv_length)
         sparse_indices = torch.where(
             compact_valid,
-            compact_indices,
-            torch.full_like(compact_indices, -1),
+            sparse_kv_manager._compact_sparse_indices,
+            sparse_kv_manager._invalid_sparse_indices,
         ).contiguous()
 
-        empty_rows = (topk_valid.sum(dim=1) == 0).view(batch_size, 1, 1)
+        empty_rows = (valid_topk_counts == 0).view(batch_size, 1, 1)
         sparse_indices[:, :, :, 0] = torch.where(
-            empty_rows.expand(batch_size, 1, num_kv_heads),
-            torch.zeros(
-                (batch_size, 1, num_kv_heads),
-                dtype=torch.int32,
-                device=q_nope.device,
-            ),
+            empty_rows,
+            sparse_kv_manager._zero_sparse_index[:batch_size],
             sparse_indices[:, :, :, 0],
         )
 
