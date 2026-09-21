@@ -117,6 +117,7 @@ class SparseKVCacheManager:
         self.store_dtype = self.paged_kv_cache.store_dtype
         self.layer_num = self.paged_kv_cache.layer_num
         self._log_cache_stats = envs.SGLANG_NPU_LOG_SPARSE_KV_CACHE_STATS.get()
+        self._probation_age = envs.SGLANG_NPU_SPARSE_KV_PROBATION_AGE.get()
 
         # Hit and miss copies overlap on independent 24-AIV streams. Metadata
         # update runs on a third stream after both copies, while refill remains
@@ -1029,7 +1030,7 @@ class SparseKVCacheManager:
                     self.device_lru_slots[layer_idx],
                     self.device_lru_slot_stamps[layer_idx],
                     max_context_len=self.max_context_len,
-                    probation_age=4,
+                    probation_age=self._probation_age,
                 )
             )
             _record_stream_event(
