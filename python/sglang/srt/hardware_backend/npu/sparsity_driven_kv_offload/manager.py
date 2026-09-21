@@ -396,13 +396,24 @@ class SparseKVCacheManager:
     def _report_request_cache_stats(self, req: Req, req_pool_idx: int) -> None:
         stats = self._cache_stats[:, req_pool_idx, :].cpu().tolist()
         layer_stats = []
+        total_hits = 0
+        total_misses = 0
         for layer_idx, (hit_count, miss_count) in enumerate(stats):
             total_count = hit_count + miss_count
             hit_rate = hit_count / total_count if total_count else 0.0
+            total_hits += hit_count
+            total_misses += miss_count
             layer_stats.append(
                 f"  layer {self.start_layer + layer_idx}: "
                 f"hit={hit_count}, miss={miss_count}, hit_rate={hit_rate:.2%}"
             )
+
+        total_count = total_hits + total_misses
+        overall_hit_rate = total_hits / total_count if total_count else 0.0
+        layer_stats.append(
+            f"  overall: hit={total_hits}, miss={total_misses}, "
+            f"hit_rate={overall_hit_rate:.2%}"
+        )
 
         logger.info(
             "Sparse KV cache stats for request rid=%s, req_pool_idx=%d:\n%s",
