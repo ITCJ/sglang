@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, List, Optional, Union
 import torch
 from sgl_kernel_npu.sparsity_driven_kv_offload import (
     create_shm_tensor,
-    fused_timestamp_lru_metadata_update,
+    fused_timestamp_lru_metadata_update_with_probation,
     parallel_lru_metadata_write,
     slot_map_lookup,
     unidex_copy_inplace,
@@ -1020,14 +1020,17 @@ class SparseKVCacheManager:
             # Select victims per request, then distribute the sparse slot-map
             # and reverse-map writes across all AIVs. Stream order carries the
             # victim_slots/miss_counts dependency between the two kernels.
-            victim_slots, miss_counts = fused_timestamp_lru_metadata_update(
-                slot_lookup_req_indices,
-                slot_lookup_topk_indices,
-                device_token_pos,
-                hit_position_mask,
-                self.device_lru_slots[layer_idx],
-                self.device_lru_slot_stamps[layer_idx],
-                max_context_len=self.max_context_len,
+            victim_slots, miss_counts = (
+                fused_timestamp_lru_metadata_update_with_probation(
+                    slot_lookup_req_indices,
+                    slot_lookup_topk_indices,
+                    device_token_pos,
+                    hit_position_mask,
+                    self.device_lru_slots[layer_idx],
+                    self.device_lru_slot_stamps[layer_idx],
+                    max_context_len=self.max_context_len,
+                    probation_age=4,
+                )
             )
             _record_stream_event(
                 self._materialize_metadata_update_stream,
