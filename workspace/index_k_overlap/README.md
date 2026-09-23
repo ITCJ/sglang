@@ -1,5 +1,26 @@
 # A3 / 910C：index K offload 的第一阶段可行性测量
 
+## OOM 排查：先恢复已知可运行基线
+
+目前优先使用 `bash launch_incremental.sh 0`，不要先运行下面的完整版 `launch_server.sh`。
+Stage 0 原样复制并运行 `../col.sh`，包括 `modelsim` 拼写、固定模型路径、eager、BS4、ctx256、系统调优和原环境初始化；不运行新加的preflight、不覆盖量化参数。仅将stdout/stderr收进 `logs/`，保存脚本副本到 `results/`，指定profile输出位置。若目标机实际能跑的脚本在别处，用 `BASELINE_SCRIPT=/绝对路径/col.sh bash launch_incremental.sh 0`。
+
+每次停止上一服务、确认进程已退出后，只增加一项：
+
+| 命令 | 相比上一阶段的唯一配置增量 |
+| --- | --- |
+| `bash launch_incremental.sh 0` | 原始col.sh基线 |
+| `bash launch_incremental.sh 1` | context上限256→2816 |
+| `bash launch_incremental.sh 2` | max-prefill-tokens 512→2048 |
+| `bash launch_incremental.sh 3` | max-running-requests 4→11 |
+| `bash launch_incremental.sh 4` | 加 enable-profile-cuda-graph，仍为eager；此时不产生graph capture |
+| `bash launch_incremental.sh 5` | 显式BF16 KV cache |
+| `bash launch_incremental.sh 6` | 开启graph，capture BS=1、11（最后再尝试） |
+
+各阶段累积修改，量化参数始终保留源脚本原值。若某阶段失败，先退回上一阶段在相同环境复验；失败发生在权重加载、cache分配还是graph capture，要以异常栈确定。若stage 0的 `modelsim` 被目标CLI拒绝，应核实实际可运行原脚本；工具不会自动替换成 `modelslim`。两者不是已证实可互换的别名。
+
+先以服务ready确认启动，通过stage 5后可直接运行 `bash profile_decode.sh` 采集eager计算，不必先开graph。Stage 0–2 不适合直接运行默认BS11/2K客户端。已有完整版入口保留，便于对照，其默认 `modelslim`、graph等差异不应混入基线复现。
+
 仅在目标昇腾 A3（910C）机器/容器执行。本目录在开发机只做静态检查，不运行模型、测试、profiler 或 microbenchmark。
 
 目标：分别测 **BS=11、2K 输入时的稳定 decode 计算窗口**，以及 **BS=11、64K 历史时单层 index K 的 DRAM→HBM 时间**。本轮没有真正的 index K offload，也没有计算与传输竞争实验。
