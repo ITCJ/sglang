@@ -2,31 +2,15 @@
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 
-# torchrun invokes this branch once per logical NPU. Binding happens before
-# importing torch, creating the pinned allocator, or first-touching host pages.
+# torchrun invokes this branch once per logical NPU.
 if [[ "${1:-}" == --worker ]]; then
     shift
-    bind=()
-    if [[ -n "${NUMA_NODES:-}" ]]; then
-        IFS=, read -r -a nodes <<< "$NUMA_NODES"
-        if (( ${#nodes[@]} != WORLD_SIZE )); then
-            echo 'NUMA_NODES must contain one comma-separated node per worker' >&2
-            exit 2
-        fi
-        node="${nodes[$LOCAL_RANK]}"
-        if [[ ! "$node" =~ ^[0-9]+$ ]]; then
-            echo 'Each NUMA_NODES entry must be a nonnegative node number' >&2
-            exit 2
-        fi
-        bind=(numactl --cpunodebind="$node" --membind="$node")
-    fi
-    exec "${bind[@]}" "$PYTHON_BIN" "$INDEX_OVERLAP_DIR/transfer_bench.py" "$@"
+    exec "$PYTHON_BIN" "$INDEX_OVERLAP_DIR/transfer_bench.py" "$@"
 fi
 
 init_logging "transfer_bs${BS}_n${NPROC:-16}"
 ascend_environment
 export PYTHON_BIN
-export NUMA_NODES="${NUMA_NODES:-}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export GLOO_SOCKET_IFNAME="${GLOO_SOCKET_IFNAME:-lo}"
 NPROC="${NPROC:-16}"

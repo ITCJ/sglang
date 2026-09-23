@@ -1,7 +1,7 @@
 """A3 single-layer index-K H2D baseline; run through run_transfer_bench.sh.
 
-Like workspace/kv_path_bench/kv_transfer_bench.py, allocation/initialization
-and correctness checking are outside synchronized, complete-transfer timing.
+Allocation/initialization and optional correctness checking are outside
+synchronized, complete-transfer timing.
 This intentionally measures contiguous pinned copy_, not Mooncake/ADXL or
 SGLang's paged transfer kernel. Every rank copies a full index-K replica.
 """
@@ -51,11 +51,12 @@ def run(args):
         "copies_per_iteration": math.ceil(nbytes / chunk_bytes),
         "protocol": "contiguous_pinned_H2D_full_replica_per_rank_no_inference",
         "timing": "rank barrier outside timing; event stream span and synchronized host wall time",
-        "numa_nodes_requested": os.environ.get("NUMA_NODES", ""),
+        "numa_binding": "none; system memory policy",
         "cpu_affinity": sorted(os.sched_getaffinity(0)),
         "hostname": platform.node(),
         "ascend_rt_visible_devices": os.environ.get("ASCEND_RT_VISIBLE_DEVICES"),
-        "samples": [],
+        "samples": [], "validation_enabled": args.validate,
+        "correct": None,
     }
     initialized = False
     try:
@@ -111,17 +112,18 @@ def run(args):
             for dst, src in copy_pairs[slot]:
                 dst.copy_(src, non_blocking=True)
 
-        # Verify each source buffer once before timing, bounded CPU scratch.
-        for slot, host in enumerate(host_buffers):
-            with torch.npu.stream(stream):
-                device_buffer.zero_()
-                submit(slot)
-            stream.synchronize()
-            for offset in range(0, nbytes, 16 * 1024 * 1024):
-                end = min(nbytes, offset + 16 * 1024 * 1024)
-                if not torch.equal(device_buffer[offset:end].cpu(), host[offset:end]):
-                    raise RuntimeError(f"Copy validation failed at slot={slot}, offset={offset}")
-        result["validation"] = "all_source_buffers_checked_before_timing"
+        if args.validate:
+            # Verify each source buffer once before timing, bounded CPU scratch.
+            for slot, host in enumerate(host_buffers):
+                with torch.npu.stream(stream):
+                    device_buffer.zero_()
+                    submit(slot)
+                stream.synchronize()
+                for offset in range(0, nbytes, 16 * 1024 * 1024):
+                    end = min(nbytes, offset + 16 * 1024 * 1024)
+                    if not torch.equal(device_buffer[offset:end].cpu(), host[offset:end]):
+                        raise RuntimeError(f"Copy validation failed at slot={slot}, offset={offset}")
+            result["correct"] = True
 
         print(f"rank={rank} device={local_rank} bytes/layer={nbytes} "
               f"MiB/layer={nbytes / 2**20:.2f} full_replica=True", flush=True)
@@ -163,6 +165,8 @@ def run(args):
             slowest = summarize_ms(slowest_samples)
             summary = {
                 "status": "ok", "config": vars(args), "world_size": world_size,
+                "validation_enabled": args.validate,
+                "correct": True if args.validate else None,
                 "bytes_per_layer_per_rank": nbytes,
                 "slowest_rank_per_iteration_wall": slowest,
                 "slowest_rank_per_iteration_wall_ms": slowest_samples,
@@ -204,6 +208,8 @@ if __name__ == "__main__":
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--repeats", type=int, default=50)
     parser.add_argument("--chunk-bytes", type=int, default=0)
+    parser.add_argument("--validate", action="store_true",
+                        help="check every host buffer before timing (default: off)")
     parser.add_argument("--output-dir", required=True)
     args = parser.parse_args()
     if min(args.batch_size, args.context_len, args.index_head_dim, args.element_bytes,

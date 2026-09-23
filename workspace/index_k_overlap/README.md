@@ -34,8 +34,9 @@ Stage 0 原样复制并运行 `../col.sh`，包括已确认正确的 `modelslim`
 | `preflight.py` | 目标机加载模型前检查依赖导入、16个可见逻辑NPU、模型维度和已安装CLI参数，保存版本与检查结果 |
 | `profile_decode.sh` | 创建独立目录并启动 profiling 客户端 |
 | `profile_decode.py` | 等全部请求 decode warmup 后手动开始/停止 profiler，记录窗口前后 token 计数并检查提前结束 |
-| `run_transfer_bench.sh` | 启动一个或 16 个 worker，支持按 rank 绑定 NUMA |
+| `run_transfer_bench.sh` | 启动一个或 16 个 worker，不设置 NUMA 绑定 |
 | `transfer_bench.py` | 单层完整 index K 副本的连续 pinned H2D 拷贝；输出各 rank 和最慢 rank 统计 |
+| `transfer_sweep.py` | 顺序运行 BS 扫描，汇总单 rank 和 16 rank 的结果 |
 
 参考：`../col.sh`、`../kv_path_bench/kv_transfer_bench.py`、`../hicache_l2_bench/bench.py`；profile 的 `/start_profile → 短窗口 → /stop_profile` 顺序来自 [指定参考脚本](https://github.com/ITCJ/usefulScript/blob/main/ascend_env/profile_sglang.sh)。API 参数按本地 SGLang `31df8e91a` 核对。目标机的 SGLang、CANN、torch-npu 版本不同可能需要调整参数。
 
@@ -157,27 +158,28 @@ results/decode_<时间>_bs11/
 
 ## 目标机运行：传输 microbenchmark
 
-先停止推理服务和其他 NPU 工作负载，再分别执行，避免引入本轮不打算测的计算竞争。
+先停止推理服务和其他 NPU 工作负载。首次运行或更换环境后，先手动执行最小规模的 16-rank 数据校验；通过后再执行性能扫描。两步都只在同一台目标机运行。
 
 ```bash
-cd /nfs2/yhc/huawei/sglang/workspace/index_k_overlap
+cd <REPO_ROOT>/workspace/index_k_overlap
 
-# 单个逻辑NPU（默认可见设备0）。
-NPROC=1 bash run_transfer_bench.sh
+# 最小规模校验，每个 rank 只拷 256 KiB；不作为性能结果。
+BS=1 TARGET_CTX=1024 NPROC=16 TRANSFER_WARMUP=0 TRANSFER_REPEATS=1 \
+  bash run_transfer_bench.sh --validate
 
-# A3 单机16个逻辑NPU同时搬运，每个rank搬完整176 MiB。
-NPROC=16 bash run_transfer_bench.sh
+# 校验通过后，分别测 BS=1,2,4,8,11,16,32,64 的 1/16-rank 搬运。
+python3 transfer_sweep.py
 ```
+
+扫描保持 `TARGET_CTX=65536`、每 rank 一份完整 index K、每次只运行一组。它按 BS 从小到大，在每档依次测 1 rank 和 16 rank；任何一组失败就停止，保留已完成结果。性能模式默认关闭逐字节数据校验；单独运行 `run_transfer_bench.sh --validate` 时才校验，结果 JSON 用 `validation_enabled` 和 `correct` 区分两种模式。即使关闭校验，仍检查 pinned 分配、拷贝异常及 NPU event 同步完成。
+
+每次扫描生成 `results/transfer_sweep_<时间>/summary.md`，包含八档的每 rank MiB、1-rank wall p50/p95 与 GB/s、16-rank 每轮最慢 rank 的 wall p50/p95、对应的慢 rank 与聚合 GB/s 估算，以及配置、commit 和失败信息。每组原始 JSON 仍在该目录的 `bs<BS>_n<NPROC>/`，日志路径由其中的 `log_path.txt` 给出。只有 `TRANSFER_SWEEP_OK` 且表头 `Status: ok` 表示 16 组都完成；该标志不表示未校验的性能数据已通过内容校验。
+
+最大 BS=64 时，16-rank 配置每 rank 搬运 1 GiB，默认需要总计约 32 GiB pinned Host 内存和分布于 16 个逻辑 NPU 的 16 GiB HBM；运行前核对模型已停止、内存余量和 pinned 分配限制。BS=11 时每 rank 为 176 MiB。BS 扫描仅改变连续拷贝字节数，不代表真实推理 batch 的全部开销。
 
 `LOCAL_RANK` 对应 torch-npu 可见的逻辑设备编号，不要假定“8张物理卡”意味着只能起8个进程。若设置 `ASCEND_RT_VISIBLE_DEVICES`，它必须暴露足够设备；结果会保存该变量和实际 device name。
 
-不预设 A3 的 NUMA 编号/设备亲和性。先用目标机已有拓扑信息、`npu-smi info`、`numactl --hardware` 确定映射，再按 rank 顺序提供 `NUMA_NODES`，例如单设备确认为NUMA0时：
-
-```bash
-NUMA_NODES=0 NPROC=1 bash run_transfer_bench.sh
-```
-
-16-rank 时传16个逗号分隔的 NUMA node 编号。wrapper 在导入 torch、分配 pinned buffer 和 first-touch 前执行 `numactl --cpunodebind --membind`；无配置时继承现有策略，记录CPU affinity，不声称实现了本地 NUMA 绑定。映射无效直接失败，不静默降级。
+不做 NUMA 绑定或 Host 内存分片，沿用系统内存策略；rank JSON 保留 CPU affinity，但不据此推断 pinned 页的实际 NUMA 位置。
 
 可覆盖参数：
 
@@ -192,7 +194,7 @@ NPROC=16 COPY_CHUNK_BYTES=4194304 bash run_transfer_bench.sh
 BS=11 TARGET_CTX=65536 NPROC=16 bash run_transfer_bench.sh
 ```
 
-多 rank 用 Gloo CPU barrier 对齐每次传输，barrier 不计入单rank拷贝耗时；采样区间没有HCCL流量。分配/初始化、所有buffer的完整字节校验在计时外。每次记录：
+多 rank 用 Gloo CPU barrier 对齐每次传输，barrier 不计入单rank拷贝耗时；采样区间没有HCCL流量。分配/初始化在计时外；启用 `--validate` 时，所有 buffer 的完整字节校验也在计时外。每次记录：
 
 - `wall_ms`：主机端从提交到完成的耗时，包含 launch、event 和同步等待，初筛优先用它。
 - `event_ms`：NPU stream 上起止event间隔，可能含分块提交间隙，不冒充纯DMA引擎活跃时间。
