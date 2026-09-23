@@ -8,7 +8,19 @@ BS="${BS:-11}"
 INPUT_LEN="${INPUT_LEN:-2048}"
 OUTPUT_LEN="${OUTPUT_LEN:-512}"
 RESULTS_DIR="${RESULTS_DIR:-${INDEX_OVERLAP_DIR}/results}"
+LOGS_DIR="${LOGS_DIR:-${INDEX_OVERLAP_DIR}/logs}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
+
+init_logging() {
+    local label="$1"
+    mkdir -p "$LOGS_DIR"
+    LOGS_DIR="$(cd "$LOGS_DIR" && pwd)"
+    LOG_FILE="$LOGS_DIR/${label}_$(date -u +%Y%m%dT%H%M%S)_$$.log"
+    exec 3>&1
+    printf 'Log: %s\n' "$LOG_FILE" >&3
+    exec >"$LOG_FILE" 2>&1
+    trap 'run_status=$?; if (( run_status != 0 )); then printf "Failed (exit %s). See log: %s\n" "$run_status" "$LOG_FILE" >&3; fi' EXIT
+}
 
 ascend_environment() {
     # Vendor environment scripts may read unset variables.

@@ -61,7 +61,7 @@ export BS=11 INPUT_LEN=2048 OUTPUT_LEN=512
 bash launch_server.sh
 ```
 
-启动会先执行 `preflight.py`，只检查依赖和CLI，不加载权重；失败时查看 `preflight.log` / `preflight.json` / `server_cli_help.txt`。通过后才加载模型。确认没有其他请求流量、实际使用单机16个逻辑 NPU。
+启动会先执行 `preflight.py`，只检查依赖和CLI，不加载权重；失败时查看终端提示的 `logs/server_*.log`，以及结果目录的 `preflight.json` / `server_cli_help.txt`。通过后才加载模型。确认没有其他请求流量、实际使用单机16个逻辑 NPU。
 
 终端二：
 
@@ -79,7 +79,7 @@ bash profile_decode.sh
 1. 等待服务ready（默认最多1800秒），读取并保存 `server_info.json`，核对模型路径、TP16/DP1、NPU、BF16 cache、请求/上下文/cache容量、非MTP/PD/DCP；然后同时提交11个流式请求，服务限制最多11个 running requests。
 2. **全部请求**都已至少输出64 tokens，且没有请求完成时，调用 `/start_profile`。
 3. 至少记录1秒，且全部请求在 start-profile 返回后各再推进至少8 tokens，再调用 `/stop_profile`。最多采集30秒，避免固定1秒在较慢机器上采不到足够decode；可用 `--profile-min-tokens` / `--profile-max-seconds` 调整。
-4. 继续接收已有请求直到完成，不再补入新请求。保存 `client.log`、`summary.json`、`progress.jsonl`；若请求在采集/flush阶段结束或发生retraction，标记 invalid 并以非零退出。flush期间结束也保守判invalid，需要查看时间线确认。
+4. 继续接收已有请求直到完成，不再补入新请求。日志保存到 `logs/decode_*.log`，结果目录保存 `summary.json`、`progress.jsonl`；若请求在采集/flush阶段结束或发生retraction，标记 invalid 并以非零退出。flush期间结束也保守判invalid，需要查看时间线确认。
 5. 检查独立 `steady_decode` 目录内至少有16份非空、大小稳定的 `trace_view.json`，最多额外等待300秒；缺文件不能报告成功。客户端必须和服务使用同一容器/文件系统；该检查按当前NPU profiler布局实现，版本不同导致文件命名变化时会明确报错而非静默通过。
 
 `ctx=2K` 在本脚本中指 **输入2048**；采集时实际历史约为2048+已生成 token 数（至少约2112），不是固定2048。窗口前后每个请求的计数保存在 JSON 中。流式返回只能证明客户端观察到的进度，最终还需检查 trace 与服务日志：窗口内没有 prefill/retraction，实际 batch 恒为11，所有 rank 正常。
@@ -109,13 +109,12 @@ WARMUP_TOKENS=96 PROFILE_SECONDS=1 bash profile_decode.sh
 results/server_<时间>_bs11/
   command.txt
   preflight.json
-  preflight.log
   server_cli_help.txt
-  server.log
+  log_path.txt
   startup_profile/graph_capture_profile/...
 results/decode_<时间>_bs11/
   summary.json
-  client.log
+  log_path.txt
   server_info.json
   progress.jsonl
   steady_decode/...                    # NPU profiler 导出目录
@@ -179,7 +178,7 @@ BS=11 TARGET_CTX=65536 NPROC=16 bash run_transfer_bench.sh
 - `event_ms`：NPU stream 上起止event间隔，可能含分块提交间隙，不冒充纯DMA引擎活跃时间。
 - 每rank p50/p95和GB/s（十进制）；每轮取最慢rank，再计算p50/p95。
 
-输出为 `results/transfer_<时间>_bs11_ctx65536_n16/{command.txt,transfer.log,rank_00.json,...,summary.json}`。`summary.json` 的 `slowest_rank_per_iteration_wall` 是跨rank初筛的保守参考，也应保留各rank明细和计算窗口对应比较。聚合GB/s按复制总字节数除以最大rank耗时估算，不包含CPU barrier释放的起始偏差，不是链路物理带宽测量。
+输出为 `results/transfer_<时间>_bs11_ctx65536_n16/{command.txt,log_path.txt,rank_00.json,...,summary.json}`。`summary.json` 的 `slowest_rank_per_iteration_wall` 是跨rank初筛的保守参考，也应保留各rank明细和计算窗口对应比较。聚合GB/s按复制总字节数除以最大rank耗时估算，不包含CPU barrier释放的起始偏差，不是链路物理带宽测量。
 
 此结果是连续 pinned-memory `copy_` 基线，**不覆盖**散页gather、host packing、page-table维护、实际 `kernel_ascend`、Mooncake/ADXL/fabric 注册路径、全61层大工作集或MoE/主KV offload竞争。默认两组buffer可能享受缓存复用，因此只能作为该预分配路径的乐观参考；可增大 `HOST_BUFFERS` 观察工作集敏感性，注意相应host容量增长。多rank测试已经包含各rank传输之间的竞争，比单rank结果更接近TP16，但仍不证明实际overlap成立。
 
@@ -201,3 +200,14 @@ BS=11 TARGET_CTX=65536 NPROC=16 bash run_transfer_bench.sh
 - 仓库 `docs/docs/hardware-platforms/ascend-npus/optimization/profiling.mdx`
 - 仓库 `python/sglang/srt/managers/scheduler_components/profiler_manager.py`
 - 仓库 `python/sglang/srt/hardware_backend/npu/graph_runner/npu_graph_runner.py`
+
+## 日志管理
+
+三个入口脚本启动后统一重定向 **stdout 和 stderr** 到本目录 `logs/`，不使用 `tee` 刷屏，也不把实验输出日志放入 `/tmp`。环境初始化、preflight、server、客户端、torchrun及worker的输出/traceback均被收集。torchrun自身的日志目录也显式指定在 `logs/` 下。
+
+- `logs/server_bs11_<时间>_<PID>.log`：环境、预检查、服务完整输出。
+- `logs/decode_bs11_<时间>_<PID>.log`：profile客户端完整输出。
+- `logs/transfer_bs11_n16_<时间>_<PID>.log`：torchrun与各worker完整输出。
+- `logs/torchrun_<运行标识>/`：torchrun内部日志目录。
+
+终端仅显示日志路径、运行阶段、完成状态或失败退出码，不自动打印错误全文。需要实时查看时，自行执行 `tail -f <终端显示的日志路径>`。`LOGS_DIR` 可覆盖日志根目录；每次运行有独立时间戳/PID，结果目录的 `log_path.txt` 指向对应日志。profile原始trace、JSON统计、配置快照仍在 `results/` 下。两个目录均被git忽略。

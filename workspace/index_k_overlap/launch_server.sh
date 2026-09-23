@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
+init_logging "server_bs${BS}"
 ascend_environment
 
 export SGLANG_SET_CPU_AFFINITY=1
@@ -49,7 +50,9 @@ command=("$PYTHON_BIN" -m sglang.launch_server
     "${graph_args[@]}" "$@")
 printf '%q ' "${command[@]}" > "$RUN_DIR/command.txt"
 printf '\n' >> "$RUN_DIR/command.txt"
-printf 'Server logs: %s\nStartup capture profiles: %s\n' "$RUN_DIR/server.log" "$SGLANG_TORCH_PROFILER_DIR"
+printf '%s\n' "$LOG_FILE" > "$RUN_DIR/log_path.txt"
+printf 'Checking environment, then starting server. Results: %s\n' "$RUN_DIR" >&3
 "$PYTHON_BIN" -u "$INDEX_OVERLAP_DIR/preflight.py" --devices 16 \
-    --model-path "$MODEL_PATH" --output-dir "$RUN_DIR" 2>&1 | tee "$RUN_DIR/preflight.log"
-"${command[@]}" 2>&1 | tee "$RUN_DIR/server.log"
+    --model-path "$MODEL_PATH" --output-dir "$RUN_DIR"
+printf 'Preflight passed; loading model. Follow startup in the log.\n' >&3
+"${command[@]}"
