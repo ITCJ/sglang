@@ -20,7 +20,6 @@ export SGLANG_NPU_PROFILING=0
 RUN_DIR="${SERVER_RUN_DIR:-${RESULTS_DIR}/server_$(date -u +%Y%m%dT%H%M%S)_bs${BS}}"
 mkdir -p "$RUN_DIR"
 RUN_DIR="$(cd "$RUN_DIR" && pwd)"
-export SGLANG_TORCH_PROFILER_DIR="$RUN_DIR/startup_profile"
 # Worker max_req_len=context_len-1; scheduler caps output at
 # max_req_len-input_len-1. Leave additional room across target versions.
 CONTEXT_LENGTH="${CONTEXT_LENGTH:-$((INPUT_LEN + OUTPUT_LEN + 256))}"
@@ -31,9 +30,9 @@ fi
 
 # col.sh says graph mode but disables graphs; here graph replay is the default.
 # Include BS exactly to avoid attributing graph-padding compute to BS=11.
-graph_args=(--cuda-graph-bs 1 "$BS" --enable-profile-cuda-graph)
+graph_args=(--cuda-graph-bs 1 "$BS")
 if [[ "${GRAPH_MODE:-1}" == 0 ]]; then
-    graph_args=(--disable-cuda-graph --enable-profile-cuda-graph)
+    graph_args=(--disable-cuda-graph)
 fi
 command=("$PYTHON_BIN" -m sglang.launch_server
     --model-path "$MODEL_PATH" --trust-remote-code

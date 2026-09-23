@@ -117,8 +117,8 @@ WARMUP_TOKENS=96 PROFILE_SECONDS=1 bash profile_decode.sh
 
 - 量化参数统一为目标环境确认的 `modelslim`，与修正后的 `col.sh` 一致。
 - 默认启用 graph，capture BS 包含精确的11，避免 padded BS 混淆计算量。原 `col.sh` 注释写图模式，但实际传了 `--disable-cuda-graph`。
-- 显式传 `--enable-profile-cuda-graph`。**它控制启动时 graph capture profiling，不会自动采集服务稳态 decode**；后者仍由 API 触发。
-- `GRAPH_MODE=0 bash launch_server.sh` 可另跑 eager 对照，用于辅助辨认层/算子；不能把 eager 的耗时当作 graph 基线。eager 下仍传 profile 参数，但不会产生 graph capture trace。
+- 正式启动不采集 graph capture profile；服务稳态 decode 由客户端调用 `/start_profile` 和 `/stop_profile` 采集，避免启动期 profiler 的解析负担延续到请求阶段。
+- `GRAPH_MODE=0 bash launch_server.sh` 可另跑 eager 对照，用于辅助辨认层/算子；不能把 eager 的耗时当作 graph 基线。
 - 保留 MLAPO、多 stream、HCCL 配置、DP attention/LM head 参数与关闭 shared-expert fusion；本地版本在 `dp_size=1` 时会将两项 DP 开关归一化为关闭，以服务实际解析配置为准。不启用 MTP、DCP 或 PD。
 - 预填充不分 chunk，`max-prefill-tokens=2048` 限制单次 admission 的预填充负载；只在全部请求 warmup 后采集，因此不把启动爬升当成稳态。
 - 不修改系统级 CPU governor/sysctl；目标机采用既有性能配置，并保证不同 case 一致。
@@ -132,7 +132,6 @@ results/server_<时间>_bs11/
   preflight.json
   server_cli_help.txt
   log_path.txt
-  startup_profile/graph_capture_profile/...
 results/decode_<时间>_bs11/
   summary.json
   log_path.txt
@@ -141,7 +140,7 @@ results/decode_<时间>_bs11/
   steady_decode/...                    # NPU profiler 导出目录
 ```
 
-按 torch-npu 版本，trace 位于 `steady_decode` 下对应 worker 的 `ASCEND_PROFILER_OUTPUT/trace_view.json` 等位置。**分析 steady_decode，勿将启动 capture trace 当成运行性能结果**。启动 trace 可辅助识别 graph 中的算子、shape 与层次。
+按 torch-npu 版本，trace 位于 `steady_decode` 下对应 worker 的 `ASCEND_PROFILER_OUTPUT/trace_view.json` 等位置。分析 `steady_decode` 中的稳态 decode trace。
 
 在 Ascend profiler/trace viewer 中选完整、稳定的 decode steps，逐 rank、逐层记录：
 

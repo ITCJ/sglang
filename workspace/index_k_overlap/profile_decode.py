@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import time
+import traceback
 from pathlib import Path
 
 import aiohttp
@@ -19,6 +20,7 @@ async def run(args):
     finished = [False] * args.batch_size
     finishes = [None] * args.batch_size
     errors = []
+    request_details = [{} for _ in range(args.batch_size)]
     changed = asyncio.Event()
     summary = {"config": vars(args), "status": "incomplete", "trace_dir": str(trace_dir)}
     tasks = []
@@ -33,7 +35,11 @@ async def run(args):
         timeline.flush()
         return state
 
-    async with aiohttp.ClientSession(timeout=timeout, read_bufsize=1024 * 1024) as session:
+    # Tokenizer setup can outlast the server's keep-alive timeout after precheck.
+    connector = aiohttp.TCPConnector(force_close=True)
+    async with aiohttp.ClientSession(
+        timeout=timeout, read_bufsize=1024 * 1024, connector=connector
+    ) as session:
         async def control(path, payload=None):
             async with session.post(args.base_url + path, json=payload) as response:
                 body = await response.text()
@@ -42,6 +48,8 @@ async def run(args):
                 return body
 
         async def generate(i):
+            detail = request_details[i]
+            detail.update(request_index=i, sent_unix_time=time.time(), stage="sending")
             payload = {
                 "input_ids": prompts[i], "stream": True,
                 "sampling_params": {"temperature": 0, "max_new_tokens": args.output_len,
@@ -49,6 +57,7 @@ async def run(args):
             }
             try:
                 async with session.post(args.base_url + "/generate", json=payload) as response:
+                    detail.update(http_status=response.status, headers_unix_time=time.time(), stage="streaming")
                     if response.status != 200:
                         raise RuntimeError(await response.text())
                     async for raw in response.content:
@@ -63,6 +72,8 @@ async def run(args):
                             raise RuntimeError(str(event["error"]))
                         meta = event.get("meta_info", {})
                         counts[i] = meta.get("completion_tokens", counts[i])
+                        if counts[i] > 0 and "first_token_unix_time" not in detail:
+                            detail["first_token_unix_time"] = time.time()
                         retractions[i] = meta.get("num_retractions", retractions[i])
                         if meta.get("prompt_tokens", args.input_len) != args.input_len:
                             raise RuntimeError(f"Unexpected prompt length: {meta.get('prompt_tokens')}")
@@ -70,10 +81,18 @@ async def run(args):
                         changed.set()
                 if counts[i] != args.output_len:
                     raise RuntimeError(f"request {i}: expected {args.output_len} output tokens, got {counts[i]}")
+                detail["stage"] = "completed"
+            except asyncio.CancelledError:
+                detail["stage"] = "cancelled"
+                raise
             except Exception as exc:
+                detail.update(error_type=type(exc).__name__, error_repr=repr(exc),
+                              traceback=traceback.format_exc())
+                print(f"request {i} failed during {detail['stage']}:\n{detail['traceback']}", flush=True)
                 errors.append(f"request {i}: {exc}")
                 raise
             finally:
+                detail["ended_unix_time"] = time.time()
                 finished[i] = True
                 snapshot(f"request_{i}_finished")
                 changed.set()
@@ -136,6 +155,8 @@ async def run(args):
             if trace_dir.exists() and any(trace_dir.iterdir()):
                 raise RuntimeError("Trace directory is not empty; use a new PROFILE_RUN_DIR")
 
+            preparation_started = time.monotonic()
+            summary["input_preparation_started_unix_time"] = time.time()
             from transformers import AutoTokenizer
 
             tokenizer = AutoTokenizer.from_pretrained(
@@ -151,6 +172,7 @@ async def run(args):
             for i in range(args.batch_size):
                 prefix = tokenizer.encode(f"Question {i}: ", add_special_tokens=False)
                 prompts.append((prefix + seed * (args.input_len // len(seed) + 1))[:args.input_len])
+            summary["input_preparation_seconds"] = time.monotonic() - preparation_started
             print(f"Server checked. Starting {args.batch_size} requests, waiting for decode warmup...", flush=True)
             snapshot("workload_start")
             tasks = [asyncio.create_task(generate(i)) for i in range(args.batch_size)]
@@ -241,6 +263,7 @@ async def run(args):
             summary["final_retractions"] = retractions
             summary["finish_reasons"] = finishes
             summary["request_errors"] = errors
+            summary["request_details"] = request_details
             (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
             timeline.close()
 

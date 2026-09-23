@@ -60,7 +60,7 @@ def main():
         (output / "server_cli_help.txt").write_text(help_text)
         if help_result.returncode:
             raise RuntimeError("Installed server --help failed; inspect server_cli_help.txt")
-        for flag in ("--enable-profile-cuda-graph", "--cuda-graph-bs", "--kv-cache-dtype",
+        for flag in ("--cuda-graph-bs", "--kv-cache-dtype",
                      "--max-running-requests", "--decode-log-interval", "--quantization",
                      "--max-prefill-tokens", "--disable-shared-experts-fusion",
                      "--enable-dp-attention", "--enable-dp-lm-head"):
