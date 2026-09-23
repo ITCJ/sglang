@@ -223,6 +223,15 @@ BS=11 TARGET_CTX=65536 NPROC=16 bash run_transfer_bench.sh
 
 ## 日志管理
 
+客户端失败后，在本目录执行 `bash collect_failure.sh` 收集诊断信息。默认选择最近的
+decode 与 server（含 incremental）结果目录，打印请求状态、异常原因及服务端最近的
+decode/错误记录，并在 `results/diagnostics_*/` 保存日志摘录、JSON 结果、版本、
+Git diff 和脚本副本，生成同名 `.tar.gz`。不采集大型 trace，也不访问推理或 profile API。
+`manifest.json` 记录文件来源和缺失项；服务和客户端独立按修改时间选择，需要核对运行时间。
+可用 `--decode-dir '<DECODE_RESULT_DIR>' --server-dir '<SERVER_RESULT_DIR>'` 指定历史运行。
+新版客户端的 `summary.json` 还包含 `request_details`，记录请求时间、HTTP 状态、
+错误类型、异常链及取消状态；旧运行未记录的信息无法事后补回。
+
 三个入口脚本启动后统一重定向 **stdout 和 stderr** 到本目录 `logs/`，不使用 `tee` 刷屏，也不把实验输出日志放入 `/tmp`。环境初始化、preflight、server、客户端、torchrun及worker的输出/traceback均被收集。torchrun自身的日志目录也显式指定在 `logs/` 下。
 
 - `logs/server_bs11_<时间>_<PID>.log`：环境、预检查、服务完整输出。

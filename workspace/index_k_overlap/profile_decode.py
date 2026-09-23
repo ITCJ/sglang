@@ -87,6 +87,7 @@ async def run(args):
                 raise
             except Exception as exc:
                 detail.update(error_type=type(exc).__name__, error_repr=repr(exc),
+                              cause=repr(exc.__cause__), context=repr(exc.__context__),
                               traceback=traceback.format_exc())
                 print(f"request {i} failed during {detail['stage']}:\n{detail['traceback']}", flush=True)
                 errors.append(f"request {i}: {exc}")
