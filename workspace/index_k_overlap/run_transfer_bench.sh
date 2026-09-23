@@ -8,7 +8,7 @@ if [[ "${1:-}" == --worker ]]; then
     exec "$PYTHON_BIN" "$INDEX_OVERLAP_DIR/transfer_bench.py" "$@"
 fi
 
-init_logging "transfer_bs${BS}_n${NPROC:-16}"
+init_logging "${TRANSFER_LOG_LABEL:-transfer_bs${BS}_n${NPROC:-16}}"
 ascend_environment
 export PYTHON_BIN
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"

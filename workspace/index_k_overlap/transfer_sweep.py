@@ -65,6 +65,7 @@ def render_report(report):
         "p50 wall time; aggregate GB/s is an estimate based on all copied bytes "
         "and the slowest rank, without accounting for barrier release skew.",
         "This is a contiguous pinned-memory copy with no inference or data validation.",
+        "Each worker group allocates buffers for the largest BS once and reuses their prefixes.",
     ])
     if report.get("failure"):
         failure = report["failure"]
@@ -97,40 +98,50 @@ def main():
     report_path.write_text(render_report(report))
     print(f"Sweep report: {report_path}", flush=True)
 
-    for bs in BATCH_SIZES:
-        for nproc in WORLD_SIZES:
-            case_dir = run_dir / f"bs{bs}_n{nproc}"
-            env = os.environ.copy()
-            env.update(BS=str(bs), NPROC=str(nproc),
-                       TARGET_CTX=str(settings["context_len"]),
-                       TRANSFER_RUN_DIR=str(case_dir))
-            print(f"Running BS={bs}, ranks={nproc}", flush=True)
-            completed = None
-            try:
-                completed = subprocess.run(["bash", str(SOURCE_DIR / "run_transfer_bench.sh")],
-                                           cwd=SOURCE_DIR, env=env, check=False)
-                summary = json.loads((case_dir / "summary.json").read_text()) if completed.returncode == 0 else None
-                if (summary is None or summary.get("status") != "ok"
+    for nproc in WORLD_SIZES:
+        case_dir = run_dir / f"n{nproc}"
+        env = os.environ.copy()
+        env.update(BS=str(BATCH_SIZES[-1]), NPROC=str(nproc),
+                   TARGET_CTX=str(settings["context_len"]),
+                   TRANSFER_RUN_DIR=str(case_dir),
+                   TRANSFER_LOG_LABEL=f"transfer_sweep_n{nproc}")
+        command = ["bash", str(SOURCE_DIR / "run_transfer_bench.sh"),
+                   "--batch-sizes", *(str(bs) for bs in BATCH_SIZES)]
+        print(f"Running all batch sizes with ranks={nproc}", flush=True)
+        completed = None
+        failed_bs = BATCH_SIZES[0]
+        try:
+            completed = subprocess.run(command, cwd=SOURCE_DIR, env=env, check=False)
+            for bs in BATCH_SIZES:
+                failed_bs = bs
+                summary_path = case_dir / f"bs{bs}_summary.json"
+                if not summary_path.is_file():
+                    break
+                summary = json.loads(summary_path.read_text())
+                if (summary.get("status") != "ok"
                         or summary.get("world_size") != nproc
-                        or summary.get("config", {}).get("batch_size") != bs
+                        or summary.get("batch_size") != bs
                         or summary.get("config", {}).get("context_len") != settings["context_len"]
                         or summary.get("validation_enabled") is not False
                         or summary.get("correct") is not None):
-                    raise RuntimeError("missing or inconsistent unvalidated case summary")
+                    raise RuntimeError(f"inconsistent unvalidated summary for BS={bs}")
                 report["cases"].append({"bs": bs, "nproc": nproc, "status": "ok",
                                         "summary": summary})
-            except (OSError, ValueError, RuntimeError, KeyboardInterrupt) as exc:
-                log_file = case_dir / "log_path.txt"
-                log_path = log_file.read_text().strip() if log_file.is_file() else "unavailable"
-                report["cases"].append({"bs": bs, "nproc": nproc, "status": "failed"})
-                report["status"] = "stopped" if isinstance(exc, KeyboardInterrupt) else "failed"
-                report["failure"] = {"bs": bs, "nproc": nproc,
-                                     "exit_code": completed.returncode if completed is not None else "not started",
-                                     "error": repr(exc), "log_path": log_path}
                 report_path.write_text(render_report(report))
-                print(f"Sweep stopped: {report_path}", flush=True)
-                return 130 if isinstance(exc, KeyboardInterrupt) else 1
+            if completed.returncode != 0 or len([c for c in report["cases"] if c["nproc"] == nproc]) != len(BATCH_SIZES):
+                raise RuntimeError(f"worker group exited {completed.returncode} before completing all batch sizes")
+        except (OSError, ValueError, RuntimeError, KeyboardInterrupt) as exc:
+            log_file = case_dir / "log_path.txt"
+            log_path = log_file.read_text().strip() if log_file.is_file() else "unavailable"
+            if not any(c["bs"] == failed_bs and c["nproc"] == nproc for c in report["cases"]):
+                report["cases"].append({"bs": failed_bs, "nproc": nproc, "status": "failed"})
+            report["status"] = "stopped" if isinstance(exc, KeyboardInterrupt) else "failed"
+            report["failure"] = {"bs": failed_bs, "nproc": nproc,
+                                 "exit_code": completed.returncode if completed is not None else "not started",
+                                 "error": repr(exc), "log_path": log_path}
             report_path.write_text(render_report(report))
+            print(f"Sweep stopped: {report_path}", flush=True)
+            return 130 if isinstance(exc, KeyboardInterrupt) else 1
 
     report["status"] = "ok"
     report_path.write_text(render_report(report))

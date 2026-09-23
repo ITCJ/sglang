@@ -171,11 +171,11 @@ BS=1 TARGET_CTX=1024 NPROC=16 TRANSFER_WARMUP=0 TRANSFER_REPEATS=1 \
 python3 transfer_sweep.py
 ```
 
-扫描保持 `TARGET_CTX=65536`、每 rank 一份完整 index K、每次只运行一组。它按 BS 从小到大，在每档依次测 1 rank 和 16 rank；任何一组失败就停止，保留已完成结果。性能模式默认关闭逐字节数据校验；单独运行 `run_transfer_bench.sh --validate` 时才校验，结果 JSON 用 `validation_enabled` 和 `correct` 区分两种模式。即使关闭校验，仍检查 pinned 分配、拷贝异常及 NPU event 同步完成。
+扫描默认 `TARGET_CTX=65536`、每 rank 一份完整 index K。它先启动 1-rank worker 组测完全部 BS，再启动 16-rank worker 组测完全部 BS；各组只启动一次 `torchrun`。每组按最大 BS=64 预分配 pinned Host 和 NPU buffer，小档位使用同一 buffer 的前缀视图，且每档单独 warmup 和采样。任何档位失败就停止，保留已完成结果。性能模式默认关闭逐字节数据校验；单独运行 `run_transfer_bench.sh --validate` 时才校验，结果 JSON 用 `validation_enabled` 和 `correct` 区分两种模式。即使关闭校验，仍检查 pinned 分配、拷贝异常及 NPU event 同步完成。
 
-每次扫描生成 `results/transfer_sweep_<时间>/summary.md`，包含八档的每 rank MiB、1-rank wall p50/p95 与 GB/s、16-rank 每轮最慢 rank 的 wall p50/p95、对应的慢 rank 与聚合 GB/s 估算，以及配置、commit 和失败信息。每组原始 JSON 仍在该目录的 `bs<BS>_n<NPROC>/`，日志路径由其中的 `log_path.txt` 给出。只有 `TRANSFER_SWEEP_OK` 且表头 `Status: ok` 表示 16 组都完成；该标志不表示未校验的性能数据已通过内容校验。
+每次扫描生成 `results/transfer_sweep_<时间>/summary.md`，包含八档的每 rank MiB、1-rank wall p50/p95 与 GB/s、16-rank 每轮最慢 rank 的 wall p50/p95、对应的慢 rank 与聚合 GB/s 估算，以及配置、commit 和失败信息。各档原始 JSON 在 `n1/` 或 `n16/` 下，以 `bs<BS>_summary.json` 和 `bs<BS>_rank_<RANK>.json` 命名；各目录的 `log_path.txt` 指向对应 worker 组的日志。只有 `TRANSFER_SWEEP_OK` 且表头 `Status: ok` 表示 16 组都完成；该标志不表示未校验的性能数据已通过内容校验。
 
-最大 BS=64 时，16-rank 配置每 rank 搬运 1 GiB，默认需要总计约 32 GiB pinned Host 内存和分布于 16 个逻辑 NPU 的 16 GiB HBM；运行前核对模型已停止、内存余量和 pinned 分配限制。BS=11 时每 rank 为 176 MiB。BS 扫描仅改变连续拷贝字节数，不代表真实推理 batch 的全部开销。
+最大 BS=64 时，16-rank 配置每 rank 搬运 1 GiB，默认需要总计约 32 GiB pinned Host 内存和分布于 16 个逻辑 NPU 的 16 GiB HBM；这些容量在该 worker 组开始时就需要可用。运行前核对模型已停止、内存余量和 pinned 分配限制。BS=11 时每 rank 为 176 MiB。BS 扫描仅改变连续拷贝字节数，不代表真实推理 batch 的全部开销。
 
 `LOCAL_RANK` 对应 torch-npu 可见的逻辑设备编号，不要假定“8张物理卡”意味着只能起8个进程。若设置 `ASCEND_RT_VISIBLE_DEVICES`，它必须暴露足够设备；结果会保存该变量和实际 device name。
 
