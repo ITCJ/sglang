@@ -32,8 +32,8 @@ def render_report(report):
         "NUMA binding: none (system policy) | "
         "data validation: off (run the separate --validate preflight)",
         "",
-        "| BS | MiB/rank | 1 rank wall p50/p95 ms | 1 rank GB/s | "
-        "16 ranks slowest wall p50/p95 ms | 16 ranks slowest GB/s | 16 ranks aggregate GB/s |",
+        "| BS | MiB/rank | 1 rank wall mean ms | 1 rank GB/s | "
+        "16 ranks slowest wall mean ms | 16 ranks slowest GB/s | 16 ranks aggregate GB/s |",
         "| ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
 
@@ -43,10 +43,10 @@ def render_report(report):
         if case["status"] != "ok":
             return ["FAILED", "-", "-"] if nproc == 16 else ["FAILED", "-"]
         summary = case["summary"]
-        wall = summary["slowest_rank_per_iteration_wall"]
+        wall_mean_ms = summary["slowest_rank_wall_mean_ms"]
         mib = summary["bytes_per_layer_per_rank"]
-        latency = f"{wall['p50_ms']:.3f} / {wall['p95_ms']:.3f}"
-        slow_gbps = mib / (wall["p50_ms"] * 1e6)
+        latency = f"{wall_mean_ms:.3f}"
+        slow_gbps = mib / (wall_mean_ms * 1e6)
         if nproc == 16:
             return [latency, f"{slow_gbps:.2f}",
                     f"{summary['aggregate_effective_GBps_estimate']:.2f}"]
@@ -60,9 +60,10 @@ def render_report(report):
 
     lines.extend([
         "",
-        "Wall time includes submission and completion wait. The 16-rank time is the "
-        "p50/p95 of each iteration's slowest rank. GB/s uses decimal bytes and "
-        "p50 wall time; aggregate GB/s is an estimate based on all copied bytes "
+        "Wall mean is the total time to enqueue and complete all repeats divided "
+        "by repeat count, with one synchronization after the loop. The 16-rank "
+        "time is the slowest rank's total divided by repeats. GB/s uses decimal "
+        "bytes and mean wall time; aggregate GB/s is an estimate based on all copied bytes "
         "and the slowest rank, without accounting for barrier release skew.",
         "This is a contiguous pinned-memory copy with no inference or data validation.",
         "Each worker group allocates buffers for the largest BS once and reuses their prefixes.",
@@ -119,6 +120,7 @@ def main():
                     break
                 summary = json.loads(summary_path.read_text())
                 if (summary.get("status") != "ok"
+                        or summary.get("measurement_protocol") != "batched_async_sync_once_v1"
                         or summary.get("world_size") != nproc
                         or summary.get("batch_size") != bs
                         or summary.get("config", {}).get("context_len") != settings["context_len"]

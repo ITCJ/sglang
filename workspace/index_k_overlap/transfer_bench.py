@@ -1,7 +1,7 @@
 """A3 single-layer index-K H2D baseline; run through run_transfer_bench.sh.
 
 Allocation/initialization and optional correctness checking are outside
-synchronized, complete-transfer timing.
+the timed enqueue-and-complete batch.
 This intentionally measures contiguous pinned copy_, not Mooncake/ADXL or
 SGLang's paged transfer kernel. Every rank copies a full index-K replica.
 """
@@ -11,21 +11,11 @@ import json
 import math
 import os
 import platform
-import statistics
 import subprocess
 import time
 from datetime import timedelta
 from importlib import metadata
 from pathlib import Path
-
-
-def summarize_ms(values):
-    return {
-        "p50_ms": statistics.median(values),
-        "p95_ms": sorted(values)[math.ceil(0.95 * len(values)) - 1],
-        "min_ms": min(values),
-        "max_ms": max(values),
-    }
 
 
 def run(args):
@@ -46,14 +36,14 @@ def run(args):
         "allocated_pinned_bytes_per_rank": max_nbytes * args.host_buffers,
         "allocated_device_bytes_per_rank": max_nbytes,
         "protocol": "contiguous_pinned_H2D_full_replica_per_rank_no_inference",
-        "timing": "rank barrier outside timing; event stream span and synchronized host wall time",
+        "timing": "warmup sync and rank barrier outside timing; enqueue all repeats then synchronize once; total / repeats",
         "numa_binding": "none; system memory policy",
         "cpu_affinity": sorted(os.sched_getaffinity(0)),
         "hostname": platform.node(),
         "ascend_rt_visible_devices": os.environ.get("ASCEND_RT_VISIBLE_DEVICES"),
         "validation_enabled": args.validate,
     }
-    result = dict(base_result, samples=[], correct=None)
+    result = dict(base_result, correct=None)
     rank_path = output / f"rank_{rank:02d}.json"
     initialized = False
     try:
@@ -110,7 +100,7 @@ def run(args):
                 logical_bytes_all_layers_per_rank=nbytes * args.layers,
                 aggregate_copy_bytes_per_iteration=nbytes * world_size,
                 copies_per_iteration=math.ceil(nbytes / chunk_bytes),
-                samples=[], correct=None,
+                correct=None,
             )
             # Views are created outside timing; chunks still add submission cost.
             copy_pairs = [
@@ -138,28 +128,26 @@ def run(args):
 
             print(f"rank={rank} device={local_rank} bs={bs} bytes/layer={nbytes} "
                   f"MiB/layer={nbytes / 2**20:.2f} full_replica=True", flush=True)
-            for iteration in range(args.warmup + args.repeats):
+            for iteration in range(args.warmup):
                 slot = iteration % args.host_buffers
-                torch.npu.synchronize()
-                barrier()
-                # Wall time includes submission and completion wait.
                 with torch.npu.stream(stream):
-                    begin = time.perf_counter()
-                    start_event.record()
                     submit(slot)
-                    end_event.record()
-                end_event.synchronize()
-                wall_ms = (time.perf_counter() - begin) * 1000
-                event_ms = start_event.elapsed_time(end_event)
-                if iteration >= args.warmup:
-                    result["samples"].append({
-                        "iteration": iteration - args.warmup,
-                        "wall_ms": wall_ms, "event_ms": event_ms,
-                    })
-
-            result["wall"] = summarize_ms([s["wall_ms"] for s in result["samples"]])
-            result["event"] = summarize_ms([s["event_ms"] for s in result["samples"]])
-            result["effective_GBps_wall_p50"] = nbytes / (result["wall"]["p50_ms"] * 1e6)
+            stream.synchronize()
+            barrier()
+            with torch.npu.stream(stream):
+                begin = time.perf_counter()
+                start_event.record()
+                for iteration in range(args.repeats):
+                    submit(iteration % args.host_buffers)
+                end_event.record()
+            end_event.synchronize()
+            wall_total_ms = (time.perf_counter() - begin) * 1000
+            event_total_ms = start_event.elapsed_time(end_event)
+            result["wall_total_ms"] = wall_total_ms
+            result["wall_mean_ms"] = wall_total_ms / args.repeats
+            result["event_total_ms"] = event_total_ms
+            result["event_mean_ms"] = event_total_ms / args.repeats
+            result["effective_GBps_wall_mean"] = nbytes / (result["wall_mean_ms"] * 1e6)
             result["status"] = "ok"
             rank_path.write_text(json.dumps(result, indent=2) + "\n")
             gathered = [None] * world_size
@@ -168,28 +156,29 @@ def run(args):
             else:
                 gathered[0] = result
             if rank == 0:
-                slowest_samples = [
-                    max(worker["samples"][i]["wall_ms"] for worker in gathered)
-                    for i in range(args.repeats)
-                ]
-                slowest = summarize_ms(slowest_samples)
+                slowest_wall_total_ms = max(worker["wall_total_ms"] for worker in gathered)
+                slowest_wall_mean_ms = slowest_wall_total_ms / args.repeats
                 summary = {
                     "status": "ok", "config": vars(args), "batch_size": bs,
                     "world_size": world_size,
+                    "measurement_protocol": "batched_async_sync_once_v1",
                     "validation_enabled": args.validate,
                     "correct": True if args.validate else None,
                     "bytes_per_layer_per_rank": nbytes,
                     "allocated_pinned_bytes_per_rank": max_nbytes * args.host_buffers,
                     "allocated_device_bytes_per_rank": max_nbytes,
-                    "slowest_rank_per_iteration_wall": slowest,
-                    "slowest_rank_per_iteration_wall_ms": slowest_samples,
+                    "slowest_rank_wall_total_ms": slowest_wall_total_ms,
+                    "slowest_rank_wall_mean_ms": slowest_wall_mean_ms,
                     "per_rank": [{
-                        "rank": worker["rank"], "wall": worker["wall"],
-                        "event": worker["event"],
-                        "effective_GBps_wall_p50": worker["effective_GBps_wall_p50"],
+                        "rank": worker["rank"],
+                        "wall_total_ms": worker["wall_total_ms"],
+                        "wall_mean_ms": worker["wall_mean_ms"],
+                        "event_total_ms": worker["event_total_ms"],
+                        "event_mean_ms": worker["event_mean_ms"],
+                        "effective_GBps_wall_mean": worker["effective_GBps_wall_mean"],
                     } for worker in gathered],
-                    "aggregate_effective_GBps_estimate": nbytes * world_size / (slowest["p50_ms"] * 1e6),
-                    "aggregate_note": "sum of replica bytes / max per-rank wall duration; CPU barrier start skew is not measured",
+                    "aggregate_effective_GBps_estimate": nbytes * world_size / (slowest_wall_mean_ms * 1e6),
+                    "aggregate_note": "sum of replica bytes / slowest rank mean wall time; CPU barrier start skew is not measured",
                     "limitations": [
                         "No inference, MoE, main-KV fetch or HCCL contention",
                         "Concurrent rank transfers still contend with one another",
@@ -199,7 +188,7 @@ def run(args):
                     ],
                 }
                 summary_path.write_text(json.dumps(summary, indent=2) + "\n")
-                print(f"Completed bs={bs} ranks={world_size}: slowest p50={slowest['p50_ms']:.3f} ms", flush=True)
+                print(f"Completed bs={bs} ranks={world_size}: slowest mean={slowest_wall_mean_ms:.3f} ms", flush=True)
     except BaseException as exc:
         result["status"] = "failed"
         result["error"] = repr(exc)

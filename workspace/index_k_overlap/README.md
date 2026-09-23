@@ -37,6 +37,7 @@ Stage 0 原样复制并运行 `../col.sh`，包括已确认正确的 `modelslim`
 | `run_transfer_bench.sh` | 启动一个或 16 个 worker，不设置 NUMA 绑定 |
 | `transfer_bench.py` | 单层完整 index K 副本的连续 pinned H2D 拷贝；输出各 rank 和最慢 rank 统计 |
 | `transfer_sweep.py` | 顺序运行 BS 扫描，汇总单 rank 和 16 rank 的结果 |
+| `cleanup_old_transfer.py` | 预览或删除持久 worker 版本之前的传输结果与关联日志 |
 
 参考：`../col.sh`、`../kv_path_bench/kv_transfer_bench.py`、`../hicache_l2_bench/bench.py`；profile 的 `/start_profile → 短窗口 → /stop_profile` 顺序来自 [指定参考脚本](https://github.com/ITCJ/usefulScript/blob/main/ascend_env/profile_sglang.sh)。API 参数按本地 SGLang `31df8e91a` 核对。目标机的 SGLang、CANN、torch-npu 版本不同可能需要调整参数。
 
@@ -173,7 +174,9 @@ python3 transfer_sweep.py
 
 扫描默认 `TARGET_CTX=65536`、每 rank 一份完整 index K。它先启动 1-rank worker 组测完全部 BS，再启动 16-rank worker 组测完全部 BS；各组只启动一次 `torchrun`。每组按最大 BS=64 预分配 pinned Host 和 NPU buffer，小档位使用同一 buffer 的前缀视图，且每档单独 warmup 和采样。任何档位失败就停止，保留已完成结果。性能模式默认关闭逐字节数据校验；单独运行 `run_transfer_bench.sh --validate` 时才校验，结果 JSON 用 `validation_enabled` 和 `correct` 区分两种模式。即使关闭校验，仍检查 pinned 分配、拷贝异常及 NPU event 同步完成。
 
-每次扫描生成 `results/transfer_sweep_<时间>/summary.md`，包含八档的每 rank MiB、1-rank wall p50/p95 与 GB/s、16-rank 每轮最慢 rank 的 wall p50/p95、对应的慢 rank 与聚合 GB/s 估算，以及配置、commit 和失败信息。各档原始 JSON 在 `n1/` 或 `n16/` 下，以 `bs<BS>_summary.json` 和 `bs<BS>_rank_<RANK>.json` 命名；各目录的 `log_path.txt` 指向对应 worker 组的日志。只有 `TRANSFER_SWEEP_OK` 且表头 `Status: ok` 表示 16 组都完成；该标志不表示未校验的性能数据已通过内容校验。
+每次扫描生成 `results/transfer_sweep_<时间>/summary.md`，包含八档的每 rank MiB、1-rank wall 平均每次耗时与 GB/s、16-rank 最慢 rank 的 wall 平均每次耗时与带宽、聚合 GB/s 估算，以及配置、commit 和失败信息。各档原始 JSON 在 `n1/` 或 `n16/` 下，以 `bs<BS>_summary.json` 和 `bs<BS>_rank_<RANK>.json` 命名；各目录的 `log_path.txt` 指向对应 worker 组的日志。只有 `TRANSFER_SWEEP_OK` 且表头 `Status: ok` 表示 16 组都完成；该标志不表示未校验的性能数据已通过内容校验。
+
+旧版传输扫描结束后，可先用 `python3 cleanup_old_transfer.py` 预览待清理路径，再用 `python3 cleanup_old_transfer.py --delete` 删除。脚本只识别旧版 `bs<BS>_n<NPROC>` 扫描布局，以及记录的 commit 早于持久 worker 版本的单档/预检查结果；仅清理其关联的 transfer 日志和 torchrun 日志。检测到传输进程仍在运行时拒绝删除，无法核对旧 commit 的目录也会保留。
 
 最大 BS=64 时，16-rank 配置每 rank 搬运 1 GiB，默认需要总计约 32 GiB pinned Host 内存和分布于 16 个逻辑 NPU 的 16 GiB HBM；这些容量在该 worker 组开始时就需要可用。运行前核对模型已停止、内存余量和 pinned 分配限制。BS=11 时每 rank 为 176 MiB。BS 扫描仅改变连续拷贝字节数，不代表真实推理 batch 的全部开销。
 
@@ -194,13 +197,13 @@ NPROC=16 COPY_CHUNK_BYTES=4194304 bash run_transfer_bench.sh
 BS=11 TARGET_CTX=65536 NPROC=16 bash run_transfer_bench.sh
 ```
 
-多 rank 用 Gloo CPU barrier 对齐每次传输，barrier 不计入单rank拷贝耗时；采样区间没有HCCL流量。分配/初始化在计时外；启用 `--validate` 时，所有 buffer 的完整字节校验也在计时外。每次记录：
+多 rank 用 Gloo CPU barrier 对齐每档采样开始，barrier 不计入单 rank 拷贝耗时；采样区间没有 HCCL 流量。每档 warmup 后同步一次；随后连续提交全部采样拷贝，循环结束才同步一次。分配/初始化在计时外；启用 `--validate` 时，所有 buffer 的完整字节校验也在计时外。每档记录：
 
-- `wall_ms`：主机端从提交到完成的耗时，包含 launch、event 和同步等待，初筛优先用它。
-- `event_ms`：NPU stream 上起止event间隔，可能含分块提交间隙，不冒充纯DMA引擎活跃时间。
-- 每rank p50/p95和GB/s（十进制）；每轮取最慢rank，再计算p50/p95。
+- `wall_total_ms` / `wall_mean_ms`：主机端总耗时及总耗时除以采样次数，包含所有提交和最后一次同步等待。
+- `event_total_ms` / `event_mean_ms`：NPU stream 上起止 event 间隔及其除以采样次数，可能包含提交间隙，不冒充纯 DMA 引擎活跃时间。
+- 每 rank 有对应带宽（十进制 GB/s）；16-rank 汇总取最大 rank 总 wall 耗时再除以采样次数。这种协议只有批量平均值，不能报告单次传输 p50/p95。
 
-输出为 `results/transfer_<时间>_bs11_ctx65536_n16/{command.txt,log_path.txt,rank_00.json,...,summary.json}`。`summary.json` 的 `slowest_rank_per_iteration_wall` 是跨rank初筛的保守参考，也应保留各rank明细和计算窗口对应比较。聚合GB/s按复制总字节数除以最大rank耗时估算，不包含CPU barrier释放的起始偏差，不是链路物理带宽测量。
+单档输出为 `results/transfer_<时间>_bs11_ctx65536_n16/{command.txt,log_path.txt,rank_00.json,...,summary.json}`。`summary.json` 的 `slowest_rank_wall_mean_ms` 是跨 rank 初筛的保守参考，也应保留各 rank 明细和计算窗口对应比较。聚合 GB/s 按复制总字节数除以最慢 rank 的平均 wall 耗时估算，不包含 CPU barrier 释放的起始偏差，不是链路物理带宽测量。
 
 此结果是连续 pinned-memory `copy_` 基线，**不覆盖**散页gather、host packing、page-table维护、实际 `kernel_ascend`、Mooncake/ADXL/fabric 注册路径、全61层大工作集或MoE/主KV offload竞争。默认两组buffer可能享受缓存复用，因此只能作为该预分配路径的乐观参考；可增大 `HOST_BUFFERS` 观察工作集敏感性，注意相应host容量增长。多rank测试已经包含各rank传输之间的竞争，比单rank结果更接近TP16，但仍不证明实际overlap成立。
 
