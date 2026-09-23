@@ -16,6 +16,10 @@ if TYPE_CHECKING:
     from sglang.srt.configs.model_config import ModelConfig
     from sglang.srt.server_args import ServerArgs
 
+
+SPARSE_KV_DEVICE_CACHE_WINDOW_COUNT = 2
+
+
 def is_sparsity_driven_kv_offload_enabled(
     *,
     model_config: ModelConfig,
@@ -94,3 +98,53 @@ def get_sparsity_driven_kv_offload_cell_size(
         model_config=model_config
     )
     return index_head_dim * num_layers * element_size
+
+
+def get_sparsity_driven_kv_offload_fixed_memory_size(
+    *,
+    model_config: ModelConfig,
+    server_args: ServerArgs,
+    use_mla_backend: bool,
+    num_layers: int,
+    element_size: int,
+    max_running_requests_per_worker: int,
+) -> Optional[int]:
+    """Return the fixed device-KV allocation made by the sparse KV manager.
+
+    In addition to the token-scaled index pool, ``SparseKVCacheManager`` keeps
+    two sparse-context windows of full MLA KV for every request and layer. The
+    request-to-token pool has one extra padding row, which the manager also
+    allocates, so it must be included in the memory budget.
+    """
+    if not is_sparsity_driven_kv_offload_enabled(
+        model_config=model_config,
+        server_args=server_args,
+        use_mla_backend=use_mla_backend,
+    ):
+        return None
+
+    max_running_requests_per_worker = int(max_running_requests_per_worker)
+    if max_running_requests_per_worker <= 0:
+        raise ValueError(
+            "Sparsity-driven KV offload requires a positive per-worker "
+            "max_running_requests, got "
+            f"{max_running_requests_per_worker}."
+        )
+
+    sparse_context_len = get_sparsity_driven_kv_offload_sparse_context_len(
+        model_config=model_config
+    )
+    device_cache_capacity = (
+        SPARSE_KV_DEVICE_CACHE_WINDOW_COUNT * sparse_context_len
+    )
+    kv_head_dim = int(model_config.kv_lora_rank) + int(
+        model_config.qk_rope_head_dim
+    )
+    request_capacity = max_running_requests_per_worker + 1
+    return (
+        request_capacity
+        * device_cache_capacity
+        * kv_head_dim
+        * num_layers
+        * element_size
+    )

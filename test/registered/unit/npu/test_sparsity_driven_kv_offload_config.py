@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config import (
     get_sparsity_driven_kv_offload_cell_size,
+    get_sparsity_driven_kv_offload_fixed_memory_size,
     get_sparsity_driven_kv_offload_sparse_context_len,
     is_sparsity_driven_kv_offload_enabled,
 )
@@ -17,12 +18,14 @@ def _make_glm51_model_config():
     hf_config = SimpleNamespace(
         architectures=["GlmMoeDsaForCausalLM"],
         index_head_dim=128,
-        index_topk=1536,
+        index_topk=2048,
     )
     hf_config.get_text_config = lambda: hf_config
     return SimpleNamespace(
         hf_config=hf_config,
         index_head_dim=128,
+        kv_lora_rank=512,
+        qk_rope_head_dim=64,
     )
 
 
@@ -56,7 +59,7 @@ class TestSparsityDrivenKVOffloadConfig(unittest.TestCase):
                 get_sparsity_driven_kv_offload_sparse_context_len(
                     model_config=model_config
                 ),
-                1536,
+                2048,
             )
             self.assertEqual(
                 get_sparsity_driven_kv_offload_cell_size(
@@ -67,6 +70,17 @@ class TestSparsityDrivenKVOffloadConfig(unittest.TestCase):
                     element_size=2,
                 ),
                 512,
+            )
+            self.assertEqual(
+                get_sparsity_driven_kv_offload_fixed_memory_size(
+                    model_config=model_config,
+                    server_args=server_args,
+                    use_mla_backend=True,
+                    num_layers=2,
+                    element_size=2,
+                    max_running_requests_per_worker=8,
+                ),
+                (8 + 1) * 4096 * (512 + 64) * 2 * 2,
             )
 
 

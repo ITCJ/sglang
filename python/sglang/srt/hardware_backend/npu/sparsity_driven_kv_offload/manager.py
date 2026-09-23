@@ -16,6 +16,9 @@ from sgl_kernel_npu.sparsity_driven_kv_offload import (
 
 from sglang.srt.constants import GPU_MEMORY_TYPE_KV_CACHE
 from sglang.srt.environ import envs
+from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config import (
+    SPARSE_KV_DEVICE_CACHE_WINDOW_COUNT,
+)
 from sglang.srt.mem_cache.allocator import BaseTokenToKVPoolAllocator
 from sglang.srt.mem_cache.memory_pool import (
     MLATokenToKVPool,
@@ -96,7 +99,9 @@ class SparseKVCacheManager:
         # Sparse attention consumes only sparse_context_len entries. The device
         # cache keeps one additional window so entries not selected in the
         # current step can survive according to LRU order.
-        self.device_cache_capacity = 2 * self.sparse_context_len
+        self.device_cache_capacity = (
+            SPARSE_KV_DEVICE_CACHE_WINDOW_COUNT * self.sparse_context_len
+        )
         self.device = req_to_token_pool.device
         paged_kv_cache = token_to_kv_pool_allocator.get_kvcache()
         if not isinstance(paged_kv_cache, MLATokenToKVPool):

@@ -221,6 +221,42 @@ class TestDefaultConfigurator(unittest.TestCase):
         self.assertIsNone(config.full_max_total_num_tokens)
         self.assertIsNone(config.swa_max_total_num_tokens)
 
+    def test_sparse_kv_manager_fixed_memory_is_reserved(self):
+        from sglang.srt.environ import envs
+
+        available = 1_000_000
+        fixed_memory = 100_000
+        cell_size = 256
+        page_size = 128
+        mr = _make_model_runner(
+            use_mla_backend=True,
+            max_running_requests=8,
+            page_size=page_size,
+        )
+
+        with (
+            mock_cpu_env(),
+            envs.SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD.override(True),
+            patch(
+                "sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config.get_sparsity_driven_kv_offload_fixed_memory_size",
+                return_value=fixed_memory,
+            ),
+            patch(
+                "sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config.get_sparsity_driven_kv_offload_cell_size",
+                return_value=cell_size,
+            ),
+        ):
+            from sglang.srt.model_executor.pool_configurator import (
+                DefaultPoolConfigurator,
+            )
+
+            config = DefaultPoolConfigurator(mr).calculate_pool_sizes(
+                available, page_size
+            )
+
+        expected_tokens = ((available - fixed_memory) // cell_size) // page_size
+        self.assertEqual(config.max_total_num_tokens, expected_tokens * page_size)
+
     @patch(
         "sglang.srt.model_executor.pool_configurator.get_dsa_index_head_dim",
         return_value=128,
