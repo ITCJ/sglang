@@ -3,7 +3,7 @@
 ## OOM 排查：先恢复已知可运行基线
 
 目前优先使用 `bash launch_incremental.sh 0`，不要先运行下面的完整版 `launch_server.sh`。
-Stage 0 原样复制并运行 `../col.sh`，包括 `modelsim` 拼写、固定模型路径、eager、BS4、ctx256、系统调优和原环境初始化；不运行新加的preflight、不覆盖量化参数。仅将stdout/stderr收进 `logs/`，保存脚本副本到 `results/`，指定profile输出位置。若目标机实际能跑的脚本在别处，用 `BASELINE_SCRIPT=/绝对路径/col.sh bash launch_incremental.sh 0`。
+Stage 0 原样复制并运行 `../col.sh`，包括已确认正确的 `modelslim` 量化参数、固定模型路径、eager、BS4、ctx256、系统调优和原环境初始化；不运行新加的preflight、不覆盖量化参数。仅将stdout/stderr收进 `logs/`，保存脚本副本到 `results/`，指定profile输出位置。若目标机实际能跑的脚本在别处，用 `BASELINE_SCRIPT=/绝对路径/col.sh bash launch_incremental.sh 0`。
 
 每次停止上一服务、确认进程已退出后，只增加一项：
 
@@ -17,9 +17,9 @@ Stage 0 原样复制并运行 `../col.sh`，包括 `modelsim` 拼写、固定模
 | `bash launch_incremental.sh 5` | 显式BF16 KV cache |
 | `bash launch_incremental.sh 6` | 开启graph，capture BS=1、11（最后再尝试） |
 
-各阶段累积修改，量化参数始终保留源脚本原值。若某阶段失败，先退回上一阶段在相同环境复验；失败发生在权重加载、cache分配还是graph capture，要以异常栈确定。若stage 0的 `modelsim` 被目标CLI拒绝，应核实实际可运行原脚本；工具不会自动替换成 `modelslim`。两者不是已证实可互换的别名。
+各阶段累积修改，量化参数始终保留源脚本原值。若某阶段失败，先退回上一阶段在相同环境复验；失败发生在权重加载、cache分配还是graph capture，要以异常栈确定。目标环境已确认使用 `modelslim`；`col.sh` 中原来的 `modelsim` 是笔误，现已修正。阶段0和完整版入口的量化参数一致。
 
-先以服务ready确认启动，通过stage 5后可直接运行 `bash profile_decode.sh` 采集eager计算，不必先开graph。Stage 0–2 不适合直接运行默认BS11/2K客户端。已有完整版入口保留，便于对照，其默认 `modelslim`、graph等差异不应混入基线复现。
+先以服务ready确认启动，通过stage 5后可直接运行 `bash profile_decode.sh` 采集eager计算，不必先开graph。Stage 0–2 不适合直接运行默认BS11/2K客户端。已有完整版入口保留，便于对照，其默认graph等额外配置不应混入基线复现。
 
 仅在目标昇腾 A3（910C）机器/容器执行。本目录在开发机只做静态检查，不运行模型、测试、profiler 或 microbenchmark。
 
@@ -115,7 +115,7 @@ WARMUP_TOKENS=96 PROFILE_SECONDS=1 bash profile_decode.sh
 
 ### 与 col.sh 的差异
 
-- 本地量化注册名称为 `modelslim`，修正参考脚本的 `modelsim` 拼写；可用 `QUANTIZATION` 覆盖以适配目标分支。
+- 量化参数统一为目标环境确认的 `modelslim`，与修正后的 `col.sh` 一致。
 - 默认启用 graph，capture BS 包含精确的11，避免 padded BS 混淆计算量。原 `col.sh` 注释写图模式，但实际传了 `--disable-cuda-graph`。
 - 显式传 `--enable-profile-cuda-graph`。**它控制启动时 graph capture profiling，不会自动采集服务稳态 decode**；后者仍由 API 触发。
 - `GRAPH_MODE=0 bash launch_server.sh` 可另跑 eager 对照，用于辅助辨认层/算子；不能把 eager 的耗时当作 graph 基线。eager 下仍传 profile 参数，但不会产生 graph capture trace。

@@ -62,7 +62,7 @@ python3 -m sglang.launch_server --model-path ${MODEL_PATH} \
     --mem-fraction-static 0.80 \
     --disable-radix-cache --chunked-prefill-size -1 --max-prefill-tokens 512 --context-length 256 \
     --max-running-requests 4 \
-    --quantization modelsim \
+    --quantization modelslim \
     --disable-cuda-graph \
     --nnodes $nnodes --node-rank $VC_TASK_INDEX \
     --enable-dp-attention --disable-shared-experts-fusion --dtype bfloat16 \
