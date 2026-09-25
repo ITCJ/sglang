@@ -63,8 +63,14 @@ def forward_sparsity_driven_kv_offload(
     sparse_kv_manager = _get_sparse_kv_manager(backend)
     stream = torch.npu.current_stream(backend.device)
 
+    decode_offload_done = None
     if save_kv_cache:
-        sparse_kv_manager.offload_v2(k_nope, k_pe, layer, forward_batch, stream)
+        if forward_batch.forward_mode.is_decode():
+            decode_offload_done = sparse_kv_manager.offload_v2_decode_async(
+                k_nope, k_pe, layer, forward_batch, stream
+            )
+        else:
+            sparse_kv_manager.offload_v2(k_nope, k_pe, layer, forward_batch, stream)
 
     if is_prefill:
         if backend.forward_metadata.actual_seq_lengths_q is not None:
@@ -177,7 +183,12 @@ def forward_sparsity_driven_kv_offload(
             topk_valid,
             valid_topk_counts,
         ) = sparse_kv_manager.materialize_selected_kv(
-            layer, forward_batch, topk_2d, selected_kv_buffer, stream
+            layer,
+            forward_batch,
+            topk_2d,
+            selected_kv_buffer,
+            stream,
+            host_kv_ready_event=decode_offload_done,
         )
 
         # Both copies are complete here. Metadata update overlaps preparation

@@ -131,6 +131,12 @@ class SparseKVCacheManager:
         self._materialize_d2d_hit_stream = torch.npu.Stream()
         self._materialize_h2d_miss_stream = torch.npu.Stream()
         self._materialize_metadata_update_stream = torch.npu.Stream()
+        # Decode offload is submitted to a persistent side stream. Keeping the
+        # stream and events alive on the manager is required by NPU graph
+        # capture: creating either object from the captured forward would make
+        # replay depend on Python-side state that is not part of the graph.
+        self._decode_offload_stream = torch.npu.Stream()
+        self._decode_offload_done = [torch.npu.Event() for _ in range(self.layer_num)]
         self._materialize_hit_done = torch.npu.Event()
         self._materialize_miss_done = torch.npu.Event()
         self._materialize_victim_slot_select_done = torch.npu.Event()
@@ -733,6 +739,44 @@ class SparseKVCacheManager:
                 dst_ptr=self.dev_ptr_list[layer_idx],
             )
 
+    def offload_v2_decode_async(
+        self,
+        k: torch.Tensor,
+        k_rope: torch.Tensor,
+        layer: RadixAttention,
+        forward_batch: ForwardBatch,
+        producer_stream: torch.npu.Stream,
+    ) -> torch.npu.Event:
+        """Submit decode KV offload on the graph-capturable side stream.
+
+        The returned persistent event represents host-KV readiness for this
+        layer. Consumers that may read the just-written token must wait for it;
+        independent decode preparation can continue on ``producer_stream``.
+        """
+        if not forward_batch.forward_mode.is_decode():
+            raise RuntimeError("Async sparse KV offload is only valid for decode.")
+
+        layer_idx = layer.layer_id - self.start_layer
+        self._decode_offload_stream.wait_stream(producer_stream)
+        with torch.npu.stream(self._decode_offload_stream):
+            self.offload_v2(
+                k,
+                k_rope,
+                layer,
+                forward_batch,
+                self._decode_offload_stream,
+            )
+            _record_stream_event(
+                self._decode_offload_stream,
+                self._decode_offload_done[layer_idx],
+            )
+        # These tensors were allocated on the producer stream but are consumed
+        # asynchronously. This also keeps error paths safe if the caller exits
+        # before reaching the host-miss join below.
+        k.record_stream(self._decode_offload_stream)
+        k_rope.record_stream(self._decode_offload_stream)
+        return self._decode_offload_done[layer_idx]
+
     def get_forward_kv(
         self,
         layer: Union[RadixAttention, int],
@@ -853,6 +897,7 @@ class SparseKVCacheManager:
         topk_indices: torch.Tensor,
         selected_kv_buffer: torch.Tensor,
         stream: torch.npu.Stream,
+        host_kv_ready_event: Optional[torch.npu.Event] = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -1006,6 +1051,14 @@ class SparseKVCacheManager:
 
         self._materialize_h2d_miss_stream.wait_stream(stream)
         with torch.npu.stream(self._materialize_h2d_miss_stream):
+            # Decode offload may be writing the current token into the same
+            # host row. Delay only the host-miss copy; hit processing and all
+            # preceding index/LRU preparation stay overlapped with offload.
+            if host_kv_ready_event is not None:
+                _wait_stream_event(
+                    self._materialize_h2d_miss_stream,
+                    host_kv_ready_event,
+                )
             unidex_copy_inplace(
                 self.host_kv_buffer[layer_idx],
                 selected_kv_buffer,
