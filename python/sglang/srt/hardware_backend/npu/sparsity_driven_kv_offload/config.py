@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
 from sglang.srt.configs.model_config import (
@@ -10,28 +11,51 @@ from sglang.srt.configs.model_config import (
     is_deepseek_dsa,
 )
 from sglang.srt.environ import envs
-from sglang.srt.runtime_context import attention_backends, get_disagg, get_schedule
+from sglang.srt.runtime_context import (
+    attention_backends,
+    get_disagg,
+    get_schedule,
+    process_model_config,
+    uses_mla_backend,
+)
 from sglang.srt.utils.common import is_npu
 
 if TYPE_CHECKING:
     from sglang.srt.configs.model_config import ModelConfig
 
 
-def should_keep_native_kv_cache_for_sparse_pd_prefill() -> bool:
-    disagg = get_disagg()
-    return (
-        disagg.disaggregation_mode == "prefill"
-        and disagg.disaggregation_transfer_backend == "ascend"
-    )
+class SparseKVOffloadMode(str, Enum):
+    DISABLED = "disabled"
+    LOCAL_OFFLOAD = "local_offload"
+    PD_PREFILL_NATIVE = "pd_prefill_native"
+    PD_DECODE_OFFLOAD = "pd_decode_offload"
+
+    @property
+    def uses_host_kv_offload(self) -> bool:
+        return self in (
+            SparseKVOffloadMode.LOCAL_OFFLOAD,
+            SparseKVOffloadMode.PD_DECODE_OFFLOAD,
+        )
+
+    @property
+    def uses_pd_decode_staging(self) -> bool:
+        return self is SparseKVOffloadMode.PD_DECODE_OFFLOAD
 
 
-def is_sparsity_driven_kv_offload_enabled(
+def resolve_sparse_kv_offload_mode(
     *,
-    model_config: ModelConfig,
-    use_mla_backend: bool,
-) -> bool:
+    model_config: Optional[ModelConfig] = None,
+    use_mla_backend: Optional[bool] = None,
+) -> SparseKVOffloadMode:
     if not envs.SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD.get():
-        return False
+        return SparseKVOffloadMode.DISABLED
+
+    # The NPU MLA pool has no ModelConfig argument; use the published process
+    # configuration there. Callers holding a model config pass it explicitly.
+    if model_config is None:
+        model_config = process_model_config()
+    if use_mla_backend is None:
+        use_mla_backend = uses_mla_backend()
 
     prefill_attention_backend, decode_attention_backend = attention_backends()
     if not (
@@ -52,7 +76,24 @@ def is_sparsity_driven_kv_offload_enabled(
             "SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD requires max_running_requests "
             "to be set to bound the per-process host KV allocation."
         )
-    return True
+
+    disagg = get_disagg()
+    if disagg.disaggregation_mode == "null":
+        return SparseKVOffloadMode.LOCAL_OFFLOAD
+    if disagg.disaggregation_mode in ("prefill", "decode"):
+        if disagg.disaggregation_transfer_backend != "ascend":
+            raise ValueError(
+                "SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD with PD disaggregation "
+                "requires disaggregation_transfer_backend='ascend'; got "
+                f"{disagg.disaggregation_transfer_backend!r}."
+            )
+        if disagg.disaggregation_mode == "prefill":
+            return SparseKVOffloadMode.PD_PREFILL_NATIVE
+        return SparseKVOffloadMode.PD_DECODE_OFFLOAD
+    raise ValueError(
+        "SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD received unsupported "
+        f"disaggregation_mode={disagg.disaggregation_mode!r}."
+    )
 
 
 def get_sparsity_driven_kv_offload_sparse_context_len(
@@ -92,12 +133,11 @@ def get_sparsity_driven_kv_offload_cell_size(
     num_layers: int,
     element_size: int,
 ) -> Optional[int]:
-    if not is_sparsity_driven_kv_offload_enabled(
+    mode = resolve_sparse_kv_offload_mode(
         model_config=model_config,
         use_mla_backend=use_mla_backend,
-    ):
-        return None
-    if should_keep_native_kv_cache_for_sparse_pd_prefill():
+    )
+    if not mode.uses_host_kv_offload:
         return None
 
     index_head_dim = get_sparsity_driven_kv_offload_index_head_dim(

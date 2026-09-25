@@ -47,18 +47,10 @@ class AscendKVManager(MooncakeKVManager):
         server_args,
         is_mla_backend: Optional[bool] = False,
     ):
-        self.use_sparse_pd_decode = False
-        self.sparse_pd_manager = None
         self.sparse_pd_decode_staging = None
 
         sparse_kv_manager = get_sparse_pd_manager()
-        if is_sparse_pd_decode_enabled(
-            server_args,
-            disaggregation_mode,
-            sparse_kv_manager=sparse_kv_manager,
-        ):
-            self.use_sparse_pd_decode = True
-            self.sparse_pd_manager = sparse_kv_manager
+        if is_sparse_pd_decode_enabled(sparse_kv_manager):
             native_kv_pool = sparse_kv_manager.paged_kv_cache
             if getattr(native_kv_pool, "dsa_kv_cache_store_fp8", False):
                 raise NotImplementedError(

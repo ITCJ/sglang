@@ -4,7 +4,8 @@ import torch
 
 from sglang.srt.constants import GPU_MEMORY_TYPE_KV_CACHE
 from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config import (
-    should_keep_native_kv_cache_for_sparse_pd_prefill,
+    SparseKVOffloadMode,
+    resolve_sparse_kv_offload_mode,
 )
 from sglang.srt.environ import envs
 from sglang.srt.mem_cache.memory_pool import (
@@ -23,27 +24,6 @@ if TYPE_CHECKING:
 
 if is_npu():
     import torch_npu
-
-
-def _should_keep_native_kv_cache_for_sparse_pd_prefill() -> bool:
-    try:
-        return should_keep_native_kv_cache_for_sparse_pd_prefill()
-    except Exception:
-        return False
-
-
-def _should_use_sparse_pd_decode_transfer_buffers() -> bool:
-    try:
-        from sglang.srt.runtime_context import get_disagg
-
-        disagg = get_disagg()
-    except Exception:
-        return False
-
-    return (
-        disagg.disaggregation_mode == "decode"
-        and disagg.disaggregation_transfer_backend == "ascend"
-    )
 
 
 def _mla_fia_nz_scatter_indices(
@@ -632,18 +612,11 @@ class NPUMLATokenToKVPool(MLATokenToKVPool):
         self.kv_lora_rank = kv_lora_rank
         self.qk_rope_head_dim = qk_rope_head_dim
         self.index_head_dim = index_head_dim
-        self.sparsity_driven_kv_offload_requested = (
-            envs.SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD.get()
-        )
-        self.keep_native_kv_cache = (
-            self.sparsity_driven_kv_offload_requested
-            and _should_keep_native_kv_cache_for_sparse_pd_prefill()
-        )
-        self.enable_sparsity_driven_kv_offload = (
-            self.sparsity_driven_kv_offload_requested
-            and not self.keep_native_kv_cache
-        )
-        if self.sparsity_driven_kv_offload_requested and self.index_head_dim is None:
+        sparse_kv_offload_mode = resolve_sparse_kv_offload_mode()
+        if (
+            sparse_kv_offload_mode is not SparseKVOffloadMode.DISABLED
+            and self.index_head_dim is None
+        ):
             raise ValueError("Sparsity-driven KV offload requires an index KV cache.")
 
         if index_head_dim is None:
@@ -686,7 +659,7 @@ class NPUMLATokenToKVPool(MLATokenToKVPool):
 
         with self.memory_saver_adapter.region(GPU_MEMORY_TYPE_KV_CACHE):
             # The padded slot 0 is used for writing dummy outputs from padded tokens.
-            if self.enable_sparsity_driven_kv_offload:
+            if sparse_kv_offload_mode.uses_host_kv_offload:
                 self.k_buffer = None
                 self.v_buffer = None
             else:
@@ -839,10 +812,7 @@ class NPUMLATokenToKVPool(MLATokenToKVPool):
 
     # for disagg
     def get_contiguous_buf_infos(self):
-        if (
-            self.sparsity_driven_kv_offload_requested
-            and _should_use_sparse_pd_decode_transfer_buffers()
-        ):
+        if resolve_sparse_kv_offload_mode().uses_pd_decode_staging:
             if getattr(self, "index_k_buffer", None) is None:
                 raise RuntimeError(
                     "Sparse KV PD decode transfer requires native NPU MLA "

@@ -19,7 +19,9 @@ from typing import Optional
 import numpy as np
 import numpy.typing as npt
 
-from sglang.srt.disaggregation.utils import DisaggregationMode
+from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config import (
+    resolve_sparse_kv_offload_mode,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +36,6 @@ class SparsePDTransferMetadata:
     decode_prefix_len: int
 
 
-def _mode_value(disaggregation_mode) -> str:
-    if isinstance(disaggregation_mode, DisaggregationMode):
-        return disaggregation_mode.value
-    return str(disaggregation_mode)
-
-
 def get_sparse_pd_manager():
     try:
         from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.manager import (
@@ -50,18 +46,13 @@ def get_sparse_pd_manager():
     return get_sparse_kv_manager()
 
 
-def is_sparse_pd_decode_enabled(
-    server_args,
-    disaggregation_mode,
-    sparse_kv_manager=None,
-) -> bool:
-    if _mode_value(disaggregation_mode) != DisaggregationMode.DECODE.value:
-        return False
-    if getattr(server_args, "disaggregation_transfer_backend", None) != "ascend":
-        return False
+def is_sparse_pd_decode_enabled(sparse_kv_manager=None) -> bool:
     if sparse_kv_manager is None:
         sparse_kv_manager = get_sparse_pd_manager()
-    return sparse_kv_manager is not None
+    return (
+        sparse_kv_manager is not None
+        and resolve_sparse_kv_offload_mode().uses_pd_decode_staging
+    )
 
 
 class SparsePDDecodeStagingPool:
