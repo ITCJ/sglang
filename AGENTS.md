@@ -18,3 +18,17 @@ Never infer model details or claim checks that were not run.
 
 Do not append a change-log entry for read-only analysis. Keep unrelated SGLang
 work out of this project record.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live in `ITCJ/sglang` GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default five triage labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use a single-context layout. See `docs/agents/domain.md`.
