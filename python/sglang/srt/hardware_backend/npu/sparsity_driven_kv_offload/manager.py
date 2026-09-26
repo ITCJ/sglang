@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import TYPE_CHECKING, List, Optional, Union
 
@@ -409,18 +408,16 @@ class SparseKVCacheManager:
                 decode_round += 1
                 self._decode_round_state[req_pool_idx] = (seq_len, decode_round)
 
-            record = {
-                "rank": rank,
-                "rid": rids[batch_index] if batch_index < len(rids) else "unknown",
-                "req_pool_idx": req_pool_idx,
-                "layer_id": int(layer.layer_id),
-                "decode_round": decode_round,
-                "seq_len": seq_len,
-                "topk": topk_indices_cpu[batch_index],
-            }
             logger.info(
-                "SPARSE_KV_DECODE_TOPK %s",
-                json.dumps(record, separators=(",", ":")),
+                "SPARSE_KV_DECODE_TOPK rank=%d rid=%s req_pool_idx=%d "
+                "layer_id=%d decode_round=%d seq_len=%d topk=%s",
+                rank,
+                rids[batch_index] if batch_index < len(rids) else "unknown",
+                req_pool_idx,
+                int(layer.layer_id),
+                decode_round,
+                seq_len,
+                topk_indices_cpu[batch_index],
             )
 
     def _install_req_lifecycle_hooks(
