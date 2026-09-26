@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import TYPE_CHECKING, List, Optional, Union
 
@@ -307,6 +308,10 @@ class SparseKVCacheManager:
             dtype=torch.int32,
             device=self.device,
         )
+        # Eager-only debug state used to assign a monotonically increasing
+        # decode round to every live request-pool row. reset_requests() clears
+        # the entry before a row is reused by another request.
+        self._decode_round_state: dict[int, tuple[int, int]] = {}
 
         self._install_req_lifecycle_hooks(req_to_token_pool)
 
@@ -341,6 +346,9 @@ class SparseKVCacheManager:
         if not req_ids:
             return
 
+        for req_id in req_ids:
+            self._decode_round_state.pop(req_id, None)
+
         req_ids_tensor = torch.tensor(
             req_ids, dtype=torch.long, device=self.device
         ).contiguous()
@@ -358,6 +366,62 @@ class SparseKVCacheManager:
                 0, req_ids_tensor, 0
             )
         self._cache_stats.index_fill_(1, req_ids_tensor, 0)
+
+    def _log_decode_topk(
+        self,
+        layer: RadixAttention,
+        forward_batch: ForwardBatch,
+        req_pool_indices: torch.Tensor,
+        topk_indices: torch.Tensor,
+        valid_req_mask: torch.Tensor,
+    ) -> None:
+        """Log one parseable, eager-only top-k record per valid request.
+
+        The device-to-host copies intentionally synchronize the current stream.
+        Run decode with ``--disable-cuda-graph`` when collecting these records.
+        """
+        req_pool_indices_cpu = req_pool_indices.detach().cpu().tolist()
+        seq_lens_cpu = (
+            forward_batch.seq_lens[: len(req_pool_indices_cpu)]
+            .detach()
+            .cpu()
+            .tolist()
+        )
+        topk_indices_cpu = topk_indices.detach().cpu().tolist()
+        valid_req_mask_cpu = valid_req_mask.detach().cpu().tolist()
+        rids = forward_batch.rids or []
+        rank = (
+            torch.distributed.get_rank()
+            if torch.distributed.is_available() and torch.distributed.is_initialized()
+            else 0
+        )
+
+        for batch_index, is_valid in enumerate(valid_req_mask_cpu):
+            if not is_valid:
+                continue
+
+            req_pool_idx = int(req_pool_indices_cpu[batch_index])
+            seq_len = int(seq_lens_cpu[batch_index])
+            last_seq_len, decode_round = self._decode_round_state.get(
+                req_pool_idx, (-1, 0)
+            )
+            if seq_len != last_seq_len:
+                decode_round += 1
+                self._decode_round_state[req_pool_idx] = (seq_len, decode_round)
+
+            record = {
+                "rank": rank,
+                "rid": rids[batch_index] if batch_index < len(rids) else "unknown",
+                "req_pool_idx": req_pool_idx,
+                "layer_id": int(layer.layer_id),
+                "decode_round": decode_round,
+                "seq_len": seq_len,
+                "topk": topk_indices_cpu[batch_index],
+            }
+            logger.info(
+                "SPARSE_KV_DECODE_TOPK %s",
+                json.dumps(record, separators=(",", ":")),
+            )
 
     def _install_req_lifecycle_hooks(
         self, req_to_token_pool: ReqToTokenPool
@@ -973,6 +1037,13 @@ class SparseKVCacheManager:
                 (topk_indices >= 0)
                 & (topk_indices < self.max_context_len)
                 & valid_req_mask.unsqueeze(1)
+            )
+            self._log_decode_topk(
+                layer,
+                forward_batch,
+                req_pool_indices,
+                topk_indices,
+                valid_req_mask,
             )
 
             # Query the slot map for device-cache hits and their slot positions.
