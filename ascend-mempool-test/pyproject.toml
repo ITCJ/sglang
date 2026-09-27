@@ -1,0 +1,15 @@
+[tool.mypy]
+python_version = "3.9"
+strict = true
+follow_imports = "skip"
+
+[tool.ruff]
+target-version = "py39"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["F", "UP037"]
+
+[tool.isort]
+profile = "black"
+known_first_party = ["ascend_mempool"]
