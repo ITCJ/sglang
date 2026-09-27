@@ -5,12 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from .layout import PoolLayout
-
 if TYPE_CHECKING:
+    from sglang.srt.hardware_backend.npu.mempool.layout import PoolLayout
     from torch import Tensor
 
     from .copy import SparseCopyInputs
+else:
+    from .layout import PoolLayout
 
 SENTINEL = -7
 

@@ -1,0 +1,159 @@
+"""Verify temporary KV writes through the external UniDexCopy boundary."""
+
+import unittest
+
+import torch
+from test_pool import FakeBM
+
+from ascend_mempool.layout import KVLayout, PoolLayout
+from ascend_mempool.offload import MempoolKVOffload, MempoolWriteInputs
+from ascend_mempool.pool import MempoolKVManager
+
+
+class CPUWriteKernel:
+    """Emulate the external raw-destination kernel with real CPU tensor contents."""
+
+    def __init__(self, destination, pointer):
+        """Associate a process-local address with its simulated DRAM tensor."""
+        self.destination = destination
+        self.pointer = pointer
+
+    def __call__(
+        self,
+        src,
+        dst,
+        src_index,
+        dst_index,
+        valid,
+        src_rows,
+        dst_rows,
+        row_bytes,
+        max_copy,
+        block_dim,
+        src_ptr,
+        dst_ptr,
+    ):
+        """Apply valid indexed writes, checking the declared storage extents."""
+        if src_ptr is not None or dst_ptr != self.pointer:
+            raise ValueError("unexpected copy address")
+        if src_rows * row_bytes != src.numel() * src.element_size():
+            raise ValueError("source extent mismatch")
+        if dst_rows * row_bytes != self.destination.numel() * 2:
+            raise ValueError("destination extent mismatch")
+        source = src.reshape(src_rows, row_bytes // 2)
+        target = self.destination.reshape(dst_rows, row_bytes // 2)
+        target[dst_index[valid]] = source[src_index[valid]]
+
+
+class TestMempoolKVOffload(unittest.TestCase):
+    """Check logical writes without mocking the mempool manager or index logic."""
+
+    def setUp(self):
+        """Open a small decode pool and a sentinel-filled simulated DRAM layer."""
+        layer = KVLayout(layers=1, slots=16, tokens=8, heads=1, dim=4)
+        self.manager = MempoolKVManager.create(
+            PoolLayout(layer, layer), rank=1, bm_module=FakeBM(1)
+        )
+        self.manager.join(timeout=0.1)
+        self.view = self.manager.view(1, 0)
+        self.target = torch.full(self.view.shape, -1, dtype=torch.bfloat16)
+        self.kernel = CPUWriteKernel(self.target, self.view.device_base)
+
+    def tearDown(self):
+        """Drain the fake device before releasing its pool."""
+        self.manager.close(drain=lambda: None)
+
+    def test_writes_logical_rows_and_leaves_padding_and_invalid_coordinates_untouched(
+        self,
+    ):
+        """Write first/last tokens while masking unbound and out-of-range rows."""
+        inputs = MempoolWriteInputs(rows=8, device="cpu")
+        inputs.slots.copy_(torch.tensor([2, 15, 16, -1, 1, 1, 1, 3]))
+        inputs.positions.copy_(torch.tensor([0, 7, 0, 0, 8, -1, 3, 2]))
+        inputs.valid.copy_(
+            torch.tensor([True, True, True, True, True, True, False, True])
+        )
+        values = torch.tensor(
+            [
+                [11, 12, 13, 14],
+                [21, 22, 23, 24],
+                [31, 32, 33, 34],
+                [41, 42, 43, 44],
+                [51, 52, 53, 54],
+                [61, 62, 63, 64],
+                [71, 72, 73, 74],
+                [81, 82, 83, 84],
+            ],
+            dtype=torch.bfloat16,
+        ).reshape(8, 1, 4)
+        writer = MempoolKVOffload(self.view, inputs, kernel=self.kernel)
+        writer.write(values)
+        expected = torch.full_like(self.target, -1)
+        expected[2, 0, 0] = torch.tensor([11, 12, 13, 14])
+        expected[15, 7, 0] = torch.tensor([21, 22, 23, 24])
+        expected[3, 2, 0] = torch.tensor([81, 82, 83, 84])
+        self.assertTrue(torch.equal(self.target, expected))
+
+    def test_unbound_warmup_and_changed_bindings_use_the_same_input_buffers(self):
+        """Enable writes after zero-valid warmup, then reuse the writer for new slots."""
+        inputs = MempoolWriteInputs(rows=2, device="cpu")
+        addresses = [
+            tensor.data_ptr()
+            for tensor in (inputs.slots, inputs.positions, inputs.valid)
+        ]
+        writer = MempoolKVOffload(self.view, inputs, kernel=self.kernel)
+        values = torch.tensor(
+            [[11, 12, 13, 14], [21, 22, 23, 24]], dtype=torch.bfloat16
+        ).reshape(2, 1, 4)
+        writer.write(values)
+        self.assertTrue((self.target == -1).all().item())
+
+        inputs.slots.copy_(torch.tensor([4, 6]))
+        inputs.positions.copy_(torch.tensor([1, 2]))
+        inputs.valid.fill_(True)
+        writer.write(values)
+        expected = torch.full_like(self.target, -1)
+        expected[4, 1, 0] = torch.tensor([11, 12, 13, 14])
+        expected[6, 2, 0] = torch.tensor([21, 22, 23, 24])
+        self.assertTrue(torch.equal(self.target, expected))
+
+        inputs.slots.copy_(torch.tensor([8, 9]))
+        inputs.positions.copy_(torch.tensor([0, 7]))
+        inputs.valid.copy_(torch.tensor([True, False]))
+        values.fill_(99)
+        writer.write(values)
+        expected[8, 0, 0] = 99
+        self.assertTrue(torch.equal(self.target, expected))
+        self.assertEqual(
+            [
+                tensor.data_ptr()
+                for tensor in (inputs.slots, inputs.positions, inputs.valid)
+            ],
+            addresses,
+        )
+
+    def test_rejects_wrong_source_schema_remote_writes_and_closed_pools(self):
+        """Reject static contract errors before the copy can access DRAM."""
+        inputs = MempoolWriteInputs(rows=2, device="cpu")
+        writer = MempoolKVOffload(self.view, inputs, kernel=self.kernel)
+        values = torch.ones((2, 1, 4), dtype=torch.bfloat16)
+        invalid_sources = (values.float(), values[:1], values.transpose(0, 2))
+        for source in invalid_sources:
+            with self.subTest(shape=source.shape, dtype=source.dtype):
+                with self.assertRaises(ValueError):
+                    writer.write(source)
+        noncontiguous = torch.ones((2, 1, 8), dtype=torch.bfloat16)[:, :, ::2]
+        with self.assertRaisesRegex(ValueError, "contiguous"):
+            writer.write(noncontiguous)
+        with self.assertRaisesRegex(ValueError, "NPU source"):
+            MempoolKVOffload(self.view, inputs).write(values)
+        with self.assertRaisesRegex(ValueError, "owning rank"):
+            MempoolKVOffload(self.manager.view(0, 0), inputs, kernel=self.kernel)
+        self.manager.close(drain=lambda: None)
+        with self.assertRaisesRegex(RuntimeError, "closed"):
+            writer.write(values)
+        self.assertTrue((self.target == -1).all().item())
+
+
+if __name__ == "__main__":
+    unittest.main()

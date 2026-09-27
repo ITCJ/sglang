@@ -8,11 +8,16 @@ BM API 参考本地 `release/1.1` 的 `9fa9afbb`；两端运行时版本写入�
 
 ```text
 ascend-mempool-test/
-  src/ascend_mempool/  typed KV layout、BM manager/view、双来源 copy、验证数据
+  src/ascend_mempool/  runtime 加载入口、双来源 copy、验证数据
   scripts/            双机测试入口与两轮 gate runner
   tests/unit/         CPU 行为测试
   reports/            默认运行日志与 JSON 报告，已 gitignore
 ```
+
+02 第一部分已将 `layout.py` 与 BM manager/view 移入
+`python/sglang/srt/hardware_backend/npu/mempool/`，并新增容量配置与 runtime offload。
+本测试 package 直接加载这些模块，绕过 SGLang public API；`pool.py` 保留兼容 import。
+因此运行测试需要完整仓库 checkout，仍不依赖 SGLang server 或 SGLang 安装。
 
 - `KVLayout` 表达每 layer 的 `[B_slots, S, N, D]` BF16 逻辑布局，校验坐标和
   UniDexCopy 范围；`PoolLayout` 分别计算 P/D 实际贡献，使用相同的最大贡献作为 rank stride。
@@ -60,14 +65,19 @@ python3 -m venv /tmp/ascend-mempool-dev
 /tmp/ascend-mempool-dev/bin/pip install torch mypy ruff isort
 PYTHONPATH=ascend-mempool-test/src /tmp/ascend-mempool-dev/bin/python -m unittest discover -s ascend-mempool-test/tests/unit -v
 /tmp/ascend-mempool-dev/bin/mypy --config-file ascend-mempool-test/pyproject.toml ascend-mempool-test/src ascend-mempool-test/scripts
+/tmp/ascend-mempool-dev/bin/mypy --config-file ascend-mempool-test/pyproject.toml python/sglang/srt/hardware_backend/npu/mempool
 /tmp/ascend-mempool-dev/bin/ruff check ascend-mempool-test
 /tmp/ascend-mempool-dev/bin/ruff format --check ascend-mempool-test
+/tmp/ascend-mempool-dev/bin/ruff check python/sglang/srt/hardware_backend/npu/mempool
+/tmp/ascend-mempool-dev/bin/ruff format --check python/sglang/srt/hardware_backend/npu/mempool
 /tmp/ascend-mempool-dev/bin/isort --check-only --settings-path ascend-mempool-test ascend-mempool-test
 bash -n ascend-mempool-test/scripts/run_gate.sh
 ```
 
 CPU 测试使用真实 CPU tensor 运算和 BM SDK boundary fake，验证布局、索引、内容写入语义与
 handle lifetime。它们不执行 BM 或 NPU kernel，不证明远端读和 Graph capture/replay 已通过。
+`test_config.py` 覆盖实际 MLA 维度与 P/D 独立容量；`test_offload.py` 检查 raw destination
+写入的内容、bounds/padding mask、zero-valid warmup 与固定 metadata buffer 的重复使用。
 
 ## NPU 前置检查
 
@@ -137,4 +147,5 @@ python3 -u ascend-mempool-test/scripts/verify_graph.py \
 
 回传两侧 `--check-env` 输出、等容量/不等容量的 `.log` 和 `.json`、实际代码版本及使用的命令。
 失败时保留完整 traceback、最后一个 PASS case、相关 MF 错误和 retained-pool 状态。
-我们据此核对实现并调整脚本。Ticket 01 当前等待用户 NPU 验收，保持 open。
+我们据此核对实现并调整脚本。Ticket 01 已于 2026-09-27 经用户确认验收并关闭。
+02 的新增 runtime offload 与真实 server 集成仍待 NPU 验证。

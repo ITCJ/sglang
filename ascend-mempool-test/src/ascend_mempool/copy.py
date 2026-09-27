@@ -6,11 +6,13 @@ import importlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from .layout import UINT32_MAX, positive_int
 from .pool import MempoolKVView
 
 if TYPE_CHECKING:
+    from sglang.srt.hardware_backend.npu.mempool.layout import UINT32_MAX, positive_int
     from torch import Tensor
+else:
+    from .layout import UINT32_MAX, positive_int
 
 
 @dataclass(frozen=True)

@@ -13,13 +13,12 @@ import traceback
 import uuid
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Optional, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from ascend_mempool.control import TestChannel
 from ascend_mempool.copy import SparseCopyInputs, SparseKVCopy
-from ascend_mempool.layout import KVLayout, PoolLayout
 from ascend_mempool.pool import MempoolKVManager
 from ascend_mempool.verification import (
     SENTINEL,
@@ -28,6 +27,11 @@ from ascend_mempool.verification import (
     kv_pattern,
     make_cases,
 )
+
+if TYPE_CHECKING:
+    from sglang.srt.hardware_backend.npu.mempool.layout import KVLayout, PoolLayout
+else:
+    from ascend_mempool.layout import KVLayout, PoolLayout
 
 PROTOCOL_VERSION = 1
 TARGET_MEMFABRIC_VERSION = "1.1.4"

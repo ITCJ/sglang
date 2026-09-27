@@ -2,6 +2,7 @@
 python_version = "3.9"
 strict = true
 follow_imports = "skip"
+mypy_path = ["python"]
 
 [tool.ruff]
 target-version = "py39"
