@@ -78,6 +78,9 @@ CPU 测试使用真实 CPU tensor 运算和 BM SDK boundary fake，验证布局�
 handle lifetime。它们不执行 BM 或 NPU kernel，不证明远端读和 Graph capture/replay 已通过。
 `test_config.py` 覆盖实际 MLA 维度与 P/D 独立容量；`test_offload.py` 检查 raw destination
 写入的内容、bounds/padding mask、zero-valid warmup 与固定 metadata buffer 的重复使用。
+`test_pair_startup.py` 检查 `P_i/D_i` 的 store 端口及 BM rank 映射、启动参数和失败清理。
+生产 BM 启动入口位于 `MempoolKVManager.initialize_rank_pair()`；01 gate 保留原测试
+初始化与控制流程，其通过记录不能替代新入口在真实 16 对 worker 中的验收。
 
 ## NPU 前置检查
 

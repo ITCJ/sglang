@@ -10,6 +10,7 @@ PD 控制协议、attention 双写、scheduler 和参数接入由后续三部分
 | --- | --- | --- |
 | `config.py` | `MempoolConfig.make_mla_layout()` | 以实际 local layer 数、`kv_lora_rank`、`qk_rope_head_dim` 构造 P/D 布局；固定 16 个 slots，容量默认各 16384。 |
 | `layout.py` | `KVLayout` / `PoolLayout` | 计算逻辑 shape、row/element offset、贡献大小、共同 stride；校验 BF16 和 UniDexCopy 范围。 |
+| `manager.py` | `MempoolKVManager.initialize_rank_pair()` | 将 TP rank `i` 映射到 P 的 `base_port+i` store，设置 P/D 的 BM rank 0/1，启动 BM 并 join pool。 |
 | `manager.py` | `MempoolKVManager.create/join/view/close()` | 拥有一个双 rank BM handle，验证映射，提供 view，并在 drain 后销毁。 |
 | `manager.py` | `MempoolKVView` | 提供一个 layer 的逻辑 tensor、元素地址和同步 setup 写入；持有 manager 引用。 |
 | `offload.py` | `MempoolWriteInputs` / `MempoolKVOffload.write()` | 使用固定 device metadata，把 temporary KV 通过 UniDexCopy 直接写入本侧 BM。 |
@@ -21,10 +22,17 @@ PD 控制协议、attention 双写、scheduler 和参数接入由后续三部分
 
 ## 生命周期与写入约定
 
-1. 调用方先完成进程级 MF/BM 初始化。manager 不调用全局 initialize/uninitialize，
-   后续需由服务协调 BM 与现有 TransferEngine 的共同生命周期。
-2. 创建本进程对应的 pool rank：P 为 0，D 为 1。`join()` 检查两侧 GVA stride、
-   每 layer 与贡献末尾的连续 device mapping；完成前 view 不返回可用地址。
+1. 调用方先完成进程级 `mf.initialize()`，并负责在现有 TransferEngine 停止后统一
+   `mf.uninitialize()`；manager 不关闭这个共享 MF 环境。
+2. 每个 TP worker 进程只负责一对 P_i/D_i。`initialize_rank_pair()` 检查 `i` 在
+   `[0, 16)`，P 用 BM rank 0 启动 `tcp://P_host:base_port+i` 的 store，D 用 BM rank 1
+   连接同一 URL。它拒绝由本 manager 在进程内重复启动第二对 BM pool，初始化 BM、
+   创建 handle、join 并检查两侧映射；失败时清理本次创建的 BM 状态。成功返回的
+   manager 在 `close(drain)` 后释放它负责的 BM context。低级 `create()/join()`
+   仍由调用方负责 BM 初始化/退出。
+   MF 1.1 不提供可靠的 Python API 检查外部代码是否已初始化 BM，调用方须保证此前
+   没有其他 BM context。这一步只确定 BM store 与两侧局部 rank；后续控制协议还须
+   核对 P_i/D_i 的实际身份。
 3. `view(rank, layer)` 可引用两侧 KV；运行时写入仅允许本侧 view。
    `write_rows()` 使用同步 BM SDK copy，只用于捕图外的 setup。
 4. `MempoolWriteInputs(rows, device)` 的 slot/position 初始为 -1、valid 为 false。
@@ -44,6 +52,9 @@ PD 控制协议、attention 双写、scheduler 和参数接入由后续三部分
 ## 检查与当前边界
 
 CPU 行为测试放在仓库根目录 `ascend-mempool-test/tests/unit/`，见该目录 README。
+`test_pair_startup.py` 使用 BM SDK boundary fake 检查 16 对端口、BM rank、错误参数与
+失败清理。它不代表 16 对真实 BM 会话已在服务中启动；第④部分接入时仍需用户运行
+NPU 测试。
 独立测试通过自己的 package path 加载本目录模块，绕过 `sglang/__init__.py`，
 无需安装 SGLang 或启动 server；01 的 `pool` import 保留兼容入口。
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import math
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -47,12 +48,15 @@ class BMHandle(Protocol):
 
 
 class MempoolKVManager:
-    """BM must be initialized by the caller; this manager owns one joined pool."""
+    """Own one BM pool and optionally its process-wide BM rank-pair context."""
+
+    _rank_pair_lock = threading.Lock()
+    _rank_pair_active = False
 
     def __init__(
         self, layout: PoolLayout, rank: int, handle: BMHandle, bm_module: Any
     ) -> None:
-        """Own an unjoined handle; the caller owns process-wide MF/BM setup."""
+        """Own an unjoined handle; direct create callers own MF/BM initialization."""
         layout.layout_for_rank(rank)
         self.layout = layout
         self.rank = rank
@@ -61,6 +65,7 @@ class MempoolKVManager:
         self._bases: dict[int, tuple[int, int]] = {}
         self._joined = False
         self._closed = False
+        self._owns_bm_context = False
 
     @classmethod
     def create(
@@ -85,6 +90,83 @@ class MempoolKVManager:
         if handle is None:
             raise RuntimeError("BM create2 returned no handle")
         return cls(layout, rank, handle, bm_module)
+
+    @classmethod
+    def initialize_rank_pair(
+        cls,
+        *,
+        layout: PoolLayout,
+        tp_rank: int,
+        role: str,
+        store_host: str,
+        base_port: int,
+        device_id: int,
+        nic_url: str,
+        timeout: float = 120.0,
+        pool_id: int = 0,
+        bm_module: Any = None,
+    ) -> MempoolKVManager:
+        """Start this worker's two-rank BM session and join its mapped KV pool.
+
+        P_i starts the store at base_port+i as BM rank 0; D_i connects to the
+        same store as rank 1. The caller initializes process-wide MF before
+        this call and keeps it alive for any TransferEngine users. One TP
+        worker process owns only one BM rank-pair context in this demo.
+        """
+        if type(tp_rank) is not int or not 0 <= tp_rank < 16:
+            raise ValueError("tp_rank must be an integer in [0, 16)")
+        if role not in ("prefill", "decode"):
+            raise ValueError("role must be 'prefill' or 'decode'")
+        if type(base_port) is not int or not 1 <= base_port <= 65535 - 15:
+            raise ValueError("base_port must leave 16 consecutive TCP ports available")
+        if type(device_id) is not int or device_id < 0:
+            raise ValueError("device_id must be a nonnegative integer")
+        if type(pool_id) is not int or not 0 <= pool_id <= 63:
+            raise ValueError("pool_id must be an integer in [0, 63]")
+        if not isinstance(store_host, str) or not store_host.strip():
+            raise ValueError("store_host must be a nonempty P host address")
+        if not isinstance(nic_url, str) or not nic_url.strip():
+            raise ValueError("nic_url must be a nonempty MF NIC URL")
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("mapping timeout must be finite and positive")
+        if layout.prompt.slots != 16:
+            raise ValueError("rank-pair startup requires 16 physical KV slots")
+
+        rank = 0 if role == "prefill" else 1
+        if bm_module is None:
+            bm_module = importlib.import_module("memfabric_hybrid").bm
+        with cls._rank_pair_lock:
+            if cls._rank_pair_active:
+                raise RuntimeError("This worker already owns a BM rank pair")
+            config = bm_module.BmConfig()
+            config.auto_ranking = False
+            config.rank_id = rank
+            config.start_store = rank == 0
+            config.init_timeout = config.create_timeout = config.operation_timeout = (
+                math.ceil(timeout)
+            )
+            config.set_nic(nic_url)
+            store_url = f"tcp://{store_host}:{base_port + tp_rank}"
+            ret = bm_module.initialize(store_url, 2, device_id, config)
+            if ret != 0:
+                raise RuntimeError(f"BM initialize failed for {store_url}: {ret}")
+
+            manager = None
+            try:
+                if bm_module.bm_rank_id() != rank:
+                    raise RuntimeError("BM initialized with an unexpected rank ID")
+                manager = cls.create(layout, rank, pool_id, bm_module)
+                manager.join(timeout)
+            except Exception:
+                try:
+                    if manager is not None:
+                        manager.close(drain=lambda: None)
+                finally:
+                    bm_module.uninitialize()
+                raise
+            manager._owns_bm_context = True
+            cls._rank_pair_active = True
+            return manager
 
     def join(self, timeout: float = 120.0) -> None:
         """Join and publish addresses only after both ranks' mappings are valid."""
@@ -121,6 +203,8 @@ class MempoolKVManager:
         if gvas[1] - gvas[0] != self.layout.rank_stride_bytes:
             raise RuntimeError("BM GVA rank stride differs from the common maximum")
         bases = {}
+        # Sample each layer's first/last byte and the allocation end to check
+        # that their device addresses equal device_va + offset.
         for rank, gva in enumerate(gvas):
             device_va = self._handle.gva_to_va(gva, self._bm.BmMemType.LOCAL_DEVICE)
             if not device_va:
@@ -182,7 +266,7 @@ class MempoolKVManager:
             raise RuntimeError(f"BM write to {gva:#x} failed: {ret}")
 
     def close(self, drain: Callable[[], None]) -> None:
-        """Drain before leaving and destroying; failed drain keeps the pool live."""
+        """Drain before destroying the pool and any BM context started here."""
         if self._closed:
             return
         drain()
@@ -192,6 +276,10 @@ class MempoolKVManager:
                 raise RuntimeError(f"BM leave failed: {ret}")
         self._handle.destroy()
         self._closed = True
+        if self._owns_bm_context:
+            with type(self)._rank_pair_lock:
+                self._bm.uninitialize()
+                type(self)._rank_pair_active = False
 
 
 @dataclass(frozen=True)

@@ -6,6 +6,7 @@ from typing import Any
 UINT32_MAX = (1 << 32) - 1
 MAX_ROW_BYTES = 32 * 1024
 GIB = 1 << 30
+_ELEMENT_BYTES_BY_DTYPE = {"bfloat16": 2}
 
 
 def positive_int(name: str, value: int) -> None:
@@ -35,7 +36,7 @@ class KVLayout:
         """Validate dimensions and the current UniDexCopy per-layer limits."""
         for name in ("layers", "slots", "tokens", "heads", "dim"):
             positive_int(name, getattr(self, name))
-        if self.dtype != "bfloat16":
+        if self.dtype not in _ELEMENT_BYTES_BY_DTYPE:
             raise ValueError("this demo supports only bfloat16 KV")
         if self.row_bytes > MAX_ROW_BYTES:
             raise ValueError("KV row exceeds UniDexCopy's 32 KiB limit")
@@ -48,9 +49,14 @@ class KVLayout:
         return self.slots, self.tokens, self.heads, self.dim
 
     @property
+    def element_bytes(self) -> int:
+        """Return the byte width of the layout's validated KV dtype."""
+        return _ELEMENT_BYTES_BY_DTYPE[self.dtype]
+
+    @property
     def row_bytes(self) -> int:
         """Return the compact KV bytes belonging to one token."""
-        return self.heads * self.dim * 2
+        return self.heads * self.dim * self.element_bytes
 
     @property
     def layer_bytes(self) -> int:
@@ -78,7 +84,7 @@ class KVLayout:
         return (
             layer * self.layer_bytes
             + self.row_index(slot, token) * self.row_bytes
-            + (head * self.dim + column) * 2
+            + (head * self.dim + column) * self.element_bytes
         )
 
 
