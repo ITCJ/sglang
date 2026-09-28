@@ -303,19 +303,30 @@ class SparseKVCacheManager:
 
     def _report_request_cache_stats(self, req: Req, req_pool_idx: int) -> None:
         stats = self._cache_stats[:, req_pool_idx, :].cpu().tolist()
+        hit_count = sum(layer_stat[0] for layer_stat in stats)
+        miss_count = sum(layer_stat[1] for layer_stat in stats)
+        total_count = hit_count + miss_count
+        hit_rate = hit_count / total_count if total_count else 0.0
         layer_stats = []
-        for layer_idx, (hit_count, miss_count) in enumerate(stats):
-            total_count = hit_count + miss_count
-            hit_rate = hit_count / total_count if total_count else 0.0
+        for layer_idx, (layer_hit_count, layer_miss_count) in enumerate(stats):
+            layer_total_count = layer_hit_count + layer_miss_count
+            layer_hit_rate = (
+                layer_hit_count / layer_total_count if layer_total_count else 0.0
+            )
             layer_stats.append(
                 f"  layer {self.start_layer + layer_idx}: "
-                f"hit={hit_count}, miss={miss_count}, hit_rate={hit_rate:.2%}"
+                f"hit={layer_hit_count}, miss={layer_miss_count}, "
+                f"hit_rate={layer_hit_rate:.2%}"
             )
 
         logger.info(
-            "Sparse KV cache stats for request rid=%s, req_pool_idx=%d:\n%s",
+            "Sparse KV cache stats for request rid=%s, req_pool_idx=%d: "
+            "hit=%d, miss=%d, hit_rate=%.2f%%\n%s",
             getattr(req, "rid", "unknown"),
             req_pool_idx,
+            hit_count,
+            miss_count,
+            hit_rate * 100,
             "\n".join(layer_stats),
         )
         self.reset_requests([req_pool_idx])
