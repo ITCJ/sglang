@@ -121,7 +121,8 @@ def worker(args):
             result["versions"]["memfabric_hybrid"] = metadata.version("memfabric-hybrid")
         except metadata.PackageNotFoundError:
             result["versions"]["memfabric_hybrid"] = getattr(mf, "__version__", "unknown")
-        result.update(include_unidex=args.include_unidex, block_dim=args.block_dim)
+        result.update(include_unidex=args.include_unidex, block_dim=args.block_dim,
+                      row_sweep=args.row_sweep)
         if args.include_unidex:
             result.update(transport="BM SDMA and UNIDEX mapped Host",
                           copy_type="BM GH2L/G2G and UNIDEX src_ptr",
@@ -163,7 +164,8 @@ def worker(args):
              tokens=args.tokens, layout=args.layout,
              preflight_validate=args.preflight_validate,
              include_unidex=args.include_unidex, unidex_only=args.unidex_only,
-             unidex_check_only=args.unidex_check_only,
+             unidex_check_only=args.unidex_check_only, row_sweep=args.row_sweep,
+             validate=args.validate,
              block_dim=args.block_dim)
         hello = receive(reader, "HELLO")
         if hello.get("protocol") != PROTOCOL or hello.get("rank") != 1 - rank:
@@ -173,6 +175,8 @@ def worker(args):
         if (hello.get("include_unidex", False) != args.include_unidex
                 or hello.get("unidex_only", False) != args.unidex_only
                 or hello.get("unidex_check_only", False) != args.unidex_check_only
+                or hello.get("row_sweep", False) != args.row_sweep
+                or (args.row_sweep and hello.get("validate", False) != args.validate)
                 or hello.get("block_dim", 24) != args.block_dim):
             raise RuntimeError("both ends must use the same UNIDEX selection and block_dim")
         if args.performance and (hello.get("tokens") != args.tokens
@@ -216,7 +220,8 @@ def worker(args):
             gva = handle.peer_rank_ptr(0, bm.BmMemType.HOST)
             if not gva:
                 raise RuntimeError("source Host GVA is null")
-            prepared_pages = ((args.tokens // PAGE_SIZE if args.tokens is not None else MAX_PERFORMANCE_PAGES)
+            prepared_pages = ((32 if args.row_sweep and args.unidex_check_only else
+                               args.tokens // PAGE_SIZE if args.tokens is not None else MAX_PERFORMANCE_PAGES)
                               if args.performance else 1)
             for page in range(prepared_pages):
                 payload = bytearray(split_page_payload(page))
@@ -384,6 +389,8 @@ def main():
                         help="measure only the two BM UNIDEX paths, excluding BM copy baselines")
     parser.add_argument("--unidex-check-only", action="store_true",
                         help="validate only 128 contiguous and 4K scattered BM UNIDEX cases")
+    parser.add_argument("--row-sweep", action="store_true",
+                        help="BM UNIDEX 128K row-token sweep; with --unidex-check-only validate small cases")
     parser.add_argument("--block-dim", type=int, choices=(24, 48), default=24)
     parser.add_argument("--tokens", type=int, help="run one performance size instead of the full matrix")
     parser.add_argument("--layout", choices=("contiguous", "scattered"), default="scattered",
@@ -403,6 +410,9 @@ def main():
         args.unidex_only = True
     if args.unidex_only:
         args.include_unidex = True
+    if args.row_sweep and (not args.performance or not args.unidex_only
+                           or args.tokens is not None or args.preflight_validate):
+        parser.error("--row-sweep requires --performance --unidex-only without --tokens/--preflight-validate")
     if args.validate and args.preflight_validate:
         parser.error("--validate and --preflight-validate are mutually exclusive")
     if args.preflight_validate and (not args.performance or args.tokens is not None):

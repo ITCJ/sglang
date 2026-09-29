@@ -17,6 +17,7 @@ SYSV = "L2-L1_unidex_sysv_registered"
 BM_PATHS = {"L2-L1_UNIDEX_bm_host", "L3-L1_UNIDEX_bm_remote_host"}
 CAPACITIES = (1024, 4096, 16384, 65536, 131072)
 LAYOUTS = ("contiguous", "scattered")
+ROW_TOKENS = (1, 2, 4, 8, 16, 32, 64, 128)
 
 
 def write_json(path, data):
@@ -165,17 +166,64 @@ def collect(directory, check_only, skip_sysv=False):
                              row["validation_enabled"], row["correct"]))
 
 
+def collect_row_sweep(directory, check_only, validate):
+    bm = json.loads((directory / "bm/summary.json").read_text())
+    bm_status = json.loads((directory / "bm/status.json").read_text())
+    if bm_status.get("status") != "ok" or bm.get("experiment") != "unidex_row_sweep":
+        raise RuntimeError("BM row sweep did not complete")
+    rows = bm["cases"]
+    sizes = ((128, "contiguous"), (4096, "scattered")) if check_only else (
+        (131072, "contiguous"), (131072, "scattered"))
+    expected = {(tokens, layout, row_tokens, path)
+                for tokens, layout in sizes for row_tokens in ROW_TOKENS for path in BM_PATHS}
+    actual = [(row["tokens"], row["layout"], row["row_tokens"], row["path"]) for row in rows]
+    if len(actual) != len(expected) or set(actual) != expected:
+        raise RuntimeError("incomplete BM row-token sweep matrix")
+    for row in rows:
+        supported = row["row_tokens"] <= 32
+        if (row["k_row_bytes"] != row["row_tokens"] * 1024
+                or row["rope_row_bytes"] != row["row_tokens"] * 128):
+            raise RuntimeError("row byte metadata does not match requested tokens")
+        if supported:
+            if (row["status"] != "ok" or row["validation_enabled"] is not (check_only or validate)
+                    or row["correct"] is not (True if check_only or validate else None)
+                    or len(row["samples_s"]) != (1 if check_only else row["repeats"])):
+                raise RuntimeError("invalid supported row-token result")
+        elif (row["status"] != "unsupported" or not row.get("reason")
+              or row["validation_enabled"] is not False or row["correct"] is not None):
+            raise RuntimeError("64/128-token row must be recorded as unsupported")
+    write_json(directory / "summary.json", dict(
+        status="ok", mode="correctness" if check_only else "performance",
+        experiment="unidex_row_sweep", measurement_protocol="whole_request_v2",
+        selected_paths=sorted(BM_PATHS), skipped_paths=[SYSV], cases=rows))
+    with (directory / "summary.csv").open("w") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(("tokens", "layout", "path", "row_tokens", "k_row_bytes",
+                         "rope_row_bytes", "status", "reason", "median_ms", "p95_ms",
+                         "effective_gbps", "validation_enabled", "correct", "launch_count"))
+        for row in rows:
+            writer.writerow((row["tokens"], row["layout"], row["path"], row["row_tokens"],
+                             row["k_row_bytes"], row["rope_row_bytes"], row["status"],
+                             row.get("reason", ""),
+                             row["median_s"] * 1000 if row["status"] == "ok" else "",
+                             row["p95_s"] * 1000 if row["status"] == "ok" else "",
+                             row.get("effective_gbps", ""), row["validation_enabled"],
+                             row["correct"], row.get("launch_count", "")))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("role", choices=("source", "client"))
     parser.add_argument("local_ip")
     parser.add_argument("source_ip", nargs="?")
     parser.add_argument("--skip-sysv", action="store_true", help="run only BM local and remote UNIDEX; explicitly record SysV as skipped")
+    parser.add_argument("--row-sweep", action="store_true", help="scan real 1..128-token rows; 128K performance, BM only")
+    parser.add_argument("--validate", action="store_true", help="validate each row-sweep performance sample (default: off)")
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--block-dim", type=int, choices=(24, 48), default=24)
     parser.add_argument("--image-digest", default="unknown", help="optional environment annotation")
     parser.add_argument("--kernel-source-dir", type=Path, help="optional source provenance; uses the installed kernel package")
-    parser.add_argument("--results-dir", type=Path, default=HERE / "results/three_paths")
+    parser.add_argument("--results-dir", type=Path)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check-only", action="store_true", help="validate small cases only; no performance matrix")
     mode.add_argument("--preflight-validate", action="store_true", help="validate small cases before each backend's performance matrix")
@@ -184,6 +232,13 @@ def main():
     parser.add_argument("--bm-timeout", type=int, default=3600, help="seconds for the BM worker including peer wait")
     parser.add_argument("--sysv-timeout", type=int, default=1800, help="seconds per SysV performance case")
     args = parser.parse_args()
+    if args.row_sweep:
+        if not args.skip_sysv or args.preflight_validate:
+            parser.error("--row-sweep requires --skip-sysv and excludes --preflight-validate")
+    elif args.validate:
+        parser.error("--validate is currently available only with --row-sweep")
+    if args.validate and args.check_only:
+        parser.error("--check-only already validates; omit --validate")
     if args.role == "client" and (not args.source_ip or args.source_ip == args.local_ip):
         parser.error("client requires its IP and a distinct source IP")
     if args.role == "source" and args.source_ip:
@@ -192,12 +247,14 @@ def main():
         parser.error("invalid device, warmup, repeats or timeout")
     if args.kernel_source_dir is not None and not args.kernel_source_dir.is_dir():
         parser.error("kernel source directory does not exist")
-    directory = args.results_dir.resolve() / (datetime.now().strftime("%y%m%d_%H%M%S_%f") + "-" + args.role)
+    results_dir = args.results_dir or HERE / ("results/row_sweep" if args.row_sweep else "results/three_paths")
+    directory = results_dir.resolve() / (datetime.now().strftime("%y%m%d_%H%M%S_%f") + "-" + args.role)
     directory.mkdir(parents=True, exist_ok=False)
     print(f"RUN_DIR={directory}", flush=True)
     status = dict(status="running", role=args.role, actual_command=[sys.executable, *sys.argv],
                   working_directory=os.getcwd(), local_ip=args.local_ip, source_ip=args.source_ip,
                   check_only=args.check_only, preflight_validate=args.preflight_validate,
+                  row_sweep=args.row_sweep, validation_enabled=args.check_only or args.validate,
                   skipped_paths=[SYSV] if args.skip_sysv else [],
                   stage="environment", exit_code=None)
     write_json(directory / "status.json", status)
@@ -219,6 +276,10 @@ def main():
                     "--block-dim", str(args.block_dim), "--warmup", str(args.warmup),
                     "--repeats", str(args.repeats), "--timeout", str(args.bm_timeout),
                     "--run-dir", str(directory / "bm")]
+        if args.row_sweep:
+            command.append("--row-sweep")
+        if args.validate:
+            command.append("--validate")
         if args.check_only:
             command.append("--unidex-check-only")
         elif args.preflight_validate:
@@ -239,10 +300,15 @@ def main():
             status["stage"] = "collect"
             if args.skip_sysv:
                 print("SYSV_SKIPPED: requested by --skip-sysv", flush=True)
-            collect(directory, args.check_only, args.skip_sysv)
+            if args.row_sweep:
+                collect_row_sweep(directory, args.check_only, args.validate)
+            else:
+                collect(directory, args.check_only, args.skip_sysv)
         status.update(status="ok", stage="complete", exit_code=0)
         write_json(directory / "status.json", status)
-        print("UNIDEX_SOURCE_DONE" if args.role == "source" else
+        print("UNIDEX_ROW_SWEEP_CHECK_OK" if args.role == "client" and args.row_sweep and args.check_only else
+              "UNIDEX_ROW_SWEEP_OK" if args.role == "client" and args.row_sweep else
+              "UNIDEX_SOURCE_DONE" if args.role == "source" else
               "UNIDEX_BM_CHECK_OK" if args.skip_sysv and args.check_only else
               "UNIDEX_BM_OK" if args.skip_sysv else
               "UNIDEX_CHECK_OK" if args.check_only else "UNIDEX_ALL_OK", flush=True)

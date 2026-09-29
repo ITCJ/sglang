@@ -2,12 +2,15 @@
 
 import mmap
 import time
+from math import gcd
 
 from check import K_DIM, LAYERS, PAGE_BYTES, PAGE_SIZE, ROPE_DIM
 from unidex_engine import UINT32_MAX, configure_soc
 
 
 PATHS = {"H": "L2-L1_UNIDEX_bm_host", "I": "L3-L1_UNIDEX_bm_remote_host"}
+ROW_TOKENS = (1, 2, 4, 8, 16, 32, 64, 128)
+MAX_ROW_BYTES = 32 * 1024
 K_PAGE = LAYERS * PAGE_SIZE * K_DIM * 2
 ROPE_PAGE = PAGE_BYTES - K_PAGE
 MAX_PAGES = 131072 // PAGE_SIZE
@@ -26,7 +29,11 @@ def wait_device_mapping(handle, bm, gva, timeout, label):
 class BmUnidexPlan:
     def __init__(self, handle, bm, torch, source_gva, local_gva, batch,
                  physical_slots, device_k, device_rope, block_dim, timeout,
-                 owner_registry):
+                 owner_registry, row_tokens=1):
+        if row_tokens not in ROW_TOKENS or PAGE_SIZE % row_tokens:
+            raise ValueError("row_tokens must be a power-of-two divisor of one page")
+        if row_tokens * K_DIM * 2 > MAX_ROW_BYTES:
+            raise ValueError(f"K row {row_tokens * K_DIM * 2} B exceeds UNIDEX 32 KiB limit")
         owner_registry.append(self)
         self.device_owners = (device_k, device_rope)
         configure_soc()
@@ -35,6 +42,7 @@ class BmUnidexPlan:
         self.copy = unidex_copy_inplace
         self.torch = torch
         self.block_dim = block_dim
+        self.row_tokens = row_tokens
         self.plans = {"H": [], "I": []}
         self.keepalive = []
         self.metadata = {}
@@ -77,7 +85,9 @@ class BmUnidexPlan:
             source_metadata_virtual_bytes_by_path=self.metadata_reserved_bytes,
             source_metadata_page_touch="no explicit CPU read/write of metadata payload; physical page faults not measured",
             index_preparation="fixed request mapping, uploaded before timed samples",
-            block_dim=block_dim,
+            block_dim=block_dim, row_tokens=row_tokens,
+            k_row_bytes=row_tokens * K_DIM * 2,
+            rope_row_bytes=row_tokens * ROPE_DIM * 2,
         )
 
     def _index_bytes(self, owners):
@@ -87,37 +97,42 @@ class BmUnidexPlan:
     def _append(self, code, source_base, selected, first_page, page_stride,
                 component_offset, dim, destination, physical_slots):
         torch = self.torch
-        row_bytes = dim * 2
-        extent = page_stride * (max(page for page, _ in selected) - first_page + 1)
+        row_bytes = dim * 2 * self.row_tokens
+        rows_per_page = PAGE_SIZE // self.row_tokens
+        extent = (page_stride * (max(page for page, _ in selected) - first_page)
+                  + component_offset + LAYERS * PAGE_SIZE * dim * 2)
         if extent > UINT32_MAX or extent % row_bytes:
             raise RuntimeError("source view exceeds uint32 extent or row alignment")
         metadata_mapping = mmap.mmap(-1, extent, access=mmap.ACCESS_WRITE)
         try:
             source = torch.frombuffer(metadata_mapping, dtype=torch.bfloat16).view(
-                extent // row_bytes, 1, dim)
+                extent // row_bytes, 1, self.row_tokens, dim)
         except BaseException:
             metadata_mapping.close()
             raise
         self.keepalive.extend((metadata_mapping, source))
         self.metadata_reserved_bytes[code] += extent
-        dst_rows = [slot * PAGE_SIZE + token for _, slot in selected for token in range(PAGE_SIZE)]
-        if len(set(dst_rows)) != len(dst_rows) or max(dst_rows) >= physical_slots * PAGE_SIZE:
+        dst_rows = [slot * rows_per_page + row for _, slot in selected
+                    for row in range(rows_per_page)]
+        if len(set(dst_rows)) != len(dst_rows) or max(dst_rows) >= physical_slots * rows_per_page:
             raise RuntimeError("UNIDEX destination rows are not unique and in range")
         dst_index = torch.tensor(dst_rows, dtype=torch.int64, device="npu")
         mask = torch.ones(len(dst_rows), dtype=torch.bool, device="npu")
         self.keepalive.extend((dst_index, mask))
         for layer in range(LAYERS):
             src_rows = [((page - first_page) * page_stride + component_offset
-                         + layer * PAGE_SIZE * row_bytes) // row_bytes + token
-                        for page, _ in selected for token in range(PAGE_SIZE)]
+                         + layer * rows_per_page * row_bytes) // row_bytes + row
+                        for page, _ in selected for row in range(rows_per_page)]
             if (min(src_rows) < 0 or max(src_rows) >= extent // row_bytes
                     or any((page_stride * (page - first_page) + component_offset
-                            + layer * PAGE_SIZE * row_bytes) % row_bytes
+                            + layer * rows_per_page * row_bytes) % row_bytes
                            for page, _ in selected)):
                 raise RuntimeError("UNIDEX source row outside mapped view")
             src_index = torch.tensor(src_rows, dtype=torch.int64, device="npu")
             self.keepalive.append(src_index)
-            self.plans[code].append((source, destination[layer], src_index, dst_index, mask, source_base))
+            target = destination[layer].view(physical_slots, rows_per_page, 1,
+                                             self.row_tokens, dim)
+            self.plans[code].append((source, target, src_index, dst_index, mask, source_base))
 
     def _build_remote(self, batch, physical_slots, device_k, device_rope, pool_bytes):
         # Each remote physical page contains all K layers followed by all RoPE layers.
@@ -128,13 +143,18 @@ class BmUnidexPlan:
             if (source_page + 1) * PAGE_BYTES > pool_bytes:
                 raise RuntimeError("remote page outside BM Host pool")
             groups.setdefault(source_page // chunk_pages, []).append((source_page, slot))
-        for group, selected in groups.items():
-            first = group * chunk_pages
-            base = self.remote_lva + first * PAGE_BYTES
-            self._append("I", base, selected, first, PAGE_BYTES, 0, K_DIM,
-                         device_k, physical_slots)
-            self._append("I", base, selected, first, PAGE_BYTES, K_PAGE, ROPE_DIM,
-                         device_rope, physical_slots)
+        for pages in groups.values():
+            for dim, component_offset, destination in ((K_DIM, 0, device_k),
+                                                        (ROPE_DIM, K_PAGE, device_rope)):
+                row_bytes = self.row_tokens * dim * 2
+                period = row_bytes // gcd(PAGE_BYTES, row_bytes)
+                aligned_groups = {}
+                for source_page, slot in pages:
+                    aligned_groups.setdefault(source_page % period, []).append((source_page, slot))
+                for selected in aligned_groups.values():
+                    first = selected[0][0]
+                    self._append("I", self.remote_lva + first * PAGE_BYTES, selected, first,
+                                 PAGE_BYTES, component_offset, dim, destination, physical_slots)
 
     def _build_local(self, batch, physical_slots, device_k, device_rope):
         # The client's BM Host contribution has separate packed K and RoPE planes.

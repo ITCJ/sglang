@@ -1,5 +1,29 @@
 # 三条 UNIDEX 路径统一入口
 
+## 128K BM UNIDEX row-token 扫描
+
+`run.py --row-sweep --skip-sysv` 只测 BM local L2→L1 与 BM remote L3→L1，不测 SysV 或旧 BM copy。性能固定 131072 tokens，分别使用 contiguous/scattered 原 page 映射；在原 61 层 BF16 分离 K/RoPE、128-token page 和最终 layer-first L1 上，把每个 UNIDEX row 的 token 数设为 1、2、4、8、16、32、64、128。K/RoPE row 分别为 `1024/128 × row_tokens` 字节。官方 kernel 单 row 上限 32768B，因此 64/128-token K row 不支持：CSV/JSON 保留 `unsupported`、实际 row 字节数和原因；**不会切成小 row 冒充该档**。完整 64/128-token K row 需要修改 kernel/host op 限制并重新验证，当前命令不启动它们。32-token K row 恰为 32768B；远端源页按地址对齐余数分组，索引只指向真实物理页，仍是一整请求计时。
+
+以下是交付 commit 发布后供远端手动执行的完整小实验；当前本地代码尚未提交/push，不应在旧远端 checkout 上直接照抄运行。停止两端模型及占用目标 NPU 的服务，使用 A3 数据面 IP 和具备 UNIDEX、MemFabric `gva_to_va(..., LOCAL_DEVICE)` 的环境。两端先 `cd <SGLANG_REPO>`、`git pull --ff-only`、`git log -1 --oneline`，核对主 Agent 随后提供的真实 `<DELIVERY_COMMIT>`。源端先启动并等待 `FR`，再启动客户端。先独立校验，再性能；两次命令都需在两端分别重新启动：
+
+```sh
+# 源端：独立小规模正确性校验
+python3 workspace/unidex_copy_bench/run.py source <SOURCE_IP> --row-sweep --skip-sysv --check-only
+# 客户端：看到源端 FR 后运行
+python3 workspace/unidex_copy_bench/run.py client <CLIENT_IP> <SOURCE_IP> --row-sweep --skip-sysv --check-only
+```
+
+客户端输出 `UNIDEX_ROW_SWEEP_CHECK_OK`、源端输出 `UNIDEX_SOURCE_DONE` 后，重新在源端启动性能命令，看到 `FR` 再启动客户端：
+
+```sh
+# 源端：128K 性能
+python3 workspace/unidex_copy_bench/run.py source <SOURCE_IP> --row-sweep --skip-sysv
+# 客户端：128K 性能
+python3 workspace/unidex_copy_bench/run.py client <CLIENT_IP> <SOURCE_IP> --row-sweep --skip-sysv
+```
+
+默认 `block_dim=24`、warmup=2/repeats=10；两端可同时显式追加 `--block-dim 48`，该参数不是本扫描轴。性能包括每整请求所有 launch 和一次完成同步，固定索引/源准备在计时外；默认 `validation_enabled=false, correct=null`，仅显式 `--validate` 才在每个性能样本后校验。`--check-only` 对 128 contiguous 与 4K scattered 的 1–32-token 行逐字节校验 KV 和 guard；64/128 记为 unsupported，不会声称校验通过。性能 CSV 有 24 条 `ok` 和 8 条 `unsupported`，含 `row_tokens/k_row_bytes/rope_row_bytes/status/reason/launch_count`；JSON 保留原始 samples 和准备耗时。成功为客户端 `UNIDEX_ROW_SWEEP_OK`、源端 `UNIDEX_SOURCE_DONE`。失败停止后续步骤，只查看 `tail -n 80 <RUN_DIR>/bm/native.log` 并回传两端 RUN_DIR 的根 `status.json`、`bm/status.json`、`bm/summary.json`、`summary.csv` 和日志末尾。进程正常退出会同步并释放 BM；异常时保留日志与状态，不批量删除共享内存。测试结束退出容器，按实际容器名手动停止本实验容器；源端无需部署 Store 服务。
+
 当前推荐入口是 `run.py`：只测 SysV L2→L1、BM L2→L1、BM L3→L1，**不测原四条 BM copy 对照**。两端运行同一个脚本，源端提供 BM Host 内存，客户端先测两条 BM UNIDEX，再等待 BM 子进程完全退出后自动测 SysV。BM 本地源仍通过计时外 G2G 准备；这是数据初始化，不是新增性能结果。三层布局、五档规模、两种映射、完整请求计时均保持原定义。
 
 默认无数据校验，含 smoke；默认 warmup=2/repeats=10。`--preflight-validate` 显式为各后端先做 128 contiguous、4K scattered 校验，再运行该后端的无校验矩阵；`--check-only` 是独立正确性模式，三条路径均校验 128 contiguous 和 4K scattered，不进入性能矩阵。两种模式互斥。首次环境请先用 `--check-only`，通过后再测性能。

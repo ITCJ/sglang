@@ -18,6 +18,10 @@
 
 ## 当前传输实验要求
 
+### UNIDEX BM row-token 诊断（新增）
+
+在已完成的 BM local/remote UNIDEX 结果基础上，固定 128K tokens、61 层 BF16 MLA、原 K/RoPE 分离布局及连续/散页映射，只改变每个 kernel row 包含的 token 数（1、2、4、8、16、32、64、128）。两条 BM 路径使用同一统一入口；SysV 和旧 BM copy 不参加本轮。先独立校验 128 contiguous/4K scattered 支持的档位，再测 128K 整请求，性能默认不校验；原始样本、median/p95、有效字节、row 字节数、launch 数与状态均落盘。上游单 row 上限 32 KiB，64/128-token K row 明确记为 unsupported，不能拆成较小 row 后同名报告；完整两档须待 kernel 变更。本轮新增实现仅是诊断准备，目标机结果尚未回传；完整双端交接见 [UNIDEX README](unidex_copy_bench/README.md#128k-bm-unidex-row-token-扫描)。
+
 两套旧性能脚本均改为完整请求提交：不设置固定页数拆批；每个样本从完整请求开始到完成直接计时，预热也以完整请求为单位，不再累加独立批次样本。底层库内部的分片不由脚本干预。
 
 - Mooncake 套件：本地 L2→L1、L3→L2→L1、L3→L2；不再测 staging。
