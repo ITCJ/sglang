@@ -124,13 +124,21 @@ class TestPairStartup(unittest.TestCase):
             {"device_id": -1},
             {"nic_url": ""},
             {"timeout": 0},
-            {"pool_id": 64},
+            {"pool_id": 256},
         ):
             with self.subTest(override=override):
                 sdk = FakePairBM()
                 with self.assertRaises(ValueError):
                     self.start(sdk, **override)
                 self.assertEqual(sdk.init_calls, [])
+
+    def test_gate_pool_ids_are_accepted_by_service_startup(self):
+        """Allow independently verified BM IDs below the TransferEngine range."""
+        for pool_id in (0, 64, 101, 102, 255):
+            with self.subTest(pool_id=pool_id):
+                sdk = FakePairBM()
+                manager = self.start(sdk, pool_id=pool_id)
+                manager.close(drain=lambda: None)
 
     def test_failed_startup_releases_only_resources_it_initialized(self):
         """Do not retain BM state after init, create, or join errors."""

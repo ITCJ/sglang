@@ -82,6 +82,36 @@ handle lifetime。它们不执行 BM 或 NPU kernel，不证明远端读和 Grap
 生产 BM 启动入口位于 `MempoolKVManager.initialize_rank_pair()`；01 gate 保留原测试
 初始化与控制流程，其通过记录不能替代新入口在真实 16 对 worker 中的验收。
 
+## 02 Ascend 控制协议检查
+
+② 的协议与单 rank 状态机可用系统 Python 直接检查，不依赖 `torch` 或 SGLang server：
+
+```bash
+PYTHONPATH=ascend-mempool-test/src python3 -m unittest discover -s ascend-mempool-test/tests/unit -p 'test_pd_*.py' -v
+```
+
+有 `mypy` 时，可对新增运行时模块做严格类型检查：
+
+```bash
+mypy --config-file ascend-mempool-test/pyproject.toml \
+  python/sglang/srt/disaggregation/ascend/mempool_protocol.py \
+  python/sglang/srt/disaggregation/ascend/mempool_control.py
+```
+
+这些测试覆盖 wire 编解码、peer 兼容、acquire/binding、双条件 decode ready、
+`DONE` 后释放、重复消息与取消时的写入排空。还会模拟 PD receive callback：
+早于 control attach 到达的 tagged frame 会按序排队，损坏的 frame 使 mempool 准入报错，
+但普通 PD frame 继续通过；测试也覆盖取消与 binding 确认乱序，以及终态记录回收后
+迟到 `ACQUIRE`/`DONE` 的处理。控制表最多保留 4096 个近期 request 记录，
+旧请求的 D generation 与每个本地 slot 的 retired generation 单独保留以防止重新占用 slot；
+slot proof 把 request、P/D lease 绑定，供记录回收后的重复消息校验。
+`RELEASE_ACK` 确认精确allocation已不再占用P资源，覆盖DONE释放及安全rollback。
+只有实际释放才更新retirement边界，结合session、签名proof和owner检查处理旧DONE；
+不再逐请求永久保存release proof，也没有累计65,536次限制。普通unbound CANCEL不新增ACK往返。
+测试包含连续65,537次释放、rollback记录回收前后确认一致、伪造消息拒绝和新owner隔离。
+这些测试不建立真实 ZMQ 连接或 BM pool。
+真实 16-rank 控制消息、P/D 双写和 Graph 请求路径需待③、④接线后通过 GLM-5.1 服务验证。
+
 ## NPU 前置检查
 
 在两台机器使用同一版本代码和已有的 Ascend 环境，包含 `torch`、`torch_npu`、

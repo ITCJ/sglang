@@ -1,17 +1,25 @@
 import concurrent.futures
 import enum
 import logging
-from typing import List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple
 
 import numpy as np
 import numpy.typing as npt
 
-from sglang.srt.disaggregation.ascend.transfer_engine import AscendTransferEngine
+from sglang.srt.disaggregation.ascend.mempool_control import (
+    MempoolFrameRouter,
+    MempoolPDControl,
+)
+from sglang.srt.disaggregation.ascend.mempool_protocol import (
+    MempoolMessage,
+    encode_message,
+)
 from sglang.srt.disaggregation.ascend.sparse_pd import (
     SparsePDDecodeStagingPool,
     get_sparse_pd_manager,
     is_sparse_pd_decode_enabled,
 )
+from sglang.srt.disaggregation.ascend.transfer_engine import AscendTransferEngine
 from sglang.srt.disaggregation.base.conn import KVPoll, StateType
 from sglang.srt.disaggregation.common.utils import group_concurrent_contiguous
 from sglang.srt.disaggregation.mooncake.conn import (
@@ -48,6 +56,8 @@ class AscendKVManager(MooncakeKVManager):
         is_mla_backend: Optional[bool] = False,
     ):
         self.sparse_pd_decode_staging = None
+        self.mempool_control: Optional[MempoolPDControl] = None
+        self._mempool_frame_router = MempoolFrameRouter()
 
         sparse_kv_manager = get_sparse_pd_manager()
         if is_sparse_pd_decode_enabled(sparse_kv_manager):
@@ -110,6 +120,41 @@ class AscendKVManager(MooncakeKVManager):
             )
 
         super().__init__(args, disaggregation_mode, server_args, is_mla_backend)
+
+    def attach_mempool_control(self, control: MempoolPDControl) -> None:
+        """Attach the mapped pool's request control after PD manager startup."""
+        if self.mempool_control is not None:
+            raise RuntimeError("Ascend mempool control is already attached")
+        parallel = get_parallel()
+        if (
+            control.local.role != self.disaggregation_mode.value
+            or control.local.tp_rank != parallel.tp_rank
+            or control.local.tp_size != parallel.tp_size
+            or control.local.pp_size != parallel.pp_size
+        ):
+            raise ValueError("Ascend mempool control does not match this PD worker")
+        self._mempool_frame_router.attach(control)
+        self.mempool_control = control
+
+    def send_mempool_message(
+        self, endpoint: str, message: MempoolMessage, is_ipv6: bool = False
+    ) -> None:
+        """Send a tagged control frame over the existing cached PD PUSH socket."""
+        if self.mempool_control is None:
+            raise RuntimeError("Ascend mempool control is not attached")
+        self._send_multipart_locked(endpoint, encode_message(message), is_ipv6=is_ipv6)
+
+    def _make_worker_recv(
+        self, socket: Any, timeout_ms: int = 500
+    ) -> Callable[[], Optional[List[bytes]]]:
+        """Route tagged mempool frames through the existing single ZMQ reader."""
+        receive: Callable[[], Optional[List[bytes]]] = super()._make_worker_recv(
+            socket, timeout_ms
+        )
+        wrapped: Callable[[], Optional[List[bytes]]] = (
+            self._mempool_frame_router.wrap_receive(receive)
+        )
+        return wrapped
 
     def _requires_exact_state_index_match(self, st: StateType) -> bool:
         return (

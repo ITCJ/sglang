@@ -121,8 +121,9 @@ class MempoolKVManager:
             raise ValueError("base_port must leave 16 consecutive TCP ports available")
         if type(device_id) is not int or device_id < 0:
             raise ValueError("device_id must be a nonnegative integer")
-        if type(pool_id) is not int or not 0 <= pool_id <= 63:
-            raise ValueError("pool_id must be an integer in [0, 63]")
+        # MF 1.1 TransferEngine entities start at 256; keep BM IDs below them.
+        if type(pool_id) is not int or not 0 <= pool_id < 256:
+            raise ValueError("pool_id must be an integer in [0, 256)")
         if not isinstance(store_host, str) or not store_host.strip():
             raise ValueError("store_host must be a nonempty P host address")
         if not isinstance(nic_url, str) or not nic_url.strip():
