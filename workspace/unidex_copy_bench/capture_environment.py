@@ -49,7 +49,8 @@ def main():
     parser.add_argument("--kernel-source-dir", type=Path)
     args = parser.parse_args()
     versions = {}
-    for package in ("torch", "torch-npu", "sgl-kernel-npu", "wheel", "setuptools", "pybind11", "pip"):
+    for package in ("torch", "torch-npu", "sgl-kernel-npu", "memfabric-hybrid", "mooncake-transfer-engine",
+                    "wheel", "setuptools", "pybind11", "pip"):
         try:
             versions[package] = metadata.version(package)
         except metadata.PackageNotFoundError:
@@ -58,7 +59,12 @@ def main():
     sources = ("workspace/kv_path_bench/kv_transfer_bench.py",
                "workspace/kv_path_bench/unidex_engine.py",
                "workspace/kv_path_bench/performance_suite.py",
-               "workspace/unidex_copy_bench/capture_environment.py")
+               "workspace/unidex_copy_bench/capture_environment.py",
+               "workspace/unidex_copy_bench/run.py",
+               "workspace/unidex_copy_bench/correctness.sh",
+               "workspace/fabric_direct_bench/check.py",
+               "workspace/fabric_direct_bench/performance.py",
+               "workspace/fabric_direct_bench/unidex_bm.py")
     cann_home = Path(os.environ.get("ASCEND_HOME_PATH", "/usr/local/Ascend/ascend-toolkit/latest"))
     if cann_home.name == "set_env.sh":
         cann_home = cann_home.parent

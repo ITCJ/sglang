@@ -1,5 +1,9 @@
 # KV 路径实验
 
+## 当前执行入口：仅三条 UNIDEX
+
+统一使用 [unidex_copy_bench/run.py](unidex_copy_bench/README.md)：源端提供 BM 内存，客户端依次测 BM local→L1、BM remote Host→L1，释放 BM 后测 SysV L2→L1。只输出这三条新增路径，五档 × 两映射共 30 条正式结果，不重跑原四条 BM 对照。默认性能及 smoke 不校验；首次先以同一入口 `--check-only` 做小规模校验，`--preflight-validate` 可选地为各后端增加 128 contiguous/4K scattered 校验后运行性能。所有布局、计时和归因边界保持下述定义；该入口尚待远端验证。
+
 ## 当前补充：UNIDEX / SysV registered Host（2026-09-28）
 
 **新增实现，待远端验证。** 原单机 UNIDEX + SysV registered Host L2→L1 保留；在现有 [MemFabric 双端基准](fabric_direct_bench/README.md#unidex-bm-映射补充实验) 增加显式开启的 BM local→L1 和 BM remote Host→L1 UNIDEX 路径。依据 [远端 benchmark `f934478`](https://github.com/hibikid/ascend-ub-bench/blob/f934478756ab5be92cfe409a3f6bc3baaf4b207f/remote_dram_sparse_copy_bench.py#L764-L785)，把 BM GVA 映射为 `LOCAL_DEVICE` 地址后交给原 `src_ptr`，不升级 kernel 或新增传输协议。两条新路径沿用同一已填充远端源、逻辑 KV、61 层 BF16、128-token page、分离 K/RoPE MLA 布局、slot 0、散页映射和五档规模；本地来源分别标记 SysV 与 BM。远端源按每页先全部 K 再全部 RoPE，本地 BM L2 为全局 K/RoPE 两个区域，各按真实字节布局构造索引，单视图小于 4 GiB。源静态准备和映射在计时外，索引准备单列，每个完整请求样本计入全部 launch 和完成同步，保留 warmup2/repeats10、median/p95。性能默认不做数据校验；先按双端 README 独立校验小规模。缺映射或容量即失败，不改页粒度、批次或标为 relay。目标机尚无该路径结果；同事单层 576 top-k 多次调用一次同步的平均值不可直接与整请求结果相比。

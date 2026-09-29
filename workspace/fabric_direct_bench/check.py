@@ -162,13 +162,17 @@ def worker(args):
         send(connection, "HELLO", protocol=PROTOCOL, rank=rank, performance=args.performance,
              tokens=args.tokens, layout=args.layout,
              preflight_validate=args.preflight_validate,
-             include_unidex=args.include_unidex, block_dim=args.block_dim)
+             include_unidex=args.include_unidex, unidex_only=args.unidex_only,
+             unidex_check_only=args.unidex_check_only,
+             block_dim=args.block_dim)
         hello = receive(reader, "HELLO")
         if hello.get("protocol") != PROTOCOL or hello.get("rank") != 1 - rank:
             raise RuntimeError("peer protocol or rank mismatch")
         if hello.get("performance", False) != args.performance:
             raise RuntimeError("both ends must use the same performance mode")
         if (hello.get("include_unidex", False) != args.include_unidex
+                or hello.get("unidex_only", False) != args.unidex_only
+                or hello.get("unidex_check_only", False) != args.unidex_check_only
                 or hello.get("block_dim", 24) != args.block_dim):
             raise RuntimeError("both ends must use the same UNIDEX selection and block_dim")
         if args.performance and (hello.get("tokens") != args.tokens
@@ -376,6 +380,10 @@ def main():
     parser.add_argument("--performance", action="store_true")
     parser.add_argument("--include-unidex", action="store_true",
                         help="add BM-local and BM-remote UNIDEX paths to the performance suite")
+    parser.add_argument("--unidex-only", action="store_true",
+                        help="measure only the two BM UNIDEX paths, excluding BM copy baselines")
+    parser.add_argument("--unidex-check-only", action="store_true",
+                        help="validate only 128 contiguous and 4K scattered BM UNIDEX cases")
     parser.add_argument("--block-dim", type=int, choices=(24, 48), default=24)
     parser.add_argument("--tokens", type=int, help="run one performance size instead of the full matrix")
     parser.add_argument("--layout", choices=("contiguous", "scattered"), default="scattered",
@@ -389,6 +397,12 @@ def main():
     parser.add_argument("--diagnose", action="store_true")
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.unidex_check_only:
+        if args.tokens is not None or args.validate or args.preflight_validate:
+            parser.error("--unidex-check-only cannot combine with case/validation selection")
+        args.unidex_only = True
+    if args.unidex_only:
+        args.include_unidex = True
     if args.validate and args.preflight_validate:
         parser.error("--validate and --preflight-validate are mutually exclusive")
     if args.preflight_validate and (not args.performance or args.tokens is not None):
@@ -416,7 +430,7 @@ def main():
     if args.worker:
         return worker(args)
     if args.performance:
-        args.run_dir = Path(__file__).resolve().parent / "results" / datetime.now().strftime("%y%m%d_%H%M%S")
+        args.run_dir = args.run_dir or (Path(__file__).resolve().parent / "results" / datetime.now().strftime("%y%m%d_%H%M%S"))
         args.run_dir.mkdir(parents=True, exist_ok=False)
     return supervise(args)
 

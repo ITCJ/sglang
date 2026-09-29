@@ -68,6 +68,8 @@ python3 workspace/fabric_direct_bench/check.py client --diagnose
 
 ## UNIDEX BM 映射补充实验
 
+仅测新增三条 UNIDEX（含 SysV）的当前入口见 [统一 run.py](../unidex_copy_bench/README.md)。下文 `--include-unidex` 是保留的六路径对照入口；统一入口内部使用 `--unidex-only`，只测 BM 两条 UNIDEX，再自动完成 SysV。
+
 现有 [UNIDEX 本地 SysV 入口](../unidex_copy_bench/README.md) 当时有意使用上游 SysV 分配；此前未发现外部 BM 映射接线，因而只准备了 SysV L2。现从同一 BM 远端 Host 源填充本地 BM L2，再分别比较 BM GH2L 与 UNIDEX 本地加载；远端 UNIDEX 以相同远端源和最终 L1 对照 BM GH2L。L3 每个物理 page 内先全部 K 后全部 RoPE、L2 整池分离 K/RoPE 是原实验既有布局；本次补上遗漏的 BM 远端映射及对应地址适配，分别按真实字节排列构造零拷贝索引，不改变 page 映射。依据是 [远端 GVA 映射与 `src_ptr` 接线](https://github.com/hibikid/ascend-ub-bench/blob/f934478756ab5be92cfe409a3f6bc3baaf4b207f/remote_dram_sparse_copy_bench.py#L764-L785)，而非新增 kernel 或传输协议。该同事 benchmark 的单层 576 维随机 top-k 和多迭代一次同步的平均值，不能与这里 61 层整请求逐样本同步的 median/p95 直接比较。新增路径尚未在目标 A3 验证。
 
 两端模型及占用 NPU 的测试先停止。两端须有相同交付 commit、匹配的 CANN/torch/torch_npu、MemFabric BM（需 `gva_to_va`/`LOCAL_DEVICE`）和固定 [sgl-kernel-npu `2026.9.0` 源码安装](../unidex_copy_bench/README.md)；此入口不会安装依赖。两端先核对主 Agent 给出的实际交付 commit：

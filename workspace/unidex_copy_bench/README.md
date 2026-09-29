@@ -1,4 +1,65 @@
-# UNIDEX / SysV registered Host 本地基准
+# 三条 UNIDEX 路径统一入口
+
+当前推荐入口是 `run.py`：只测 SysV L2→L1、BM L2→L1、BM L3→L1，**不测原四条 BM copy 对照**。两端运行同一个脚本，源端提供 BM Host 内存，客户端先测两条 BM UNIDEX，再等待 BM 子进程完全退出后自动测 SysV。BM 本地源仍通过计时外 G2G 准备；这是数据初始化，不是新增性能结果。三层布局、五档规模、两种映射、完整请求计时均保持原定义。
+
+默认无数据校验，含 smoke；默认 warmup=2/repeats=10。`--preflight-validate` 显式为各后端先做 128 contiguous、4K scattered 校验，再运行该后端的无校验矩阵；`--check-only` 是独立正确性模式，三条路径均校验 128 contiguous 和 4K scattered，不进入性能矩阵。两种模式互斥。首次环境请先用 `--check-only`，通过后再测性能。
+
+## 统一交接
+
+1. **问题**：同一 MLA page 定义下，三个 UNIDEX 数据来源能否正确搬运，以及各自完整请求性能如何。
+2. **前置条件与命令**：仅用户在远端 A3 执行。停止模型及其他 NPU 测试；两端依赖按本文后面的安装说明准备，BM 支持 `gva_to_va(..., LOCAL_DEVICE)`，同一 Python 环境可用 UNIDEX。两端各需 28 GiB BM Host 池；客户端最大离散 L1 约 17.16 GiB，后续 SysV Host/L1 各约 17.16 GiB，另留运行时余量。BM 与 SysV 不同时占用。无需 Mooncake Store。`<SOURCE_DIR>` 为本端安装所用 kernel 源码目录，IP 必须为目标数据面地址。
+
+新入口需主 Agent 获授权提交/push 后才可拉取；**f6bc09642 尚不包含它**。两端先执行并核对实际交付 commit：
+
+```sh
+cd <SGLANG_REPO>
+git pull --ff-only
+git log -1 --oneline
+```
+
+首次最小正确性检查，源端：
+
+```sh
+python3 workspace/unidex_copy_bench/run.py source <SOURCE_IP> \
+  --kernel-source-dir <SOURCE_DIR> --image-digest <SOURCE_IMAGE_DIGEST> --check-only
+```
+
+看到 `FR` 后，客户端：
+
+```sh
+python3 workspace/unidex_copy_bench/run.py client <CLIENT_IP> <SOURCE_IP> \
+  --kernel-source-dir <SOURCE_DIR> --image-digest <CLIENT_IMAGE_DIGEST> --check-only
+```
+
+检查通过、两端退出后，完整性能只需再次使用同一个入口。源端：
+
+```sh
+python3 workspace/unidex_copy_bench/run.py source <SOURCE_IP> \
+  --kernel-source-dir <SOURCE_DIR> --image-digest <SOURCE_IMAGE_DIGEST> --preflight-validate
+```
+
+看到 `FR` 后，客户端：
+
+```sh
+python3 workspace/unidex_copy_bench/run.py client <CLIENT_IP> <SOURCE_IP> \
+  --kernel-source-dir <SOURCE_DIR> --image-digest <CLIENT_IMAGE_DIGEST> --preflight-validate
+```
+
+此命令显式增加散页校验。后续复测可在两端去掉 `--preflight-validate`，性能及 smoke 默认不校验。源/客户端模式与 `--block-dim` 必须一致；默认设备 0，可各自追加 `--device <DEVICE_ID>`。默认 BM 总超时（含等对端）3600 秒，SysV 每档超时 1800 秒，可分别用 `--bm-timeout`/`--sysv-timeout` 指定。
+
+3. **成功标志**：源端 `UNIDEX_SOURCE_DONE` 只表示 BM 服务已正常完成；整个实验以客户端 `UNIDEX_CHECK_OK` 或 `UNIDEX_ALL_OK` 为准。客户端根目录 `summary.csv` 只汇总三条 UNIDEX：正式性能为五档 × 两映射 × 三路径 = **30 行**，没有旧 BM 路径。性能 `validation_enabled=false, correct=null`；小规模校验必须 `correct=true`。`RUN_DIR` 默认在 `results/three_paths/<timestamp>-<role>/`。原始数据分在 `bm/`、`sysv-check/`、`sysv/<timestamp>/`；保留两端 `environment.json`、`status.json`、实际命令、IP、commit、镜像 digest、CANN/驱动/包版本以及完整日志。不能用汇总成功推断物理互联链路。
+4. **失败**：入口立即停止后续阶段，根目录 `status.json` 记录失败 stage/exit_code/command；失败端执行一条：
+
+```sh
+tail -n 80 <RUN_DIR>/<FAILED_STAGE>.log
+```
+
+回传末尾 80 行、退出码、根目录 status，以及相关子目录 status/summary、原始 JSON/CSV。`FAILED_STAGE` 是 environment、bm、sysv-check-128-contiguous、sysv-check-4096-scattered 或 sysv；收集阶段失败时回传终端错误与 status。BM 源端在 BM 完成后已退出，之后 SysV 失败不会要求重启或清理源端服务。
+5. **清理**：正常结束由现有子入口同步、释放 BM/SysV 内存；等待本次进程退出，保留两端日志。异常不得批量删除共享内存；遵循本文下方 SysV 清理边界，BM 完成同步未知时不要主动拆除仍被设备访问的映射。
+
+---
+
+## 原独立 SysV 入口与安装说明
 
 本目录当时有意选用上游 SysV registered Host，但因尚未发现外部 BM 映射接线，准备范围仅覆盖本地 L2→L1。远端 BM Host GVA 经 `gva_to_va(..., LOCAL_DEVICE)` 交给现有 UNIDEX `src_ptr` 的 [源码接线](https://github.com/hibikid/ascend-ub-bench/blob/f934478756ab5be92cfe409a3f6bc3baaf4b207f/remote_dram_sparse_copy_bench.py#L764-L785) 已接入本仓库的 [MemFabric 双端基准](../fabric_direct_bench/README.md#unidex-bm-映射补充实验)，而非本目录脚本。两种本地 Host 来源分别标记，不混同；远端适配尚未在目标 A3 实测。
 

@@ -80,7 +80,8 @@ def run_client(handle, bm, torch, source_gva, args, runtime_info=None, owner_reg
         raise RuntimeError("UNIDEX requires worker-owned lifetime registry")
     cases = []
     save(cases, args.run_dir)
-    codes = FABRIC_CODES + (("H", "I") if args.include_unidex else ())
+    codes = (("H", "I") if args.unidex_only else
+             FABRIC_CODES + (("H", "I") if args.include_unidex else ()))
     names = {**PATH_NAMES, **UNIDEX_PATHS}
     l2_gva = handle.peer_rank_ptr(1, bm.BmMemType.HOST)
     if not l2_gva or l2_gva == source_gva:
@@ -93,6 +94,10 @@ def run_client(handle, bm, torch, source_gva, args, runtime_info=None, owner_reg
                (1024, 4096, 16384, 65536, 131072) for layout in ("contiguous", "scattered")])
     if args.preflight_validate:
         matrix.insert(0, (4096, "scattered", True))
+        if args.unidex_only:
+            matrix.insert(0, (128, "contiguous", True))
+    if args.unidex_check_only:
+        matrix = [(128, "contiguous", True), (4096, "scattered", True)]
     for tokens, layout, preflight in matrix:
         owner_start = len(owner_registry) if args.include_unidex else 0
         count = tokens // PAGE_SIZE
