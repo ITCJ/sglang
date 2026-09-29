@@ -2,7 +2,9 @@
 
 ## 当前补充：UNIDEX / SysV registered Host（2026-09-28）
 
-**本轮只讨论设计，暂停执行。** 已准备的新增代码仅实现单机 UNIDEX + SysV registered Host L2→L1，沿用现有逻辑 KV、61 层 BF16、128-token page、分离 K/RoPE MLA 布局、slot 0、散页映射与整请求计时；原 ADXL/FAST2D 默认不变。此前遗漏外部映射：[远端 benchmark `f934478`](https://github.com/hibikid/ascend-ub-bench/blob/f934478756ab5be92cfe409a3f6bc3baaf4b207f/remote_dram_sparse_copy_bench.py#L764-L785) 已示范 MemFabric GVA→`LOCAL_DEVICE` 地址供现有 UNIDEX `src_ptr` 使用，无需据此认定 kernel 缺少远端 copy 功能。现有准备脚本未接入该映射，目标环境也未实测。同事 benchmark 只作远端环境/路径正确性参考；正式性能设计复用远端 pool 与映射到现有 `fabric_direct_bench`/UNIDEX 适配，以相同 BM 远端源和最终 L1 比较 BM GH2L、UNIDEX，保留原 61 层完整请求、page 映射、五档规模及逐样本完成同步。源静态准备/注册映射在计时外，索引准备单列，全部 launch 和完成同步在计时内。其单层 576 维随机 top-k 和多次调用一次同步所得平均值不能直接与现有 median/p95 比较。准备材料见 [UNIDEX README](unidex_copy_bench/README.md)；本轮不安排测试或新增运行命令。
+**新增实现，待远端验证。** 原单机 UNIDEX + SysV registered Host L2→L1 保留；在现有 [MemFabric 双端基准](fabric_direct_bench/README.md#unidex-bm-映射补充实验) 增加显式开启的 BM local→L1 和 BM remote Host→L1 UNIDEX 路径。依据 [远端 benchmark `f934478`](https://github.com/hibikid/ascend-ub-bench/blob/f934478756ab5be92cfe409a3f6bc3baaf4b207f/remote_dram_sparse_copy_bench.py#L764-L785)，把 BM GVA 映射为 `LOCAL_DEVICE` 地址后交给原 `src_ptr`，不升级 kernel 或新增传输协议。两条新路径沿用同一已填充远端源、逻辑 KV、61 层 BF16、128-token page、分离 K/RoPE MLA 布局、slot 0、散页映射和五档规模；本地来源分别标记 SysV 与 BM。远端源按每页先全部 K 再全部 RoPE，本地 BM L2 为全局 K/RoPE 两个区域，各按真实字节布局构造索引，单视图小于 4 GiB。源静态准备和映射在计时外，索引准备单列，每个完整请求样本计入全部 launch 和完成同步，保留 warmup2/repeats10、median/p95。性能默认不做数据校验；先按双端 README 独立校验小规模。缺映射或容量即失败，不改页粒度、批次或标为 relay。目标机尚无该路径结果；同事单层 576 top-k 多次调用一次同步的平均值不可直接与整请求结果相比。
+
+归因边界：SysV 是首个本地入口有意选用的 Host 来源；此前只准备 SysV L2、未纳入 BM 映射，是信息不足造成的范围缩窄。L3 每页 K/RoPE 与 L2 整池分区是原实验既有布局，本次补的是 BM 远端映射和匹配两种原布局的地址适配。
 
 ## 当前补充：原生 HiCache L2→L1（2026-09-16）
 

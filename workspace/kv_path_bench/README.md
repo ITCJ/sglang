@@ -112,4 +112,4 @@ python3 workspace/kv_path_bench/feasibility_check.py <CLIENT_IP> <STORE_IP> smal
 
 ## 单机 UNIDEX 补充入口
 
-原有 ADXL/FAST2D 默认路径保持不变。已准备的 `--copy-engine unidex --l2-only` 使用上游 SysV registered Host，仍只是本地 L2→L1 copy。此前遗漏外部远端映射：[源码 `f934478`](https://github.com/hibikid/ascend-ub-bench/blob/f934478756ab5be92cfe409a3f6bc3baaf4b207f/remote_dram_sparse_copy_bench.py#L764-L785) 已将 MemFabric GVA 转成 `LOCAL_DEVICE` 地址交给现有 UNIDEX `src_ptr`；本入口尚未接入。当前只讨论设计，不安排安装或测试；已有命令保存在[暂停中的准备草稿](../unidex_copy_bench/README.md)。目标环境尚无本路径的功能或性能结果。
+原有 ADXL/FAST2D 默认路径保持不变。`--copy-engine unidex --l2-only` 当时有意使用 SysV registered Host，但因尚未发现外部 BM 映射接线而只覆盖本地 L2→L1。[MemFabric 双端基准新增的 BM local/remote UNIDEX 路径](../fabric_direct_bench/README.md#unidex-bm-映射补充实验)复用 [源码 `f934478`](https://github.com/hibikid/ascend-ub-bench/blob/f934478756ab5be92cfe409a3f6bc3baaf4b207f/remote_dram_sparse_copy_bench.py#L764-L785) 的 GVA→`LOCAL_DEVICE` 映射，仍使用既有 `src_ptr`；SysV 与 BM 来源分别标记。两类路径均尚无目标 A3 功能或性能结果；本地 SysV 独立命令见[对应 README](../unidex_copy_bench/README.md)。

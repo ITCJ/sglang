@@ -3,11 +3,13 @@ import csv
 import json
 import math
 import statistics
+import time
 
 from check import (LAYERS, PAGE_SIZE, PAGE_BYTES, K_DIM, ROPE_DIM,
                    transfer_plan, check_rc, check_page, print_result)
 from kv_transfer_bench import make_batches, measure_batch, physical_page_slots
 from path_names import PATH_NAMES
+from unidex_bm import BmUnidexPlan, PATHS as UNIDEX_PATHS
 
 FABRIC_CODES = ("E", "F", "D", "G")
 K_PAGE = LAYERS * PAGE_SIZE * K_DIM * 2
@@ -50,7 +52,10 @@ def copy(handle, plan, kind):
     check_rc(handle.wait(), "BM wait")
 
 
-def run_path(code, handle, bm, plans):
+def run_path(code, handle, bm, plans, unidex=None):
+    if code in UNIDEX_PATHS:
+        unidex.submit(code)
+        return
     if code in ("F", "G"):
         copy(handle, plans["read"], bm.BmCopyType.G2G)
     if code == "G":
@@ -70,9 +75,13 @@ def save(cases, directory):
                                  case["effective_gbps"]))
 
 
-def run_client(handle, bm, torch, source_gva, args):
+def run_client(handle, bm, torch, source_gva, args, runtime_info=None, owner_registry=None):
+    if args.include_unidex and owner_registry is None:
+        raise RuntimeError("UNIDEX requires worker-owned lifetime registry")
     cases = []
     save(cases, args.run_dir)
+    codes = FABRIC_CODES + (("H", "I") if args.include_unidex else ())
+    names = {**PATH_NAMES, **UNIDEX_PATHS}
     l2_gva = handle.peer_rank_ptr(1, bm.BmMemType.HOST)
     if not l2_gva or l2_gva == source_gva:
         raise RuntimeError("local L2 must belong to client rank 1")
@@ -85,20 +94,31 @@ def run_client(handle, bm, torch, source_gva, args):
     if args.preflight_validate:
         matrix.insert(0, (4096, "scattered", True))
     for tokens, layout, preflight in matrix:
+        owner_start = len(owner_registry) if args.include_unidex else 0
         count = tokens // PAGE_SIZE
         physical_slots = physical_page_slots(count, layout)
         smoke = tokens == 128 and not preflight
         case_validate = True if preflight else args.validate
         print_result(f"Running kind={'preflight' if preflight else 'performance'} tokens={tokens} layout={layout}")
         k = torch.zeros((LAYERS, physical_slots, PAGE_SIZE, 1, K_DIM), dtype=torch.bfloat16, device="npu")
+        if args.include_unidex:
+            owner_registry.append(k)
         rope = torch.zeros((LAYERS, physical_slots, PAGE_SIZE, 1, ROPE_DIM), dtype=torch.bfloat16, device="npu")
+        if args.include_unidex:
+            owner_registry.append(rope)
         request = make_batches(count, layout=layout)[0]
         request_samples = {}
+        plan_start = time.perf_counter()
         plans = batch_plans(request, source_gva, l2_gva, k.data_ptr(), rope.data_ptr(), physical_slots)
-        for code in FABRIC_CODES:
-            print(f"MEASURE path={PATH_NAMES[code]} tokens={tokens} layout={layout} whole_request", flush=True)
+        unidex = (BmUnidexPlan(handle, bm, torch, source_gva, l2_gva, request,
+                               physical_slots, k, rope, args.block_dim, args.timeout,
+                               owner_registry)
+                  if args.include_unidex else None)
+        plan_prepare_s = time.perf_counter() - plan_start
+        for code in codes:
+            print(f"MEASURE path={names[code]} tokens={tokens} layout={layout} whole_request", flush=True)
             def prepare():
-                if code == "E":
+                if code in ("E", "H"):
                     copy(handle, plans["read"], bm.BmCopyType.G2G)
                 elif code in ("F", "G"):
                     # Clear in page-sized pieces; this is not timed transfer batching.
@@ -123,16 +143,16 @@ def run_client(handle, bm, torch, source_gva, args):
                     raise RuntimeError("unused L1 guard page overwritten")
 
             request_samples[code] = measure_batch(
-                lambda: run_path(code, handle, bm, plans), prepare, torch.npu.synchronize,
+                lambda: run_path(code, handle, bm, plans, unidex), prepare, torch.npu.synchronize,
                 0 if smoke or preflight else args.warmup,
                 1 if smoke or preflight else args.repeats,
                 validate=validate if case_validate else None)
-        for code in FABRIC_CODES:
+        for code in codes:
             samples = request_samples[code]
             median = statistics.median(samples)
             case = dict(tokens=tokens, layout=layout, smoke=smoke, preflight=preflight,
-                    path=PATH_NAMES[code], validation_enabled=case_validate,
-                    correct=True if case_validate else None, l2_bytes=l2_bytes(physical_slots) if code != "D" else 0,
+                    path=names[code], validation_enabled=case_validate,
+                    correct=True if case_validate else None, l2_bytes=l2_bytes(physical_slots) if code not in ("D", "I") else 0,
                     allocated_l2_bytes=l2_bytes(physical_slots), physical_page_slots=physical_slots,
                     measurement_protocol="whole_request_v2",
                     request_pages=count, timing="one synchronized whole-request wall time per sample",
@@ -146,11 +166,25 @@ def run_client(handle, bm, torch, source_gva, args):
                                           else MAX_PAGES + 1 + 2 * page)
                                          for page in request["pages"]],
                     mapping_version="page_gap_v2")
+            if code in UNIDEX_PATHS:
+                case.update(unidex.metadata)
+                case.update(status="ok", plan_prepare_s=plan_prepare_s,
+                            copy_engine="unidex",
+                            host_memory="bm_remote_mapped" if code == "I" else "bm_local_mapped",
+                            versions=(runtime_info or {}).get("versions", {}),
+                            import_sources=(runtime_info or {}).get("import_sources", {}),
+                            repo_commit=(runtime_info or {}).get("commit", "unknown"))
+                case["index_bytes"] = unidex.metadata["index_bytes_by_path"][code]
+                case["launch_count"] = unidex.metadata["launch_count_by_path"][code]
             cases.append(case)
             prefix = "preflight-" if preflight else ""
-            (args.run_dir / f"{prefix}{tokens}-{layout}-{PATH_NAMES[code]}.json").write_text(json.dumps(case, indent=2) + "\n")
+            (args.run_dir / f"{prefix}{tokens}-{layout}-{names[code]}.json").write_text(json.dumps(case, indent=2) + "\n")
             save(cases, args.run_dir)
-        for case in cases[-len(FABRIC_CODES):]:
+        for case in cases[-len(codes):]:
             print_result(f"tokens={tokens} layout={layout} {case['path']}={case['median_s'] * 1000:.3f} ms")
+        if args.include_unidex:
+            torch.npu.synchronize()
+            del owner_registry[owner_start:]
+        del unidex
         del k, rope
         torch.npu.empty_cache()

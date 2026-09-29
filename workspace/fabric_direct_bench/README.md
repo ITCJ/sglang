@@ -10,8 +10,10 @@
 | `L3-L2-L1_MemFabric` | 一次整请求 G2G + wait，再一次整请求 GH2L + wait |
 | `L3-L1_MemFabric` | 远端 Host 直接到最终 L1，一次整请求 GH2L + wait |
 | `L3-L2_MemFabric` | 远端 Host 到本地最终 L2，一次整请求 G2G + wait |
+| `L2-L1_UNIDEX_bm_host` | 已准备的客户端 BM Host L2，经本地设备映射由 UNIDEX 写最终 L1 |
+| `L3-L1_UNIDEX_bm_remote_host` | 与 GH2L 相同的远端 BM Host 源，经本地设备映射由 UNIDEX 写最终 L1 |
 
-均包含末尾 NPU 同步。中转路径先完成全部读取再加载 L1，不增加流水。接口内部调度由 MF 决定；若完整地址列表超过接口限制，报错停止，不静默缩成小批次。
+默认仍只运行原四条 BM 路径；显式 `--include-unidex` 才增加后两条。均包含末尾 NPU 同步。中转路径先完成全部读取再加载 L1，不增加流水。接口内部调度由 MF 决定；若完整地址列表超过接口限制，报错停止，不静默缩成小批次。
 
 数据为 61 层、BF16、128-token page、512+64 维 MLA KV。源一页全部 KV 后接 RoPE，最终 Host L2 为分离 KV/RoPE 的 page-first，NPU L1 为 layer-first。真正离散模式在远端 Host、最终 L2 和 L1 都让有效 page 之间间隔一个完整空 page，page 内部仍连续；四条路径共享同一逻辑映射。旧 scattered 结果只是连续物理页集合上的置换，不作为本轮离散结果。
 
@@ -63,6 +65,53 @@ python3 workspace/fabric_direct_bench/check.py client --diagnose
 源端把 client 换成 source。回报短码和诊断信息。结果位于 `results/YYMMDD_HHMMSS/`，包含 cli/native 日志、status.json、客户端汇总与每条路径 JSON。CSV 耗时为 ms，JSON samples_s 为秒，带宽为十进制 GB/s。10 样本 P95 为最大值。
 
 `260915_104705` 的全部 40 条正式性能结果及比较结论已撤回，文件仅作历史记录。旧结果不能混入整请求性能分析。`FP` / `FD` 在性能默认模式只表示运行完成，启用 `--validate` 后才包含数据校验通过。独立的一页正确性检查（不加 `--performance`）仍始终校验。新结果只说明具体传输实现下的路径成本，不代表 server TTFT 或物理链路上限。
+
+## UNIDEX BM 映射补充实验
+
+现有 [UNIDEX 本地 SysV 入口](../unidex_copy_bench/README.md) 当时有意使用上游 SysV 分配；此前未发现外部 BM 映射接线，因而只准备了 SysV L2。现从同一 BM 远端 Host 源填充本地 BM L2，再分别比较 BM GH2L 与 UNIDEX 本地加载；远端 UNIDEX 以相同远端源和最终 L1 对照 BM GH2L。L3 每个物理 page 内先全部 K 后全部 RoPE、L2 整池分离 K/RoPE 是原实验既有布局；本次补上遗漏的 BM 远端映射及对应地址适配，分别按真实字节排列构造零拷贝索引，不改变 page 映射。依据是 [远端 GVA 映射与 `src_ptr` 接线](https://github.com/hibikid/ascend-ub-bench/blob/f934478756ab5be92cfe409a3f6bc3baaf4b207f/remote_dram_sparse_copy_bench.py#L764-L785)，而非新增 kernel 或传输协议。该同事 benchmark 的单层 576 维随机 top-k 和多迭代一次同步的平均值，不能与这里 61 层整请求逐样本同步的 median/p95 直接比较。新增路径尚未在目标 A3 验证。
+
+两端模型及占用 NPU 的测试先停止。两端须有相同交付 commit、匹配的 CANN/torch/torch_npu、MemFabric BM（需 `gva_to_va`/`LOCAL_DEVICE`）和固定 [sgl-kernel-npu `2026.9.0` 源码安装](../unidex_copy_bench/README.md)；此入口不会安装依赖。两端先核对主 Agent 给出的实际交付 commit：
+
+```sh
+git pull --ff-only
+git log -1 --oneline
+```
+
+先单独校验 128-token contiguous；源端：
+
+```sh
+python3 workspace/fabric_direct_bench/check.py source <SOURCE_IP> --performance --include-unidex --tokens 128 --layout contiguous --validate
+```
+
+源端显示 `FR` 后，客户端：
+
+```sh
+python3 workspace/fabric_direct_bench/check.py client <CLIENT_IP> <SOURCE_IP> --performance --include-unidex --tokens 128 --layout contiguous --validate
+```
+
+两端 `FD`/`FP` 且客户端新增两条路径 JSON 为 `status` 对应完成、`validation_enabled=true`、`correct=true`，才进入正式矩阵。随后双端以相同参数运行，源端：
+
+```sh
+python3 workspace/fabric_direct_bench/check.py source <SOURCE_IP> --performance --include-unidex --preflight-validate
+```
+
+见 `FR` 后客户端：
+
+```sh
+python3 workspace/fabric_direct_bench/check.py client <CLIENT_IP> <SOURCE_IP> --performance --include-unidex --preflight-validate
+```
+
+该入口先做 4K scattered 显式逐字节校验，再运行默认无校验的 128-token smoke 和 1K/4K/16K/64K/128K × 两映射 × 六路径；warmup=2、repeats=10。可在两端同设 `--block-dim 48` 覆盖默认 24，不自动扫参。静态源准备、BM 注册/映射和索引准备在计时外，索引耗时/bytes、CPU 元数据视图的虚拟保留字节数与 launch 数另记；计时包含每次整请求全部 UNIDEX launch 和完成同步。源端填充并等待 BM 完成后才发 `READY`，客户端等此握手再建映射；`gva_to_va` 返回非零本身不证明数据就绪，实际传输异常、完成同步和显式校验仍须通过。性能 JSON 保存每个样本、median/p95、`host_memory`、实际包版本和 import 来源；`correct=null` 表示该性能样本未做内容校验。缺 `gva_to_va` 或映射超时会失败，不退回两段路径。
+
+新路径与旧路径同写本套件的 `summary.json`/`summary.csv` 和逐路径 JSON；现有总表收集器按最新 MemFabric summary 的实际行自动纳入它们。总表的 `--include-unidex` 仍只表示另外加入独立 SysV 单机套件，不改变 BM 路径标签。
+
+失败时停止后续步骤，先在失败的一端执行一条短日志命令并回传其输出、退出码、`status.json` 和对应 run 的原始 JSON/CSV；源端同理：
+
+```sh
+tail -n 80 workspace/fabric_direct_bench/results/<RUN_ID>/cli.log
+```
+
+成功或失败后等待两端工作进程退出；正常路径自动完成 NPU 同步、BM leave/destroy/uninitialize。若完成同步失败，客户端会跳过主动 BM unmap 并报非零，先核对进程/NPU 状态；不要批量清除别人的共享内存。日志和结果留存供回传。只采用数据面互通的 `<SOURCE_IP>`/`<CLIENT_IP>`，控制 TCP 连接不代替数据路径校验。
 
 ## 一页验证
 

@@ -66,18 +66,22 @@ page batching requirement or sums of independently warmed batches. Staging is
 excluded. These reruns are not yet validated on the remote NPU. Native HiCache
 L2-only work is handled separately; see kv-path-plan.md for ownership and scope.
 
-## Next Step: UNIDEX Remote Mapping Adaptation
+## Next Step: Verify UNIDEX BM Local and Remote Paths
 
-This round is for discussion and design; no test is scheduled. Earlier inspection
-missed an external mapping layer: [remote benchmark `f934478`](https://github.com/hibikid/ascend-ub-bench/blob/f934478756ab5be92cfe409a3f6bc3baaf4b207f/remote_dram_sparse_copy_bench.py#L764-L785)
+Earlier inspection missed an external mapping layer: [remote benchmark `f934478`](https://github.com/hibikid/ascend-ub-bench/blob/f934478756ab5be92cfe409a3f6bc3baaf4b207f/remote_dram_sparse_copy_bench.py#L764-L785)
 maps a MemFabric remote Host GVA to `LOCAL_DEVICE` and passes it to the existing
-UNIDEX `src_ptr`. The prepared [local L2 copy entry](unidex_copy_bench/README.md)
-does not yet use this mapping, and the target A3 path has not been tested. The
-colleague's single-layer 576-wide top-k benchmark is a remote-path correctness
-reference, not directly comparable to current whole-request median/p95 results.
-The intended performance comparison reuses the remote pool and mapping in the
-existing `fabric_direct_bench`/UNIDEX adaptation: same BM remote source and
-final L1, 61-layer separated K/RoPE, page mapping and capacities, with every
-launch and completion sync inside each request sample; static source setup and
-mapping stay outside timing, while index preparation is reported separately.
-Existing research conclusions remain unchanged; no remote result is claimed.
+UNIDEX `src_ptr`. The [MemFabric whole-request suite](fabric_direct_bench/README.md#unidex-bm-映射补充实验)
+now has optional UNIDEX paths for BM local Host and remote Host to the same
+final L1. The separate SysV local entry remains available and distinctly
+labeled. SysV was a deliberate local allocation choice; omitting BM mapping
+from that first entry reflected an earlier information gap. L3's K-then-RoPE
+per-page layout and L2's separate K/RoPE pools were already part of the
+experiment; this change adds the missed BM mapping and corresponding address
+adaptation. The new paths preserve 61-layer BF16 separated K/RoPE pages, both
+physical mappings, whole-request samples and completion synchronization;
+static mapping and fixed index preparation are reported outside timing.
+Small-scale explicit data validation precedes default-unvalidated performance
+in the remote handoff. No target A3 result is available yet, so existing
+research conclusions remain unchanged. The colleague's single-layer 576-wide
+top-k mean timings cannot be compared directly to these request median/p95
+results.

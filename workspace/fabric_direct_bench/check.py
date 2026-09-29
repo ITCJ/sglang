@@ -30,6 +30,7 @@ PERFORMANCE_POOL_BYTES = 28 * POOL_BYTES
 MAX_PERFORMANCE_PAGES = 131072 // PAGE_SIZE
 SCATTER_SOURCE_BASE = MAX_PERFORMANCE_PAGES * PAGE_BYTES
 PROTOCOL = "a3-bm-host-to-l1-v2"
+_INCOMPLETE_OWNERS = []
 
 
 def transfer_plan(source_gva, k_base, rope_base, count=1, slot=1):
@@ -88,6 +89,7 @@ def worker(args):
                                  text=True).stdout.strip(),
     }
     mf = bm = handle = connection = reader = listener = None
+    pending_owners = []
     mf_ready = bm_ready = joined = False
     failure = None
     code, stage = "F1", "imports and public API check"
@@ -111,11 +113,38 @@ def worker(args):
             raise RuntimeError("installed BM enum lacks G2G")
         if not hasattr(config, "set_nic"):
             raise RuntimeError("installed BmConfig lacks set_nic")
+        if args.include_unidex and (not hasattr(bm.BmMemType, "LOCAL_DEVICE")
+                                    or not hasattr(bm, "create2")):
+            raise RuntimeError("installed BM lacks LOCAL_DEVICE mapping prerequisites")
         result["versions"] = {"torch": torch.__version__, "torch_npu": torch_npu.__version__}
         try:
             result["versions"]["memfabric_hybrid"] = metadata.version("memfabric-hybrid")
         except metadata.PackageNotFoundError:
             result["versions"]["memfabric_hybrid"] = getattr(mf, "__version__", "unknown")
+        result.update(include_unidex=args.include_unidex, block_dim=args.block_dim)
+        if args.include_unidex:
+            result.update(transport="BM SDMA and UNIDEX mapped Host",
+                          copy_type="BM GH2L/G2G and UNIDEX src_ptr",
+                          extra_receive_staging=None,
+                          path_specific_receive_staging=True)
+        result["import_sources"] = {
+            "torch": getattr(torch, "__file__", "unknown"),
+            "torch_npu": getattr(torch_npu, "__file__", "unknown"),
+            "memfabric_hybrid": getattr(mf, "__file__", "unknown"),
+            "bm": getattr(bm, "__file__", "unknown"),
+        }
+        if args.include_unidex:
+            from unidex_engine import configure_soc
+            configure_soc()
+            import sgl_kernel_npu
+            try:
+                result["versions"]["sgl_kernel_npu"] = metadata.version("sgl-kernel-npu")
+            except metadata.PackageNotFoundError:
+                result["versions"]["sgl_kernel_npu"] = "unknown"
+            from sgl_kernel_npu.sparsity_driven_kv_offload import unidex_copy_inplace
+            result["import_sources"]["sgl_kernel_npu"] = unidex_copy_inplace.__code__.co_filename
+            result["import_sources"]["sgl_kernel_npu_library"] = str(
+                Path(sgl_kernel_npu.__file__).parent / "lib" / "libsgl_kernel_npu.so")
 
         code, stage = "F2", "control connection"
         if source:
@@ -132,12 +161,16 @@ def worker(args):
         reader = connection.makefile("rb")
         send(connection, "HELLO", protocol=PROTOCOL, rank=rank, performance=args.performance,
              tokens=args.tokens, layout=args.layout,
-             preflight_validate=args.preflight_validate)
+             preflight_validate=args.preflight_validate,
+             include_unidex=args.include_unidex, block_dim=args.block_dim)
         hello = receive(reader, "HELLO")
         if hello.get("protocol") != PROTOCOL or hello.get("rank") != 1 - rank:
             raise RuntimeError("peer protocol or rank mismatch")
         if hello.get("performance", False) != args.performance:
             raise RuntimeError("both ends must use the same performance mode")
+        if (hello.get("include_unidex", False) != args.include_unidex
+                or hello.get("block_dim", 24) != args.block_dim):
+            raise RuntimeError("both ends must use the same UNIDEX selection and block_dim")
         if args.performance and (hello.get("tokens") != args.tokens
                                  or hello.get("layout") != args.layout
                                  or hello.get("preflight_validate", False) != args.preflight_validate):
@@ -164,6 +197,8 @@ def worker(args):
                             data_op_type=bm.BmDataOpType.SDMA)
         if handle is None:
             raise RuntimeError("bm.create2 returned no handle")
+        if args.include_unidex and not hasattr(handle, "gva_to_va"):
+            raise RuntimeError("installed BM handle lacks gva_to_va for UNIDEX source mapping")
         check_rc(handle.join(), "BM join")
         joined = True
         required_pages = 3 * MAX_PERFORMANCE_PAGES if args.performance else 1
@@ -177,7 +212,9 @@ def worker(args):
             gva = handle.peer_rank_ptr(0, bm.BmMemType.HOST)
             if not gva:
                 raise RuntimeError("source Host GVA is null")
-            for page in range(MAX_PERFORMANCE_PAGES if args.performance else 1):
+            prepared_pages = ((args.tokens // PAGE_SIZE if args.tokens is not None else MAX_PERFORMANCE_PAGES)
+                              if args.performance else 1)
+            for page in range(prepared_pages):
                 payload = bytearray(split_page_payload(page))
                 tensor = torch.frombuffer(payload, dtype=torch.uint8)
                 check_rc(handle.copy_data(tensor.data_ptr(), gva + page * PAGE_BYTES, PAGE_BYTES, bm.BmCopyType.H2GH, 0), "H2GH fill")
@@ -200,10 +237,11 @@ def worker(args):
             source_gva = handle.peer_rank_ptr(0, bm.BmMemType.HOST)
             if not source_gva:
                 raise RuntimeError("remote rank 0 Host GVA is null")
-            code, stage = "F5", "GH2L directly into final NPU L1"
+            code, stage = "F5", ("BM/UNIDEX final NPU L1 paths" if args.include_unidex
+                                  else "GH2L directly into final NPU L1")
             if args.performance:
                 from performance import run_client
-                run_client(handle, bm, torch, source_gva, args)
+                run_client(handle, bm, torch, source_gva, args, result, pending_owners)
             else:
                 check_one_page(handle, bm, torch, source_gva, result)
     except Exception as exc:
@@ -216,14 +254,24 @@ def worker(args):
         print(f"FABRIC_FAIL stage={stage} error={exc!r}", flush=True)
         traceback.print_exc()
     finally:
+        completion_unknown = False
+        if args.include_unidex and joined and not source:
+            try:
+                torch.npu.synchronize()
+                pending_owners.clear()
+            except BaseException as exc:
+                completion_unknown = True
+                failure = failure or ("F9", "UNIDEX completion before BM unmap", repr(exc))
+                result["bm_cleanup"] = "skipped: NPU completion not established"
+                _INCOMPLETE_OWNERS.extend((handle, bm, mf, pending_owners))
         actions = []
-        if joined:
+        if joined and not completion_unknown:
             actions.append(("leave", lambda: check_rc(handle.leave(), "BM leave")))
-        if handle is not None:
+        if handle is not None and not completion_unknown:
             actions.append(("destroy", handle.destroy))
-        if bm_ready:
+        if bm_ready and not completion_unknown:
             actions.append(("bm uninitialize", lambda: bm.uninitialize(0)))
-        if mf_ready:
+        if mf_ready and not completion_unknown:
             actions.append(("mf uninitialize", mf.uninitialize))
         for name, action in actions:
             try:
@@ -326,6 +374,9 @@ def main():
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--timeout", type=int, default=None)
     parser.add_argument("--performance", action="store_true")
+    parser.add_argument("--include-unidex", action="store_true",
+                        help="add BM-local and BM-remote UNIDEX paths to the performance suite")
+    parser.add_argument("--block-dim", type=int, choices=(24, 48), default=24)
     parser.add_argument("--tokens", type=int, help="run one performance size instead of the full matrix")
     parser.add_argument("--layout", choices=("contiguous", "scattered"), default="scattered",
                         help="layout for --tokens (full matrix still runs both)")
@@ -342,6 +393,8 @@ def main():
         parser.error("--validate and --preflight-validate are mutually exclusive")
     if args.preflight_validate and (not args.performance or args.tokens is not None):
         parser.error("--preflight-validate requires the full --performance suite")
+    if args.include_unidex and not args.performance:
+        parser.error("--include-unidex requires --performance")
     args.timeout = args.timeout if args.timeout is not None else (3600 if args.performance else 180)
     if args.diagnose:
         path = Path(f"/tmp/a3-fabric-{args.role}.json")
