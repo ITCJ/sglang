@@ -7,9 +7,9 @@
 ## 统一交接
 
 1. **问题**：同一 MLA page 定义下，三个 UNIDEX 数据来源能否正确搬运，以及各自完整请求性能如何。
-2. **前置条件与命令**：仅用户在远端 A3 执行。停止模型及其他 NPU 测试；两端依赖按本文后面的安装说明准备，BM 支持 `gva_to_va(..., LOCAL_DEVICE)`，同一 Python 环境可用 UNIDEX。两端各需 28 GiB BM Host 池；客户端最大离散 L1 约 17.16 GiB，后续 SysV Host/L1 各约 17.16 GiB，另留运行时余量。BM 与 SysV 不同时占用。无需 Mooncake Store。`<SOURCE_DIR>` 为本端安装所用 kernel 源码目录，IP 必须为目标数据面地址。
+2. **前置条件与命令**：仅用户在远端 A3 执行。停止模型及其他 NPU 测试；直接使用官方镜像中已安装的 `sgl_kernel_npu`，无需 kernel 源码目录或重新安装；BM 支持 `gva_to_va(..., LOCAL_DEVICE)`，同一 Python 环境可用 UNIDEX。两端各需 28 GiB BM Host 池；客户端最大离散 L1 约 17.16 GiB，后续 SysV Host/L1 各约 17.16 GiB，另留运行时余量。BM 与 SysV 不同时占用。无需 Mooncake Store。IP 必须为目标数据面地址。`--kernel-source-dir` 与 `--image-digest` 仅为可选的环境追溯字段；不传时源码 commit/镜像 digest 记为 `unknown`，仍自动记录已安装包版本和运行时导入位置。
 
-新入口需主 Agent 获授权提交/push 后才可拉取；**f6bc09642 尚不包含它**。两端先执行并核对实际交付 commit：
+两端先执行并核对主 Agent 给出的实际交付 commit：
 
 ```sh
 cd <SGLANG_REPO>
@@ -21,28 +21,28 @@ git log -1 --oneline
 
 ```sh
 python3 workspace/unidex_copy_bench/run.py source <SOURCE_IP> \
-  --kernel-source-dir <SOURCE_DIR> --image-digest <SOURCE_IMAGE_DIGEST> --check-only
+  --check-only
 ```
 
 看到 `FR` 后，客户端：
 
 ```sh
 python3 workspace/unidex_copy_bench/run.py client <CLIENT_IP> <SOURCE_IP> \
-  --kernel-source-dir <SOURCE_DIR> --image-digest <CLIENT_IMAGE_DIGEST> --check-only
+  --check-only
 ```
 
 检查通过、两端退出后，完整性能只需再次使用同一个入口。源端：
 
 ```sh
 python3 workspace/unidex_copy_bench/run.py source <SOURCE_IP> \
-  --kernel-source-dir <SOURCE_DIR> --image-digest <SOURCE_IMAGE_DIGEST> --preflight-validate
+  --preflight-validate
 ```
 
 看到 `FR` 后，客户端：
 
 ```sh
 python3 workspace/unidex_copy_bench/run.py client <CLIENT_IP> <SOURCE_IP> \
-  --kernel-source-dir <SOURCE_DIR> --image-digest <CLIENT_IMAGE_DIGEST> --preflight-validate
+  --preflight-validate
 ```
 
 此命令显式增加散页校验。后续复测可在两端去掉 `--preflight-validate`，性能及 smoke 默认不校验。源/客户端模式与 `--block-dim` 必须一致；默认设备 0，可各自追加 `--device <DEVICE_ID>`。默认 BM 总超时（含等对端）3600 秒，SysV 每档超时 1800 秒，可分别用 `--bm-timeout`/`--sysv-timeout` 指定。

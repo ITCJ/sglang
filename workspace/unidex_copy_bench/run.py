@@ -168,8 +168,8 @@ def main():
     parser.add_argument("source_ip", nargs="?")
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--block-dim", type=int, choices=(24, 48), default=24)
-    parser.add_argument("--image-digest", required=True)
-    parser.add_argument("--kernel-source-dir", type=Path, required=True)
+    parser.add_argument("--image-digest", default="unknown", help="optional environment annotation")
+    parser.add_argument("--kernel-source-dir", type=Path, help="optional source provenance; uses the installed kernel package")
     parser.add_argument("--results-dir", type=Path, default=HERE / "results/three_paths")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check-only", action="store_true", help="validate small cases only; no performance matrix")
@@ -185,7 +185,7 @@ def main():
         parser.error("source takes only its own IP")
     if min(args.device, args.warmup) < 0 or min(args.repeats, args.bm_timeout, args.sysv_timeout) < 1:
         parser.error("invalid device, warmup, repeats or timeout")
-    if not args.kernel_source_dir.is_dir():
+    if args.kernel_source_dir is not None and not args.kernel_source_dir.is_dir():
         parser.error("kernel source directory does not exist")
     directory = args.results_dir.resolve() / (datetime.now().strftime("%y%m%d_%H%M%S_%f") + "-" + args.role)
     directory.mkdir(parents=True, exist_ok=False)
@@ -198,10 +198,12 @@ def main():
     def interrupted(signum, frame):
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, interrupted)
+    source_args = (["--kernel-source-dir", str(args.kernel_source_dir.resolve())]
+                   if args.kernel_source_dir is not None else [])
     try:
         run_stage([sys.executable, str(HERE / "capture_environment.py"),
                    "--output", str(directory / "environment.json"),
-                   "--kernel-source-dir", str(args.kernel_source_dir.resolve()),
+                   *source_args,
                    "--image-digest", args.image_digest], "environment", directory, status)
         command = [sys.executable, str(WORKSPACE / "fabric_direct_bench/check.py"),
                    args.role, args.local_ip]
@@ -225,7 +227,7 @@ def main():
                            "--copy-engine", "unidex", "--l2-only", "--device", str(args.device),
                            "--block-dim", str(args.block_dim), "--warmup", str(args.warmup),
                            "--repeats", str(args.repeats), "--timeout", str(args.sysv_timeout),
-                           "--kernel-source-dir", str(args.kernel_source_dir.resolve()),
+                           *source_args,
                            "--image-digest", args.image_digest, "--results-dir", str(directory / "sysv")],
                           "sysv", directory, status)
             status["stage"] = "collect"
