@@ -1,22 +1,24 @@
 # UNIDEX / SysV registered Host 准备草稿
 
-**当前暂停：本轮不运行本页任何安装、校验、性能或 MemFabric 对照命令。** UNIDEX 本地 Host L2→L1 copy 已有代码入口；用户目标所需的 UNIDEX L3→L1 集成，在已查的 kernel 和 tcj 调用中未见现成入口。已写的脚本和下文命令仅作为未来准备参考，待该集成完成并重新确定交接后启用。这不表示 UNIDEX 算子本身不存在或已经功能失败。
+**当前暂停：本轮只讨论设计，不运行本页任何安装、校验、性能或 MemFabric 对照命令。** 此前只查 kernel/tcj，遗漏了外部远端地址映射：[ascend-ub-bench `f934478`](https://github.com/hibikid/ascend-ub-bench/blob/f934478756ab5be92cfe409a3f6bc3baaf4b207f/remote_dram_sparse_copy_bench.py#L764-L785) 已示范 MemFabric 远端 Host GVA 经 `gva_to_va(..., LOCAL_DEVICE)` 映射，再作为现有 UNIDEX `src_ptr` 使用。下文准备脚本仍仅实现本地 L2→L1，未接入该远端映射；目标 A3 尚未实测。保留命令仅供后续适配完成后的交接参考。
 
 ## 已准备的本地范围
 
-已准备的实现是单机 A3 的 UNIDEX + SysV registered Host L2→L1，沿用 `kv_path_bench/kv_transfer_bench.py` 的完整请求、逻辑 KV、page 映射和采样方法；原 ADXL/FAST2D 默认入口保留。下述 UNIDEX 单机命令不连接 Store、不需要 IP，不提供 UNIDEX L3 模式，也未实现 SysV FAST2D。该本地入口不代替用户目标中的 UNIDEX L3→L1 集成。
+已准备的实现是单机 A3 的 UNIDEX + SysV registered Host L2→L1，沿用 `kv_path_bench/kv_transfer_bench.py` 的完整请求、逻辑 KV、page 映射和采样方法；原 ADXL/FAST2D 默认入口保留。下述 UNIDEX 单机命令不连接 Store、不需要 IP，不提供 UNIDEX L3 模式，也未实现 SysV FAST2D。该本地入口尚不使用已发现的远端映射接线。
 
 61 层 BF16；128-token page；K=512、RoPE=64 分离。Host 为 `[page,61,128,1,D]`，NPU 为 `[61,page,128,1,D]`。slot 0 保留，scattered 有效 slot 间隔完整空 page。每 token 一行，逐层提交 K/RoPE；Host 零拷贝视图按完整物理 page 切片，K/RoPE 使用同一边界，各视图严格小于 4 GiB；CPU view 与 device alias 偏移一致。上游 size 传递没有 int 截断，因此每个组件仍分配一个完整 Host block，JSON 记录 allocation 与 views。128K scattered 的 L1 和 L2 各约 17.16 GiB，另需索引、运行时余量和注册资源；容量/注册失败即停止，不改请求或自动缩小批次。
 
 `block_dim=24`，可用 `--block-dim` 覆盖。索引/mask 固定映射、范围/覆盖/唯一目标检查及上传同步在计时外，JSON 记录 `index_prepare_s/index_bytes/launch_count`。采样复用这些索引，不包含动态请求索引准备。`measure_batch` 计入全部 launch 和一次请求完成同步，目标清零及其同步在计时外。默认无数据校验，`correct=null`；完成同步/异常检查仍执行。`--validate` 在计时外逐字节检查 KV 和未用 Host/NPU page guards。
 
-## L3→L1 集成状态
+## L3→L1 对照设计边界
 
-已有 [MemFabric GH2L L3→L1 双端入口](../fabric_direct_bench/README.md#聚合执行) 是独立传输路径；当前 UNIDEX kernel 和 tcj manager 调用未见把该远端传输集成到 UNIDEX L3→L1 的封装。本轮不安排 MemFabric 对照或本地 L2 测试，不把任何旧 BM 结果标为 UNIDEX 远端能力。
+同事的 [远端正确性入口](https://github.com/hibikid/ascend-ub-bench/blob/f934478756ab5be92cfe409a3f6bc3baaf4b207f/remote_dram_unidex_copy_test.py#L260-L313) 及 [对照 benchmark](https://github.com/hibikid/ascend-ub-bench/blob/f934478756ab5be92cfe409a3f6bc3baaf4b207f/remote_dram_sparse_copy_bench.py#L745-L899) 证明已有 MemFabric 映射与 UNIDEX `src_ptr` 的源码接线，可作远端环境和数据路径的正确性参考；它们不等于本仓库的目标负载已接入或远端验证通过。正式性能设计是在现有 `fabric_direct_bench`/UNIDEX 适配中复用远端 pool 和 GVA→`LOCAL_DEVICE` 映射，以相同 BM 远端源、相同最终 L1 比较 BM GH2L 与 UNIDEX；保持 61 层、分离 K/RoPE、page 映射、五档规模和完整请求。源静态准备及注册/映射在计时外，索引准备耗时单列；每个样本计入全部 launch 和完成同步。
+
+同事 benchmark 使用单层 `(16,32768,1,576)` 的随机 top-k、对多次调用只做一次末尾同步并报告平均值；这些数字不能直接与本仓库逐样本同步的整请求 median/p95 比较。本轮不运行任何测试，也不把现有本地 L2 脚本或旧 BM 结果标为已完成的 UNIDEX 远端性能。
 
 ## 前置条件与完整命令
 
-**下文命令当前均不执行，只供集成完成后的未来交接参考。** 如后续重新安排远端执行，先按主 Agent 提供的实际交付 commit 运行 `git pull --ff-only`、`git log -1 --oneline` 并核对 HEAD；本轮没有远端功能或性能验证。
+**下文命令当前均不执行，只供远端适配完成后的未来交接参考。** 如后续重新安排远端执行，先按主 Agent 提供的实际交付 commit 运行 `git pull --ff-only`、`git log -1 --oneline` 并核对 HEAD；本轮没有远端功能或性能验证。
 
 目标为 A3/910C、aarch64；停止模型及占用目标 NPU 的服务后执行，每进程只使用一设备。已记录环境为 Ubuntu 22.04、CANN 9.0.0、driver 26.1.1；实际 Python/torch/torch_npu、镜像 digest 必须采集，未知写 `unknown`。准备目标 CANN/驱动开发文件、CMake、C++ 编译器、make、Python3/pip3、torch/torch_npu（与目标 CANN/ABI 匹配）、setuptools、pybind11、wheel==0.45.1。不可假设准备机 wheel 适配目标架构和 Python/torch ABI。
 

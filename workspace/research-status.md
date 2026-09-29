@@ -66,16 +66,18 @@ page batching requirement or sums of independently warmed batches. Staging is
 excluded. These reruns are not yet validated on the remote NPU. Native HiCache
 L2-only work is handled separately; see kv-path-plan.md for ownership and scope.
 
-## Next Step: UNIDEX L3-to-L1 Integration
+## Next Step: UNIDEX Remote Mapping Adaptation
 
-Execution is paused. Single-device UNIDEX + upstream SysV registered Host
-L2-to-L1 copy has a local code entry, but the needed UNIDEX L3-to-L1
-integration was not found in the inspected kernel or tcj calls. Existing
-MemFabric BM GH2L L3-to-L1 is a separate path and cannot stand in for UNIDEX
-remote capability. No local-L2 or old-BM comparison, installation, correctness
-check or performance run is scheduled in this round. Prepared files and commands
-remain [draft handoff material](unidex_copy_bench/README.md) until the
-integration is completed and a new handoff is agreed. This is not evidence of
-an operator failure or a remote test result. Existing research conclusions
-remain unchanged; a future remote handoff will verify the actual delivery
-commit with `git pull --ff-only` and `git log -1 --oneline` before execution.
+This round is for discussion and design; no test is scheduled. Earlier inspection
+missed an external mapping layer: [remote benchmark `f934478`](https://github.com/hibikid/ascend-ub-bench/blob/f934478756ab5be92cfe409a3f6bc3baaf4b207f/remote_dram_sparse_copy_bench.py#L764-L785)
+maps a MemFabric remote Host GVA to `LOCAL_DEVICE` and passes it to the existing
+UNIDEX `src_ptr`. The prepared [local L2 copy entry](unidex_copy_bench/README.md)
+does not yet use this mapping, and the target A3 path has not been tested. The
+colleague's single-layer 576-wide top-k benchmark is a remote-path correctness
+reference, not directly comparable to current whole-request median/p95 results.
+The intended performance comparison reuses the remote pool and mapping in the
+existing `fabric_direct_bench`/UNIDEX adaptation: same BM remote source and
+final L1, 61-layer separated K/RoPE, page mapping and capacities, with every
+launch and completion sync inside each request sample; static source setup and
+mapping stay outside timing, while index preparation is reported separately.
+Existing research conclusions remain unchanged; no remote result is claimed.

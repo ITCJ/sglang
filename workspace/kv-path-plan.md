@@ -2,7 +2,7 @@
 
 ## 当前补充：UNIDEX / SysV registered Host（2026-09-28）
 
-**暂停执行。** 已准备的新增代码仅实现单机 UNIDEX + SysV registered Host L2→L1，沿用现有逻辑 KV、61 层 BF16、128-token page、分离 K/RoPE MLA 布局、slot 0、散页映射与整请求计时；原 ADXL/FAST2D 默认不变。UNIDEX 本地 copy 入口已有，但所需 L3→L1 集成在已查 kernel/tcj 调用中未见现成入口。现有 MemFabric GH2L L3→L1 是独立路径，不能代替或命名为 UNIDEX 远端能力。本轮不安排本地 L2、旧 BM 对照或其他远端测试；准备脚本与命令保留在 [UNIDEX README](unidex_copy_bench/README.md) 供集成完成后重新交接，不代表功能失败或已有远端验证。届时远端先按主 Agent 给出的实际交付 commit 执行 `git pull --ff-only` 和 `git log -1 --oneline` 核对，再按新的交接执行。
+**本轮只讨论设计，暂停执行。** 已准备的新增代码仅实现单机 UNIDEX + SysV registered Host L2→L1，沿用现有逻辑 KV、61 层 BF16、128-token page、分离 K/RoPE MLA 布局、slot 0、散页映射与整请求计时；原 ADXL/FAST2D 默认不变。此前遗漏外部映射：[远端 benchmark `f934478`](https://github.com/hibikid/ascend-ub-bench/blob/f934478756ab5be92cfe409a3f6bc3baaf4b207f/remote_dram_sparse_copy_bench.py#L764-L785) 已示范 MemFabric GVA→`LOCAL_DEVICE` 地址供现有 UNIDEX `src_ptr` 使用，无需据此认定 kernel 缺少远端 copy 功能。现有准备脚本未接入该映射，目标环境也未实测。同事 benchmark 只作远端环境/路径正确性参考；正式性能设计复用远端 pool 与映射到现有 `fabric_direct_bench`/UNIDEX 适配，以相同 BM 远端源和最终 L1 比较 BM GH2L、UNIDEX，保留原 61 层完整请求、page 映射、五档规模及逐样本完成同步。源静态准备/注册映射在计时外，索引准备单列，全部 launch 和完成同步在计时内。其单层 576 维随机 top-k 和多次调用一次同步所得平均值不能直接与现有 median/p95 比较。准备材料见 [UNIDEX README](unidex_copy_bench/README.md)；本轮不安排测试或新增运行命令。
 
 ## 当前补充：原生 HiCache L2→L1（2026-09-16）
 
