@@ -1,5 +1,9 @@
 # KV 路径实验
 
+## 当前补充：UNIDEX / SysV registered Host（2026-09-28）
+
+**暂停执行。** 已准备的新增代码仅实现单机 UNIDEX + SysV registered Host L2→L1，沿用现有逻辑 KV、61 层 BF16、128-token page、分离 K/RoPE MLA 布局、slot 0、散页映射与整请求计时；原 ADXL/FAST2D 默认不变。UNIDEX 本地 copy 入口已有，但所需 L3→L1 集成在已查 kernel/tcj 调用中未见现成入口。现有 MemFabric GH2L L3→L1 是独立路径，不能代替或命名为 UNIDEX 远端能力。本轮不安排本地 L2、旧 BM 对照或其他远端测试；准备脚本与命令保留在 [UNIDEX README](unidex_copy_bench/README.md) 供集成完成后重新交接，不代表功能失败或已有远端验证。届时远端先按主 Agent 给出的实际交付 commit 执行 `git pull --ff-only` 和 `git log -1 --oneline` 核对，再按新的交接执行。
+
 ## 当前补充：原生 HiCache L2→L1（2026-09-16）
 
 新增 `workspace/hicache_l2_bench/`，独立单机/单 NPU，无 Mooncake/L3。复用官方 NPU MLA pool、pinned Host pool、HiRadixCache 和 controller；仅测整请求纯搬运 `copy_whole` 和实际 L2 命中的 `hicache_load`（匹配/加载/提交/等待/完成维护），新测试不再设置固定页数拆批。默认一条命令先冒烟，再自动跑全部五档并保存结果。按阶段记录同一次 wall-clock 样本，不用中位数相减估算管理开销。单个连续 Host-only 前缀、无淘汰压力，不代表真实 server 调度或 L3 管理性能。先 128-token 冒烟，再扩大规模；已收到 2026-09-16 远端汇总截图，实际 commit 与校验状态未回传；运行命令与计时边界见新目录 README。历史 staging 数据保留，后续研究分析不再纳入 staging。流水不作为本轮前置任务。

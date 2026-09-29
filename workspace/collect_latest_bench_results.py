@@ -68,10 +68,13 @@ def read_rows(experiment: str, summary: Path) -> list[dict[str, str]]:
     return rows
 
 
-def collect(repo: Path) -> tuple[list[dict[str, str]], list[Path]]:
+def collect(repo: Path, include_unidex: bool = False) -> tuple[list[dict[str, str]], list[Path]]:
     rows = []
     sources = []
-    for experiment, relative_results in SUITES:
+    suites = SUITES
+    if include_unidex:
+        suites += (("unidex_sysv_registered", Path("workspace/unidex_copy_bench/results")),)
+    for experiment, relative_results in suites:
         summary = latest_summary(repo, relative_results)
         sources.append(summary)
         rows.extend(read_rows(experiment, summary))
@@ -93,9 +96,11 @@ def main() -> int:
         default=default_repo / "workspace/latest_bench_summary.csv",
         help="combined CSV output path",
     )
+    parser.add_argument("--include-unidex", action="store_true",
+                        help="also collect the distinct unidex/SysV single-device suite")
     args = parser.parse_args()
     repo = args.repo.resolve()
-    rows, sources = collect(repo)
+    rows, sources = collect(repo, args.include_unidex)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=OUTPUT_COLUMNS)

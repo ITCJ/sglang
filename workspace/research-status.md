@@ -65,3 +65,17 @@ Reruns use whole-request submission and wall-clock samples, without a fixed
 page batching requirement or sums of independently warmed batches. Staging is
 excluded. These reruns are not yet validated on the remote NPU. Native HiCache
 L2-only work is handled separately; see kv-path-plan.md for ownership and scope.
+
+## Next Step: UNIDEX L3-to-L1 Integration
+
+Execution is paused. Single-device UNIDEX + upstream SysV registered Host
+L2-to-L1 copy has a local code entry, but the needed UNIDEX L3-to-L1
+integration was not found in the inspected kernel or tcj calls. Existing
+MemFabric BM GH2L L3-to-L1 is a separate path and cannot stand in for UNIDEX
+remote capability. No local-L2 or old-BM comparison, installation, correctness
+check or performance run is scheduled in this round. Prepared files and commands
+remain [draft handoff material](unidex_copy_bench/README.md) until the
+integration is completed and a new handoff is agreed. This is not evidence of
+an operator failure or a remote test result. Existing research conclusions
+remain unchanged; a future remote handoff will verify the actual delivery
+commit with `git pull --ff-only` and `git log -1 --oneline` before execution.

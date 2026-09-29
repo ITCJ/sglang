@@ -3,11 +3,14 @@
 
 import argparse
 import ctypes
+from importlib import metadata
 import json
 import math
 import os
+import signal
 import statistics
 import subprocess
+import sys
 import time
 import traceback
 from pathlib import Path
@@ -73,15 +76,105 @@ def measure_batch(action, prepare, synchronize, warmup, repeats, clock=time.perf
     return samples
 
 
-def summarize(code: str, samples: list[float], nbytes: int, validate: bool = False) -> dict:
+def summarize(code: str, samples: list[float], nbytes: int, validate: bool = False,
+              path_name: str | None = None) -> dict:
     median = statistics.median(samples)
     return {
-        "path": PATHS[code], "median_s": median,
+        "path": path_name or PATHS[code], "median_s": median,
         "p95_s": sorted(samples)[math.ceil(0.95 * len(samples)) - 1],
         "effective_gbps": nbytes / median / 1e9,
         "samples_s": samples, "validation_enabled": validate, "correct": True if validate else None,
         "measurement_protocol": "whole_request_v2",
     }
+
+
+def run_unidex(args, result, batches, physical_slots):
+    from unidex_engine import HOST_MEMORY, PATH_NAME, UnidexEngine, configure_soc
+
+    engine = None
+    stage = "A3 SOC configuration"
+    failure = "F9"
+    result.update(engine="unidex", host_memory=HOST_MEMORY, l2_only=True,
+                  path_order="A only", store_local_buffer_bytes=0,
+                  object_layout="local logical pages; no Store objects accessed",
+                  l2_layout="page,layer,token,1,dim; separate KV/RoPE in SysV registered Host",
+                  disabled_paths=["all L3 paths"], block_dim=args.block_dim)
+    try:
+        configure_soc()
+        stage = "target imports"
+        import torch
+        import torch_npu  # noqa: F401
+
+        result["versions"] = {}
+        for package in ("torch", "torch-npu", "sgl-kernel-npu"):
+            try:
+                result["versions"][package] = metadata.version(package)
+            except metadata.PackageNotFoundError:
+                result["versions"][package] = "unknown"
+        failure, stage = "F2", "single-device NPU L1 allocation"
+        torch.npu.set_device(args.device)
+        device_k = torch.empty((LAYERS, physical_slots, PAGE_SIZE, 1, K_DIM), dtype=torch.bfloat16, device="npu")
+        device_rope = torch.empty((LAYERS, physical_slots, PAGE_SIZE, 1, ROPE_DIM), dtype=torch.bfloat16, device="npu")
+        failure, stage = "F3", "SysV registered Host allocation"
+        engine = UnidexEngine(torch, args.device, args.block_dim)
+        engine.allocate(physical_slots)
+        item = batches[0]
+        pages, slots = item["pages"], item["slots"]
+        host_k, host_rope = engine.host_k, engine.host_rope
+        stage = "fixed Host source preparation"
+        start = time.perf_counter()
+        k_page_elements = LAYERS * PAGE_SIZE * K_DIM
+        for page, slot in zip(pages, slots):
+            packed = torch.frombuffer(bytearray(split_page_payload(page)), dtype=torch.bfloat16)
+            host_k[slot].copy_(packed[:k_page_elements].view_as(host_k[slot]))
+            host_rope[slot].copy_(packed[k_page_elements:].view_as(host_rope[slot]))
+        result["host_source_prepare_s"] = time.perf_counter() - start
+        stage = "unidex index preparation"
+        engine.prepare_indices(pages, slots, device_k, device_rope)
+        result.update(engine.metadata)
+
+        def prepare():
+            device_k.zero_()
+            device_rope.zero_()
+
+        def validate():
+            for page, slot in zip(pages, slots):
+                check_page(device_k, device_rope, slot, page, torch)
+            used = set(slots)
+            for slot in range(physical_slots):
+                if slot in used:
+                    continue
+                for component in (device_k[:, slot], device_rope[:, slot], host_k[slot], host_rope[slot]):
+                    if torch.count_nonzero(component.contiguous().view(torch.uint8)).item():
+                        raise RuntimeError(f"unused/reserved Host or NPU page {slot} overwritten")
+
+        failure, stage = "F5", "unidex whole-request samples and completion"
+        samples = measure_batch(engine.submit, prepare, torch.npu.synchronize,
+                                args.warmup, args.repeats, validate=validate if args.validate else None)
+        path = summarize("A", samples, result["bytes"], validate=args.validate, path_name=PATH_NAME)
+        path.update(engine="unidex", host_memory=HOST_MEMORY, block_dim=args.block_dim)
+        result["paths"].append(path)
+        result["status"] = "ok"
+    except (Exception, KeyboardInterrupt) as exc:
+        result.update(status="failed", stage=stage, error=repr(exc), failure_code=failure)
+        if engine is not None:
+            result["engine_stage"] = engine.stage
+        print(f"PERFORMANCE_FAIL stage={stage} error={exc!r}", flush=True)
+        traceback.print_exc()
+    finally:
+        if engine is not None:
+            result.update(engine.metadata)
+            try:
+                engine.close()
+                result.update(engine.metadata)
+            except (Exception, KeyboardInterrupt) as exc:
+                result.update(status="failed", cleanup_error=repr(exc), failure_code="F9")
+                result.setdefault("stage", "unidex completion/cleanup")
+                result.setdefault("error", repr(exc))
+                result.update(engine.metadata)
+                print(f"CLEANUP_FAIL {exc!r}; owners retained until process exit", flush=True)
+                traceback.print_exc()
+    return result.get("failure_code", failure)
 
 
 def main() -> int:
@@ -101,23 +194,32 @@ def main() -> int:
     parser.add_argument("--validate", action="store_true", help="validate all KV bytes after every iteration (default: off)")
     parser.add_argument("--warmup", type=int, default=WARMUP)
     parser.add_argument("--repeats", type=int, default=REPEATS)
+    parser.add_argument("--copy-engine", choices=("sglkernel", "unidex"), default="sglkernel")
+    parser.add_argument("--l2-only", action="store_true", help="single-device unidex path; no Store or IPs")
+    parser.add_argument("--block-dim", type=int, default=24, help="unidex AI Core block_dim (default: 24)")
     parser.add_argument("--skip-direct", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     local_ip, master_ip = args.local_ip or args.client_ip, args.master_ip or args.store_ip
-    if not local_ip or not master_ip:
+    if args.copy_engine == "unidex" and not args.l2_only:
+        parser.error("unidex requires --l2-only; L3 modes are not implemented")
+    if args.l2_only and args.copy_engine != "unidex":
+        parser.error("--l2-only currently requires --copy-engine unidex")
+    if not args.l2_only and (not local_ip or not master_ip):
         parser.error("provide client and Store IPs")
     tokens = args.tokens if args.tokens is not None else {"small": 128, "max": 131072, None: 1024}[args.size]
     if args.size and args.tokens is not None and tokens != {"small": 128, "max": 131072}[args.size]:
         parser.error("size and --tokens disagree")
     if not PAGE_SIZE <= tokens <= 131072 or tokens % PAGE_SIZE:
         parser.error("--tokens must be a multiple of 128 between 128 and 131072")
-    if args.device < 0 or args.warmup < 0 or args.repeats < 1:
+    if args.device < 0 or args.warmup < 0 or args.repeats < 1 or not 1 <= args.block_dim <= (1 << 32) - 1:
         parser.error("device/warmup must be nonnegative; repeats must be positive")
 
-    output = args.output or Path(f"/tmp/a3-kv-perf-{tokens}.json")
-    enable_log("perf", str(tokens), path=args.log or Path(f"/tmp/a3-kv-perf-{tokens}.log"))
-    os.environ.setdefault("ASCEND_ENABLE_USE_FABRIC_MEM", "1")
-    os.environ.setdefault("HCCL_INTRA_ROCE_ENABLE", "0")
+    name = f"a3-kv-perf-{'unidex-sysv_registered-' if args.copy_engine == 'unidex' else ''}{tokens}"
+    output = args.output or Path(f"/tmp/{name}.json")
+    enable_log("perf", str(tokens), path=args.log or Path(f"/tmp/{name}.log"))
+    if not args.l2_only:
+        os.environ.setdefault("ASCEND_ENABLE_USE_FABRIC_MEM", "1")
+        os.environ.setdefault("HCCL_INTRA_ROCE_ENABLE", "0")
 
 
     count = tokens // PAGE_SIZE
@@ -129,13 +231,15 @@ def main() -> int:
     l2_bytes = physical_slots * PAGE_BYTES
     local_buffer_bytes = max(GIB, math.ceil((l2_bytes + PAGE_BYTES) / GIB) * GIB)
     capacity = max(4, math.ceil(local_buffer_bytes / GIB) + 2)
-    os.environ.setdefault("ASCEND_GLOBAL_RESOURCE_CONFIG", json.dumps({"fabric_memory.max_capacity": capacity}))
-    if int(json.loads(os.environ["ASCEND_GLOBAL_RESOURCE_CONFIG"]).get("fabric_memory.max_capacity", 0)) < capacity:
+    if not args.l2_only:
+        os.environ.setdefault("ASCEND_GLOBAL_RESOURCE_CONFIG", json.dumps({"fabric_memory.max_capacity": capacity}))
+    if not args.l2_only and int(json.loads(os.environ["ASCEND_GLOBAL_RESOURCE_CONFIG"]).get("fabric_memory.max_capacity", 0)) < capacity:
         raise RuntimeError(f"whole-request Host pool needs fabric_memory.max_capacity >= {capacity}")
     keys = page_keys(args.prefix + "-split", count)
     batches = make_batches(count, layout=args.layout)
     result = {
         "status": "running", "tokens": tokens, "pages": count, "page_bytes": PAGE_BYTES,
+        "engine": "sglkernel", "host_memory": "adxl", "l2_only": False,
         "layout": args.layout,
         "bytes": count * PAGE_BYTES, "request_pages": count,
         "measurement_protocol": "whole_request_v2",
@@ -158,6 +262,28 @@ def main() -> int:
             capture_output=True, text=True,
         ).stdout.strip(),
     }
+    if args.copy_engine == "unidex":
+        result.update(engine="unidex", host_memory="sysv_registered", l2_only=True,
+                      actual_command=[sys.executable, *sys.argv], process_pid=os.getpid(),
+                      process_started_wall_s=time.time(), working_directory=os.getcwd())
+        output.write_text(json.dumps(result, indent=2) + "\n")
+
+        def terminate(signum, frame):
+            raise RuntimeError(f"received signal {signum}; stop this request")
+
+        previous = signal.signal(signal.SIGTERM, terminate)
+        try:
+            failure = run_unidex(args, result, batches, physical_slots)
+        finally:
+            signal.signal(signal.SIGTERM, previous)
+        output.write_text(json.dumps(result, indent=2) + "\n")
+        if result["status"] != "ok":
+            print(failure, flush=True)
+            return 1
+        item = result["paths"][0]
+        print_result(f"tokens={tokens} layout={args.layout} {item['path']}={item['median_s'] * 1000:.3f} ms "
+                     f"validation={args.validate} launches={result['launch_count']}")
+        return 0
     store = pool = None
     leases = []
     stage = "imports"
