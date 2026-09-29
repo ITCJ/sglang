@@ -207,7 +207,7 @@ git -C "$repo_dir" rev-parse HEAD > "$log_dir/repo-commit.txt"
 docker image inspect --format '{{json .RepoDigests}}' "$image_id" > "$log_dir/image-repodigests.json"
 image_digest=$(python3 -c 'import json,sys; items=json.load(open(sys.argv[1])); print(items[0] if items else "unknown")' "$log_dir/image-repodigests.json")
 printf '%s\n' "$image_id" > "$log_dir/image-id.txt"
-args=(run -d --init --name "$container_name" --network host --privileged
+args=(run -d --name "$container_name" --network host --privileged
       --shm-size=32g --ulimit memlock=-1:-1 --entrypoint /bin/bash
       -e "UNIDEX_REPO=$repo_dir" -e "UNIDEX_IMAGE_DIGEST=$image_digest"
       -e SOC_VERSION=Ascend910_9382 -e ASCEND_SOC_VERSION=Ascend910_9382
