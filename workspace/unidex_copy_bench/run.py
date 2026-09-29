@@ -101,7 +101,8 @@ def check_sysv(args, directory, status):
         write_json(checks / "correctness-status.json", record)
 
 
-def collect(directory, check_only):
+def collect(directory, check_only, skip_sysv=False):
+    selected_paths = BM_PATHS if skip_sysv else BM_PATHS | {SYSV}
     bm = json.loads((directory / "bm/summary.json").read_text())
     bm_status = json.loads((directory / "bm/status.json").read_text())
     if bm_status.get("status") != "ok":
@@ -114,43 +115,46 @@ def collect(directory, check_only):
         raise RuntimeError("SysV correctness did not complete successfully")
     if check_only:
         rows = list(bm_cases)
-        for name in ("128-contiguous", "4096-scattered"):
+        for name in (() if skip_sysv else ("128-contiguous", "4096-scattered")):
             data = json.loads((directory / "sysv-check" / f"{name}.json").read_text())
             if data.get("status") != "ok":
                 raise RuntimeError("invalid SysV correctness result")
             rows.extend(dict(path, tokens=data["tokens"], layout=data["layout"])
                         for path in data["paths"])
-        if ({row["path"] for row in rows} != BM_PATHS | {SYSV}
+        if ({row["path"] for row in rows} != selected_paths
                 or not all(row.get("validation_enabled") is True and row.get("correct") is True
                            for row in rows)):
-            raise RuntimeError("missing successful validation for the three paths")
+            raise RuntimeError("missing successful validation for selected paths")
         expected = {(n, layout, path) for n, layout in ((128, "contiguous"), (4096, "scattered"))
-                    for path in BM_PATHS | {SYSV}}
+                    for path in selected_paths}
         actual = [(row["tokens"], row["layout"], row["path"]) for row in rows]
         if len(actual) != len(expected) or set(actual) != expected:
-            raise RuntimeError("incomplete three-path correctness matrix")
+            raise RuntimeError("incomplete selected-path correctness matrix")
     else:
-        summaries = list((directory / "sysv").glob("*/summary.json"))
-        if len(summaries) != 1:
-            raise RuntimeError("expected exactly one SysV run under this run directory")
-        sysv = json.loads(summaries[0].read_text())
-        if sysv.get("status") != "ok":
-            raise RuntimeError("SysV suite did not complete successfully")
+        sysv = {"cases": []}
+        if not skip_sysv:
+            summaries = list((directory / "sysv").glob("*/summary.json"))
+            if len(summaries) != 1:
+                raise RuntimeError("expected exactly one SysV run under this run directory")
+            sysv = json.loads(summaries[0].read_text())
+            if sysv.get("status") != "ok":
+                raise RuntimeError("SysV suite did not complete successfully")
         rows = [case for case in bm_cases if not case["smoke"] and not case.get("preflight", False)]
         for case in sysv["cases"]:
             if not case["smoke"]:
                 rows.extend(dict(path, tokens=case["tokens"], layout=case["layout"])
                             for path in case["result"]["paths"])
         expected = {(n, layout, path) for n in CAPACITIES for layout in LAYOUTS
-                    for path in BM_PATHS | {SYSV}}
+                    for path in selected_paths}
         actual = [(row["tokens"], row["layout"], row["path"]) for row in rows]
         if len(actual) != len(expected) or set(actual) != expected:
-            raise RuntimeError("incomplete or duplicate three-path performance matrix")
+            raise RuntimeError("incomplete or duplicate selected-path performance matrix")
         if not all(row.get("validation_enabled") is False and row.get("correct") is None
                    for row in rows):
             raise RuntimeError("performance validation unexpectedly enabled")
     write_json(directory / "summary.json", dict(status="ok", mode="correctness" if check_only else "performance",
-               measurement_protocol="whole_request_v2", cases=rows))
+               measurement_protocol="whole_request_v2", selected_paths=sorted(selected_paths),
+               skipped_paths=[SYSV] if skip_sysv else [], cases=rows))
     with (directory / "summary.csv").open("w") as stream:
         writer = csv.writer(stream)
         writer.writerow(("tokens", "layout", "path", "median_ms", "p95_ms", "effective_gbps",
@@ -166,6 +170,7 @@ def main():
     parser.add_argument("role", choices=("source", "client"))
     parser.add_argument("local_ip")
     parser.add_argument("source_ip", nargs="?")
+    parser.add_argument("--skip-sysv", action="store_true", help="run only BM local and remote UNIDEX; explicitly record SysV as skipped")
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--block-dim", type=int, choices=(24, 48), default=24)
     parser.add_argument("--image-digest", default="unknown", help="optional environment annotation")
@@ -193,6 +198,7 @@ def main():
     status = dict(status="running", role=args.role, actual_command=[sys.executable, *sys.argv],
                   working_directory=os.getcwd(), local_ip=args.local_ip, source_ip=args.source_ip,
                   check_only=args.check_only, preflight_validate=args.preflight_validate,
+                  skipped_paths=[SYSV] if args.skip_sysv else [],
                   stage="environment", exit_code=None)
     write_json(directory / "status.json", status)
     def interrupted(signum, frame):
@@ -220,9 +226,9 @@ def main():
         run_stage(command, "bm", directory, status)
         if args.role == "client":
             # BM process and mappings are gone before SysV allocation starts.
-            if args.check_only or args.preflight_validate:
+            if not args.skip_sysv and (args.check_only or args.preflight_validate):
                 check_sysv(args, directory, status)
-            if not args.check_only:
+            if not args.skip_sysv and not args.check_only:
                 run_stage([sys.executable, str(WORKSPACE / "kv_path_bench/performance_suite.py"),
                            "--copy-engine", "unidex", "--l2-only", "--device", str(args.device),
                            "--block-dim", str(args.block_dim), "--warmup", str(args.warmup),
@@ -231,10 +237,14 @@ def main():
                            "--image-digest", args.image_digest, "--results-dir", str(directory / "sysv")],
                           "sysv", directory, status)
             status["stage"] = "collect"
-            collect(directory, args.check_only)
+            if args.skip_sysv:
+                print("SYSV_SKIPPED: requested by --skip-sysv", flush=True)
+            collect(directory, args.check_only, args.skip_sysv)
         status.update(status="ok", stage="complete", exit_code=0)
         write_json(directory / "status.json", status)
         print("UNIDEX_SOURCE_DONE" if args.role == "source" else
+              "UNIDEX_BM_CHECK_OK" if args.skip_sysv and args.check_only else
+              "UNIDEX_BM_OK" if args.skip_sysv else
               "UNIDEX_CHECK_OK" if args.check_only else "UNIDEX_ALL_OK", flush=True)
         return 0
     except (Exception, KeyboardInterrupt) as exc:

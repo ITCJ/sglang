@@ -4,6 +4,22 @@
 
 默认无数据校验，含 smoke；默认 warmup=2/repeats=10。`--preflight-validate` 显式为各后端先做 128 contiguous、4K scattered 校验，再运行该后端的无校验矩阵；`--check-only` 是独立正确性模式，三条路径均校验 128 contiguous 和 4K scattered，不进入性能矩阵。两种模式互斥。首次环境请先用 `--check-only`，通过后再测性能。
 
+## 暂跳过 SysV
+
+当前 BM 的 128 contiguous / 4K scattered 校验已有用户回报通过，SysV 128 校验 F3 待定位。用户允许暂跳过 SysV。两端统一入口加 `--skip-sysv`，只测 BM 本地/远端两条 UNIDEX，不测旧 BM copy 对照。完整性能输出 20 条结果；`status.json` 和 `summary.json` 的 `skipped_paths` 明确标记 SysV，终端输出 `SYSV_SKIPPED`，客户端成功码为 `UNIDEX_BM_OK`，不把 SysV 算通过。该选项也支持 `--check-only`（四项 BM 校验，成功 `UNIDEX_BM_CHECK_OK`）或 `--preflight-validate`。默认仍测三条，不在 SysV 失败后自动吞掉错误。
+
+已有上述 BM 校验依据、环境不变时，两端拉取并核对主 Agent 给出的 commit 后，在停止模型及其他测试的容器内执行：
+
+```sh
+# 源端；见 FR 后启动客户端
+python3 workspace/unidex_copy_bench/run.py source <SOURCE_IP> --skip-sysv
+
+# 客户端
+python3 workspace/unidex_copy_bench/run.py client <CLIENT_IP> <SOURCE_IP> --skip-sysv
+```
+
+默认不重复数据校验，完整请求 warmup=2/repeats=10。失败回传 `tail -n 80 <RUN_DIR>/bm/native.log`、根 status 和 BM status；结束后自动同步清理 BM，保留日志。新环境仍须先用同一命令加 `--check-only`。
+
 ## 统一交接
 
 1. **问题**：同一 MLA page 定义下，三个 UNIDEX 数据来源能否正确搬运，以及各自完整请求性能如何。

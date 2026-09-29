@@ -2,6 +2,8 @@
 
 ## 当前执行入口：仅三条 UNIDEX
 
+用户允许暂跳过尚未通过的 SysV：统一入口加 `--skip-sysv`，只采 BM 本地/远端两条路径（20 条正式结果），显式记录 skipped_paths；不改变 BM 布局/计时，不将 SysV 标为通过。默认三路径入口保留。
+
 统一使用 [unidex_copy_bench/run.py](unidex_copy_bench/README.md)：源端提供 BM 内存，客户端依次测 BM local→L1、BM remote Host→L1，释放 BM 后测 SysV L2→L1。只输出这三条新增路径，五档 × 两映射共 30 条正式结果，不重跑原四条 BM 对照。默认性能及 smoke 不校验；首次先以同一入口 `--check-only` 做小规模校验，`--preflight-validate` 可选地为各后端增加 128 contiguous/4K scattered 校验后运行性能。所有布局、计时和归因边界保持下述定义；该入口尚待远端验证。
 
 ## 当前补充：UNIDEX / SysV registered Host（2026-09-28）
