@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import importlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from .layout import UINT32_MAX, positive_int
 from .manager import MempoolKVView
@@ -32,7 +32,7 @@ class MempoolKVOffload:
     def __init__(
         self,
         target: MempoolKVView,
-        inputs: MempoolWriteInputs,
+        inputs: Optional[MempoolWriteInputs] = None,
         block_dim: int = 48,
         kernel: Any = None,
     ) -> None:
@@ -42,19 +42,23 @@ class MempoolKVOffload:
         positive_int("block_dim", block_dim)
         if target.rank != target.owner.rank:
             raise ValueError("KV offload must target the owning rank's view")
-        if inputs.rows * target.layout.row_bytes > UINT32_MAX:
+        if inputs is not None and inputs.rows * target.layout.row_bytes > UINT32_MAX:
             raise ValueError("source span exceeds UniDexCopy's UINT32_MAX limit")
         self.target = target
         self.inputs = inputs
         self.block_dim = block_dim
         self._kernel = kernel
-        self._source_index = torch.arange(
-            inputs.rows, dtype=torch.int64, device=inputs.slots.device
-        )
         # A CPU dtype placeholder preserves NPU dispatch from the source/indices.
         self._target_dtype = torch.empty(1, dtype=torch.bfloat16, device="cpu")
 
-    def write(self, values: Tensor) -> None:
+    def write(
+        self,
+        values: Tensor,
+        *,
+        slots: Optional[Tensor] = None,
+        positions: Optional[Tensor] = None,
+        valid: Optional[Tensor] = None,
+    ) -> None:
         """Enqueue masked writes without host tensor reads or device synchronization.
 
         Bounds masking also excludes unbound/padded rows. Request admission must
@@ -64,12 +68,41 @@ class MempoolKVOffload:
         """
         import torch
 
-        layout, inputs = self.target.layout, self.inputs
+        layout = self.target.layout
+        if slots is None and positions is None and valid is None:
+            if self.inputs is None:
+                raise ValueError("slots, positions and valid must be supplied together")
+            slots, positions, valid = (
+                self.inputs.slots,
+                self.inputs.positions,
+                self.inputs.valid,
+            )
+        if slots is None or positions is None or valid is None:
+            raise ValueError("slots, positions and valid must be supplied together")
+        rows = slots.numel()
+        if rows <= 0 or rows * layout.row_bytes > UINT32_MAX:
+            raise ValueError("invalid source extent for UniDexCopy")
+        if (
+            positions.shape != slots.shape
+            or valid.shape != slots.shape
+            or slots.ndim != 1
+        ):
+            raise ValueError("write metadata must be equal-length vectors")
+        if (
+            slots.dtype != torch.int64
+            or positions.dtype != torch.int64
+            or valid.dtype != torch.bool
+        ):
+            raise ValueError(
+                "write metadata requires int64 slots/positions and bool valid"
+            )
+        if positions.device != slots.device or valid.device != slots.device:
+            raise ValueError("write metadata must share one device")
         if values.dtype != torch.bfloat16:
             raise ValueError("KV offload requires bfloat16")
-        if tuple(values.shape) != (inputs.rows, layout.heads, layout.dim):
+        if tuple(values.shape) != (rows, layout.heads, layout.dim):
             raise ValueError("KV offload source must have shape [rows, heads, dim]")
-        if not values.is_contiguous() or values.device != inputs.slots.device:
+        if not values.is_contiguous() or values.device != slots.device:
             raise ValueError(
                 "KV offload requires contiguous source and inputs on one device"
             )
@@ -80,26 +113,24 @@ class MempoolKVOffload:
             self._kernel = torch.ops.npu.unidex_copy
 
         valid = (
-            inputs.valid
-            & (inputs.slots >= 0)
-            & (inputs.slots < layout.slots)
-            & (inputs.positions >= 0)
-            & (inputs.positions < layout.tokens)
+            valid
+            & (slots >= 0)
+            & (slots < layout.slots)
+            & (positions >= 0)
+            & (positions < layout.tokens)
         )
-        destination = torch.where(
-            valid, inputs.slots * layout.tokens + inputs.positions, 0
-        )
+        destination = torch.where(valid, slots * layout.tokens + positions, 0)
         # Always launch: a zero-valid capture must still contain the write path.
         self._kernel(
             values,
             self._target_dtype,
-            self._source_index,
+            torch.arange(rows, dtype=torch.int64, device=values.device),
             destination,
             valid,
-            inputs.rows,
+            rows,
             layout.slots * layout.tokens,
             layout.row_bytes,
-            inputs.rows,
+            rows,
             self.block_dim,
             None,
             self.target.device_base,

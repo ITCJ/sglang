@@ -45,6 +45,7 @@ from sglang.srt.utils import (
 )
 
 if TYPE_CHECKING:
+    from sglang.srt.hardware_backend.npu.mempool.runtime import MempoolRuntime
     from sglang.srt.layers.radix_attention import RadixAttention
     from sglang.srt.model_executor.model_runner import ModelRunner
 
@@ -356,6 +357,7 @@ class AscendAttnBackend(AttentionBackend):
             self.sparse_kv_offload_mode.uses_host_kv_offload
         )
         self.sparse_kv_manager = None
+        self.mempool_runtime: Optional[MempoolRuntime] = None
         if self.sparse_kv_offload_mode is SparseKVOffloadMode.PD_PREFILL_NATIVE:
             logger.info(
                 "Sparsity-driven KV offload is configured, but disabled on "
@@ -439,6 +441,22 @@ class AscendAttnBackend(AttentionBackend):
             self.dllm_block_size = self.dllm_config.block_size
 
         self.attn_cp_size = model_runner.ps.attn_cp_size
+
+    def attach_mempool_runtime(self, runtime: MempoolRuntime) -> None:
+        """Attach mapped shadow storage before capture; PD startup owns creation."""
+        if self.mempool_runtime is not None:
+            raise RuntimeError("attention backend already has a mempool runtime")
+        if is_mla_preprocess_enabled():
+            raise ValueError("mempool does not support MLAPO")
+        if not self.use_mla or runtime.layout.heads != 1:
+            raise ValueError("mempool shadow writes require compact MLA KV")
+        if runtime.layout.dim != self.kv_lora_rank + self.qk_rope_head_dim:
+            raise ValueError("mempool compact KV dimensions differ from the model")
+        if runtime.row_slot.numel() != self.req_to_token.shape[0]:
+            raise ValueError("mempool binding table must cover request pool rows")
+        if runtime.row_slot.device != self.req_to_token.device:
+            raise ValueError("mempool metadata must be on the model device")
+        self.mempool_runtime = runtime
 
     def _is_swa_layer(self, layer: RadixAttention) -> bool:
         return (
@@ -1322,6 +1340,12 @@ class AscendAttnBackend(AttentionBackend):
                 k_rope=k_rope,
             )
         if topk_indices is not None:
+            if self.mempool_runtime is not None:
+                if k_rope is None:
+                    raise ValueError("mempool compact KV requires k_rope")
+                self.mempool_runtime.write_layer(
+                    layer.layer_id, k, k_rope, forward_batch
+                )
             if self.enable_sparsity_driven_kv_offload:
                 from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.attention import (
                     forward_sparsity_driven_kv_offload,
@@ -2778,6 +2802,12 @@ class AscendAttnBackend(AttentionBackend):
             if topk_indices is None:
                 save_kv_cache = False
         if topk_indices is not None:
+            if self.mempool_runtime is not None:
+                if k_rope is None:
+                    raise ValueError("mempool compact KV requires k_rope")
+                self.mempool_runtime.write_layer(
+                    layer.layer_id, k, k_rope, forward_batch
+                )
             if self.enable_sparsity_driven_kv_offload:
                 from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.attention import (
                     forward_sparsity_driven_kv_offload,

@@ -11,6 +11,7 @@ import sys
 import time
 import traceback
 import uuid
+from collections.abc import Callable
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Sequence
@@ -336,22 +337,51 @@ def write_report(args: argparse.Namespace, report: dict[str, Any]) -> None:
 
 
 def retain_failed_pool(
-    args: argparse.Namespace, report: dict[str, Any], reason: str
+    args: argparse.Namespace,
+    report: dict[str, Any],
+    reason: str,
+    *,
+    bilateral_reads: bool = False,
 ) -> None:
+    """Retain storage while its peer may still submit remote reads."""
+    shutdown = (
+        "Both peers may read remotely; Ctrl+C will keep storage retained. "
+        "Confirm both peers have stopped reading before terminating the test processes."
+        if bilateral_reads
+        else "Stop D before stopping P."
+    )
     print(
-        f"[rank {args.rank}] DRAIN_UNCONFIRMED: {reason}; retaining BM pool. Stop D before stopping P.",
+        f"[rank {args.rank}] DRAIN_UNCONFIRMED: {reason}; retaining BM pool. {shutdown}",
         flush=True,
     )
     report["retained_pool"] = True
     write_report(args, report)
-    try:
-        while True:
+    while True:
+        try:
             time.sleep(1)
-    except KeyboardInterrupt:
-        print("[test] operator requested shutdown of retained pool", flush=True)
+        except KeyboardInterrupt:
+            if not bilateral_reads:
+                print("[test] operator requested shutdown of retained pool", flush=True)
+                return
+            print(
+                "[test] peer drain remains unconfirmed; BM pool stays retained",
+                flush=True,
+            )
 
 
-def run(args: argparse.Namespace, layout: PoolLayout) -> None:
+def run(
+    args: argparse.Namespace,
+    layout: PoolLayout,
+    *,
+    stage: Callable[[MempoolKVManager, argparse.Namespace], None] = stage_local_kv,
+    paired_checks: Optional[
+        Callable[
+            [MempoolKVManager, argparse.Namespace, Any, TestChannel],
+            list[dict[str, Any]],
+        ]
+    ] = None,
+) -> None:
+    """Own paired setup/teardown; optional checks reuse this proven test lifecycle."""
     torch, mf, environment = load_runtime(args)
     if args.check_env:
         print(json.dumps(environment, indent=2))
@@ -409,9 +439,9 @@ def run(args: argparse.Namespace, layout: PoolLayout) -> None:
         manager.probe_peer(marker)
         channel.send("PROBED")
         channel.expect("PROBED")
-        stage_local_kv(manager, args)
-        # P cannot tear down after it has permitted D to read its KV.
-        if args.rank == 0:
+        stage(manager, args)
+        # A writer cannot tear down after it has permitted peer reads.
+        if args.rank == 0 or paired_checks is not None:
             may_close_pool = False
         channel.send("DATA_READY")
         channel.expect("DATA_READY")
@@ -419,12 +449,16 @@ def run(args: argparse.Namespace, layout: PoolLayout) -> None:
             copy_error = None
             may_close_pool = False
             try:
-                report["checks"] = run_copy_checks(manager, args, torch)
+                report["checks"] = (
+                    run_copy_checks(manager, args, torch)
+                    if paired_checks is None
+                    else paired_checks(manager, args, torch, channel)
+                )
             except Exception as exc:
                 copy_error = exc
                 report["error"] = f"{type(exc).__name__}: {exc}"
             torch.npu.synchronize()
-            may_close_pool = True
+            may_close_pool = paired_checks is None or copy_error is None
             channel.send(
                 "DRAINED",
                 success=copy_error is None,
@@ -432,12 +466,15 @@ def run(args: argparse.Namespace, layout: PoolLayout) -> None:
                 checks=len(report.get("checks", [])),
             )
             channel.expect("P_RELEASED")
+            may_close_pool = True
             manager.close(drain=torch.npu.synchronize)
             manager = None
             channel.send("D_CLOSED")
             if copy_error is not None:
                 raise copy_error
         else:
+            if paired_checks is not None:
+                report["checks"] = paired_checks(manager, args, torch, channel)
             outcome = channel.expect("DRAINED")
             may_close_pool = True
             report["decode_result"] = outcome
@@ -468,13 +505,19 @@ def run(args: argparse.Namespace, layout: PoolLayout) -> None:
                             args,
                             report,
                             "peer completion or local NPU drain was not confirmed",
+                            bilateral_reads=paired_checks is not None,
                         )
                     try:
                         manager.close(drain=torch.npu.synchronize)
                     except Exception as exc:
                         report["status"] = "failed"
                         report["cleanup_error"] = str(exc)
-                        retain_failed_pool(args, report, f"pool close failed: {exc}")
+                        retain_failed_pool(
+                            args,
+                            report,
+                            f"pool close failed: {exc}",
+                            bilateral_reads=paired_checks is not None,
+                        )
                         raise
                 if bm_initialized:
                     mf.bm.uninitialize()

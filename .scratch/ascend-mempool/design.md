@@ -9,7 +9,7 @@ demo 暂不支持自动 retraction/rebootstrap；采用下文的精度验收标�
 2026-09-28 复核发现控制状态、释放条件和接入验收仍有需要补充的内容，见
 [整体方案与代码复核](design-review-2026-09-28.md)。其中标为“待确认”的建议尚未成为已确认设计。
 
-本文描述待实现的功能；消息名、字段和状态名用于明确协议，不表示仓库已有这些实现。
+本文描述整体设计；实际实现与验收进度以对应 ticket 的检查项和 Comments 为准。
 项目使用本地 Markdown tracker。后续 tickets 放在本 feature 的 `issues/` 目录，
 每个任务单独一个文件，并记录状态、验收条件及 blocking edges。
 旧的 `agent-mission-track/sglang-npu-develop.md` 不再作为项目维护入口。
@@ -17,7 +17,8 @@ demo 暂不支持自动 retraction/rebootstrap；采用下文的精度验收标�
 ## 2026-09-29：ticket02 ③④接线方案（当前 review 入口）
 
 进度：01 已验收，02① storage、②控制协议/单 rank 状态机已提交；
-③ backend 数据路径、④服务控制接线尚未实现。以下是方案，不是运行验证结果。
+2026-09-30 ③ backend 数据路径及 runtime gate 代码/Mac 检查已完成，待用户核对和
+NPU gate；④服务控制接线尚未实现。下面的服务合同尚无实际运行验证结果。
 D1/D4/D5 已确认的策略见 [控制与 drain 设计](d1-d4-d5-design.md)。
 
 ### Runtime 归属与代码路径
@@ -27,11 +28,11 @@ Mempool 不依赖 `SparseKVCacheManager` 的创建或生命周期；尤其 P 为
 `PD_PREFILL_NATIVE` 时没有 sparse manager，也必须能创建 mempool 并执行双写。
 backend 是 forward 接入点；request ownership 决策仍由 Ascend 控制层和统一 tick 负责。
 
-以下路径相对仓库根目录，新增文件名和具体接口仍是实现建议：
+以下路径相对仓库根目录，③已实现；④接线仍为待实现内容：
 
 | 路径 | 职责 / 拟改动 |
 | --- | --- |
-| `python/sglang/srt/hardware_backend/npu/mempool/runtime.py`（拟新增） | backend 使用的运行时适配：request-row 到已批准 binding 的映射、forward 写入 metadata、固定 Graph buffer、写入完成观察接口 |
+| `python/sglang/srt/hardware_backend/npu/mempool/rows.py`、`runtime.py` | 已实现：行推导、request-row binding、固定设备表、forward/replay 边界、有效行计数快照和完成事件 |
 | `python/sglang/srt/hardware_backend/npu/mempool/offload.py` | 复用已有 `MempoolWriteInputs` / `MempoolKVOffload`，按实际 forward 接口补充能力 |
 | `python/sglang/srt/hardware_backend/npu/attention/ascend_backend.py` | P/D temporary compact KV 的 mempool 写入入口；eager、capture/replay metadata 接入；避免按已有 host-offload 开关漏掉 P |
 | `python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/attention.py`、`manager.py` | 核对 D 当前实际调用链，必要时做小范围适配/共享 compact KV；不让 sparse manager 持有 mempool runtime 或成为 mempool writer 的唯一入口 |
@@ -49,10 +50,25 @@ cache 和 top-k materialization；关闭整个类前必须迁移仍需要的功�
 为实施入口。③不包括④的 tick、准入、drain、配置、BM startup 或服务运行；
 ③整体完成后统一交付 runtime 两机 NPU gate，不单独提前交付底层 writer gate。
 
-已知重复：计划新增 mempool/rows.py，复制 offload_v2 的行推导并独立测试，本轮不改
+已知重复：已新增 mempool/rows.py，复制 offload_v2 的行推导并独立测试，本轮不改
 sparse manager。修改 padding、seq_lens != 1 等条件时需同步核对两处，文件头和
 该 ticket Comments 留档；后续补特征测试后再考虑合并为共享纯函数。
-此处记录实施选择，不表示新模块已存在或硬件测试已通过。
+代码和77项CPU测试已完成；NPU Graph、远端可见性与真实服务仍未运行。
+
+③接口：`bind/unbind/assert_bound` 管理本地已批准 binding；
+`begin_forward` / `write_layer` / `end_forward` / `poll_completed` 提交写入和完成事实。
+`KVWriteExpectation` 使用全序列 position，D 在 writer 内减 prompt length。
+eager/capture 检查层覆盖；replay 使用外部 begin/end 边界与捕获的设备计数。
+每次 forward 记录计数快照和事件，完成后核对实际有效行数与 host 期望；
+`prompt_ready` 仅表示本地 prompt 写完，不证明 D 可读。
+capture 拒绝 live binding/pending work；binding 更新在统一 scheduler stream 提交，
+forward stream 等待安装事件；unbind 仍必须由④提供远端 drain 确认。
+
+独立 writer gate 使用真实机器/角色：先 P 写/D 读 prompt，再 D 写/P 读 decode。
+两侧用01的读取路径逐元素检查完整逻辑 KV 和哨兵；双方交换
+`WRITER_GATE_DRAINED` 后进入 pool 关闭握手。双向读回失败且 peer drain 未确认时，
+保持存储，Ctrl+C 不使该保留分支进入 BM close。运行方式见
+[测试 README](../../ascend-mempool-test/README.md)。
 
 ### 双写与 Graph 合同
 

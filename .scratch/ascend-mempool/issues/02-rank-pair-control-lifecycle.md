@@ -14,7 +14,9 @@
 
 ## ③ Implementation plan（2026-09-30 用户确认安排）
 
-本节是③的当前实施入口，优先于较早的③任务安排；以下均为待实现/待验证内容。
+本节是③的当前实施入口，优先于较早的③任务安排。2026-09-30 已完成③代码与
+Mac 检查，等待用户核对及两机 NPU gate。S1–S4 勾选仅表示代码/本地检查完成，
+不表示硬件验收；完整服务及本票 Acceptance criteria 仍待④。
 范围：backend mempool runtime、P/D temporary compact KV shadow 双写、Graph 所需
 metadata、Mac 检查和代码核对。不含④的 tick、准入 gate、drain、配置、BM 启动和
 真实服务运行。③提供 binding 安装/清除与写入完成接口，不依赖 D1/D4/D5 已实现。
@@ -43,65 +45,77 @@ metadata、Mac 检查和代码核对。不含④的 tick、准入 gate、drain�
 
 ### S1：复制行推导并建立测试
 
-- [ ] 新增 `python/sglang/srt/hardware_backend/npu/mempool/rows.py`，纯函数输入
+- [x] 新增 `python/sglang/srt/hardware_backend/npu/mempool/rows.py`，纯函数输入
   普通字段/张量：forward mode、req_pool_indices、seq_lens、extend_seq_lens、
   extend_prefix_lens、CPU 侧长度、out_cache_loc 等；不依赖 ForwardBatch 类型。
-- [ ] 忠实移植 offload_v2 四种布局、有效性条件及错误检查，返回
+- [x] 忠实移植 offload_v2 四种布局、有效性条件及错误检查，返回
   `(req_ids, token_pos, valid)`。保留 decode 的 `seq_lens != 1`、cache loc 检查。
-- [ ] 文件头标明来源函数/对应逻辑，并指向本 ticket 的“已知重复”记录。
-- [ ] 手算期望值测试四种布局和 padding，不仅用实现自身生成期望值。
+- [x] 文件头标明来源函数/对应逻辑，并指向本 ticket 的“已知重复”记录。
+- [x] 手算期望值测试四种布局和 padding，不仅用实现自身生成期望值。
 
 ### S2：扩展 writer
 
-- [ ] `MempoolKVOffload.write` 支持可变行数，接受行推导后得到的
+- [x] `MempoolKVOffload.write` 支持可变行数，接受行推导后得到的
   slots/positions/valid，保持零有效行也 launch。
-- [ ] P eager 可以按实际 chunk 行数写入；D capture/replay 保持所需设备地址稳定。
+- [x] P eager 支持实际 chunk 行数；D 使用固定 binding 表，capture/replay 实测待 S5。
 
 ### S3：backend mempool runtime
 
-- [ ] 新增 `mempool/runtime.py`，按 `layer_id - start_layer` 定位 per-layer offloader。
-- [ ] 固定地址设备 binding 表 `row_slot`、`row_prompt_len`，大小对应 req_to_token_pool
+- [x] 新增 `mempool/runtime.py`，按 `layer_id - start_layer` 定位 per-layer offloader。
+- [x] 固定地址设备 binding 表 `row_slot`、`row_prompt_len`，大小对应 req_to_token_pool
   行数；第0行作为 graph padding 保持 invalid（-1）。
-- [ ] 提供 bind/unbind，仅由 tick 批准后调用；③测试用假调用。约束为 bind 对应尚未
+- [x] 提供 bind/unbind，仅由 tick 批准后调用；③测试用假调用。约束为 bind 对应尚未
   入 batch 的请求、unbind 在 drain 后，操作行不属于任何在飞行 batch。以此作为
   不需要额外 WAR barrier 的设计前提，写成不变量检查，不将推理视为硬件证据。
-- [ ] `write_layer(layer_id, k, k_rope, forward_batch)`：拼接 compact KV → S1 行推导
+- [x] `write_layer(layer_id, k, k_rope, forward_batch)`：拼接 compact KV → S1 行推导
   → binding/角色映射 → writer。P local position=pos，要求 pos<prompt_len；
   D local position=pos-prompt_len，要求 local>=0。未绑定行 invalid，仍 launch。
-- [ ] 同一 stream 写入，与 offload_v2 一致，避免新引入源 tensor 跨流生命周期问题。
+- [x] 同一 stream 写入，与 offload_v2 一致，避免新引入源 tensor 跨流生命周期问题。
   shadow 阶段接受写入位于关键路径，侧流优化留待后续。
-- [ ] forward 结束时记录完成事件，提供 tick 查询；runtime 不发送 READY/DONE。
-- [ ] host 侧记账用于首个无服务内 readback gate：每个 forward 每层恰好调用一次，
+- [x] forward 结束时记录完成事件，提供 tick 查询；runtime 不发送 READY/DONE。
+- [x] host 侧记账用于首个无服务内 readback gate：每个 forward 每层恰好调用一次，
   总调用数等于本 rank 层数；按期望行数（P extend_seq_lens 之和、D 有效请求数）
   累计 per-slot 写入进度，KV_READY 前与 prompt_len 核对，不一致报错。
-- [ ] `assert_bound(reqs)`：真实请求必须有 binding，fake 通过既有标识跳过；④在
+- [x] `assert_bound(reqs)`：真实请求必须有 binding，fake 通过既有标识跳过；④在
   run_batch 前调用。底层 invalid mask 不能成为真实请求未绑定时静默通过的理由。
-- [ ] 构造时防御性拒绝 MLAPO 同开；正式启动配置校验归④。
+- [x] 构造时防御性拒绝 MLAPO 同开；正式启动配置校验归④。
+
+实现补充：eager/capture 检查 Python layer 覆盖；replay 不执行 Python hook，因此
+`begin_forward(..., replay=True)` / `end_forward()` 必须由④在每次真实 replay 外调用。
+设备计数按 layer/slot 累计有效行，forward 末尾 clone 快照并记录完成事件；
+`poll_completed()` 在事件完成后核对 host 期望值，再更新 completed KV rows。
+快照避免 overlap 下早一轮完成事实读到后一轮的计数；计数不代替实际数据 readback。
+capture 只允许无 live binding、无 pending completion 的 dummy 状态。
+bind/unbind 禁止 open forward，bind 更新在同一 scheduler stream 上提交，下一次
+forward stream 等待最新安装事件；unbind 仍需调用方证明远端 drain。
 
 ### S4：薄 backend hook
 
-- [ ] 在上述 extend/decode 的 topk 分支中调用
+- [x] 在上述 extend/decode 的 topk 分支中调用
   `self.mempool_runtime.write_layer(...)`，不以 save_kv_cache 控制写入。
-- [ ] `AscendAttnBackend` 提供 attach 接口，默认 runtime 为 None，实际 attach 归④。
-- [ ] 不修改 sparse manager 的行推导；mempool 不依赖该类的生命周期。
+- [x] `AscendAttnBackend` 提供 attach 接口，默认 runtime 为 None，实际 attach 归④。
+- [x] 不修改 sparse manager 的行推导；mempool 不依赖该类的生命周期。
   每个新增类/函数提供简短功能介绍，核心逻辑放入 Mac 可测模块。
 
 ### S5：③完成后统一交付两机 NPU 测试包
 
-- [ ] 在 `ascend-mempool-test/scripts/` 增加 gate 脚本并更新 README，沿用 run_gate.sh
+- [x] 在 `ascend-mempool-test/scripts/` 增加 gate 脚本并更新 README，沿用 run_gate.sh
   风格和 `ALL_CHECKS_PASSED` 判据。gate 驱动 runtime.write_layer，使用合成 batch。
-- [ ] 写端（物理 P 机器）覆盖 ragged prefill（chunk 偏移、eager）、decode 静态布局
-  capture/replay（不同 slot/position），同 slot 内容改写，以及 padding/未绑定行。
-  decode 布局测试须显式使用 D 角色位置规则，不把机器角色当作 runtime 角色。
-- [ ] 读端（物理 D 机器）用01已验证的读取路径逐元素对照，确认无效行哨兵未改动。
+- [x] gate 实现 P 写/D 读的 ragged prefill、chunk 偏移、同 slot 改写和 padding/unbound。
+  随后 D 写/P 读 decode capture/replay，改变 slot、prompt length 和位置；使用真实
+  BM rank1/runtime D 角色规则，不在 P pool 模拟 decode 相对位置。
+- [x] 两侧读端用01读取路径逐元素比较 owner 全部逻辑 KV，覆盖未改动 slot 的哨兵。
+  测试脚本已交付；实际双机运行与 Graph/远端可见性证据尚未取得。
 - [ ] 按 verification.md 先向用户核对实现、正常路径、ownership、同步/释放前提和
   代码位置，再交付具体双机命令。③与 writer gate 同轮交付，不提前单独验收 writer。
+- [ ] 用户执行两机 writer gate，双方20条 checks、其中10条 decode replay，
+  `ALL_CHECKS_PASSED` 且报告 `status=passed`；回传日志后核对验收。
 
 ### S6：记录与重复代码管理
 
-- [ ] ticket Comments 记录实际实现/检查结果；没运行的检查明确写“未运行”。
-- [ ] ③及两机 writer gate 合并为同一轮 NPU 测试，未验证里程碑不勾选。
-- [ ] 已知重复：`mempool/rows.py` 计划复制自 offload_v2 行推导。修改 padding、
+- [x] ticket Comments 记录实际实现/检查结果；没运行的检查明确写“未运行”。
+- [x] ③及两机 writer gate 合并为同一轮 NPU 测试，未验证里程碑不勾选。
+- [x] 已知重复：`mempool/rows.py` 已复制自 offload_v2 行推导。修改 padding、
   `seq_lens != 1` 等逻辑时需核对并同步两处；在文件头、ticket Comments 和
   design.md ③一节留档。后续先补特征测试再抽共享纯函数，此次不改无测试保护的
   sparse manager。若发现原逻辑缺陷，先明确差异，不能无记录地令两份代码分歧。
@@ -177,6 +191,48 @@ NPU 上由用户启动全部 16 对 rank，验证启动兼容性检查、正常 
 故障注入的系统验证归06，active cancel/peer fault 完整矩阵归07。
 
 ## Comments
+
+### 2026-09-30：③实现交付，等待用户核对与 NPU gate
+
+Codex / GPT-6：按用户要求先提交原工作区内容，提交为 `6dab4b6258`
+（Document Ascend mempool implementation plan and verification gates）。
+其后③新增/修改保持 unstaged/untracked，没有再次 git add 或 commit。
+
+- `mempool/rows.py` 独立纯张量行推导；`offload.py` 接受可变行数/显式 metadata，
+  全 invalid 仍 launch。保留固定 inputs 的已有调用方式。
+- `mempool/runtime.py` 提供 `KVWriteExpectation`、bind/unbind/assert_bound、
+  begin/write/end/poll 与 writes_done/prompt_ready。固定 request-row 表映射到本侧 slot，
+  P 写全 prompt position，D 写相对 decode position；本地完成与协议 ownership 分开。
+- eager/capture 验证每层写入一次；replay 通过外部 forward 边界记账。设备有效行计数
+  及事件后的快照核对避免全 invalid 静默通过，并覆盖 overlap 的完成顺序。
+- backend 增加默认 None 的 runtime 和 attach 防御性校验，extend/decode topk 分支
+  在现有 sparse 路径前 shadow 写入；不依赖 save_kv_cache，不改 sparse manager。
+  ④仍负责 runtime 创建/attach、scheduler 边界调用、fake marker 和 ownership。
+- 新增 `verify_writer.py`、`run_writer_gate.sh`、`writer_cases.py` 及 README。
+  gate 与 hook 使用相同 runtime；P prompt 写/D 远端读后，D decode 写/P 远端读。
+  这个双向安排替代原 S5 的固定单向机器职责，以实际验证 rank1 的 D 相对位置。
+  每个24/48-core阶段都包含 eager、16-row decode capture/replay、rebind、边界和哨兵。
+- 双向 gate 收到双方 `WRITER_GATE_DRAINED` 后才关闭 pool；失败缺少 peer drain 时
+  保留存储，Ctrl+C 不授权双向 retained pool 的 BM close。01单向 gate 保留原流程。
+- 已知重复：rows.py 有意复制 offload_v2，来源/同步维护要求已在文件头、此票和
+  design.md 记录；空 batch 保留静态 source extent 为全 invalid，额外 shape 检查
+  使 malformed 输入直接报错。后续共享抽取需先补原 manager 特征测试。
+
+Mac 实际执行：完整 CPU suite **77项通过**；严格 mypy 检查 **16个源码文件通过**；
+Ruff F/UP037、format、isort、git diff whitespace、两份 gate runner 的 bash syntax 检查通过；
+writer `--describe --kv-dim 576` 通过（P/D 各贡献1 GiB，stride=1 GiB）。
+backend 的 import/runtime 路径受 torch_npu 限制，Mac 只做静态检查。
+新增21项测试覆盖四种布局、可变行数、chunk/local position、容量边界、绑定地址、
+安装事件等待、漏/重复layer、计数错误、capture live-binding 拒绝及完整 gate CPU参考。
+CPU测试使用 fake SDK/kernel/event 边界，不是实际 BM/NPU 执行。
+
+Standards review 的事件边界/测试 fixture 可读性/嵌套函数介绍已修正；
+Spec review 的 live-binding capture 漏记完成和双向失败时 D 提前关闭缺陷已修正。
+两项 review 最后定向复核均无剩余发现；Spec review 的 CPU 模拟也确认双向 callback
+失败/timeout 时不关闭 BM，以及双向 retention 不因 Ctrl+C 执行 close。
+实际 NPU Graph、远端可见性、真实 GLM5.1 server：**未运行**。
+③代码与 gate 同轮交付；用户核对、两机 writer gate、④以及服务 readback 都待完成，
+ticket02 保持 open，不解锁依赖本票硬件验收的工作。
 
 2026-09-29：用户确认②代码review无疑问并授权commit，已提交
 `8d9bdd75b2`（Add Ascend mempool PD control and safe slot retirement），共9个文件，

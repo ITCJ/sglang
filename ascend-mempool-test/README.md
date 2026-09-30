@@ -1,6 +1,6 @@
 # Ascend mempool 独立功能测试
 
-Ticket 01 的硬件验证入口。目标环境为同一 superpod 的两台 Ascend 机器，
+Ticket 01 与02③的独立硬件验证入口。目标环境为同一 superpod 的两台 Ascend 机器，
 每侧使用一张 NPU，MemFabric Hybrid **1.1.4**。不启动 SGLang server、router 或模型。
 BM API 参考本地 `release/1.1` 的 `9fa9afbb`；两端运行时版本写入报告并相互核对。
 
@@ -182,3 +182,79 @@ python3 -u ascend-mempool-test/scripts/verify_graph.py \
 失败时保留完整 traceback、最后一个 PASS case、相关 MF 错误和 retained-pool 状态。
 我们据此核对实现并调整脚本。Ticket 01 已于 2026-09-27 经用户确认验收并关闭。
 02 的新增 runtime offload 与真实 server 集成仍待 NPU 验证。
+
+## 02③ Runtime writer gate
+
+③增加 `mempool/rows.py`、`runtime.py` 和 backend attach/write hook。P/D runtime
+均通过 attention backend 使用；③提供数据路径和接口，④才接入配置、BM startup、
+control tick、准入与 drain。因此此 gate 不启动 GLM5.1 server，也不宣称服务已通过。
+
+`rows.py` 有意复制原 `SparseKVCacheManager.offload_v2` 的行推导，当前不修改原函数。
+修正 padding 或 validity 时需核对两份逻辑；后续补特征测试后再考虑共享抽取。
+
+调用顺序如下，eager 和 replay 都必须具有 host forward 边界：
+
+```text
+tick 批准 → bind(req_pool_idx, slot, prompt_tokens)
+begin_forward([KVWriteExpectation(req_pool_idx, full_position, rows)])
+  → eager: 每层 write_layer(...)
+  → replay: begin_forward(..., replay=True) 后 graph.replay()
+end_forward()  → 在相同提交 stream 上记录设备计数快照和完成事件
+poll_completed() → 事件完成后核对每层/每 slot 的实际有效行数
+  → 本地 writes_done / prompt_ready 供 control tick 使用
+drain、远端安全与 tick 批准 → unbind()
+```
+
+capture 使用 `begin_forward([], capture=True)`，要求没有真实 binding 或 pending work，
+捕获全部 invalid 的每层 writer，
+然后 `end_forward()` 验证层覆盖。replay 不执行 Python write_layer，不能依赖该函数
+做每次 replay 的 host 记账。binding 表和设备计数地址保持固定；forward 设备字段使用
+Graph 自身的固定输入，更新与 replay 在同一提交 stream 排序。
+
+`bind/unbind` 不能发生在 open forward 或该 request 的未完成写入期间。binding 更新
+事件由下一次 begin_forward 等待；binding 更新统一在同一 scheduler stream 提交，
+跨 scheduler/forward stream 的安装顺序明确。
+写入、有效行计数及快照都在 forward producer stream，临时 source 不跨流。
+`prompt_ready` 只证明本地写入完成；发布 KV_READY 还需远端可读性保证。
+取消、远端读取 drain、DONE 和 slot ownership 由④负责，runtime 不自行发送消息或释放。
+
+两机 gate 沿用01的环境/SDK/BM/test-channel/安全 teardown。默认两层、16 slots、
+P每slot8 tokens、D每slot16 tokens、compact dim576；对齐后各机贡献1 GiB。
+使用 P 的18773/18774端口、pool ID103。两端版本/配置必须一致，先启动 P，再启动 D。
+
+P：
+
+```bash
+bash ascend-mempool-test/scripts/run_writer_gate.sh 0 <P_IP> <P_NIC_URL> 0 /tmp/mempool-02-writer-p
+```
+
+D：
+
+```bash
+bash ascend-mempool-test/scripts/run_writer_gate.sh 1 <P_IP> <D_NIC_URL> 0 /tmp/mempool-02-writer-d
+```
+
+与现有 runner 相同，可设置 `MEMPOOL_TEST_PYTHON` 和 `MEMPOOL_TEST_TIMEOUT`。
+环境检查复用 `verify_graph.py --check-env`；新脚本也支持 `verify_writer.py --check-env`。
+Mac 可执行 `verify_writer.py --describe`，只描述小测试布局。
+
+每个24/48-core阶段都从 sentinel 重新开始，先 P 写/D远端读，再 D 写/P远端读。
+D 使用真实 BM rank1/runtime decode 规则，避免在 P pool 上模拟错误的相对位置。
+case 包含：ragged+MoE尾部padding+unbound、chunk prefix、同 slot内容改写、P最后slot，
+decode全invalid捕获与replay、首行/下一行、不同prompt/slot重绑定、D最后一行。
+最后一行前先 eager 写完整 prefix，再用同一个decode graph写 `S_D-1`，核对边界。
+所有copy内容、未改动的slot及padding均由另一机器逐元素比较；完成事实还要通过runtime
+设备计数检查，host期望行数不能代替实际copy内容。
+
+通过判据：两侧 `ALL_CHECKS_PASSED`；各自JSON `status=passed`、包含20条 `checks`，
+其中10条为decode replay。报错、内容不符、计数不符、timeout或teardown失败均不通过。
+双方结束所有读写后交换 `WRITER_GATE_DRAINED`，才进入01已有的pool关闭握手。
+无法确认安全drain时双方保留pool，不能超时强制复用；本 gate 双方均可能远端读，
+不能沿用01“先停D再停P”的单向停止顺序。双向 retained pool 遇到 Ctrl+C 继续保留，
+不执行 BM close；需先确认双方都停止远端读取，再协调终止测试进程。
+回传两侧 writer `.log`/`.json`、版本/命令；NPU执行由用户完成。
+
+Mac 新增 `test_rows.py` 与 `test_runtime.py`，覆盖四种行布局、chunk/local position、
+容量边界、binding固定地址、漏/重复layer、invalid导致少写、意外额外写入、overlap快照、
+fake admission及同一套gate案例的完整CPU参考值。Mac 不执行实际NPU Graph。
+③与这个runtime gate同一轮交付NPU测试，ticket02保持open，仍需④及后续服务readback。

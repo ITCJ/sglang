@@ -154,6 +154,46 @@ class TestMempoolKVOffload(unittest.TestCase):
             writer.write(values)
         self.assertTrue((self.target == -1).all().item())
 
+    def test_explicit_metadata_supports_variable_eager_chunk_sizes(self):
+        """One writer handles a short chunk and then a larger chunk."""
+        writer = MempoolKVOffload(self.view, kernel=self.kernel)
+        writer.write(
+            torch.full((1, 1, 4), 11, dtype=torch.bfloat16),
+            slots=torch.tensor([2]),
+            positions=torch.tensor([0]),
+            valid=torch.tensor([True]),
+        )
+        writer.write(
+            torch.full((3, 1, 4), 22, dtype=torch.bfloat16),
+            slots=torch.tensor([2, 2, -1]),
+            positions=torch.tensor([1, 2, 0]),
+            valid=torch.tensor([True, True, False]),
+        )
+        expected = torch.full_like(self.target, -1)
+        expected[2, 0] = 11
+        expected[2, 1:3] = 22
+        self.assertTrue(torch.equal(self.target, expected))
+
+    def test_zero_valid_still_reaches_kernel_and_partial_metadata_is_rejected(self):
+        """Capture includes the write call even when its mask selects no rows."""
+        calls = []
+
+        def kernel(*args):
+            """Observe whether the external copy boundary was submitted."""
+            calls.append(args[6])
+
+        writer = MempoolKVOffload(self.view, kernel=kernel)
+        values = torch.zeros((3, 1, 4), dtype=torch.bfloat16)
+        writer.write(
+            values,
+            slots=torch.full((3,), -1),
+            positions=torch.zeros(3, dtype=torch.long),
+            valid=torch.zeros(3, dtype=torch.bool),
+        )
+        self.assertEqual(calls, [128])
+        with self.assertRaisesRegex(ValueError, "together"):
+            writer.write(values, slots=torch.tensor([1, 1, 1]))
+
 
 if __name__ == "__main__":
     unittest.main()
