@@ -1,28 +1,44 @@
-# Issue tracker: GitHub
+# Issue tracker: Local Markdown
 
-Issues and specs for this checkout live in `ITCJ/sglang` GitHub Issues.
-Use `gh` with `-R ITCJ/sglang` for tracker operations. The `upstream`
-remote is not this project's issue tracker.
+Issues and specs for this checkout live as Markdown files in `.scratch/`.
+Local Markdown is the configured tracker for engineering skills.
 
-## Operations
+## Conventions
 
-- Create: `gh issue create -R ITCJ/sglang --title "..." --body-file <file>`.
-- Read: `gh issue view <number> -R ITCJ/sglang --comments`.
-- List: `gh issue list -R ITCJ/sglang --state open --json number,title,body,labels`.
-- Comment: `gh issue comment <number> -R ITCJ/sglang --body-file <file>`.
-- Label: `gh issue edit <number> -R ITCJ/sglang --add-label "..."` or `--remove-label "..."`.
-- Close: `gh issue close <number> -R ITCJ/sglang`.
+- One feature per directory: `.scratch/<feature-slug>/`.
+- The authoritative feature spec is `.scratch/<feature-slug>/spec.md`.
+- Implementation tickets are one file per issue at
+  `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01` in
+  dependency order. Keep each ticket in its own file.
+- Record the triage role near the top as `**Status:** <role>` using the
+  vocabulary in `triage-labels.md`.
+- Record `**State:** open` or `**State:** closed` separately from triage.
+  A `ready-for-agent` spec is ready for planning; it does not mean the feature
+  has been implemented.
+- Append comments and work history under `## Comments`, including changes,
+  checks actually run, their results, and remaining issues.
+- Reference blocking tickets by feature-local number/title and relative link
+  under `**Blocked by:**`. A ticket can start when every blocker is closed.
 
-When a skill says "publish to the issue tracker", create an issue here.
-When it says "fetch the relevant ticket", read the issue here.
+## Skill operations
 
-## Pull requests as a triage surface
-
-**PRs as a request surface: no.**
+- Publish a spec: create or update `.scratch/<feature-slug>/spec.md` and apply
+  the requested triage role in its `Status` field.
+- Publish tickets: write one file per approved ticket under the feature's
+  `issues/` directory, with its acceptance criteria and blockers.
+- Fetch: read the referenced spec or ticket and its appended comments. Resolve
+  ticket numbers within the referenced feature.
+- List: inspect the feature directories and ticket files in `.scratch/`.
+- Comment: append to `## Comments` in the relevant file.
+- Label: update the local `Status` field.
+- Close: set `State` to `closed` after acceptance passes, and append completion
+  notes with actual verification evidence.
 
 ## Wayfinding
 
-A map is one issue labelled `wayfinder:map`; its child tickets are GitHub
-sub-issues when available, otherwise linked in the map's task list.
-Use native issue dependencies for blockers when available; otherwise
-record `Blocked by: #<number>` in the child issue.
+When using the wayfinding flow, its map is `.scratch/<effort>/map.md`, with one
+child ticket per file under `.scratch/<effort>/issues/`.
+Use `Type` for `research`, `prototype`, `grilling`, or `task` and its flow-specific
+`Status` values `claimed`/`resolved`. Record blockers in each child file.
+Append resolved decisions and child links to the map. An unresolved child can
+start when all its blockers are resolved.

@@ -1,34 +1,24 @@
-# Ascend Sparse KV Offload Project Record
-
-Treat commit `295132c4a5` (`[NPU] Add sparsity-driven KV offload for DeepSeek
-DSA on Ascend`, PR #33089) as this project's initial upstream development
-baseline when reviewing its history and changes.
-
-When modifying Ascend sparse KV offload or sparse PD code in this repository,
-read `../agent-mission-track/sglang-npu-develop.md` for the current project
-status and recent change history.
-
-After completing each independent logical code change in this area, and before
-the final response, update the progress section when its conclusions changed
-and append one entry to the document's Agent Change Log. Record the exact model
-identifier and reasoning effort supplied by the runtime, the behavior changed
-and why, affected files, checks actually run and their results, and remaining
-issues. Write `not provided` for model details the runtime does not expose.
-Never infer model details or claim checks that were not run.
-
-Do not append a change-log entry for read-only analysis. Keep unrelated SGLang
-work out of this project record.
+# Agent Instructions
 
 ## Agent skills
 
 ### Issue tracker
 
-Issues and specs live in `ITCJ/sglang` GitHub Issues. See `docs/agents/issue-tracker.md`.
+Issues and specs live as local Markdown under `.scratch/<feature>/`.
+See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
-Use the default five triage labels. See `docs/agents/triage-labels.md`.
+Use the default five triage labels as local `Status` values.
+See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
-Use a single-context layout. See `docs/agents/domain.md`.
+Read `CONTEXT.md` when reviewing Ascend sparse KV history. Use a single-context
+layout as described in `docs/agents/domain.md`.
+
+### Ascend mempool delivery
+
+When implementing, handing off, or closing an Ascend mempool ticket, read
+`.scratch/ascend-mempool/verification.md` for stage review and user-run NPU
+verification. Hardware acceptance gates ticket closure and dependent work.
