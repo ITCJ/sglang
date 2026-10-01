@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import logging
 import math
+import os
 import socket
 import threading
 import time
@@ -83,9 +84,18 @@ class MempoolKVManager:
         layout.layout_for_rank(rank)
         if bm_module is None:
             bm_module = importlib.import_module("memfabric_hybrid").bm
+        local_bytes = layout.contribution_bytes(rank)
+        logger.info(
+            "Creating mempool BM pool: bm_rank=%d pool_id=%d "
+            "local_dram_bytes=%d rank_stride_bytes=%d",
+            rank,
+            pool_id,
+            local_bytes,
+            layout.rank_stride_bytes,
+        )
         handle = bm_module.create2(
             id=pool_id,
-            local_dram_size=layout.contribution_bytes(rank),
+            local_dram_size=local_bytes,
             max_dram_size=layout.rank_stride_bytes,
             local_hbm_size=0,
             max_hbm_size=0,
@@ -93,6 +103,7 @@ class MempoolKVManager:
         )
         if handle is None:
             raise RuntimeError("BM create2 returned no handle")
+        logger.info("Mempool BM pool created: bm_rank=%d pool_id=%d", rank, pool_id)
         return cls(layout, rank, handle, bm_module)
 
     @classmethod
@@ -159,12 +170,22 @@ class MempoolKVManager:
                 # P may still be loading weights when D reaches this point.
                 cls._wait_for_store(store_host, store_port, timeout)
             logger.info(
-                "Initializing mempool BM pair: role=%s tp_rank=%d store=%s",
+                "Initializing mempool BM pair: role=%s tp_rank=%d pid=%d "
+                "device_id=%d store=%s nic=%s",
                 role,
                 tp_rank,
+                os.getpid(),
+                device_id,
                 store_url,
+                nic_url,
             )
             ret = bm_module.initialize(store_url, 2, device_id, config)
+            logger.info(
+                "Mempool BM initialize returned: role=%s tp_rank=%d ret=%d",
+                role,
+                tp_rank,
+                ret,
+            )
             if ret != 0:
                 raise RuntimeError(f"BM initialize failed for {store_url}: {ret}")
 
@@ -235,6 +256,7 @@ class MempoolKVManager:
             raise RuntimeError("mempool is closed")
         if self._joined:
             raise RuntimeError("mempool has already joined")
+        logger.info("Joining mempool BM pool: bm_rank=%d", self.rank)
         ret = self._handle.join()
         if ret != 0:
             raise RuntimeError(f"BM join failed: {ret}")
@@ -242,15 +264,34 @@ class MempoolKVManager:
         actual_bytes = self._handle.local_mem_size(self._bm.BmMemType.HOST)
         if actual_bytes != self.layout.contribution_bytes(self.rank):
             raise RuntimeError(f"BM local contribution mismatch: {actual_bytes}")
-        deadline = time.monotonic() + timeout
+        logger.info(
+            "Mempool BM join returned: bm_rank=%d p_gva=%#x d_gva=%#x; "
+            "checking device mappings (timeout=%gs)",
+            self.rank,
+            self._handle.peer_rank_ptr(0, self._bm.BmMemType.HOST),
+            self._handle.peer_rank_ptr(1, self._bm.BmMemType.HOST),
+            timeout,
+        )
+        started = time.monotonic()
+        deadline = started + timeout
         while True:
             bases = self._mapped_bases()
             if bases is not None:
                 self._bases = bases
+                logger.info(
+                    "Mempool BM mappings ready: bm_rank=%d elapsed=%.1fs "
+                    "p_device_va=%#x d_device_va=%#x",
+                    self.rank,
+                    time.monotonic() - started,
+                    bases[0][1],
+                    bases[1][1],
+                )
                 return
             if time.monotonic() >= deadline:
                 raise TimeoutError("BM peer mappings did not become device-visible")
-            time.sleep(min(0.05, max(0, deadline - time.monotonic())))
+            # MF logs each unavailable GVA at ERROR; poll once per second
+            # while the peer finishes allocation/import, capped by the deadline.
+            time.sleep(min(1.0, max(0, deadline - time.monotonic())))
 
     def _mapped_bases(self) -> dict[int, tuple[int, int]] | None:
         """Check stride and device-contiguous layer ranges, or retry incomplete maps."""

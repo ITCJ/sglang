@@ -348,6 +348,8 @@ D进入 `bm.initialize()` 前，先按此参数等待对应P store的TCP listene
 不受 `BmConfig.init_timeout` 控制，因此必须在进入SDK前完成这段等待。
 TCP等待、后续BM操作/映射等阶段分别使用该timeout，它不是整个模型加载/服务启动的总时限。
 TCP可达只允许继续执行正式BM初始化，pool身份及映射仍按原流程校验；SDK错误直接报错。
+P/D的device mapping查询在失败后等待1秒再重试，最后一次等待受剩余deadline限制。
+每个rank各自轮询；MF对单次失败可能输出HYBM和SMEM两行，因此16个rank仍会有多行日志。
 
 维持TP16、DP1、PP1、CP1、BF16、`--attention-backend ascend`、
 `--disaggregation-transfer-backend ascend`、`--disable-radix-cache`；P保留
@@ -409,6 +411,25 @@ pair记录一次 `Failed to read header from the socket connected from ...`；�
 这一条视为探测日志；持续错误、正式握手失败或mapping超时仍需排查。
 这次启动速度差异修复的NPU回归应保留D先完成加载的场景，并继续完成后面的服务请求gate；
 Mac模拟测试不代替真实MF监听/握手及16对映射验证。
+
+如果D停在BM启动阶段，按下面的阶段日志定位；TCP可达不等于BM初始化已经返回。
+
+| 最后出现的阶段日志 | 尚未确认完成的调用 |
+| --- | --- |
+| `Initializing mempool BM pair`，没有 `Mempool BM initialize returned` | `bm.initialize()`，包括正式store连接/握手及HYBM初始化 |
+| `Creating mempool BM pool`，没有 `Mempool BM pool created` | `bm.create2()`，包括本地内存分配与导出 |
+| `Joining mempool BM pool`，没有 `Mempool BM join returned` | 原生 `handle.join()` |
+| `Mempool BM join returned`，没有 `Mempool BM mappings ready` | 本地/远端device mapping尚未全部通过检查 |
+
+初始化日志包含role、TP rank、PID、device ID和NIC，便于对应MF原生日志里的PID；
+create日志包含实际local DRAM字节数和共同stride，join返回后记录P/D GVA base。
+结合这些base判断失败地址属于哪个rank范围，不凭同一个十六进制地址猜测peer身份。
+保存完整日志，再提取阶段行（分别在P/D机器执行对应行）：
+
+```bash
+grep -E 'mempool BM|Mempool BM|P BM store|Traceback|RuntimeError|TimeoutError' /tmp/mempool-02-service/p.log
+grep -E 'mempool BM|Mempool BM|P BM store|Traceback|RuntimeError|TimeoutError' /tmp/mempool-02-service/d.log
+```
 
 P日志中 `ready` 只表明mempool prompt写完；`native_handoff` 后才允许
 `row_detach/native_free`，其 `native_release` 事件通常仍显示P slot占用。

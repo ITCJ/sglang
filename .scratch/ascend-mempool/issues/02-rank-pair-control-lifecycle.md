@@ -326,6 +326,26 @@ NPU 上由用户启动全部 16 对 rank，验证启动兼容性检查、正常 
 
 ## Comments
 
+### 2026-10-01：BM映射查询降频与启动阶段日志
+
+Codex / GPT-6：用户在21:04这一轮重测中反馈，D全部16个rank的P store TCP探测均在
+0秒内成功，随后最后一条Python日志仍为 `Initializing mempool BM pair`；P在21:06
+仍有多个PID重复报告GVA转换失败。该轮不能继续归因于P store未监听，也不能由这条
+调用前日志确定D阻塞在initialize、create2还是join。P日志只证明映射检查尚未通过，
+当前片段不足以确定失败地址属于P还是D。真实NPU卡住的根因继续待查。
+
+按用户要求，将 `mempool/manager.py::join()` 的映射查询失败间隔由0.05秒改为1秒，
+P/D统一使用，最后一次等待仍受剩余deadline限制；整体mapping timeout不变。
+生产改动仅在此文件。补充initialize返回、create2前后、原生join前后和mapping通过的
+阶段日志，记录PID/TP rank/device/NIC、实际local DRAM大小、stride及P/D GVA base。
+这些日志用于下一次真实运行区分SDK阻塞阶段，不将TCP探测成功误写为BM初始化成功。
+README增加阶段定位表和双方日志提取命令；没有调整BM协议、内存布局或控制状态机。
+
+Mac实际执行：原有完整CPU suite **113项通过**；NPU mempool包strict mypy **7个源文件通过**；
+Ruff lint/format、isort、`git diff --check`通过。本轮没有为日志或轮询常量新增测试。
+尚未执行NPU；等待用户更新两端后沿用原脚本重测，回传阶段日志与最终异常。
+降频不等于BM启动卡住已修复，ticket保持open；未add、commit或push。
+
 ### 2026-10-01：修复 D 提前完成模型加载时的 BM store 连接失败
 
 Codex / GPT-6：用户反馈真实GLM5.1 shadow启动失败。D在19:05:33连接
