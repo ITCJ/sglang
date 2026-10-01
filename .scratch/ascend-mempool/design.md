@@ -14,12 +14,25 @@ demo 暂不支持自动 retraction/rebootstrap；采用下文的精度验收标�
 每个任务单独一个文件，并记录状态、验收条件及 blocking edges。
 旧的 `agent-mission-track/sglang-npu-develop.md` 不再作为项目维护入口。
 
-## 2026-09-29：ticket02 ③④接线方案（当前 review 入口）
+## ticket02 接线方案（2026-10-01 更新，已确认实施入口）
 
 进度：01 已验收，02① storage、②控制协议/单 rank 状态机已提交；
-2026-09-30 ③ backend 数据路径及 runtime gate 代码/Mac 检查已完成，待用户核对和
-NPU gate；④服务控制接线尚未实现。下面的服务合同尚无实际运行验证结果。
+③ backend 数据路径及 runtime gate 已提交，用户反馈双机 writer gate 两端通过；
+④服务控制接线尚未实现，真实服务合同尚无实际运行验证结果。
 D1/D4/D5 已确认的策略见 [控制与 drain 设计](d1-d4-d5-design.md)。
+
+接下来按 [ticket02](issues/02-rank-pair-control-lifecycle.md) 的两部分执行：
+先优化 part1–part3 的 row detach、Req 适配、writer 单接口和只读 control snapshot，
+再实现 part4。优化项与 part4 均待实现，不能把方案确认当作代码完成。
+
+保留已有8个生产文件；④仅新增 `disaggregation/ascend/mempool_service.py` 和
+`mempool_tick.py`。service 对接 SGLang 请求/原 transfer/native 回收与 drain，
+tick 以一次 advance 封装完整 TP 协调；control 保持协议状态/ownership 的唯一来源，
+runtime 提供设备写入事实。不新增 integration.py 或 queue 子类层。
+共享路径确定为 environ.py、arg_groups/fields/disagg.py、managers/scheduler.py、
+disaggregation/prefill.py、disaggregation/decode.py、
+managers/scheduler_components/batch_result_processor.py 和 model_executor/model_runner.py，
+均仅接薄接口。完整职责、实施顺序、测试及历史记录见 ticket02。
 
 ### Runtime 归属与代码路径
 
@@ -33,7 +46,7 @@ backend 是 forward 接入点；request ownership 决策仍由 Ascend 控制层�
 | 路径 | 职责 / 拟改动 |
 | --- | --- |
 | `python/sglang/srt/hardware_backend/npu/mempool/rows.py`、`runtime.py` | 已实现：行推导、request-row binding、固定设备表、forward/replay 边界、有效行计数快照和完成事件 |
-| `python/sglang/srt/hardware_backend/npu/mempool/offload.py` | 复用已有 `MempoolWriteInputs` / `MempoolKVOffload`，按实际 forward 接口补充能力 |
+| `python/sglang/srt/hardware_backend/npu/mempool/offload.py` | 保留 `MempoolKVOffload`；A3待删除 `MempoolWriteInputs`/兼容分支，统一显式 slots/positions/valid |
 | `python/sglang/srt/hardware_backend/npu/attention/ascend_backend.py` | P/D temporary compact KV 的 mempool 写入入口；eager、capture/replay metadata 接入；避免按已有 host-offload 开关漏掉 P |
 | `python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/attention.py`、`manager.py` | 核对 D 当前实际调用链，必要时做小范围适配/共享 compact KV；不让 sparse manager 持有 mempool runtime 或成为 mempool writer 的唯一入口 |
 | `python/sglang/srt/disaggregation/ascend/` | conn attach、原 socket 消息传送、统一 TP control tick 适配；协调 scheduler 与 backend runtime |
@@ -46,23 +59,33 @@ cache 和 top-k materialization；关闭整个类前必须迁移仍需要的功�
 
 ### ③实施安排补充（2026-09-30）
 
-具体 S1–S6 任务、接口、测试矩阵及风险以 [ticket02 的③ Implementation plan](issues/02-rank-pair-control-lifecycle.md)
-为实施入口。③不包括④的 tick、准入、drain、配置、BM startup 或服务运行；
-③整体完成后统一交付 runtime 两机 NPU gate，不单独提前交付底层 writer gate。
+③ S1–S6 是已交付初版的历史安排，存档于 [ticket02](issues/02-rank-pair-control-lifecycle.md)
+Comments；当前实施入口为该票前部的两部分任务。③初版不包括④的 tick、准入、drain、
+配置、BM startup 或服务运行；独立两机 runtime writer gate 已由用户反馈通过。
 
 已知重复：已新增 mempool/rows.py，复制 offload_v2 的行推导并独立测试，本轮不改
 sparse manager。修改 padding、seq_lens != 1 等条件时需同步核对两处，文件头和
 该 ticket Comments 留档；后续补特征测试后再考虑合并为共享纯函数。
-代码和77项CPU测试已完成；NPU Graph、远端可见性与真实服务仍未运行。
+初版代码和77项CPU测试已完成；用户提供的 writer 日志含两端各20条PASS和
+ALL_CHECKS_PASSED，验证合成 batch 的 NPU Graph 写入/远端读回。真实服务尚未验收。
 
-③接口：`bind/unbind/assert_bound` 管理本地已批准 binding；
+③初版接口：`bind/unbind/assert_bound` 管理本地已批准 binding；
 `begin_forward` / `write_layer` / `end_forward` / `poll_completed` 提交写入和完成事实。
 `KVWriteExpectation` 使用全序列 position，D 在 writer 内减 prompt length。
 eager/capture 检查层覆盖；replay 使用外部 begin/end 边界与捕获的设备计数。
 每次 forward 记录计数快照和事件，完成后核对实际有效行数与 host 期望；
 `prompt_ready` 仅表示本地 prompt 写完，不证明 D 可读。
 capture 拒绝 live binding/pending work；binding 更新在统一 scheduler stream 提交，
-forward stream 等待安装事件；unbind 仍必须由④提供远端 drain 确认。
+forward stream 等待安装事件。
+
+2026-10-01 已确认的接口调整（待实现）：Req 投影集中到 Ascend service，真实字段为
+`req.kv.req_pool_idx`，runtime 仅接收明确 row/写入参数。`detach_row` 只清除本地
+row attachment，并返回不可变完成事实；control 的 persistent slot 不随之释放。
+detach 前无 open forward/该 row 未消费 completion，且调用方保证无未来提交。
+正常 P 还须等原 handoff 成功及本地相关操作完成，才能回收原生 HBM KV/request row。
+**KV_READY 本身不够**：shadow 阶段旧 KV 仍可能通过 staging 传输。
+P mempool slot 保留至精确 DONE 和本地写入安全条件满足，由 tick 统一 release。
+D 仍先完成 whole-D drain 再 detach/release；runtime 无需引入 PD identity/generation。
 
 独立 writer gate 使用真实机器/角色：先 P 写/D 读 prompt，再 D 写/P 读 decode。
 两侧用01的读取路径逐元素检查完整逻辑 KV 和哨兵；双方交换

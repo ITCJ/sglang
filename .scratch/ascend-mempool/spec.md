@@ -105,6 +105,31 @@ the existing path. Readback is a verification buffer, not attention input. Both
 steps are required to complete ticket 02. Removing duplicate persistent DRAM and
 main-KV transfer remains a subsequent integration step in the final demo.
 
+### Ticket 02 Review Optimizations and Part IV (2026-10-01)
+
+The user confirmed two implementation sections in [ticket02](issues/02-rank-pair-control-lifecycle.md):
+first optimize the existing parts I–III, then implement part IV. These changes
+remain pending; confirming their design does not establish implementation acceptance.
+
+- Separate transient request-row attachment from persistent mempool slot ownership.
+  In the shadow stage, KV_READY alone cannot release P native HBM KV or request rows:
+  ordinary staging/transfer may still read them. Normal cleanup also requires native
+  handoff success, completed local operations, and no future submissions using the row.
+  Consume its completions and retain immutable progress before detaching/reusing it.
+  The P mempool slot remains owned until the matching DONE and P write-safety checks
+  permit the unified tick to release it. D still drains before detach/release.
+- Project real SGLang requests through the Ascend service using `req.kv.req_pool_idx`;
+  keep Req/fake/protocol interpretation out of the device runtime. Remove the unused
+  fixed-input writer interface and retain explicit slots/positions/valid metadata.
+- Expose immutable control snapshots. Control remains the sole owner of protocol
+  phase/allocation state; service stores integration facts and pending native cleanup,
+  while runtime reports device progress. Only the unified tick commits ownership changes.
+- Retain the eight existing production modules. Add only Ascend `mempool_service.py`
+  and `mempool_tick.py`; do not add integration or queue-subclass layers. Use the seven
+  explicit shared-file hooks listed in ticket02. Run tick at the end of
+  `Scheduler.ingest_requests()`, before the PD loops' paused branch; keep capture/replay
+  hooks in the NPU graph files and a thin eager scope in ModelRunner.
+
 ### Backend Runtime and Shadow Service Delivery (2026-09-29)
 
 - Both P and D access their process's mempool runtime through `AscendAttnBackend`.
@@ -129,9 +154,9 @@ main-KV transfer remains a subsequent integration step in the final demo.
   still-needed HBM sparse-cache and materialization functions. That cutover is
   outside this shadow stage.
 
-Concrete proposed file responsibilities and outstanding implementation checks are
-in [the current design review entry](design.md).
-New runtime filenames/interfaces there remain implementation proposals.
+Confirmed file responsibilities and outstanding implementation checks are in
+[the current design entry](design.md) and the two sections of ticket02.
+The 2026-10-01 module organization is approved; its implementation remains pending.
 
 ### Deployment, Configuration, and Startup
 
@@ -313,7 +338,7 @@ passes; no fixed performance improvement is an acceptance condition.
 ## Further Notes
 
 - Treat commit `295132c4a5`, the initial upstream Ascend sparsity-driven KV offload merge in PR #33089, as this project's development baseline. The active feature branch is `cryang/dev/mempool`.
-- The user reports successful, fully checked sparse/dense remote DRAM benchmark runs on the intended machines. Ticket 01's combined remote BM fetch Graph and asymmetric contributions were accepted on 2026-09-27; runtime BM offload and real-server integration still require their own hardware verification.
+- The user reports successful, fully checked sparse/dense remote DRAM benchmark runs on the intended machines. Ticket 01's combined remote BM fetch Graph and asymmetric contributions were accepted on 2026-09-27. The user subsequently supplied successful two-machine runtime writer/Graph logs dated 2026-09-30 (20 PASS checks per side, both ALL_CHECKS_PASSED); real-server integration, TP lifecycle and in-server top-k readback still require their own verification.
 - This is the parent feature spec. Subsequent tickets should declare blockers and deliver observable slices: the hardware graph gate, one complete PD request through release acknowledgement, request reuse/cancellation coverage, and accuracy acceptance.
 - Preserve explicit storage-owner and consumer identity and independent P/D slots, so that future NUMA sharing and different serving ratios do not depend on slot equality.
 - This local spec defines intended behavior; implementation and hardware acceptance have not been completed by publishing the spec.

@@ -1,14 +1,17 @@
 # TP control tick、drain 与 fault 接入草案
 
 日期：2026-09-29。状态：D1、D4 首版 drain 策略和 D5 直接报错终止策略已确认；已同步至 spec。故障检测与退出接线仍须实现时核对。
-范围：02③④接线设计。01、02①②已有实现；本轮不修改运行代码。
+范围：02③④接线设计。01、02①②③初版已有实现，③独立双机 writer gate 已获用户反馈通过；
+2026-10-01 的接口优化与④实施入口见 [ticket02](issues/02-rank-pair-control-lifecycle.md)。
+service/tick 接线仍待实现，本文不表示真实服务或 TP collective 已验收。
 
 ## D1：同侧统一推进
 
 P16、D16 各自使用完整 TP CPU group；不建立跨 P/D 的32-rank collective。
 固定 demo 验证 TP16 / DP1 / CP1 / PP1。P slot 与 D slot 独立选择。
 
-在 P/D normal、overlap 四条循环的 ingest_requests 后、paused 判断前执行 tick。
+在 `Scheduler.ingest_requests()` 处理输入后、返回前统一执行 tick，覆盖 P/D normal、
+overlap 四条循环且位于 paused 判断前；不再给四条循环各加一个入口。
 后续结果回调产生的事件进入 pending observations，在下一次 tick 处理。
 有 mempool pending/active work 时不能仅凭普通队列为空进入长时间 idle sleep。
 
@@ -36,6 +39,10 @@ collective 数量/顺序不依赖本地消息数。空输入也参与。
 所有 ownership 变化都由 tick 统一批准，包括 acquire、普通 safe rollback、
 finish_drain、apply(DONE)，以及会消费 pending_done 的 finish_prefill_writes。
 仅同步 acquire 不能维持相同 free set。
+
+接线分工：`mempool_service.py` 收集真实请求/transfer/写入完成事实并管理待回收原生
+资源；`mempool_tick.py::advance(...)` 封装完整协调流程。control 提供只读 snapshot，
+保持协议 phase/slot ownership 的唯一来源；service 不维护第二套协议状态机。
 
 正常 release 顺序：
 
@@ -74,6 +81,16 @@ D：保留原 transfer、metadata 和 staging 推进；只有原路径就绪与 
 不能把 success 藏在 gate 后导致 tick 与 transfer queue 循环等待。
 失败保持失败处理，不降为普通 waiting。覆盖 READY/transfer 两种到达顺序。
 普通 receiver cleanup 仍不释放 persistent mempool binding。
+
+### P request row 与 mempool slot 的独立回收（2026-10-01 已确认）
+
+KV_READY 后原 main-KV transfer 仍可能经 staging 读取 P HBM，因此它不单独授权
+native cleanup。正常 P 需原 handoff 成功、本地相关读写完成、无未来 host submission，
+并消费该 row 的全部 completion 后，保存完成事实、detach 映射、回收原生 KV/pages
+和 request row。新请求可复用该 row，但仍须独立 acquire 一个可用 mempool slot。
+旧 P mempool slot 继续等待精确 DONE；slot release 顺序仍按 D1 执行。
+取消/失败还须遵守原 transfer 的安全条件，不以本地 event 推断远端 writer 已停止。
+这取代初版 runtime 中“P unbind 必须等整个 D drain”的过强约定；D 的 drain 要求不变。
 
 ## D4：向 tick 提供真实 drain 事实
 
