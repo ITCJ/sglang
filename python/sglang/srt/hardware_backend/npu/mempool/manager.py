@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import importlib
+import logging
 import math
+import socket
 import threading
 import time
 from collections.abc import Callable
@@ -11,6 +13,8 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from .layout import KVLayout, PoolLayout, check_index
+
+logger = logging.getLogger(__name__)
 
 
 class BMHandle(Protocol):
@@ -109,9 +113,10 @@ class MempoolKVManager:
         """Start this worker's two-rank BM session and join its mapped KV pool.
 
         P_i starts the store at base_port+i as BM rank 0; D_i connects to the
-        same store as rank 1. The caller initializes process-wide MF before
-        this call and keeps it alive for any TransferEngine users. One TP
-        worker process owns only one BM rank-pair context in this demo.
+        same store as rank 1 after waiting up to timeout for its TCP listener.
+        The caller initializes process-wide MF before this call and keeps it
+        alive for any TransferEngine users. One TP worker process owns only
+        one BM rank-pair context in this demo.
         """
         if type(tp_rank) is not int or not 0 <= tp_rank < 16:
             raise ValueError("tp_rank must be an integer in [0, 16)")
@@ -147,7 +152,18 @@ class MempoolKVManager:
                 math.ceil(timeout)
             )
             config.set_nic(nic_url)
-            store_url = f"tcp://{store_host}:{base_port + tp_rank}"
+            store_port = base_port + tp_rank
+            store_url = f"tcp://{store_host}:{store_port}"
+            if rank == 1:
+                # MF 1.1's initial TCP connect retries ignore config.init_timeout.
+                # P may still be loading weights when D reaches this point.
+                cls._wait_for_store(store_host, store_port, timeout)
+            logger.info(
+                "Initializing mempool BM pair: role=%s tp_rank=%d store=%s",
+                role,
+                tp_rank,
+                store_url,
+            )
             ret = bm_module.initialize(store_url, 2, device_id, config)
             if ret != 0:
                 raise RuntimeError(f"BM initialize failed for {store_url}: {ret}")
@@ -168,6 +184,48 @@ class MempoolKVManager:
             manager._owns_bm_context = True
             cls._rank_pair_active = True
             return manager
+
+    @staticmethod
+    def _wait_for_store(store_host: str, port: int, timeout: float) -> None:
+        """Wait for P's TCP listener; BM still performs its own peer handshake."""
+        store_url = f"tcp://{store_host}:{port}"
+        started = time.monotonic()
+        deadline = started + timeout
+        next_log = started + 30
+        last_error: OSError | None = None
+        logger.info("Waiting for P BM store %s (timeout=%gs)", store_url, timeout)
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"P BM store {store_url} was not reachable within {timeout:g}s"
+                ) from last_error
+            try:
+                # Send no MF header or rank identity. MF 1.1 closes this probe
+                # at header validation, before registering a BM peer.
+                with socket.create_connection(
+                    (store_host, port), timeout=min(1.0, remaining)
+                ):
+                    pass
+            except OSError as error:
+                last_error = error
+                now = time.monotonic()
+                if now >= next_log:
+                    logger.info(
+                        "Still waiting for P BM store %s (%.1fs remaining): %s",
+                        store_url,
+                        max(0, deadline - now),
+                        error,
+                    )
+                    next_log = now + 30
+                time.sleep(min(0.2, max(0, deadline - now)))
+            else:
+                logger.info(
+                    "P BM store %s is reachable after %.1fs",
+                    store_url,
+                    time.monotonic() - started,
+                )
+                return
 
     def join(self, timeout: float = 120.0) -> None:
         """Join and publish addresses only after both ranks' mappings are valid."""

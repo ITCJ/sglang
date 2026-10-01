@@ -79,7 +79,8 @@ CPU 测试使用真实 CPU tensor 运算和 BM SDK boundary fake，验证布局�
 handle lifetime。它们不执行 BM 或 NPU kernel，不证明远端读和 Graph capture/replay 已通过。
 `test_config.py` 覆盖实际 MLA 维度与 P/D 独立容量；`test_offload.py` 检查 raw destination
 写入的内容、bounds/padding mask、zero-valid warmup 与固定 metadata buffer 的重复使用。
-`test_pair_startup.py` 检查 `P_i/D_i` 的 store 端口及 BM rank 映射、启动参数和失败清理。
+`test_pair_startup.py` 检查 `P_i/D_i` 的 store 端口及 BM rank 映射、启动参数和失败清理，
+并用模拟时钟覆盖 P 晚90秒监听、P始终不可达、TCP连接超时、P不等待自身store及SDK错误直报。
 生产 BM 启动入口位于 `MempoolKVManager.initialize_rank_pair()`；01 gate 保留原测试
 初始化与控制流程，其通过记录不能替代新入口在真实 16 对 worker 中的验收。
 
@@ -342,6 +343,11 @@ export SGLANG_DISAGGREGATION_BOOTSTRAP_TIMEOUT=600
 
 `--mempool-timeout` 用于BM启动、控制peer心跳、取消后的native drain以及tick watchdog。
 request acquire等待仍使用原PD bootstrap timeout，不因重试重新计时。
+D进入 `bm.initialize()` 前，先按此参数等待对应P store的TCP listener；每次连接最多1秒，
+失败后最多等待0.2秒，重试不重置deadline。MF 1.1的初始TCP连接默认仅重试60次，
+不受 `BmConfig.init_timeout` 控制，因此必须在进入SDK前完成这段等待。
+TCP等待、后续BM操作/映射等阶段分别使用该timeout，它不是整个模型加载/服务启动的总时限。
+TCP可达只允许继续执行正式BM初始化，pool身份及映射仍按原流程校验；SDK错误直接报错。
 
 维持TP16、DP1、PP1、CP1、BF16、`--attention-backend ascend`、
 `--disaggregation-transfer-backend ascend`、`--disable-radix-cache`；P保留
@@ -358,7 +364,11 @@ prefix复用、two-batch overlap或自动rebootstrap。普通scheduler overlap�
 
 1. 分别保存P/D完整新日志，例如 `/tmp/mempool-02-service-p.log` 和
    `/tmp/mempool-02-service-d.log`；不要追加到包含旧测试的日志。
-2. 先启动P，随后启动D。P等待D完成BM join是正常行为。
+2. 先启动P，随后启动D，不用等P服务ready。D模型加载更快时，会在
+   `Waiting for P BM store tcp://<P_IP>:19000+i` 等待，期间每30秒报告剩余时间；
+   P开始监听后出现 `P BM store ... is reachable`，再进入正式BM初始化。
+   P等待D完成BM join是正常行为。P超过 `--mempool-timeout` 仍未监听时，D报
+   `P BM store ... was not reachable within 600s` 并退出（数值随配置变化）。
    BM映射完成后D才capture；AscendKVManager建立后才握手control。
    两侧进入服务循环后，每个rank应出现 `mapping_ready` 和 `POOL_HELLO`/`POOL_READY`。
 3. 启动已经验证过的PD router，沿用原P/D地址及bootstrap设置。
@@ -392,6 +402,13 @@ python3 ascend-mempool-test/scripts/verify_shadow_service.py check-logs \
 `ACQUIRE/ACQUIRED/BOUND_ACK → READY + native transfer → decode → drain/DONE/ACK`
 事件，以及最后全部16个slots可用。任何缺rank、缺replay、缺ACK、slot未归还、Traceback、
 计数差异或协议fault都不通过。初始GVA映射重试后成功的既有MF日志不会被直接判错。
+
+启动探测只建立/关闭TCP连接，不发送MF header或rank身份。MF 1.1的P listener可能为每个
+pair记录一次 `Failed to read header from the socket connected from ...`；源码在登记peer前
+关闭该探测连接并继续监听。只有紧邻上述探测、随后正式BM握手和mapping成功时，才能将
+这一条视为探测日志；持续错误、正式握手失败或mapping超时仍需排查。
+这次启动速度差异修复的NPU回归应保留D先完成加载的场景，并继续完成后面的服务请求gate；
+Mac模拟测试不代替真实MF监听/握手及16对映射验证。
 
 P日志中 `ready` 只表明mempool prompt写完；`native_handoff` 后才允许
 `row_detach/native_free`，其 `native_release` 事件通常仍显示P slot占用。

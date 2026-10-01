@@ -1,6 +1,7 @@
 """Check BM rank-pair startup at the MemFabric SDK boundary."""
 
 import unittest
+from unittest.mock import patch
 
 from test_pool import FakeBM
 
@@ -59,6 +60,22 @@ class FakePairBM(FakeBM):
         return handle
 
 
+class StartupClock:
+    """Advance startup deadlines without sleeping through model loading."""
+
+    def __init__(self):
+        """Start the simulated D worker at time zero."""
+        self.now = 0.0
+
+    def monotonic(self):
+        """Return elapsed startup time in seconds."""
+        return self.now
+
+    def sleep(self, seconds):
+        """Advance time by the requested polling interval."""
+        self.now += seconds
+
+
 class TestPairStartup(unittest.TestCase):
     """Observe per-pair session identity and cleanup through the public manager."""
 
@@ -66,6 +83,9 @@ class TestPairStartup(unittest.TestCase):
         """Use a compact two-rank layout with the production 16-slot topology."""
         layer = KVLayout(layers=1, slots=16, tokens=8, heads=1, dim=8)
         self.layout = PoolLayout(layer, layer)
+        connection_patch = patch("socket.create_connection")
+        self.connect = connection_patch.start()
+        self.addCleanup(connection_patch.stop)
 
     def start(self, sdk, **overrides):
         """Start one worker with valid defaults and selected overrides."""
@@ -82,6 +102,97 @@ class TestPairStartup(unittest.TestCase):
         )
         arguments.update(overrides)
         return MempoolKVManager.initialize_rank_pair(**arguments)
+
+    def test_decode_waits_for_slow_prefill_before_entering_bm(self):
+        """A P store appearing after MF's 60 retries must still allow D startup."""
+        sdk = FakePairBM()
+        clock = StartupClock()
+        connection = self.connect.return_value
+        initialize = sdk.initialize
+
+        def connect_when_prefill_loaded(address, timeout):
+            """Refuse D until P finishes its longer model load at 90 seconds."""
+            self.assertEqual(address, ("10.120.72.31", 18576))
+            self.assertGreater(timeout, 0)
+            self.assertLessEqual(timeout, 1.0)
+            self.assertEqual(sdk.init_calls, [])
+            if clock.now < 90:
+                raise ConnectionRefusedError("P is still loading weights")
+            return connection
+
+        def initialize_after_listen(*args):
+            """Model MF failing if entered before the P store is listening."""
+            if clock.now < 90:
+                return -1
+            connection.__exit__.assert_called_once()
+            return initialize(*args)
+
+        self.connect.side_effect = connect_when_prefill_loaded
+        with (
+            patch("ascend_mempool.manager.time", clock),
+            patch.object(sdk, "initialize", side_effect=initialize_after_listen),
+        ):
+            manager = self.start(sdk, role="decode", tp_rank=3, timeout=600)
+            self.addCleanup(manager.close, drain=lambda: None)
+        self.assertGreaterEqual(clock.now, 90)
+        self.assertLess(clock.now, 600)
+        self.assertEqual(len(sdk.init_calls), 1)
+        self.assertEqual(sdk.init_calls[0][3].init_timeout, 600)
+
+    def test_decode_store_wait_expires_without_initializing_bm(self):
+        """An absent P store times out without allocating or retaining BM state."""
+        sdk = FakePairBM()
+        clock = StartupClock()
+        self.connect.side_effect = ConnectionRefusedError("P is not listening")
+        with (
+            patch("ascend_mempool.manager.time", clock),
+            self.assertRaisesRegex(TimeoutError, "P BM store.*18573.*1.25s"),
+        ):
+            manager = self.start(sdk, role="decode", timeout=1.25)
+            self.addCleanup(manager.close, drain=lambda: None)
+        self.assertAlmostEqual(clock.now, 1.25)
+        self.assertEqual(sdk.init_calls, [])
+        self.assertEqual(sdk.uninit_calls, 0)
+        self.assertIsNone(sdk.handle)
+
+    def test_decode_connect_timeout_obeys_remaining_wait_budget(self):
+        """An unresponsive address cannot make each probe restart the deadline."""
+        sdk = FakePairBM()
+        clock = StartupClock()
+
+        def connect_times_out(address, timeout):
+            """Consume the socket timeout as a dropped connection attempt would."""
+            self.assertLessEqual(clock.now + timeout, 0.25)
+            clock.sleep(timeout)
+            raise TimeoutError("TCP connect timed out")
+
+        self.connect.side_effect = connect_times_out
+        with (
+            patch("ascend_mempool.manager.time", clock),
+            self.assertRaisesRegex(TimeoutError, "P BM store.*0.25s"),
+        ):
+            manager = self.start(sdk, role="decode", timeout=0.25)
+            self.addCleanup(manager.close, drain=lambda: None)
+        self.assertAlmostEqual(clock.now, 0.25)
+        self.connect.assert_called_once()
+        self.assertEqual(sdk.init_calls, [])
+
+    def test_prefill_starts_its_store_without_waiting_for_it(self):
+        """P must enter BM directly so D has a store to connect to."""
+        sdk = FakePairBM()
+        manager = self.start(sdk)
+        self.addCleanup(manager.close, drain=lambda: None)
+        self.connect.assert_not_called()
+        self.assertEqual(len(sdk.init_calls), 1)
+
+    def test_decode_does_not_retry_sdk_errors_after_store_is_reachable(self):
+        """Do not turn configuration or device initialization errors into waits."""
+        sdk = FakePairBM(init_status=-7)
+        with self.assertRaisesRegex(RuntimeError, "BM initialize failed.*-7"):
+            self.start(sdk, role="decode")
+        self.connect.assert_called_once()
+        self.assertEqual(len(sdk.init_calls), 1)
+        self.assertEqual(sdk.uninit_calls, 0)
 
     def test_each_pair_uses_its_own_port_and_local_bm_ranks(self):
         """P_i and D_i share a store, while adjacent pairs use distinct stores."""

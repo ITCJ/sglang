@@ -326,6 +326,37 @@ NPU 上由用户启动全部 16 对 rank，验证启动兼容性检查、正常 
 
 ## Comments
 
+### 2026-10-01：修复 D 提前完成模型加载时的 BM store 连接失败
+
+Codex / GPT-6：用户反馈真实GLM5.1 shadow启动失败。D在19:05:33连接
+`10.120.72.31:19000` 用完60次重试，19:05:34退出；P在19:06:13才进入mempool初始化，
+19:06:32开始持续GVA映射重试。两侧日志支持D先退出、P随后等不到D映射的故障链。
+核对MF `release/1.1`：BM `PrepareStore()` 没有向 `CreateStoreByUrl()` 传递连接重试次数，
+因此初始TCP连接使用默认60次，失败间隔1秒，不受当前 `BmConfig.init_timeout=600` 控制。
+
+实际修改：
+
+- 生产代码仅改 `hardware_backend/npu/mempool/manager.py`。
+  `initialize_rank_pair()` 在D进入SDK前调用 `_wait_for_store()`，等待对应的
+  `P:base_port+tp_rank`；deadline使用 `--mempool-timeout`，每次连接最多1秒，
+  失败轮询间隔最多0.2秒，等待不重置deadline；每30秒报告剩余时间。
+  P直接启动自身store。端口可达后仅调用一次正式 `bm.initialize()`；SDK错误直接抛出，
+  不将配置/设备故障当作慢启动无限重试。未进入SDK便超时时，不创建pool或保留BM context。
+- 探测只建立/关闭TCP，不发送MF header或rank身份。MF 1.1 listener会在登记peer前
+  关闭该连接并记录一次header读取失败；真实握手、pool身份和映射校验继续由原流程完成。
+  此记录不表示真实MF握手失败，也不能用来忽略后续连续错误。README明确说明该行为。
+- `test_pair_startup.py` 新增5项行为回归：模拟P晚90秒才监听、P始终不可达、TCP
+  connect消耗剩余deadline、P不等待自身store、可达后SDK错误不重试。先运行原实现，
+  慢P场景复现 `BM initialize failed ... -1`；修复后全部通过。
+- README补充新日志、timeout边界与用户NPU重测步骤。TCP等待与后续BM/映射分别使用
+  timeout；本次没有承诺整个模型加载/服务启动共享同一个600秒总预算。
+
+Mac实际执行：完整CPU suite **113项通过**；NPU mempool包strict mypy **7个源文件通过**；
+两个改动Python文件的Ruff lint/format、isort通过，`git diff --check`通过。
+未在本机执行MF/NPU服务。等待用户用原 `glm51mempool.sh` 和 `--mempool-timeout 600`
+在两端重启完整16对，保留D先完成加载场景，确认wait→reachable→mapping/capture/control
+ready，随后继续三个请求与日志gate。ticket保持open，未add、commit或push。
+
 ### 2026-10-01：授权推送与GLM5.1启动脚本
 
 Codex / GPT-6：用户授权提交推送本轮part4，并要求基于已跑通的 `glm51dis.sh` 提供
