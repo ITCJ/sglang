@@ -136,6 +136,56 @@ runner为每次调用新建`REPORT_DIR/run.XXXXXX`，打印完整路径，保存
 若16pair独立BM通过，继续检查模型已加载、D hostSHM、进程NUMA/cgroup限制和服务初始化
 上下文的差异；若失败，先按device/分配耗时定位，不能直接认定为并发死锁。
 
+2026-10-01用户回传本入口两侧device0–15全部PASSED，P报告目录为
+`/tmp/mempool-bm-startup-p/run.fv3xez`，D为`/tmp/mempool-bm-startup-d/run.dKTy4b`。
+这证明无模型条件下16pair、每侧176GiB同时占用的路径通过；本次回传不含逐卡耗时或JSON，
+不能据此断言与单pair一样快，也不替代真实SGLang服务启动验收。
+
+## 真实服务BM启动重测：增加诊断输出
+
+更新两端相同版本的SGLang后，在原Docker中保留此前卡住那轮的模型、容量、context和
+CPU绑定参数。独立BM gate已通过，这轮直接重跑原P/D服务，增加以下环境变量即可：
+
+```bash
+export SGLANG_NPU_MEMPOOL_DIAGNOSTICS=1
+export PYTHONUNBUFFERED=1
+```
+
+然后分别运行原P/D启动脚本，例如在已有`ascend-sglang-script`目录内执行
+`bash pd-disaggregation/glm51mempool.sh`（沿用各机已经设置好的`LOCAL_HOST1`等配置）。
+先P后D，P开始等待BM时就启动D，无需等P服务ready。该脚本已有`tee`保存
+`/tmp/mempool-02-service/p.log`或`d.log`；重跑前保留旧日志。此次诊断不要求先启动router
+或发送请求。首先核对`CONFIG`/`bm.create2`中的实际字节数；若与旧记录11811160064不同，
+说明容量条件也变了，应随结果注明。
+
+在两侧另一终端跟踪各自的完整日志：
+
+```bash
+# P
+tail -F /tmp/mempool-02-service/p.log
+# D
+tail -F /tmp/mempool-02-service/d.log
+```
+
+每条`[MEMPOOL_INIT]`包含步骤以及PID；`END`给出耗时，超过15秒未返回会持续`WAIT`。
+`CONFIG`给出原hostSHM占用，`SNAPSHOT`给出容器/主机内存与实际执行线程等待位置；
+`MAPPING_PENDING`给出缺失的rank/GVA/offset。完整阶段说明及代码流程见
+[mempool模块说明](../python/sglang/srt/hardware_backend/npu/mempool/README.md)。
+两侧全部16个worker的`[MEMPOOL_INIT] READY`表示BM/runtime已完成，后续仍需Graph和PD
+控制握手以及服务ready。出现FAIL、映射超时或清理阶段卡住时均保留完整上下文。
+
+如果仍卡住，先保留两侧进程，收集至少两次WAIT再抓取日志；原生HAL调用并不保证能被
+`--mempool-timeout`打断。回传两侧完整`p.log/d.log`、`git rev-parse HEAD`和实际启动参数；
+可先用下面的过滤命令摘取关键信息（每机使用自己的日志文件）：
+
+```bash
+rg 'MEMPOOL_INIT|Mempool BM|Try HalMemCreate|AllocReserve|alloc mem success|export vmm|import rank|Mmap|Traceback' \
+  /tmp/mempool-02-service/d.log
+```
+
+完成诊断后移除`SGLANG_NPU_MEMPOOL_DIAGNOSTICS`即可在下一次启动关闭后台采样和主动
+设置MF INFO；基本阶段日志保留。诊断仅增强可观测性，尚未认定或修复服务卡住的根因。
+
 ## 02 Ascend 控制协议检查
 
 ② 的协议与单 rank 状态机不依赖 SGLang server；新增 service/tick 检查使用 CPU torch，

@@ -326,6 +326,46 @@ NPU 上由用户启动全部 16 对 rank，验证启动兼容性检查、正常 
 
 ## Comments
 
+### 2026-10-01：独立16pair全部通过，复核服务BM建立流程并增加诊断
+
+用户回传两侧run_bm_startup_gate.sh完整runner输出，device0–15各自均PASSED，
+两侧均有ALL_BM_STARTUP_CHECKS_PASSED。P PID46144–46159，报告目录
+`/tmp/mempool-bm-startup-p/run.fv3xez`；D PID13387–13402，报告目录
+`/tmp/mempool-bm-startup-d/run.dKTy4b`。入口来自已推送的927e01e4ef；远端实际HEAD、
+逐卡日志/JSON及耗时未独立核验。独立无模型条件下16pair、每卡11GiB、每侧176GiB
+同时存活的诊断通过；不能据此认定真实服务启动正常或并发分配与单pair一样快。
+
+按用户要求复核config/layout、ModelRunner/attention backend、runtime和manager调用链。
+服务与gate共用create2路径，均只贡献DRAM、HBM=0、SDMA、world size=2；每对P/D
+使用BM rank0/1，服务store=base_port+tp_rank，NIC每对预留2端口。layout计算加64字节
+probe后按1GiB对齐，使用两侧较大贡献作共同stride；join后校验映射才发布view。
+进程内锁只防同worker重复BM初始化，不串行化16个TP进程。未找到可证明本次等待根因的
+rank/端口/贡献计算错误。服务的前置模型/NPU KV、D原hostSHM、CPU亲和性与NUMA/cgroup
+条件尚与独立gate不同；shadow设计保留原hostSHM，当前没有证据支持删除它或调整分配策略。
+另外，两种入口的store端口、pool ID、前置握手和初始化时序也有差异，独立gate不是完整
+initialize_rank_pair服务路径的验收。
+
+新增diagnostics.py及环境开关SGLANG_NPU_MEMPOOL_DIAGNOSTICS=1。基本日志统一前缀
+`[MEMPOOL_INIT]`，为MF import/init、BM wait_store/init/create2/join/inspect/mappings、
+runtime allocate/attach和清理阶段记录BEGIN/END/FAIL、PID/TID及耗时。开启诊断后设置
+MF INFO；每15秒对仍未返回的调用记录WAIT和执行线程wchan，首次WAIT附Python/内核栈。
+BM创建前后记录RSS、CPU/Mems允许列表、host和NUMA meminfo、由cgroup/mountinfo定位的
+v1/v2用量/限制与可见祖先；额外记录布局、原hostSHM总字节数、实际device及相关环境。
+映射等待另报missing_rank/GVA/offset。采样线程不调用BM/NPU；诊断信息不可读或监控线程
+不能启动时保留原流程，已有SDK异常不被替换。原生调用超时/取消机制没有改变。
+
+本地MF release/1.1的create2绑定释放GIL，因此该路径可在阻塞时由Python线程采样；
+远端已报MF commit c01f3ad...不在本地git对象中，未声称逐行核对该二进制。
+Docker内核栈权限不足会明确记为unavailable，容器外祖先内存约束仍需宿主机核查。
+模块README新增调用流程、分配公式、阶段含义与证据边界；测试README给出原Docker内
+开启诊断、沿用此前失败参数重跑服务、先P后D、保留完整日志的步骤。
+
+Mac实际检查：完整CPU suite **124项通过**，含6项新增诊断测试，覆盖SDK实际等待期间
+采样正确调用线程、异常退出停止采样并保留原异常、关闭诊断无后台采样、权限/线程创建
+失败不阻断、cgroup v1/v2及可见父级限制。严格mypy **19个源文件通过**，ruff lint、
+format（40文件）、isort与git diff --check通过。诊断版本尚未执行NPU服务重测，未将
+独立BM通过视为服务故障已修复；ticket保持open。本轮改动未暂存、未commit/push。
+
 ### 2026-10-01：22:41单pair 11GiB通过，准备独立16pair BM启动诊断
 
 用户回传72层、16slots、S_P=S_D=8192、dim576的writer gate完整P/D终端日志。

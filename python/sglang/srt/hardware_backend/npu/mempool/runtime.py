@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 from collections import deque
 from collections.abc import Callable, Sequence
 from contextlib import contextmanager, nullcontext
@@ -13,6 +15,7 @@ import torch
 from torch import Tensor
 
 from .config import MempoolConfig
+from .diagnostics import diagnostics_enabled, startup_stage
 from .layout import check_index, positive_int
 from .manager import MempoolKVManager
 from .offload import MempoolKVOffload
@@ -501,9 +504,59 @@ def initialize_for_model_runner(model_runner: Any) -> None:
         kv_lora_rank=model_runner.model_config.kv_lora_rank,
         qk_rope_head_dim=model_runner.model_config.qk_rope_head_dim,
     )
-    mf = importlib.import_module("memfabric_hybrid")
-    if mf.initialize() != 0:
-        raise RuntimeError("MemFabric initialization failed")
+    sparse = getattr(backend, "sparse_kv_manager", None)
+    host_buffers = getattr(sparse, "host_kv_buffer", [])
+    logger.info(
+        "[MEMPOOL_INIT] CONFIG pid=%d role=%s tp_rank=%d device_id=%d "
+        "start_layer=%d req_pool_rows=%d max_context_len=%d "
+        "existing_host_shm_layers=%d existing_host_shm_bytes=%d layout=%s",
+        os.getpid(),
+        args.disaggregation_mode,
+        model_runner.ps.tp_rank,
+        model_runner.gpu_id,
+        model_runner.layer_info.start_layer,
+        model_runner.req_to_token_pool.req_to_token.shape[0],
+        model_runner.model_config.context_len,
+        len(host_buffers),
+        sum(tensor.numel() * tensor.element_size() for tensor in host_buffers),
+        json.dumps(layout.signature(), sort_keys=True),
+    )
+    with startup_stage("mf.import"):
+        mf = importlib.import_module("memfabric_hybrid")
+    if diagnostics_enabled():
+        # MF's INFO output exposes HAL allocation/export/import/map boundaries.
+        # This is process-wide, including subsequent TransferEngine diagnostics.
+        log_ret = mf.set_log_level(1)
+        with startup_stage("npu.current_device"):
+            current_device = torch.npu.current_device()
+        logger.info(
+            "[MEMPOOL_INIT] ENV pid=%d mf_module=%s mf_set_log_level_ret=%s "
+            "current_device=%d settings=%s",
+            os.getpid(),
+            getattr(mf, "__file__", "unknown"),
+            log_ret,
+            current_device,
+            json.dumps(
+                {
+                    name: os.environ.get(name)
+                    for name in (
+                        "ASCEND_RT_VISIBLE_DEVICES",
+                        "ASCEND_VISIBLE_DEVICES",
+                        "SGLANG_SET_CPU_AFFINITY",
+                        "SGLANG_NUMA_BIND_V2",
+                        "SGLANG_AUTO_NUMA_BIND",
+                        "PYTORCH_NPU_ALLOC_CONF",
+                        "SGLANG_NPU_USE_MULTI_STREAM",
+                        "TASK_QUEUE_ENABLE",
+                    )
+                },
+                sort_keys=True,
+            ),
+        )
+    with startup_stage("mf.initialize"):
+        ret = mf.initialize()
+        if ret != 0:
+            raise RuntimeError(f"MemFabric initialization failed: {ret}")
     # BM and TransferEngine share process-wide MF. No per-request/global MF
     # uninitialize, atexit pool destroy, or fault-path close is permitted here.
     manager = MempoolKVManager.initialize_rank_pair(
@@ -517,16 +570,26 @@ def initialize_for_model_runner(model_runner: Any) -> None:
         pool_id=config.pool_id,
         timeout=config.timeout,
     )
-    runtime = MempoolRuntime(
-        manager,
-        req_pool_rows=model_runner.req_to_token_pool.req_to_token.shape[0],
-        max_context_len=model_runner.model_config.context_len,
-        start_layer=model_runner.layer_info.start_layer,
-        device=str(model_runner.req_to_token_pool.req_to_token.device),
-    )
+    with startup_stage("runtime.allocate", bm_rank=manager.rank):
+        runtime = MempoolRuntime(
+            manager,
+            req_pool_rows=model_runner.req_to_token_pool.req_to_token.shape[0],
+            max_context_len=model_runner.model_config.context_len,
+            start_layer=model_runner.layer_info.start_layer,
+            device=str(model_runner.req_to_token_pool.req_to_token.device),
+        )
     runtime.config = config
     seen = set()
     for candidate in (backend, model_runner.decode_attn_backend):
         if candidate is not None and id(candidate) not in seen:
-            candidate.attach_mempool_runtime(runtime)
+            with startup_stage("runtime.attach", backend=type(candidate).__name__):
+                candidate.attach_mempool_runtime(runtime)
             seen.add(id(candidate))
+    logger.info(
+        "[MEMPOOL_INIT] READY pid=%d role=%s tp_rank=%d device_id=%d; "
+        "BM/runtime initialized, PD control handshake still pending",
+        os.getpid(),
+        args.disaggregation_mode,
+        model_runner.ps.tp_rank,
+        model_runner.gpu_id,
+    )

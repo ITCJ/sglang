@@ -13,6 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from .diagnostics import startup_stage
 from .layout import KVLayout, PoolLayout, check_index
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,7 @@ class MempoolKVManager:
         self._joined = False
         self._closed = False
         self._owns_bm_context = False
+        self._mapping_pending = "not checked"
 
     @classmethod
     def create(
@@ -93,16 +95,27 @@ class MempoolKVManager:
             local_bytes,
             layout.rank_stride_bytes,
         )
-        handle = bm_module.create2(
-            id=pool_id,
-            local_dram_size=local_bytes,
-            max_dram_size=layout.rank_stride_bytes,
-            local_hbm_size=0,
-            max_hbm_size=0,
-            data_op_type=bm_module.BmDataOpType.SDMA,
-        )
-        if handle is None:
-            raise RuntimeError("BM create2 returned no handle")
+        with startup_stage(
+            "bm.create2",
+            resources=True,
+            bm_rank=rank,
+            pool_id=pool_id,
+            local_dram_bytes=local_bytes,
+            max_dram_bytes=layout.rank_stride_bytes,
+            local_hbm_bytes=0,
+            max_hbm_bytes=0,
+            data_op="SDMA",
+        ):
+            handle = bm_module.create2(
+                id=pool_id,
+                local_dram_size=local_bytes,
+                max_dram_size=layout.rank_stride_bytes,
+                local_hbm_size=0,
+                max_hbm_size=0,
+                data_op_type=bm_module.BmDataOpType.SDMA,
+            )
+            if handle is None:
+                raise RuntimeError("BM create2 returned no handle")
         logger.info("Mempool BM pool created: bm_rank=%d pool_id=%d", rank, pool_id)
         return cls(layout, rank, handle, bm_module)
 
@@ -168,7 +181,8 @@ class MempoolKVManager:
             if rank == 1:
                 # MF 1.1's initial TCP connect retries ignore config.init_timeout.
                 # P may still be loading weights when D reaches this point.
-                cls._wait_for_store(store_host, store_port, timeout)
+                with startup_stage("bm.wait_store", tp_rank=tp_rank, store=store_url):
+                    cls._wait_for_store(store_host, store_port, timeout)
             logger.info(
                 "Initializing mempool BM pair: role=%s tp_rank=%d pid=%d "
                 "device_id=%d store=%s nic=%s",
@@ -179,15 +193,28 @@ class MempoolKVManager:
                 store_url,
                 nic_url,
             )
-            ret = bm_module.initialize(store_url, 2, device_id, config)
-            logger.info(
-                "Mempool BM initialize returned: role=%s tp_rank=%d ret=%d",
-                role,
-                tp_rank,
-                ret,
-            )
-            if ret != 0:
-                raise RuntimeError(f"BM initialize failed for {store_url}: {ret}")
+            with startup_stage(
+                "bm.initialize",
+                role=role,
+                tp_rank=tp_rank,
+                bm_rank=rank,
+                device_id=device_id,
+                store=store_url,
+                nic=nic_url,
+                world_size=2,
+                auto_ranking=False,
+                start_store=rank == 0,
+                sdk_timeout=math.ceil(timeout),
+            ):
+                ret = bm_module.initialize(store_url, 2, device_id, config)
+                logger.info(
+                    "Mempool BM initialize returned: role=%s tp_rank=%d ret=%d",
+                    role,
+                    tp_rank,
+                    ret,
+                )
+                if ret != 0:
+                    raise RuntimeError(f"BM initialize failed for {store_url}: {ret}")
 
             manager = None
             try:
@@ -200,7 +227,8 @@ class MempoolKVManager:
                     if manager is not None:
                         manager.close(drain=lambda: None)
                 finally:
-                    bm_module.uninitialize()
+                    with startup_stage("bm.uninitialize_after_failure", bm_rank=rank):
+                        bm_module.uninitialize()
                 raise
             manager._owns_bm_context = True
             cls._rank_pair_active = True
@@ -257,23 +285,32 @@ class MempoolKVManager:
         if self._joined:
             raise RuntimeError("mempool has already joined")
         logger.info("Joining mempool BM pool: bm_rank=%d", self.rank)
-        ret = self._handle.join()
-        if ret != 0:
-            raise RuntimeError(f"BM join failed: {ret}")
+        with startup_stage("bm.join", bm_rank=self.rank):
+            ret = self._handle.join()
+            if ret != 0:
+                raise RuntimeError(f"BM join failed: {ret}")
         self._joined = True
-        actual_bytes = self._handle.local_mem_size(self._bm.BmMemType.HOST)
-        if actual_bytes != self.layout.contribution_bytes(self.rank):
-            raise RuntimeError(f"BM local contribution mismatch: {actual_bytes}")
-        logger.info(
-            "Mempool BM join returned: bm_rank=%d p_gva=%#x d_gva=%#x; "
-            "checking device mappings (timeout=%gs)",
-            self.rank,
-            self._handle.peer_rank_ptr(0, self._bm.BmMemType.HOST),
-            self._handle.peer_rank_ptr(1, self._bm.BmMemType.HOST),
-            timeout,
-        )
+        with startup_stage("bm.inspect_pool", bm_rank=self.rank):
+            actual_bytes = self._handle.local_mem_size(self._bm.BmMemType.HOST)
+            if actual_bytes != self.layout.contribution_bytes(self.rank):
+                raise RuntimeError(f"BM local contribution mismatch: {actual_bytes}")
+            logger.info(
+                "Mempool BM join returned: bm_rank=%d local_dram_bytes=%d p_gva=%#x d_gva=%#x; "
+                "checking device mappings (timeout=%gs)",
+                self.rank,
+                actual_bytes,
+                self._handle.peer_rank_ptr(0, self._bm.BmMemType.HOST),
+                self._handle.peer_rank_ptr(1, self._bm.BmMemType.HOST),
+                timeout,
+            )
+        with startup_stage("bm.wait_mappings", bm_rank=self.rank, timeout=timeout):
+            self._wait_for_mappings(timeout)
+
+    def _wait_for_mappings(self, timeout: float) -> None:
+        """Publish bases only when both ranks have contiguous device mappings."""
         started = time.monotonic()
         deadline = started + timeout
+        next_log = started
         while True:
             bases = self._mapped_bases()
             if bases is not None:
@@ -287,8 +324,21 @@ class MempoolKVManager:
                     bases[1][1],
                 )
                 return
-            if time.monotonic() >= deadline:
-                raise TimeoutError("BM peer mappings did not become device-visible")
+            now = time.monotonic()
+            if now >= next_log:
+                logger.info(
+                    "[MEMPOOL_INIT] MAPPING_PENDING bm_rank=%d pid=%d elapsed=%.1fs %s",
+                    self.rank,
+                    os.getpid(),
+                    now - started,
+                    self._mapping_pending,
+                )
+                next_log = now + 30
+            if now >= deadline:
+                raise TimeoutError(
+                    "BM peer mappings did not become device-visible: "
+                    + self._mapping_pending
+                )
             # MF logs each unavailable GVA at ERROR; poll once per second
             # while the peer finishes allocation/import, capped by the deadline.
             time.sleep(min(1.0, max(0, deadline - time.monotonic())))
@@ -299,6 +349,7 @@ class MempoolKVManager:
             self._handle.peer_rank_ptr(rank, self._bm.BmMemType.HOST) for rank in (0, 1)
         ]
         if not all(gvas):
+            self._mapping_pending = f"p_gva={gvas[0]:#x} d_gva={gvas[1]:#x}"
             return None
         if gvas[1] - gvas[0] != self.layout.rank_stride_bytes:
             raise RuntimeError("BM GVA rank stride differs from the common maximum")
@@ -308,6 +359,7 @@ class MempoolKVManager:
         for rank, gva in enumerate(gvas):
             device_va = self._handle.gva_to_va(gva, self._bm.BmMemType.LOCAL_DEVICE)
             if not device_va:
+                self._mapping_pending = f"missing_rank={rank} gva={gva:#x} offset=0"
                 return None
             layout = self.layout.layout_for_rank(rank)
             offsets = {self.layout.contribution_bytes(rank) - 1}
@@ -319,6 +371,9 @@ class MempoolKVManager:
                     gva + offset, self._bm.BmMemType.LOCAL_DEVICE
                 )
                 if not mapped:
+                    self._mapping_pending = (
+                        f"missing_rank={rank} gva={gva + offset:#x} offset={offset}"
+                    )
                     return None
                 if mapped != device_va + offset:
                     raise RuntimeError("BM layer mapping is not device-contiguous")
@@ -386,16 +441,20 @@ class MempoolKVManager:
         """Drain before destroying the pool and any BM context started here."""
         if self._closed:
             return
-        drain()
+        with startup_stage("bm.close_drain", bm_rank=self.rank):
+            drain()
         if self._joined:
-            ret = self._handle.leave()
-            if ret != 0:
-                raise RuntimeError(f"BM leave failed: {ret}")
-        self._handle.destroy()
+            with startup_stage("bm.leave", bm_rank=self.rank):
+                ret = self._handle.leave()
+                if ret != 0:
+                    raise RuntimeError(f"BM leave failed: {ret}")
+        with startup_stage("bm.destroy", bm_rank=self.rank):
+            self._handle.destroy()
         self._closed = True
         if self._owns_bm_context:
             with type(self)._rank_pair_lock:
-                self._bm.uninitialize()
+                with startup_stage("bm.uninitialize", bm_rank=self.rank):
+                    self._bm.uninitialize()
                 type(self)._rank_pair_active = False
 
 
