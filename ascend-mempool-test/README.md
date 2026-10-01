@@ -2,7 +2,8 @@
 
 Ticket 01 与02③的独立硬件验证入口，以及02④的真实服务 shadow gate。
 以下独立测试的目标环境为同一 superpod 的两台 Ascend 机器，
-每侧使用一张 NPU，MemFabric Hybrid **1.1.4**。不启动 SGLang server、router 或模型。
+原 graph/writer gate 每侧使用一张 NPU，BM启动诊断可选1到16张；使用MemFabric Hybrid
+**1.1.4**。不启动 SGLang server、router 或模型。
 BM API 参考本地 `release/1.1` 的 `9fa9afbb`；两端运行时版本写入报告并相互核对。
 
 ## 目录与职责
@@ -83,6 +84,57 @@ handle lifetime。它们不执行 BM 或 NPU kernel，不证明远端读和 Grap
 并用模拟时钟覆盖 P 晚90秒监听、P始终不可达、TCP连接超时、P不等待自身store及SDK错误直报。
 生产 BM 启动入口位于 `MempoolKVManager.initialize_rank_pair()`；01 gate 保留原测试
 初始化与控制流程，其通过记录不能替代新入口在真实 16 对 worker 中的验收。
+
+## BM多卡启动诊断
+
+用于区分单pair正常、模型服务中的16pair创建很慢这一现象。2026-10-01用户反馈
+device0单pair的1GiB和11GiB writer gate均通过；11GiB的HalMemCreate耗时P约1.17秒、
+D约2.01秒。下一步只验证多卡同时持有BM池，避免重复大量KV读写和Graph检查。
+
+`verify_bm_startup.py`复用`verify_graph.run()`和生产`MempoolKVManager.create()/join()`。
+每个worker使用72层、16slots、S_P=S_D=8192、dim576的逻辑布局，对齐后每侧贡献
+11GiB。实际只写/readback各自64字节的peer probe；不填充逻辑KV或执行attention/Graph。
+每个worker校验探针后等待本机所选devices全部ready，所有池同时存活后才进入原双侧
+drain/close握手。这验证并行启动和同时占用，不保证16个HAL调用在同一时刻进入。
+
+在原P/D容器、相同checkout中运行，保持模型服务停止，先P后D。默认选择device0–15，
+每侧总共176GiB BM DRAM。先用`MEMPOOL_TEST_DEVICES=0`可做新诊断入口的单pair对照；
+两侧必须使用相同device列表。独立pair按device i使用P store `18773+2*i`、
+test control `18774+2*i`、本机NIC `25670+2*i`（相邻端口预留给SDK）、pool ID103。
+这些端口布局沿用单pair writer gate，与真实service的store布局不同。
+
+P容器：
+
+```bash
+bash ascend-mempool-test/scripts/run_bm_startup_gate.sh \
+  0 10.120.72.31 10.120.72.31 /tmp/mempool-bm-startup-p
+```
+
+D容器：
+
+```bash
+bash ascend-mempool-test/scripts/run_bm_startup_gate.sh \
+  1 10.120.72.31 10.120.72.32 /tmp/mempool-bm-startup-d
+```
+
+runner为每次调用新建`REPORT_DIR/run.XXXXXX`，打印完整路径，保存每卡`.log/.json`及
+`pids.tsv`（device、容器可见PID）。同时启动各worker后等待它们退出。
+成功要求两侧均有`ALL_BM_STARTUP_CHECKS_PASSED`，每个worker有`PROBE_VERIFIED`、
+`LOCAL_POOLS_READY`和`[BM_STARTUP] PASSED`，JSON `status=passed`及一个
+`bm_peer_probe` check。该结果不是writer/Graph或TP控制验收。
+
+`MEMPOOL_TEST_PYTHON`、`MEMPOOL_TEST_TIMEOUT`默认分别是`python3`、600秒。
+`MEMPOOL_TEST_DEVICES='0 1'`可选择子集；`MEMPOOL_TEST_DRY_RUN=1`只打印命令，
+不启动worker。原生HAL调用可能阻塞在SDK内部，600秒不能保证打断这种调用。
+超时、probe错误、缺少worker或非零退出均不能视作通过。runner不会自动kill其他worker；
+中断runner也不表示所有后台worker已退出。需排查时按`pids.tsv`确认存活进程，
+保持P/D进程可供抓栈；原gate对无法确认peer drain的pool仍采取保留策略。
+
+回传该轮两侧run目录中的日志、JSON和PID表。可以先提取每个日志的
+`BM_STARTUP|Creating mempool BM|Mempool BM|Try HalMemCreate|alloc mem success|Traceback|Error`
+行，以区分HAL分配、create/join、映射和本机ready等待。
+若16pair独立BM通过，继续检查模型已加载、D hostSHM、进程NUMA/cgroup限制和服务初始化
+上下文的差异；若失败，先按device/分配耗时定位，不能直接认定为并发死锁。
 
 ## 02 Ascend 控制协议检查
 

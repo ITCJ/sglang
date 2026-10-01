@@ -326,6 +326,112 @@ NPU 上由用户启动全部 16 对 rank，验证启动兼容性检查、正常 
 
 ## Comments
 
+### 2026-10-01：22:41单pair 11GiB通过，准备独立16pair BM启动诊断
+
+用户回传72层、16slots、S_P=S_D=8192、dim576的writer gate完整P/D终端日志。
+两侧device0，P PID45349、D PID12599；local DRAM均为11811160064字节（11GiB），
+与服务每rank分配量一致。双方均完成MAPPED、20条PASS（10条decode replay）、
+正常释放及ALL_CHECKS_PASSED。JSON和远端checkout未独立核验。
+实际MF日志标识版本1.1.4、commit c01f3ad842b9ff7412681a44b67141ce7a124c6d；
+驱动V100R001C10SPC009B220。HalMemCreate返回0，P耗时1173193微秒（1.173193秒），
+D耗时2005174微秒（2.005174秒）。P在22:41:50.332查询D GVA失败一次，随后
+22:41:51.166完成对D段的import/map；这次短暂失败对应对端尚未就绪。
+MEMFABRIC_HYBRID_EXTEND_LIB_PATH未设置和libhcom.so未打开也出现在本轮成功路径，
+不能仅据此认定它们造成服务启动故障。
+
+结论限于当前Docker/device0/无模型单pair条件：11GiB单次分配可快速成功，未复现
+服务D侧create2长时间等待。16进程/多卡、每侧176GiB同时占用、模型加载与D hostSHM、
+NUMA/cgroup策略和服务初始化上下文仍是待区分因素，尚不能认定并发死锁或内存不足。
+
+新增verify_bm_startup.py及run_bm_startup_gate.sh，复用原verify_graph.run()的BM
+配置、manager create/join和双侧释放流程。每卡申请11GiB，仅写回读64字节peer probe；
+本机所选devices全部探针校验成功前不释放池，以覆盖所有池同时存在的条件。
+默认并行启动device0–15，两端对应device使用独立store/control/NIC；每次运行生成
+新目录，保存每卡log/JSON、PID表和ready标记。支持device子集与dry run；不修改生产
+初始化路径，不执行模型KV填充、writer或Graph。README给出容器内两侧命令和判定边界。
+
+Mac实际检查：CPU unittest共118项通过（新增5项覆盖缺失worker/失败probe不会通过、
+池等待和两侧16pair端口隔离）；mypy 11个source files、ruff lint/format、isort、
+bash -n均通过。新入口--describe确认contributions/stride均为11811160064。
+16pair NPU诊断尚未运行，完整服务根因与验收仍未完成，ticket保持open；改动未暂存、
+未commit/push。
+
+### 2026-10-01：22:35原writer gate两侧再次通过
+
+用户回传重测终端日志：P PID44599、D PID11856，device0单pair；双方均完成MAPPED、
+20条PASS（10条decode replay）及ALL_CHECKS_PASSED。JSON文件及远端commit未独立核验。
+P在MAPPED前有一次D GVA转换失败，随后映射成功；本轮不构成持续映射失败。
+现有MF/驱动/双机SDMA路径在每侧1GiB的gate条件下可用，不能据此证明服务中的
+16pair、每rank11GiB或D已有hostSHM的场景正常。未确认完整服务根因，ticket保持open。
+
+下一轮对照先保持单pair/device0，增大单rank分配至服务相同的11GiB。无需改源码，
+直接调用verify_writer.py，保持store/control=18773/18774、pool ID103、dim576、
+16slots、24/48-core；使用72层和S_P=S_D=8192这一测试布局。
+Mac实际执行该参数的--describe，确认contributions和rank_stride均为11811160064。
+这组层数只用于构造相同分配量，不表示模型层数。逻辑读写核验也随布局增大，因此
+分开观察MAPPED前的BM创建/映射与MAPPED后的writer检查；MF log-level=1用于观察
+SDK分配耗时。11GiB NPU对照尚未执行，未修改生产代码或测试脚本，未add/commit/push。
+
+### 2026-10-01：按用户选择先重跑原writer gate
+
+用户希望在重新启动完整模型前，先复测此前通过的writer gate。核对当前入口：
+`run_writer_gate.sh` -> `verify_writer.py` -> `verify_graph.run()` ->
+`MempoolKVManager.create()` -> `bm.create2(..., SDMA)`，随后执行同一manager的join、
+双向读写验证和decode Graph replay。gate自行初始化BM，未经过service的
+`initialize_rank_pair()`，也不创建原SparseKVCacheManager hostSHM。
+保留原参数：单pair、每机device0、2层、16slots、S_P=8、S_D=16、dim576；
+实际对齐后每rank贡献1GiB。store/control端口18773/18774，pool ID103。
+当前模型服务是每侧16个进程、每进程11GiB，两者结果不能直接等同。
+
+Mac实际检查：`bash -n ascend-mempool-test/scripts/run_writer_gate.sh`通过；
+`verify_writer.py --describe --s-p 8 --s-d 16 --layers 2 --kv-dim 576 --graph-rows 16`
+成功输出两侧各1073741824字节的布局。未修改测试或生产代码，未执行NPU gate。
+交付原容器内两端命令，报告另存/tmp/mempool-02-writer-recheck-p和-d，
+等待用户回传双方ALL_CHECKS_PASSED及JSON/log结果。真实服务故障继续保持未解决。
+
+### 2026-10-01：D进程等待在devmm分配路径
+
+用户进一步反馈新一轮D TP0 PID=1169，`ps`状态为 `Dl+`，WCHAN为
+`devmm_master_alloc_interleaving_`（ps列可能截断）。该采样将等待位置收窄到
+驱动内存分配路径，尚不能证明具体页类型、NUMA资源约束或驱动死锁。
+主机2.0TiB总内存、217GiB free、1.6TiB available，不支持直接归因为主机总内存
+耗尽，但也不能排除特定分配资源不足。numastat未安装；用户消息中的gdb输出为空，
+尚未取得原生调用栈。下一步读取该PID的/proc/wchan和/proc/stack，以及NUMA各节点
+meminfo和驱动日志；无需安装numastat。仅更新诊断记录，未修改实现或执行NPU测试。
+
+用户补充上述程序和采集命令都在Docker内运行：1169应按容器可见PID处理，宿主机
+抓栈前需在该容器进程列表内通过NSpid映射；不能直接对宿主机PID 1169操作。
+同时修正内存证据边界：容器内free不能证明该进程拥有1.6TiB可用额度，仍需检查
+Docker/cgroup内存上限及允许的NUMA节点。devmm等待位置仍然有效；容器root也不
+保证具有读取内核栈或ptrace所需权限，GDB空输出本身不能据此归因为权限错误。
+下一步在D宿主机读取容器配置、stats，并对映射后的宿主机PID读取内核栈。
+
+### 2026-10-01：21:23重测定位到D侧create2尚未返回
+
+Codex / GPT-6：用户回传加入阶段日志后的P/D运行记录。两侧全部16个rank的
+`bm.initialize()` 均返回0；D在21:24:00–08进入 `bm.create2()`，直到P在
+21:25:27末尾被Ctrl-C停止，仍没有D侧 `Mempool BM pool created` 或join日志。
+P的TP8在21:23:26完成create2，其余15个rank在21:25:06–10完成；从21:23:18
+开始计算，后者耗时约108–112秒。停止P时D的create2仅观察了约79–87秒，
+这份记录尚不能区分长时间分配与永久阻塞，也不否定早先运行的超时反馈。
+
+P反复转换失败的 `0x280300000000` 与日志中的D GVA完全一致，P本地base为
+`0x280040000000`。D尚未完成create/join时，P获得预留GVA不代表D内存已映射。
+21:24:00–08的单次header读取失败对应D的空TCP探测，之后正式initialize成功。
+21:25:30开始的D LeaveHandle/inited_、GroupWatch -602及重连失败发生于P停止后，
+不能用它们解释此前create2未返回。
+
+核对本地MF `release/1.1` 源码：create2涉及group建立、entity/VA预留、本地DRAM
+分配与导出；在910C/GVA V4的VMM分支，host分配优先尝试1GiB页，OOM后回退2MiB页，
+随后还有HalMemExport/Import/Map。这是待原生栈确认的候选路径，并非已证明的根因。
+日志记录每rank实际贡献11GiB，16个rank每侧共176GiB；D还保留原sparse KV hostSHM。
+现有日志没有主机可用DRAM或HAL耗时，不能据此断言内存不足；NPU avail mem不是该指标。
+
+下一步：复现时保持两侧存活，在D侧按新日志PID抓取一个rank的原生全线程调用栈，
+同时采集free/numastat，区分HAL分配、导出/映射与内部同步。必要时再用同参数第二份栈
+判断是否有进展。当前只记录诊断，无生产代码变更，未执行新的CPU/NPU测试，未add、
+commit或push。真实启动问题未解决，ticket保持open。
+
 ### 2026-10-01：BM映射查询降频与启动阶段日志
 
 Codex / GPT-6：用户在21:04这一轮重测中反馈，D全部16个rank的P store TCP探测均在
