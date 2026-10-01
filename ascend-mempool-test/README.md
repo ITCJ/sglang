@@ -195,14 +195,17 @@ control tick、准入与 drain。因此此 gate 不启动 GLM5.1 server，也不
 调用顺序如下，eager 和 replay 都必须具有 host forward 边界：
 
 ```text
-tick 批准 → bind(req_pool_idx, slot, prompt_tokens)
+tick 批准 → binding = bind(req_pool_idx, slot=slot, prompt_tokens=prompt_tokens)
+service 按 request attempt 保存 binding；真实请求投影 req.kv.req_pool_idx
+  → assert_bound(req.kv.req_pool_idx, binding)
 begin_forward([KVWriteExpectation(req_pool_idx, full_position, rows)])
   → eager: 每层 write_layer(...)
   → replay: begin_forward(..., replay=True) 后 graph.replay()
 end_forward()  → 在相同提交 stream 上记录设备计数快照和完成事件
 poll_completed() → 事件完成后核对每层/每 slot 的实际有效行数
   → 本地 writes_done / prompt_ready 供 control tick 使用
-drain、远端安全与 tick 批准 → unbind()
+本地 completion 已消费 + 无未来 row 提交 + native 安全条件 + tick 批准
+  → receipt = detach_row(binding)，按 attempt 保存完成事实，再归还原生资源
 ```
 
 capture 使用 `begin_forward([], capture=True)`，要求没有真实 binding 或 pending work，
@@ -211,12 +214,37 @@ capture 使用 `begin_forward([], capture=True)`，要求没有真实 binding �
 做每次 replay 的 host 记账。binding 表和设备计数地址保持固定；forward 设备字段使用
 Graph 自身的固定输入，更新与 replay 在同一提交 stream 排序。
 
-`bind/unbind` 不能发生在 open forward 或该 request 的未完成写入期间。binding 更新
+`bind/detach_row` 不能发生在 open forward 或该 request 的未消费 completion 期间。
+event 已完成也必须先 `poll_completed()`。binding 更新
 事件由下一次 begin_forward 等待；binding 更新统一在同一 scheduler stream 提交，
 跨 scheduler/forward stream 的安装顺序明确。
 写入、有效行计数及快照都在 forward producer stream，临时 source 不跨流。
 `prompt_ready` 只证明本地写入完成；发布 KV_READY 还需远端可读性保证。
 取消、远端读取 drain、DONE 和 slot ownership 由④负责，runtime 不自行发送消息或释放。
+
+`KVRowBinding` 是 `bind()` 返回的本进程 attachment 对象，字段为 row、slot 和
+prompt length；接入层按已批准的 request attempt 保存并传回同一个对象。
+`assert_bound(row, binding)` 拒绝 missing/stale attachment，即使旧 row/slot/prompt
+数值与新请求完全相同也不能通过。不要重建或跨进程序列化这个 attachment；TP 协调
+使用 control 的协议 snapshot。runtime 不解析 Req/fake marker；④的 service 负责
+真实 `req.kv.req_pool_idx` 投影、attempt 匹配和既有 fake 请求过滤。
+
+`KVWriteReceipt` 不可变，保存 binding 和 submitted/completed 本地行数；detach 后
+用它查看旧请求进度，不再通过已复用的 row 查询。P 的正常 detach 须等原 native
+handoff 成功及本地安全，不必等整个 decode；**KV_READY 单独不足以允许 detach**，
+旧 transfer 仍可能通过 staging 读取 HBM。P slot 继续由 control 保留到对应 DONE，
+D 则先 whole-D drain 再 detach。取消/失败还须证明原 transfer 安全。
+
+writer 只有 `write(values, *, slots, positions, valid)`；`MempoolWriteInputs` 已删除。
+runtime 管理固定 binding 表，writer 不持有另一套输入缓存。边界检查和全 invalid
+时仍 launch 的行为保留。
+
+`MempoolPDControl.snapshot()` 返回 frozen dataclass、tuple 和 frozenset，可序列化，
+包含当前 peer/fault、各 request 的 phase、P/D binding、readiness、待确认消息及
+available slots。`owns_slot` 表示本侧当前实际占用；旧 record 的 slot 字段可能只是
+保留的确认信息。`binding_confirmed/writes_pending` 为 P 事实，`transfer_ready` 为 D
+事实。读取不消费 inbox、不转换状态，不暴露内部可变 record；service/tick 每次从
+control 取新观察值，不能维护另一份可变协议状态机。
 
 两机 gate 沿用01的环境/SDK/BM/test-channel/安全 teardown。默认两层、16 slots、
 P每slot8 tokens、D每slot16 tokens、compact dim576；对齐后各机贡献1 GiB。
@@ -256,5 +284,12 @@ decode全invalid捕获与replay、首行/下一行、不同prompt/slot重绑定�
 
 Mac 新增 `test_rows.py` 与 `test_runtime.py`，覆盖四种行布局、chunk/local position、
 容量边界、binding固定地址、漏/重复layer、invalid导致少写、意外额外写入、overlap快照、
-fake admission及同一套gate案例的完整CPU参考值。Mac 不执行实际NPU Graph。
+真实 Req 字段投影与 missing/stale attachment、row reuse/旧 slot 保留、control
+snapshot 不可变，以及同一套gate案例的完整CPU参考值。真实 service 的 fake 过滤
+属于④；Mac 不执行实际NPU Graph。
 ③与这个runtime gate同一轮交付NPU测试，ticket02保持open，仍需④及后续服务readback。
+
+2026-10-01 接口优化后，`verify_writer.py` 已改为保存 `bind()` 返回值并调用
+`detach_row(binding)`。上述两机命令、20条 checks/10条 replay 判据不变；请两端同步
+本轮代码后回归并回传 `.log`/`.json`。9月30日的通过结果属于旧接口版本，本轮未在
+NPU 执行；本 gate 也不替代④的真实 native handoff/TP 生命周期验收。

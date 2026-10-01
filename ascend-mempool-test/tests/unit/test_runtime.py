@@ -1,6 +1,7 @@
 """Check forward writes and ownership adapters through a CPU kernel boundary."""
 
 import unittest
+from dataclasses import FrozenInstanceError, replace
 from types import SimpleNamespace
 
 import torch
@@ -11,6 +12,8 @@ from ascend_mempool.layout import KVLayout, PoolLayout
 from ascend_mempool.pool import MempoolKVManager
 from ascend_mempool.runtime import KVWriteExpectation, MempoolRuntime
 from ascend_mempool.writer_cases import WRITER_SENTINEL, decode_cases, prefill_cases
+from ascend_mempool_pd.mempool_control import MempoolPDControl
+from ascend_mempool_pd.mempool_protocol import PoolDescriptor, PoolPeer
 
 
 class ManualEvent:
@@ -80,10 +83,148 @@ class TestMempoolRuntime(unittest.TestCase):
         )
         return runtime, targets, events
 
+    def test_detach_preserves_completed_facts_before_request_row_reuse(self):
+        """Consume local completion before detaching; retain old KV after row reuse."""
+        runtime, targets, events = self.make_runtime(layers=1)
+        binding = runtime.bind(1, slot=2, prompt_tokens=1)
+        runtime.begin_forward([KVWriteExpectation(1, 0, 1)])
+        k = torch.full((1, 2), 11, dtype=torch.bfloat16)
+        runtime.write_layer(5, k, k, prefill_batch((1,), (0,), (1,)))
+        runtime.end_forward()
+        with self.assertRaisesRegex(RuntimeError, "in-flight"):
+            runtime.detach_row(binding)
+        events[-1].done = True
+        # A ready device event still must be consumed before the row can change.
+        with self.assertRaisesRegex(RuntimeError, "in-flight"):
+            runtime.detach_row(binding)
+        runtime.poll_completed()
+        receipt = runtime.detach_row(binding)
+        self.assertIs(receipt.binding, binding)
+        self.assertEqual((receipt.submitted, receipt.completed), (1, 1))
+        with self.assertRaises(FrozenInstanceError):
+            receipt.completed = 99
+        self.assertEqual(runtime.row_slot[1].item(), -1)
+        self.assertEqual(runtime.row_prompt_len[1].item(), -1)
+
+        runtime.bind(1, slot=3, prompt_tokens=1)
+        runtime.begin_forward([KVWriteExpectation(1, 0, 1)])
+        runtime.write_layer(5, k * 2, k * 2, prefill_batch((1,), (0,), (1,)))
+        runtime.end_forward()
+        events[-1].done = True
+        runtime.poll_completed()
+        self.assertEqual(receipt.completed, 1)
+        self.assertEqual(targets[0][2, 0, 0].tolist(), [11] * 4)
+        self.assertEqual(targets[0][3, 0, 0].tolist(), [22] * 4)
+
+    def test_admission_requires_the_approved_attachment_for_the_actual_req_row(self):
+        """Project kv.req_pool_idx outside runtime; reject missing or stale approval."""
+        runtime, _, _ = self.make_runtime()
+        req = SimpleNamespace(kv=SimpleNamespace(req_pool_idx=1), rid="real")
+        with self.assertRaisesRegex(RuntimeError, "binding"):
+            runtime.assert_bound(req.kv.req_pool_idx, None)
+        old = runtime.bind(req.kv.req_pool_idx, slot=2, prompt_tokens=1)
+        runtime.assert_bound(req.kv.req_pool_idx, old)
+        with self.assertRaises(FrozenInstanceError):
+            old.slot = 3
+        with self.assertRaisesRegex(RuntimeError, "binding"):
+            runtime.assert_bound(2, old)
+        with self.assertRaisesRegex(RuntimeError, "binding"):
+            runtime.assert_bound(req.kv.req_pool_idx, replace(old))
+
+        runtime.detach_row(old)
+        current = runtime.bind(req.kv.req_pool_idx, slot=2, prompt_tokens=1)
+        with self.assertRaisesRegex(RuntimeError, "binding"):
+            runtime.assert_bound(req.kv.req_pool_idx, old)
+        with self.assertRaisesRegex(RuntimeError, "binding"):
+            runtime.detach_row(old)
+        runtime.assert_bound(req.kv.req_pool_idx, current)
+        # A real request without approval must fail even if its row is bound.
+        with self.assertRaisesRegex(RuntimeError, "binding"):
+            runtime.assert_bound(req.kv.req_pool_idx, None)
+        other, _, _ = self.make_runtime()
+        other.bind(req.kv.req_pool_idx, slot=2, prompt_tokens=1)
+        with self.assertRaisesRegex(RuntimeError, "binding"):
+            other.assert_bound(req.kv.req_pool_idx, current)
+
+    def test_prefill_row_reuse_keeps_old_slot_until_its_own_done(self):
+        """A controlled caller separates native row reuse from protocol ownership."""
+        runtime, targets, events = self.make_runtime(layers=1)
+        descriptor = PoolDescriptor(
+            layers=1,
+            slots=16,
+            prompt_tokens=8,
+            decode_tokens=8,
+            heads=1,
+            dim=4,
+            dtype="bfloat16",
+            prompt_bytes=1 << 30,
+            decode_bytes=1 << 30,
+            stride_bytes=1 << 30,
+        )
+        p = MempoolPDControl(PoolPeer("p", "prefill", 0, 16, 1, 7, descriptor))
+        d = MempoolPDControl(PoolPeer("d", "decode", 0, 16, 1, 7, descriptor))
+        d.apply(p.apply(d.begin_handshake("tcp://d:4351")))
+        first = d.acquire_decode(27, "old", 5, 1, 1, "tcp://d:4351")
+        p.apply(first)
+        p.apply(d.apply(p.acquire_prefill(first.request, 2)))
+        p.start_prefill(first.request)
+        old = runtime.bind(1, slot=2, prompt_tokens=1)
+        runtime.begin_forward([KVWriteExpectation(1, 0, 1)])
+        k = torch.full((1, 2), 11, dtype=torch.bfloat16)
+        runtime.write_layer(5, k, k, prefill_batch((1,), (0,), (1,)))
+        runtime.end_forward()
+        events[-1].done = True
+        runtime.poll_completed()
+        self.assertTrue(runtime.prompt_ready(1))
+        p.finish_prefill_writes(first.request)
+        d.apply(p.publish_kv_ready(first.request, 1))
+        d.transfer_succeeded(first.request)
+        d.start_decode(first.request)
+
+        # Stand in for approved native handoff cleanup; the real gate belongs to IV.
+        receipts = {first.request: runtime.detach_row(old)}
+        self.assertNotIn(2, p.available_slots())
+        self.assertEqual(p.state(first.request), "WAITING_DONE")
+        second = d.acquire_decode(28, "new-row-owner", 6, 1, 1, "tcp://d:4351")
+        p.apply(second)
+        with self.assertRaisesRegex(ValueError, "already acquired"):
+            p.acquire_prefill(second.request, 2)
+        p.apply(d.apply(p.acquire_prefill(second.request, 3)))
+        p.start_prefill(second.request)
+        current = runtime.bind(1, slot=3, prompt_tokens=1)
+        runtime.begin_forward([KVWriteExpectation(1, 0, 1)])
+        runtime.write_layer(5, k * 2, k * 2, prefill_batch((1,), (0,), (1,)))
+        runtime.end_forward()
+
+        d.begin_drain(first.request)
+        done = d.finish_drain(first.request)
+        ack = p.apply(done)
+        d.apply(ack)
+        self.assertIn(2, p.available_slots())
+        self.assertNotIn(3, p.available_slots())
+        runtime.assert_bound(1, current)
+        self.assertFalse(runtime.writes_done(1))
+        self.assertEqual(runtime.written_tokens(1), 0)
+        self.assertEqual(receipts[first.request].completed, 1)
+        self.assertEqual(targets[0][2, 0, 0].tolist(), [11] * 4)
+        self.assertEqual(targets[0][3, 0, 0].tolist(), [22] * 4)
+
+        third = d.acquire_decode(29, "new-slot-owner", 7, 1, 1, "tcp://d:4351")
+        p.apply(third)
+        p.acquire_prefill(third.request, 2)
+        self.assertEqual(p.apply(done), ack)
+        self.assertNotIn(2, p.available_slots())
+        self.assertEqual(p.state(third.request), "ACQUIRED")
+        self.assertEqual(p.state(second.request), "PREFILLING")
+        events[-1].done = True
+        runtime.poll_completed()
+        self.assertTrue(runtime.prompt_ready(1))
+        self.assertEqual(receipts[first.request].binding.slot, 2)
+
     def test_prompt_chunks_and_layers_are_counted_once_after_device_completion(self):
         """Two forwards fill prompt KV, and readiness waits for all layer writes."""
         runtime, targets, events = self.make_runtime()
-        runtime.bind(1, slot=3, prompt_tokens=3)
+        binding = runtime.bind(1, slot=3, prompt_tokens=3)
         runtime.bind(2, slot=7, prompt_tokens=1)
         batch = prefill_batch()
         runtime.begin_forward(
@@ -96,7 +237,7 @@ class TestMempoolRuntime(unittest.TestCase):
         runtime.end_forward()
         self.assertEqual(runtime.poll_completed(), [])
         with self.assertRaisesRegex(RuntimeError, "in-flight"):
-            runtime.unbind(1)
+            runtime.detach_row(binding)
         events[-1].done = True
         self.assertEqual(runtime.poll_completed(), [1, 2])
         self.assertFalse(runtime.prompt_ready(1))
@@ -148,7 +289,7 @@ class TestMempoolRuntime(unittest.TestCase):
         pointers = runtime.row_slot.data_ptr(), runtime.row_prompt_len.data_ptr()
         with self.assertRaisesRegex(ValueError, "row 0"):
             runtime.bind(0, slot=1, prompt_tokens=1)
-        runtime.bind(1, slot=2, prompt_tokens=1)
+        binding = runtime.bind(1, slot=2, prompt_tokens=1)
         with self.assertRaisesRegex(RuntimeError, "slot"):
             runtime.bind(2, slot=2, prompt_tokens=1)
         runtime.begin_forward([KVWriteExpectation(1, 0, 1)])
@@ -156,10 +297,10 @@ class TestMempoolRuntime(unittest.TestCase):
         runtime.write_layer(5, k, k, prefill_batch((1,), (0,), (1,)))
         runtime.end_forward()
         with self.assertRaisesRegex(RuntimeError, "in-flight"):
-            runtime.unbind(1)
+            runtime.detach_row(binding)
         events[-1].done = True
         runtime.poll_completed()
-        runtime.unbind(1)
+        runtime.detach_row(binding)
         runtime.bind(1, slot=2, prompt_tokens=1)
         runtime.begin_forward([KVWriteExpectation(1, 0, 1)])
         runtime.write_layer(5, k * 2, k * 2, prefill_batch((1,), (0,), (1,)))
@@ -203,14 +344,9 @@ class TestMempoolRuntime(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "counts"):
             runtime.poll_completed()
 
-    def test_layer_coverage_and_fake_admission_are_explicit(self):
-        """Missing/duplicate hooks fail; only the supplied fake marker bypasses bind."""
+    def test_layer_coverage_is_required_even_for_dummy_capture(self):
+        """An empty expectation list cannot bypass missing/duplicate layer checks."""
         runtime, _, _ = self.make_runtime()
-        req = SimpleNamespace(req_pool_idx=1, rid="real", bootstrap_host="P")
-        with self.assertRaisesRegex(RuntimeError, "binding"):
-            runtime.assert_bound([req], fake_bootstrap_host="2.2.2.2")
-        req.bootstrap_host = "2.2.2.2"
-        runtime.assert_bound([req], fake_bootstrap_host="2.2.2.2")
         runtime.begin_forward([], capture=True)
         batch = prefill_batch((0,), (0,), (0,))
         batch.out_cache_loc = torch.tensor([0])
@@ -269,11 +405,13 @@ class TestMempoolRuntime(unittest.TestCase):
     def test_binding_updates_cannot_interleave_an_open_capture(self):
         """Dummy capture also consumes binding tables and cannot change them mid-forward."""
         runtime, _, _ = self.make_runtime()
+        binding = runtime.bind(1, slot=2, prompt_tokens=2)
+        runtime.detach_row(binding)
         runtime.begin_forward([], capture=True)
         with self.assertRaisesRegex(RuntimeError, "open forward"):
             runtime.bind(2, slot=3, prompt_tokens=2)
         with self.assertRaisesRegex(RuntimeError, "open forward"):
-            runtime.unbind(1)
+            runtime.detach_row(binding)
 
     def test_capture_cannot_access_a_real_binding(self):
         """Graph setup must not bypass normal tracking for live request storage."""
@@ -301,15 +439,14 @@ class TestMempoolRuntime(unittest.TestCase):
                 ]
                 for target in targets:
                     target.fill_(WRITER_SENTINEL)
-                bound = set()
+                bound = {}
                 for case in make_cases(8):
                     if case.reset_bindings:
-                        for row in bound:
-                            runtime.unbind(row)
+                        for binding in bound.values():
+                            runtime.detach_row(binding)
                         bound.clear()
                     for row, slot, prompt in case.bindings:
-                        runtime.bind(row, slot=slot, prompt_tokens=prompt)
-                        bound.add(row)
+                        bound[row] = runtime.bind(row, slot=slot, prompt_tokens=prompt)
                     runtime.begin_forward(case.writes)
                     for layer in range(2):
                         values = case.values(layer, 4)

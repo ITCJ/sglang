@@ -1,8 +1,8 @@
 # Ascend mempool storage
 
-02 的第一部分：提供存储布局、BM handle/view 和临时 KV 写入接口。
-PD 控制协议、attention 双写、scheduler 和参数接入由后续三部分完成。
-当前没有修改原有 sparse PD 数据路径，也没有创建服务级 mempool。
+提供 ticket02 的存储布局、BM handle/view、临时 KV writer 和 backend runtime。
+①–③及本轮 A1–A4 接口优化已实现；④的 scheduler/参数/真实服务接入尚未完成。
+shadow 双写保留原 sparse PD 路径，当前没有在服务中创建 mempool runtime。
 
 ## 文件与接口
 
@@ -13,7 +13,10 @@ PD 控制协议、attention 双写、scheduler 和参数接入由后续三部分
 | `manager.py` | `MempoolKVManager.initialize_rank_pair()` | 将 TP rank `i` 映射到 P 的 `base_port+i` store，设置 P/D 的 BM rank 0/1，启动 BM 并 join pool。 |
 | `manager.py` | `MempoolKVManager.create/join/view/close()` | 拥有一个双 rank BM handle，验证映射，提供 view，并在 drain 后销毁。 |
 | `manager.py` | `MempoolKVView` | 提供一个 layer 的逻辑 tensor、元素地址和同步 setup 写入；持有 manager 引用。 |
-| `offload.py` | `MempoolWriteInputs` / `MempoolKVOffload.write()` | 使用固定 device metadata，把 temporary KV 通过 UniDexCopy 直接写入本侧 BM。 |
+| `offload.py` | `MempoolKVOffload.write(values, *, slots, positions, valid)` | 通过显式 metadata 将 temporary KV 写入本侧 BM；不持有另一套输入缓存。 |
+| `rows.py` | `derive_kv_rows()` | 从普通 forward 张量推导 request row、全序列 token position 和 valid；目前有意保留 sparse manager 行推导的副本。 |
+| `runtime.py` | `MempoolRuntime` | 持有固定设备 binding 表、per-layer writer、forward/Graph 边界及本地写入计数/完成事件。 |
+| `runtime.py` | `KVRowBinding` / `KVWriteReceipt` | 标识一次本地 row attachment，保留 detach 后的完成事实；不表示 PD slot ownership。 |
 
 每侧 KV payload 为 `L * B_slots * S * N * D * 2` 字节；MLA 的 `N=1`，
 `D=kv_lora_rank+qk_rope_head_dim`。每 rank 加 64 字节 probe，再向 1 GiB 对齐。
@@ -35,9 +38,13 @@ PD 控制协议、attention 双写、scheduler 和参数接入由后续三部分
    核对 P_i/D_i 的实际身份。
 3. `view(rank, layer)` 可引用两侧 KV；运行时写入仅允许本侧 view。
    `write_rows()` 使用同步 BM SDK copy，只用于捕图外的 setup。
-4. `MempoolWriteInputs(rows, device)` 的 slot/position 初始为 -1、valid 为 false。
-   调用方用 `copy_()` 等原地更新这些 tensor，保持 Graph 输入地址不变。
-5. `MempoolKVOffload.write(values)` 接受连续的 BF16 `[rows, N, D]` temporary KV。
+4. `MempoolRuntime` 管理固定设备 `row_slot` / `row_prompt_len` 表，初始为 -1。
+   `binding = bind(row, slot=..., prompt_tokens=...)` 原地更新表；安装 event 由下次
+   forward 等待。接入层按 approved request attempt 保存这个不可变 attachment 对象，
+   对真实 `req.kv.req_pool_idx` 调用 `assert_bound(row, binding)`，拒绝旧 attachment。
+5. `MempoolKVOffload.write(values, *, slots, positions, valid)` 接受连续 BF16
+   `[rows, N, D]` temporary KV，以及同设备的 int64 slots/positions、bool valid 向量。
+   runtime 在设备上构造这些参数；P eager 每个 chunk 可使用不同的 rows。
    每个 valid source row 对应一个不同的目的坐标；无效/越界行不写入。
    即使全部 invalid，也会提交 kernel，使 zero-valid capture 保留运行时写入路径。
 6. 写入不调用 host tensor read 或 synchronize。跨 stream 的 producer/consumer
@@ -45,18 +52,24 @@ PD 控制协议、attention 双写、scheduler 和参数接入由后续三部分
    不能用来把超容量请求当作成功。
 7. 本 manager 管理 pool 的生命周期。request slot 的 acquire/release 与持久 ownership
    留在 PD 控制层；`view.write_rows()` 和 `offload.write()` 均不分配 slot。
+   `detach_row(binding)` 在本地 completion 消费后清除 row 映射并返回不可变 receipt，
+   不释放 slot。调用方还须保证无未来 row 提交以及 native transfer 安全；正常 P
+   须等 handoff 成功，KV_READY 本身不够。P slot 保留到 D 的 DONE，D 则先 whole-D
+   drain 再 detach。receipt 按 attempt 保存，不能再以旧 row 查询已复用请求的进度。
 8. pool 和 view 必须覆盖整个 Graph 生命周期。`close(drain)` 的 drain callback
    需排空所有相关 reads/writes，并确保 Graph 不会再次提交；失败时不销毁 pool。
    关闭后的 Python view 拒绝返回地址，但已捕获的 raw pointer 无法靠 Python 检查拦截。
 
 ## 检查与当前边界
 
-CPU 行为测试放在仓库根目录 `ascend-mempool-test/tests/unit/`，见该目录 README。
+CPU 行为测试放在仓库根目录 `ascend-mempool-test/tests/unit/`，见
+[测试与两机运行说明](../../../../../../ascend-mempool-test/README.md)。
 `test_pair_startup.py` 使用 BM SDK boundary fake 检查 16 对端口、BM rank、错误参数与
 失败清理。它不代表 16 对真实 BM 会话已在服务中启动；第④部分接入时仍需用户运行
 NPU 测试。
 独立测试通过自己的 package path 加载本目录模块，绕过 `sglang/__init__.py`，
 无需安装 SGLang 或启动 server；01 的 `pool` import 保留兼容入口。
 
-01 已有双机 BM + remote fetch Graph 的硬件验证。新增 offload 的 raw destination
-写入和真实 server shadow 路径尚未由用户在 NPU 验证，不能从 CPU 结果推断通过。
+01 的 remote fetch Graph、③旧版本的双机 runtime writer gate 已由用户反馈通过。
+本轮 bind/detach/writer 接口调整后的 NPU 回归仍待运行；真实 server shadow 验收
+还需要④，不能从 CPU 测试或旧版本硬件结果推断本轮通过。

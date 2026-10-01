@@ -1,7 +1,8 @@
 """Exercise request ownership through the Ascend mempool control API."""
 
+import pickle
 import unittest
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 
 from ascend_mempool_pd.mempool_control import MempoolPDControl
 from ascend_mempool_pd.mempool_protocol import (
@@ -76,6 +77,117 @@ class TestMempoolPDControl(unittest.TestCase):
         self.assertIn(7, self.p.available_slots())
         self.d.apply(release_ack)
         self.assertEqual(self.d.state(request), "CLOSED")
+
+    def test_snapshot_is_immutable_and_does_not_follow_later_transitions(self):
+        """Read ownership/readiness without exposing records or mutating control."""
+        empty = self.p.snapshot()
+        self.assertEqual(empty.requests, ())
+        self.assertEqual(empty.available_slots, frozenset(range(16)))
+        acquire = self.d.acquire_decode(27, "snapshot", 5, 32, 16, "tcp://d:4351")
+        request = acquire.request
+        self.p.apply(acquire)
+        waiting = self.p.snapshot()
+        record = waiting.requests[0]
+        self.assertEqual(record.identity, request)
+        self.assertEqual(record.phase, "WAITING_ACQUIRE")
+        self.assertFalse(record.owns_slot)
+        self.assertIsNone(record.p_slot)
+        self.assertEqual(record.d_slot, acquire.d_slot)
+        self.assertEqual((record.prompt_limit, record.decode_limit), (32, 16))
+        self.assertEqual(record.reply_to, "tcp://d:4351")
+        self.assertEqual(waiting, self.p.snapshot())
+
+        acquired = self.p.acquire_prefill(request, 7)
+        self.p.apply(self.d.apply(acquired))
+        bound = self.p.snapshot()
+        self.assertEqual(bound.requests[0].p_slot, acquired.p_slot)
+        self.assertTrue(bound.requests[0].owns_slot)
+        self.assertTrue(bound.requests[0].binding_confirmed)
+        self.assertNotIn(7, bound.available_slots)
+        self.assertEqual(waiting.requests[0].phase, "WAITING_ACQUIRE")
+        self.assertEqual(empty.requests, ())
+        with self.assertRaises(FrozenInstanceError):
+            bound.requests[0].phase = "RELEASED"
+        with self.assertRaises(FrozenInstanceError):
+            bound.requests[0].p_slot.generation = 99
+        with self.assertRaises(FrozenInstanceError):
+            bound.requests = ()
+        with self.assertRaises(AttributeError):
+            bound.available_slots.add(7)
+        self.assertEqual(self.p.snapshot(), bound)
+        self.assertEqual(self.p.state(request), "BOUND")
+        self.assertNotIn(7, self.p.available_slots())
+
+    def test_snapshot_reports_readiness_and_retained_binding_after_slot_release(self):
+        """Retained leases do not imply ownership, and reads cannot process an inbox."""
+        acquire = self.d.acquire_decode(27, "observations", 5, 32, 16, "tcp://d:4351")
+        request = acquire.request
+        self.p.apply(acquire)
+        self.p.apply(self.d.apply(self.p.acquire_prefill(request, 7)))
+        self.p.start_prefill(request)
+        self.assertTrue(self.p.snapshot().requests[0].writes_pending)
+        self.p.finish_prefill_writes(request)
+        ready = self.p.publish_kv_ready(request, 32)
+        before = self.d.snapshot()
+        self.d.enqueue(ready)
+        self.assertEqual(self.d.snapshot(), before)
+        self.assertEqual(before.requests[0].phase, "WAITING_READY")
+        self.assertIsNone(before.requests[0].prompt_written)
+        self.assertFalse(before.requests[0].transfer_ready)
+        self.assertEqual(self.d.drain_inbox(), [ready])
+        self.d.apply(ready)
+        self.assertEqual(self.d.snapshot().requests[0].prompt_written, 32)
+        self.assertFalse(self.d.can_decode(request))
+        self.d.transfer_succeeded(request)
+        self.assertTrue(self.d.snapshot().requests[0].transfer_ready)
+        self.d.start_decode(request)
+        self.d.begin_drain(request)
+        done = self.d.finish_drain(request)
+        drained = self.d.snapshot()
+        self.assertEqual(drained.requests[0].phase, "WAITING_RELEASE_ACK")
+        self.assertFalse(drained.requests[0].owns_slot)
+        self.assertEqual(drained.requests[0].done, done)
+        self.assertIn(5, drained.available_slots)
+        self.assertTrue(self.p.snapshot().requests[0].owns_slot)
+
+        second = self.d.acquire_decode(28, "new-owner", 5, 32, 16, "tcp://d:4351")
+        records = {record.identity: record for record in self.d.snapshot().requests}
+        self.assertFalse(records[request].owns_slot)
+        self.assertTrue(records[second.request].owns_slot)
+        ack = self.p.apply(done)
+        released = self.p.snapshot()
+        self.assertEqual(released.requests[0].release_ack, ack)
+        self.assertFalse(released.requests[0].owns_slot)
+        self.assertIsNone(released.requests[0].pending_done)
+        self.d.apply(ack)
+        # The TP CPU group can serialize these values; there are no proxy dicts.
+        self.assertEqual(pickle.loads(pickle.dumps(released)), released)
+
+    def test_snapshot_exposes_pending_done_and_sticky_fault_without_releasing(self):
+        """An early DONE stays pending until writes drain; observing a fault is safe."""
+        acquire = self.d.acquire_decode(27, "pending-done", 5, 32, 16, "tcp://d:4351")
+        request = acquire.request
+        self.p.apply(acquire)
+        self.p.apply(self.d.apply(self.p.acquire_prefill(request, 7)))
+        self.p.start_prefill(request)
+        self.d.cancel_local(request, "client disconnected")
+        self.d.begin_drain(request)
+        done = self.d.finish_drain(request)
+        self.assertIsNone(self.p.apply(done))
+        pending = self.p.snapshot()
+        self.assertEqual(pending.requests[0].phase, "CANCELLING")
+        self.assertEqual(pending.requests[0].pending_done, done)
+        self.assertTrue(pending.requests[0].writes_pending)
+        self.assertTrue(pending.requests[0].owns_slot)
+        self.p.finish_prefill_writes(request)
+        self.assertFalse(self.p.snapshot().requests[0].owns_slot)
+        self.assertIsNone(self.p.snapshot().requests[0].pending_done)
+        self.assertTrue(pending.requests[0].owns_slot)
+        self.d.fail_protocol("lost peer")
+        fault = self.d.snapshot()
+        self.assertEqual(fault.protocol_fault, "lost peer")
+        self.assertEqual(fault, self.d.snapshot())
+        self.assertEqual(fault.requests[0].phase, "WAITING_RELEASE_ACK")
 
     def test_duplicate_cancel_preserves_drain_progress(self):
         """Repeated remote and local cancellation cannot undo an ongoing drain."""

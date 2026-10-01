@@ -1,9 +1,9 @@
-"""Write temporary compact KV to local BM using fixed graph input addresses."""
+"""Write temporary compact KV to local BM with explicit device metadata."""
 
 from __future__ import annotations
 
 import importlib
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from .layout import UINT32_MAX, positive_int
 from .manager import MempoolKVView
@@ -12,40 +12,23 @@ if TYPE_CHECKING:
     from torch import Tensor
 
 
-class MempoolWriteInputs:
-    """Hold fixed device buffers; callers update slot/token/valid values in place."""
-
-    def __init__(self, rows: int, device: str) -> None:
-        """Start every row unbound so capture and warmup cannot touch request KV."""
-        import torch
-
-        positive_int("rows", rows)
-        self.rows = rows
-        self.slots = torch.full((rows,), -1, dtype=torch.int64, device=device)
-        self.positions = torch.full((rows,), -1, dtype=torch.int64, device=device)
-        self.valid = torch.zeros((rows,), dtype=torch.bool, device=device)
-
-
 class MempoolKVOffload:
     """Write [rows, heads, dim] BF16 KV to the owning rank's logical layer."""
 
     def __init__(
         self,
         target: MempoolKVView,
-        inputs: Optional[MempoolWriteInputs] = None,
+        *,
         block_dim: int = 48,
         kernel: Any = None,
     ) -> None:
-        """Prepare fixed copy metadata; an injected kernel supports CPU tests."""
+        """Retain the mapped destination; an injected kernel supports CPU tests."""
         import torch
 
         positive_int("block_dim", block_dim)
         if target.rank != target.owner.rank:
             raise ValueError("KV offload must target the owning rank's view")
-        if inputs is not None and inputs.rows * target.layout.row_bytes > UINT32_MAX:
-            raise ValueError("source span exceeds UniDexCopy's UINT32_MAX limit")
         self.target = target
-        self.inputs = inputs
         self.block_dim = block_dim
         self._kernel = kernel
         # A CPU dtype placeholder preserves NPU dispatch from the source/indices.
@@ -55,9 +38,9 @@ class MempoolKVOffload:
         self,
         values: Tensor,
         *,
-        slots: Optional[Tensor] = None,
-        positions: Optional[Tensor] = None,
-        valid: Optional[Tensor] = None,
+        slots: Tensor,
+        positions: Tensor,
+        valid: Tensor,
     ) -> None:
         """Enqueue masked writes without host tensor reads or device synchronization.
 
@@ -69,16 +52,6 @@ class MempoolKVOffload:
         import torch
 
         layout = self.target.layout
-        if slots is None and positions is None and valid is None:
-            if self.inputs is None:
-                raise ValueError("slots, positions and valid must be supplied together")
-            slots, positions, valid = (
-                self.inputs.slots,
-                self.inputs.positions,
-                self.inputs.valid,
-            )
-        if slots is None or positions is None or valid is None:
-            raise ValueError("slots, positions and valid must be supplied together")
         rows = slots.numel()
         if rows <= 0 or rows * layout.row_bytes > UINT32_MAX:
             raise ValueError("invalid source extent for UniDexCopy")

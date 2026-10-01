@@ -37,12 +37,34 @@ class KVWriteExpectation:
     rows: int
 
 
+@dataclass(frozen=True, eq=False)
+class KVRowBinding:
+    """Identify one local row attachment, even if its coordinates are later reused.
+
+    Keep the object returned by bind with the approved request attempt. Object
+    identity distinguishes attachments without importing PD sessions/generations.
+    This is not slot ownership: only control may acquire or release a slot.
+    """
+
+    req_pool_idx: int
+    slot: int
+    prompt_tokens: int
+
+
+@dataclass(frozen=True)
+class KVWriteReceipt:
+    """Retain completed local progress after the request row has been detached."""
+
+    binding: KVRowBinding
+    submitted: int
+    completed: int
+
+
 @dataclass
 class _Binding:
     """Keep local submission/completion progress independent of output tokens."""
 
-    slot: int
-    prompt_tokens: int
+    attachment: KVRowBinding
     submitted: int = 0
     completed: int = 0
 
@@ -73,8 +95,11 @@ class MempoolRuntime:
 
     The scheduler calls begin/end_forward around every eager forward or graph
     replay on its submission stream. write_layer runs once per layer (only at
-    capture time for graphs). Bind/unbind require tick approval and a row with
-    no outstanding work; unbind also requires remote drain approval on P.
+    capture time for graphs). Bind/detach require tick approval and a row with
+    no outstanding local work or future host submissions. P can detach after
+    native handoff is safe while control keeps its mempool slot until D's DONE.
+    D detaches only after its whole-side drain. The caller proves these external
+    conditions; a completed local event alone does not establish native safety.
     This adapter never sends control messages or releases protocol ownership.
     """
 
@@ -158,8 +183,8 @@ class MempoolRuntime:
         self._binding_update = self._event_factory()
         self._binding_update.record()
 
-    def bind(self, req_pool_idx: int, *, slot: int, prompt_tokens: int) -> None:
-        """Install a tick-approved allocation before the request enters a batch."""
+    def bind(self, req_pool_idx: int, *, slot: int, prompt_tokens: int) -> KVRowBinding:
+        """Install an approved allocation and return its local attachment identity."""
         if self._active is not None:
             raise RuntimeError("cannot change bindings during an open forward")
         self._row(req_pool_idx)
@@ -169,41 +194,49 @@ class MempoolRuntime:
             raise ValueError("prompt length exceeds P mempool capacity")
         if req_pool_idx in self._bindings or self._row_in_flight(req_pool_idx):
             raise RuntimeError("request row is already bound or in-flight")
-        if any(binding.slot == slot for binding in self._bindings.values()):
+        if any(binding.attachment.slot == slot for binding in self._bindings.values()):
             raise RuntimeError("mempool slot is already bound")
-        self._bindings[req_pool_idx] = _Binding(slot, prompt_tokens)
+        attachment = KVRowBinding(req_pool_idx, slot, prompt_tokens)
+        self._bindings[req_pool_idx] = _Binding(attachment)
         self.row_slot[req_pool_idx] = slot
         self.row_prompt_len[req_pool_idx] = prompt_tokens
         self._write_counts[:, slot].zero_()
         self._slot_totals[slot] = 0
         self._record_binding_update()
+        return attachment
 
-    def unbind(self, req_pool_idx: int) -> None:
-        """Invalidate a drained row; the caller additionally proves remote safety."""
+    def detach_row(self, binding: KVRowBinding) -> KVWriteReceipt:
+        """Remove only this row mapping and return immutable local completion facts.
+
+        The caller retains the receipt under its request attempt before returning
+        native resources. It must prove native transfer safety and no future row
+        submissions (and D drain on decode); this method never releases a BM slot.
+        """
         if self._active is not None:
             raise RuntimeError("cannot change bindings during an open forward")
+        req_pool_idx = binding.req_pool_idx
         self._row(req_pool_idx)
         if self._row_in_flight(req_pool_idx):
-            raise RuntimeError("cannot unbind an in-flight request row")
-        if req_pool_idx not in self._bindings:
-            raise RuntimeError("request row is not bound")
+            raise RuntimeError("cannot detach an in-flight request row")
+        self.assert_bound(req_pool_idx, binding)
+        progress = self._bindings[req_pool_idx]
+        receipt = KVWriteReceipt(binding, progress.submitted, progress.completed)
         self.row_slot[req_pool_idx] = -1
         self.row_prompt_len[req_pool_idx] = -1
         del self._bindings[req_pool_idx]
         self._record_binding_update()
+        return receipt
 
-    def assert_bound(
-        self, reqs: Sequence[Any], *, fake_bootstrap_host: Optional[str] = None
-    ) -> None:
-        """Check real requests at admission; caller supplies SGLang's fake marker."""
-        for req in reqs:
-            if (
-                fake_bootstrap_host is not None
-                and req.bootstrap_host == fake_bootstrap_host
-            ):
-                continue
-            if req.req_pool_idx not in self._bindings:
-                raise RuntimeError(f"real request {req.rid} has no mempool binding")
+    def assert_bound(self, req_pool_idx: int, binding: Optional[KVRowBinding]) -> None:
+        """Check a real row against the attachment saved for its approved attempt.
+
+        The service projects req.kv.req_pool_idx and filters existing fake
+        requests. Equal row/slot numbers alone cannot approve a new request.
+        """
+        self._row(req_pool_idx)
+        progress = self._bindings.get(req_pool_idx)
+        if binding is None or progress is None or progress.attachment is not binding:
+            raise RuntimeError("request row has no matching mempool binding")
 
     def begin_forward(
         self,
@@ -238,13 +271,15 @@ class MempoolRuntime:
             binding = self._bindings.get(write.req_pool_idx)
             if binding is None:
                 raise RuntimeError("real forward request has no mempool binding")
-            base = binding.prompt_tokens if self.manager.rank == 1 else 0
+            base = binding.attachment.prompt_tokens if self.manager.rank == 1 else 0
             if write.start_position != base + binding.submitted:
                 raise ValueError(
                     "expected writes must continue the submitted KV prefix"
                 )
             limit = (
-                self.layout.tokens if self.manager.rank == 1 else binding.prompt_tokens
+                self.layout.tokens
+                if self.manager.rank == 1
+                else binding.attachment.prompt_tokens
             )
             if binding.submitted + write.rows > limit:
                 raise ValueError("expected writes exceed request KV capacity")
@@ -316,7 +351,7 @@ class MempoolRuntime:
         for write in active.writes:
             binding = self._bindings[write.req_pool_idx]
             binding.submitted += write.rows
-            self._slot_totals[binding.slot] = binding.submitted
+            self._slot_totals[binding.attachment.slot] = binding.submitted
         totals = tuple(self._bindings[row].submitted for row in rows)
         snapshot = self._write_counts.clone()
         event = self._event_factory()
@@ -361,5 +396,5 @@ class MempoolRuntime:
         binding = self._bindings[req_pool_idx]
         return (
             self.writes_done(req_pool_idx)
-            and binding.completed == binding.prompt_tokens
+            and binding.completed == binding.attachment.prompt_tokens
         )

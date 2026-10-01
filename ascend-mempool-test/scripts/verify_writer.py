@@ -24,10 +24,13 @@ from ascend_mempool.writer_cases import (
 
 if TYPE_CHECKING:
     from sglang.srt.hardware_backend.npu.mempool.manager import MempoolKVManager
-    from sglang.srt.hardware_backend.npu.mempool.runtime import MempoolRuntime
+    from sglang.srt.hardware_backend.npu.mempool.runtime import (
+        KVRowBinding,
+        MempoolRuntime,
+    )
 else:
     from ascend_mempool.pool import MempoolKVManager
-    from ascend_mempool.runtime import MempoolRuntime
+    from ascend_mempool.runtime import KVRowBinding, MempoolRuntime
 
 
 def stage_sentinel(manager: MempoolKVManager, args: argparse.Namespace) -> None:
@@ -135,7 +138,7 @@ def paired_writer_checks(
                 graph = None
                 sources: list[Any] = []
                 batch = None
-                bound: set[int] = set()
+                bound: dict[int, KVRowBinding] = {}
                 copies = []
                 if manager.rank == owner:
                     runtime = MempoolRuntime(
@@ -177,12 +180,13 @@ def paired_writer_checks(
                         case.update_reference(reference, layer)
                     if runtime is not None:
                         if case.reset_bindings:
-                            for row in bound:
-                                runtime.unbind(row)
+                            for binding in bound.values():
+                                runtime.detach_row(binding)
                             bound.clear()
                         for row, slot, prompt in case.bindings:
-                            runtime.bind(row, slot=slot, prompt_tokens=prompt)
-                            bound.add(row)
+                            bound[row] = runtime.bind(
+                                row, slot=slot, prompt_tokens=prompt
+                            )
                         if graph is not None and case.decode:
                             load_decode_case(case, batch, sources)
                             runtime.begin_forward(case.writes, replay=True)

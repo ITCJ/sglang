@@ -27,6 +27,48 @@ from .mempool_protocol import (
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class MempoolRequestSnapshot:
+    """Expose one attempt's protocol facts without handing out its mutable record.
+
+    Slot coordinates can outlive local ownership, notably while D waits for ACK.
+    owns_slot reports current local ownership, independently of retained leases.
+    binding_confirmed/writes_pending are P facts; transfer_ready is a D fact.
+    pending_done contains only unacknowledged DONE; released attempts expose ACK.
+    """
+
+    identity: RequestIdentity
+    phase: str
+    prompt_limit: int
+    decode_limit: int
+    reply_to: str
+    d_slot: SlotLease
+    p_slot: SlotLease | None
+    owns_slot: bool
+    prompt_written: int | None
+    transfer_ready: bool
+    writes_pending: bool
+    binding_confirmed: bool
+    pending_done: MempoolMessage | None
+    done: MempoolMessage | None
+    release_ack: MempoolMessage | None
+
+
+@dataclass(frozen=True)
+class MempoolControlSnapshot:
+    """Capture scheduler-owned state as immutable, serializable observations.
+
+    Read on the scheduler thread between transitions. Reading neither drains
+    the inbox nor advances protocol state; faults remain visible to the TP tick.
+    """
+
+    local: PoolPeer
+    peer: PoolPeer | None
+    requests: tuple[MempoolRequestSnapshot, ...]
+    available_slots: frozenset[int]
+    protocol_fault: str | None
+
+
 @dataclass
 class _RequestRecord:
     """Retain one attempt independently of ordinary PD sender/receiver cleanup."""
@@ -121,7 +163,12 @@ class MempoolFrameRouter:
 
 
 class MempoolPDControl:
-    """Advance one paired rank's protocol in scheduler order, with an inbox for ZMQ."""
+    """Own one pair's protocol state; ZMQ queues facts for the scheduler.
+
+    The TP tick must approve every ownership-changing call, including apply,
+    cancellation, finish_drain and finish_prefill_writes (which can consume a
+    pending DONE). Completion/network callbacks must not call these transitions.
+    """
 
     def __init__(
         self,
@@ -187,6 +234,38 @@ class MempoolPDControl:
     def available_slots(self) -> frozenset[int]:
         """Expose candidates for the scheduler's rank-wide same-slot choice."""
         return frozenset(set(range(self.local.layout.slots)) - self._slot_owner.keys())
+
+    def snapshot(self) -> MempoolControlSnapshot:
+        """Copy current protocol facts for planning, without changing ownership."""
+        requests = tuple(
+            MempoolRequestSnapshot(
+                identity=record.identity,
+                phase=record.phase,
+                prompt_limit=record.prompt_limit,
+                decode_limit=record.decode_limit,
+                reply_to=record.reply_to,
+                d_slot=record.d_slot,
+                p_slot=record.p_slot,
+                owns_slot=record.identity in self._slot_owner.values(),
+                prompt_written=record.prompt_written,
+                transfer_ready=record.transfer_ready,
+                writes_pending=record.writes_pending,
+                binding_confirmed=record.binding_confirmed,
+                pending_done=record.pending_done
+                if record.release_ack is None
+                else None,
+                done=record.done,
+                release_ack=record.release_ack,
+            )
+            for record in self._records.values()
+        )
+        return MempoolControlSnapshot(
+            local=self.local,
+            peer=self.peer,
+            requests=requests,
+            available_slots=self.available_slots(),
+            protocol_fault=self._protocol_fault,
+        )
 
     def state(self, request: RequestIdentity) -> str:
         """Report an attempt's durable lifecycle state for scheduler decisions."""

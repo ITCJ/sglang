@@ -6,7 +6,7 @@ import torch
 from test_pool import FakeBM
 
 from ascend_mempool.layout import KVLayout, PoolLayout
-from ascend_mempool.offload import MempoolKVOffload, MempoolWriteInputs
+from ascend_mempool.offload import MempoolKVOffload
 from ascend_mempool.pool import MempoolKVManager
 
 
@@ -67,12 +67,9 @@ class TestMempoolKVOffload(unittest.TestCase):
         self,
     ):
         """Write first/last tokens while masking unbound and out-of-range rows."""
-        inputs = MempoolWriteInputs(rows=8, device="cpu")
-        inputs.slots.copy_(torch.tensor([2, 15, 16, -1, 1, 1, 1, 3]))
-        inputs.positions.copy_(torch.tensor([0, 7, 0, 0, 8, -1, 3, 2]))
-        inputs.valid.copy_(
-            torch.tensor([True, True, True, True, True, True, False, True])
-        )
+        slots = torch.tensor([2, 15, 16, -1, 1, 1, 1, 3])
+        positions = torch.tensor([0, 7, 0, 0, 8, -1, 3, 2])
+        valid = torch.tensor([True, True, True, True, True, True, False, True])
         values = torch.tensor(
             [
                 [11, 12, 13, 14],
@@ -86,8 +83,8 @@ class TestMempoolKVOffload(unittest.TestCase):
             ],
             dtype=torch.bfloat16,
         ).reshape(8, 1, 4)
-        writer = MempoolKVOffload(self.view, inputs, kernel=self.kernel)
-        writer.write(values)
+        writer = MempoolKVOffload(self.view, kernel=self.kernel)
+        writer.write(values, slots=slots, positions=positions, valid=valid)
         expected = torch.full_like(self.target, -1)
         expected[2, 0, 0] = torch.tensor([11, 12, 13, 14])
         expected[15, 7, 0] = torch.tensor([21, 22, 23, 24])
@@ -96,62 +93,62 @@ class TestMempoolKVOffload(unittest.TestCase):
 
     def test_unbound_warmup_and_changed_bindings_use_the_same_input_buffers(self):
         """Enable writes after zero-valid warmup, then reuse the writer for new slots."""
-        inputs = MempoolWriteInputs(rows=2, device="cpu")
-        addresses = [
-            tensor.data_ptr()
-            for tensor in (inputs.slots, inputs.positions, inputs.valid)
-        ]
-        writer = MempoolKVOffload(self.view, inputs, kernel=self.kernel)
+        slots = torch.full((2,), -1, dtype=torch.int64)
+        positions = torch.full((2,), -1, dtype=torch.int64)
+        valid = torch.zeros(2, dtype=torch.bool)
+        addresses = [tensor.data_ptr() for tensor in (slots, positions, valid)]
+        writer = MempoolKVOffload(self.view, kernel=self.kernel)
         values = torch.tensor(
             [[11, 12, 13, 14], [21, 22, 23, 24]], dtype=torch.bfloat16
         ).reshape(2, 1, 4)
-        writer.write(values)
+        writer.write(values, slots=slots, positions=positions, valid=valid)
         self.assertTrue((self.target == -1).all().item())
 
-        inputs.slots.copy_(torch.tensor([4, 6]))
-        inputs.positions.copy_(torch.tensor([1, 2]))
-        inputs.valid.fill_(True)
-        writer.write(values)
+        slots.copy_(torch.tensor([4, 6]))
+        positions.copy_(torch.tensor([1, 2]))
+        valid.fill_(True)
+        writer.write(values, slots=slots, positions=positions, valid=valid)
         expected = torch.full_like(self.target, -1)
         expected[4, 1, 0] = torch.tensor([11, 12, 13, 14])
         expected[6, 2, 0] = torch.tensor([21, 22, 23, 24])
         self.assertTrue(torch.equal(self.target, expected))
 
-        inputs.slots.copy_(torch.tensor([8, 9]))
-        inputs.positions.copy_(torch.tensor([0, 7]))
-        inputs.valid.copy_(torch.tensor([True, False]))
+        slots.copy_(torch.tensor([8, 9]))
+        positions.copy_(torch.tensor([0, 7]))
+        valid.copy_(torch.tensor([True, False]))
         values.fill_(99)
-        writer.write(values)
+        writer.write(values, slots=slots, positions=positions, valid=valid)
         expected[8, 0, 0] = 99
         self.assertTrue(torch.equal(self.target, expected))
         self.assertEqual(
-            [
-                tensor.data_ptr()
-                for tensor in (inputs.slots, inputs.positions, inputs.valid)
-            ],
+            [tensor.data_ptr() for tensor in (slots, positions, valid)],
             addresses,
         )
 
     def test_rejects_wrong_source_schema_remote_writes_and_closed_pools(self):
         """Reject static contract errors before the copy can access DRAM."""
-        inputs = MempoolWriteInputs(rows=2, device="cpu")
-        writer = MempoolKVOffload(self.view, inputs, kernel=self.kernel)
+        slots = torch.full((2,), -1, dtype=torch.int64)
+        positions = torch.full((2,), -1, dtype=torch.int64)
+        valid = torch.zeros(2, dtype=torch.bool)
+        writer = MempoolKVOffload(self.view, kernel=self.kernel)
         values = torch.ones((2, 1, 4), dtype=torch.bfloat16)
         invalid_sources = (values.float(), values[:1], values.transpose(0, 2))
         for source in invalid_sources:
             with self.subTest(shape=source.shape, dtype=source.dtype):
                 with self.assertRaises(ValueError):
-                    writer.write(source)
+                    writer.write(source, slots=slots, positions=positions, valid=valid)
         noncontiguous = torch.ones((2, 1, 8), dtype=torch.bfloat16)[:, :, ::2]
         with self.assertRaisesRegex(ValueError, "contiguous"):
-            writer.write(noncontiguous)
+            writer.write(noncontiguous, slots=slots, positions=positions, valid=valid)
         with self.assertRaisesRegex(ValueError, "NPU source"):
-            MempoolKVOffload(self.view, inputs).write(values)
+            MempoolKVOffload(self.view).write(
+                values, slots=slots, positions=positions, valid=valid
+            )
         with self.assertRaisesRegex(ValueError, "owning rank"):
-            MempoolKVOffload(self.manager.view(0, 0), inputs, kernel=self.kernel)
+            MempoolKVOffload(self.manager.view(0, 0), kernel=self.kernel)
         self.manager.close(drain=lambda: None)
         with self.assertRaisesRegex(RuntimeError, "closed"):
-            writer.write(values)
+            writer.write(values, slots=slots, positions=positions, valid=valid)
         self.assertTrue((self.target == -1).all().item())
 
     def test_explicit_metadata_supports_variable_eager_chunk_sizes(self):
@@ -191,7 +188,7 @@ class TestMempoolKVOffload(unittest.TestCase):
             valid=torch.zeros(3, dtype=torch.bool),
         )
         self.assertEqual(calls, [128])
-        with self.assertRaisesRegex(ValueError, "together"):
+        with self.assertRaises(TypeError):
             writer.write(values, slots=torch.tensor([1, 1, 1]))
 
 

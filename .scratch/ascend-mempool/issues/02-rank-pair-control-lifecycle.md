@@ -15,7 +15,8 @@
 ## 当前执行入口（2026-10-01 用户确认）
 
 本票接下来分为两部分：先完成 part1–part3 已有代码的复核优化，再实现 part4。
-下面的未勾选项都是待实现工作；“已有代码”不表示本轮优化已经完成。
+第一部分的本地接口优化已写入工作区；未勾选项仍待接线/验证。
+第一部分的勾选只表示本地实现与合同检查，不代表④的真实服务回收已经接通。
 本节及两部分任务替代较早的接口/文件组织提案；旧③ S1–S6 安排移至 Comments
 末尾保留历史。产品范围仍以父 spec 为准，D1/D4/D5 已确认的同步与安全要求不变。
 
@@ -23,7 +24,7 @@
 | --- | --- | --- |
 | ① storage | layout、BM manager/view、writer、rank-pair startup helper 已提交 | 尚未完成16对真实服务启动接入 |
 | ② control | 单 pair 协议/状态机、retirement 与 conn 消息入口已提交 | TP tick、真实请求接线尚未实现 |
-| ③ runtime/writer | `0ed22f0aa0`；已有77项CPU测试；用户反馈双机 writer gate 两端通过 | 合成 batch 的写入/Graph 证据不代表真实服务闭环；接口优化待做 |
+| ③ runtime/writer | `0ed22f0aa0`；已有77项CPU测试；用户反馈双机 writer gate 两端通过 | 合成 batch 的写入/Graph 证据不代表真实服务闭环；本轮接口优化已写入工作区；修改后的 NPU 回归待运行 |
 | ④ service integration | 本轮实现方案已确认 | 尚未实现、尚未完成服务验收 |
 
 保留 shadow 范围：P 原生 HBM cache、原 main-KV transfer、D staging/hostSHM、
@@ -35,26 +36,27 @@ Index K/其他 metadata 传输和 attention 消费路径继续工作；P/D 额�
 
 ### A1. 分离 request row attachment 与 persistent slot ownership
 
-依据：`hardware_backend/npu/mempool/runtime.py` 当前按 `req_pool_idx` 保存 binding
+复核依据：`hardware_backend/npu/mempool/runtime.py` 初版按 `req_pool_idx` 保存 binding
 和完成进度，文档要求 P unbind 等 remote drain；但原 P handoff 成功会回收原生 KV
 和 request row。`req_pool_idx` 是请求索引行，不是 HBM KV page，也不是 mempool slot。
 下文路径均相对 `python/sglang/srt/`，测试路径相对仓库根目录。
 
-- [ ] 将 runtime 的 row 清理约定改为明确的 `detach_row`：只移除设备表中的
+- [x] 将 runtime 的 row 清理约定改为明确的 `detach_row`：只移除设备表中的
   `row -> slot` 映射及本地 binding，不释放 control 持有的 slot ownership。
-- [ ] detach 前必须无 open forward、无该 row 尚未消费的 completion；调用方还须
+- [x] detach 前必须无 open forward、无该 row 尚未消费的 completion；调用方还须
   保证没有未来 host submission 会引用旧 row。保留固定设备表地址及安装事件顺序。
-- [ ] detach 返回不可变的本地完成事实（row/slot、prompt length、submitted/completed
-  等实际所需字段）；Ascend 接入层按已确认的 request attempt 保存，不再依赖旧 row
+- [x] detach 返回不可变的本地完成事实（row/slot、prompt length、submitted/completed
+  等实际所需字段）；返回 `KVWriteReceipt`，其中 `binding` 为本次 `bind()` 返回的
+  `KVRowBinding` 对象。④ Ascend 接入层按已确认的 request attempt 保存，不再依赖旧 row
   查询进度。记录完成事实后再清映射/归还原生资源。
-- [ ] 正常 P native cleanup 同时要求原 handoff 成功、本地相关读写完成、无后续
+- [ ] ④实际接线：正常 P native cleanup 同时要求原 handoff 成功、本地相关读写完成、无后续
   forward 使用该 row；完整 prompt 写入及 KV_READY 已作为独立事实记录。
   **仅收到/发布 KV_READY 不允许回收 P HBM cache**：此时原 KV 仍可能通过 staging
   路径传输。取消/失败走原 transfer 安全条件与取消/drain 流程，不能套用正常成功条件。
-- [ ] P 的原生 KV pages/request row 回收后可服务新请求；旧 mempool P slot 仍保留到
-  精确 binding 的 DONE 和 P 写入安全条件全部满足，再由 TP tick 统一释放。
-  D 仍先完成已确认的 whole-D drain，再 detach 和 release。
-- [ ] 当前实现继续禁止带 pending completion 的 row detach。因此无需把 PD
+- [x] A阶段用 runtime/control 公共接口验证 row 可复用而旧 P slot 仍占用；旧 slot
+  等精确 binding 的 DONE 和 P 写入安全条件满足才可释放。实际 native 回收、TP tick
+  统一释放和 D whole-side drain 属于④接线，不能把此项当作服务验收通过。
+- [x] 当前实现继续禁止带 pending completion 的 row detach。因此无需把 PD
   RequestIdentity/generation 引入 runtime completion，也不新增一套 runtime 协议状态机。
   未来若允许提前 detach，需另行设计 completion 身份，不能取消当前检查。
 
@@ -71,46 +73,51 @@ D 停止该请求提交并 drain -> DONE
 
 ### A2. 修正 Req 适配，收敛 runtime 的调用约定
 
-- [ ] 消除 `runtime.assert_bound()` 对 `req.req_pool_idx` 的错误假设；真实字段是
+- [x] 消除 `runtime.assert_bound()` 对 `req.req_pool_idx` 的错误假设；真实字段是
   `req.kv.req_pool_idx`。runtime 的校验接口接收明确的 row/写入期望等数据，不直接
   解析 SGLang Req、fake marker 或协议 phase。
 - [ ] 将真实 Req/fake 标识/attempt 与 row 对应关系的投影集中在第二部分的
   `mempool_service.py`。A阶段建立明确的 runtime 输入合同；B阶段补齐真实调用，
   不新增第三个 Req adapter 文件。不得只因 row 数字相同就认可新 request 的旧 binding。
-- [ ] 测试使用与真实 Req 一致的 `kv.req_pool_idx` 形状；真实请求缺少批准的 binding
-  必须失败，只有既有 fake 标识可跳过。不得靠 invalid mask 静默接受接线错误。
-- [ ] 顺带检查现有公开方法：能在所属模块内完成的简单 offset/角色映射留在内部，
+- [x] A阶段以真实 `kv.req_pool_idx` 字段形状投影到 runtime，验证 missing/stale
+  attachment 必须失败，包括完全相同 row/slot/prompt 的重用。fake 标识不进入 runtime。
+- [ ] B阶段验证 service 只有既有 fake 标识可跳过，真实请求必须持有批准的 binding；
+  不得靠 invalid mask 静默接受接线错误。
+- [x] 顺带检查现有公开方法：能在所属模块内完成的简单 offset/角色映射留在内部，
   不新增要求调用者记忆顺序的透传接口；必要的身份、容量、完成条件检查继续保留。
   每个新增/修改类和函数有简短介绍，以清晰参数表达必要约定。
 
 ### A3. writer 只保留显式 metadata 的一种接口
 
-- [ ] 删除仅由旧测试使用的 `MempoolWriteInputs` 与固定-input 兼容分支；统一为
+- [x] 删除仅由旧测试使用的 `MempoolWriteInputs` 与固定-input 兼容分支；统一为
   `write(values, *, slots, positions, valid)`，调用方不再在两套约定中选择。
-- [ ] 固定设备 binding 表由 runtime 管理；writer 保留 dtype/shape/extent/bounds
+- [x] 固定设备 binding 表由 runtime 管理；writer 保留 dtype/shape/extent/bounds
   校验以及全 invalid 仍 launch 的行为，支持 P eager 可变 chunk 行数。
-- [ ] 更新相关 CPU 测试、writer gate 调用和 README；保留有价值的 kernel/Graph
+- [x] 更新相关 CPU 测试、writer gate 调用和 README；保留有价值的 kernel/Graph
   行为回归，不为已删除的兼容接口保留包装层。
 
 ### A4. control 提供只读 snapshot，状态只由一个 owner 维护
 
-- [ ] 在 `disaggregation/ascend/mempool_control.py` 提供只读 request/binding snapshot
+- [x] 在 `disaggregation/ascend/mempool_control.py` 提供只读 request/binding snapshot
   和必要的 slot 可用状态；返回值不得暴露可修改的内部 record/dict 引用。
-- [ ] control 是 phase、P/D allocation、generation、协议 readiness 与 retirement
+  当前接口为 `snapshot()` → `MempoolControlSnapshot`，每个 request 为
+  `MempoolRequestSnapshot`；`owns_slot` 与保留的旧 slot coordinates 分开。
+- [x] control 是 phase、P/D allocation、generation、协议 readiness 与 retirement
   的唯一来源。runtime 只掌握本地写入事实；service 只增加 Req 对应关系、deadline、
   待回收动作/完成事实等接线信息，不复制 `_RequestRecord` 状态机。
-- [ ] snapshot 读取无副作用；网络和完成回调只排队事实。`apply(DONE)`、safe rollback、
+- [x] snapshot 读取无副作用；网络和完成回调只排队事实。`apply(DONE)`、safe rollback、
   `finish_drain()`、会消费 pending_done 的 `finish_prefill_writes()` 等 ownership
-  变化都由统一 tick 批准执行。保留已确认的 session/proof/retired-generation 语义。
+  变化都须由统一 tick 批准执行（④接线，当前以类文档明确该调用合同）。
+  保留已确认的 session/proof/retired-generation 语义。
 
 ### 第一部分检查与交付
 
-- [ ] Mac 回归：pending completion 阻止 detach；消费完成后 row 可复用、完成事实仍可
+- [x] Mac 回归：pending completion 阻止 detach；消费完成后 row 可复用、完成事实仍可
   关联旧 attempt；control 仍拒绝复用尚未 DONE 的 P slot；旧 DONE 不影响新 owner。
   A阶段用可控调用方验证这些合同，B阶段再验证真实 scheduler/transfer 接线。
-- [ ] 覆盖真实 Req 字段形状、missing/stale binding、snapshot 不可修改且读取不改变
+- [x] 覆盖真实 Req 字段形状、missing/stale binding、snapshot 不可修改且读取不改变
   phase/free set；保留可变行数、零有效行 launch、固定地址及 overlap counter 快照测试。
-- [ ] 运行 `ascend-mempool-test/` 适用 CPU suite、现有配置的严格 mypy、Ruff
+- [x] 运行 `ascend-mempool-test/` 适用 CPU suite、现有配置的严格 mypy、Ruff
   F/UP037/format、isort 与 `git diff --check`；记录本次实际结果，不沿用旧计数冒充重测。
 - [ ] 向用户核对改动后的接口和释放时序，再接第二部分。若实际改动影响 writer/Graph
   行为，交付同步更新的双机 gate 供用户回归；历史通过不自动证明修改后的硬件行为。
@@ -259,9 +266,10 @@ queue 内部 readiness 字段来减少共享文件数。
 
 ## Acceptance criteria
 
-- [ ] 第一部分 A1–A4 的接口优化及 Mac 回归完成；真实 Req 使用 kv.req_pool_idx，
-  runtime 不依赖 Req/fake/协议结构，writer 仅保留一种 metadata 调用方式，control
-  snapshot 只读且是协议状态的唯一来源。
+- [x] 第一部分 A1–A4 的本地接口优化及 Mac 回归完成；测试按真实
+  kv.req_pool_idx 形状投影，runtime 不依赖 Req/fake/协议结构，writer 仅保留一种
+  metadata 调用方式，control snapshot 只读且是协议状态的唯一来源。实际 Req/fake
+  适配仍由④接入 service。
 - [ ] P 的 KV_READY 不单独触发 native cache/request-row 回收；原 handoff 完成且
   本地相关操作/未来提交排空后可 detach 并复用 row，旧 P mempool slot 仍保持 acquired
   直到对应 DONE 和统一 release；实际日志/测试验证两个生命周期可以分离。
@@ -313,6 +321,51 @@ NPU 上由用户启动全部 16 对 rank，验证启动兼容性检查、正常 
 故障注入的系统验证归06，active cancel/peer fault 完整矩阵归07。
 
 ## Comments
+
+### 2026-10-01：第一部分 A1–A4 接口优化（工作区，等待核对）
+
+Codex / GPT-6：按用户要求，先将原四份设计文档 add/commit 为 `d0ace7a5f2`
+（Document mempool review refinements and service integration plan）。以下实现保持
+unstaged，未再次 add/commit/push；本轮不实现 part4。
+
+- A1：以 `detach_row(binding)` 取代 unbind，返回不可变 `KVWriteReceipt`。
+  open forward/该 row 未消费 completion 均拒绝 detach；本地 event 完成后也必须 poll。
+  detach 只清 row 映射，P persistent slot 仍由 control 保留。测试由可控调用方模拟
+  native handoff 已安全，验证旧 row 可复用、旧 slot 未 DONE 不可 acquire、重复旧
+  DONE 不释放新 owner。实际 staging/native cleanup gate 仍须④接线。
+- A2：`bind()` 返回本地不可变 `KVRowBinding(row, slot, prompt_tokens)`；service
+  按 approved attempt 保存同一个对象。`assert_bound(row, binding)` 检查该对象
+  仍是 row 的当前 attachment；相同坐标的新 attachment、缺失 approval、其他 runtime
+  的 attachment 和 stale detach 均拒绝。runtime 不解析 Req/fake/session/generation；
+  CPU 测试使用 `req.kv.req_pool_idx` 形状，真实 service/fake 过滤仍归④。
+- A3：删除 `MempoolWriteInputs` 与兼容分支，只有显式 metadata 的 write 接口；
+  保留原 kernel 参数、边界检查、可变行数及 zero-valid launch。同步 CPU 测试与
+  `verify_writer.py` 的 bind/detach 调用；双机命令和20条checks/10条replay判据不变。
+- A4：`snapshot()` 返回 frozen request/control dataclass、tuple、frozenset；
+  包含 readiness、精确 P/D binding、pending DONE/确认消息、实际 local ownership、
+  available slots 和 protocol fault。读取不消费 inbox、不推进 phase，不暴露可变 record；
+  快照可序列化，旧快照不随控制状态变化。已生成 RELEASE_ACK 的 DONE 不再作为
+  pending_done 暴露；内部历史记录保留。协议转换/retirement 算法未改动。
+- 已保留固定设备表地址、stream 安装事件和 overlap 计数快照。`KVRowBinding` 只在
+  所属进程内按对象身份使用，不重建、不通过 TP 传输；跨 TP observations 使用 control
+  snapshot。receipt 按 request attempt 保存，旧 row 复用后不得再以旧 row 查询进度。
+
+Mac 实际验证：完整 CPU suite **83项通过**；严格 mypy **18个源码文件通过**；
+Ruff F/UP037、format（31个文件）、isort、`git diff --check` 通过；writer runner
+bash syntax、`verify_writer.py --describe` 与本轮文档本地链接检查通过。
+TDD 定向回归先观察 detach/assert_bound/snapshot 未实现和必选 metadata 的失败，
+再实现并转绿。Review 后补测 DONE 已确认时的 snapshot；最终完整 suite 再次通过。
+
+双轴 code-review 基线为 `d0ace7a5f2` 的工作区 diff（用户要求不暂存本轮实现）：
+- Standards：发现1项 P3（生产 mempool README 仍介绍旧 writer 接口），已修复，
+  复查剩余0项；未发现代码规范/实质性 smell 问题。
+- Spec：同样发现上述1项 README 遗漏，已修复，复查剩余0项；未发现 A1–A4 行为缺陷
+  或④ scope creep。真实 Req/fake、native cleanup 和 TP tick 延后符合本票阶段划分。
+
+NPU 本轮未运行；用户需两端同步代码后按 README 的 run_writer_gate.sh 命令回归。
+命令、24/48-core配置、两端ALL_CHECKS_PASSED/各20条checks/10条replay判据不变。
+历史硬件结果不能视为新接口版本的通过证据。
+Ticket02 保持 open，④真实 GLM5.1 服务及之后 top-k readback 均尚未实现/验收。
 
 ### 2026-10-01：两部分实现入口与用户确认的 row/slot 释放条件
 

@@ -23,7 +23,8 @@ D1/D4/D5 已确认的策略见 [控制与 drain 设计](d1-d4-d5-design.md)。
 
 接下来按 [ticket02](issues/02-rank-pair-control-lifecycle.md) 的两部分执行：
 先优化 part1–part3 的 row detach、Req 适配、writer 单接口和只读 control snapshot，
-再实现 part4。优化项与 part4 均待实现，不能把方案确认当作代码完成。
+再实现 part4。第一部分的本地接口优化已写入工作区，检查/交付状态见 ticket；
+part4 尚未实现，本轮修改后的 NPU gate 与真实服务验收仍待用户执行。
 
 保留已有8个生产文件；④仅新增 `disaggregation/ascend/mempool_service.py` 和
 `mempool_tick.py`。service 对接 SGLang 请求/原 transfer/native 回收与 drain，
@@ -46,7 +47,7 @@ backend 是 forward 接入点；request ownership 决策仍由 Ascend 控制层�
 | 路径 | 职责 / 拟改动 |
 | --- | --- |
 | `python/sglang/srt/hardware_backend/npu/mempool/rows.py`、`runtime.py` | 已实现：行推导、request-row binding、固定设备表、forward/replay 边界、有效行计数快照和完成事件 |
-| `python/sglang/srt/hardware_backend/npu/mempool/offload.py` | 保留 `MempoolKVOffload`；A3待删除 `MempoolWriteInputs`/兼容分支，统一显式 slots/positions/valid |
+| `python/sglang/srt/hardware_backend/npu/mempool/offload.py` | `MempoolKVOffload` 只保留显式 slots/positions/valid；已删除固定 inputs 兼容分支 |
 | `python/sglang/srt/hardware_backend/npu/attention/ascend_backend.py` | P/D temporary compact KV 的 mempool 写入入口；eager、capture/replay metadata 接入；避免按已有 host-offload 开关漏掉 P |
 | `python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/attention.py`、`manager.py` | 核对 D 当前实际调用链，必要时做小范围适配/共享 compact KV；不让 sparse manager 持有 mempool runtime 或成为 mempool writer 的唯一入口 |
 | `python/sglang/srt/disaggregation/ascend/` | conn attach、原 socket 消息传送、统一 TP control tick 适配；协调 scheduler 与 backend runtime |
@@ -69,7 +70,7 @@ sparse manager。修改 padding、seq_lens != 1 等条件时需同步核对两�
 初版代码和77项CPU测试已完成；用户提供的 writer 日志含两端各20条PASS和
 ALL_CHECKS_PASSED，验证合成 batch 的 NPU Graph 写入/远端读回。真实服务尚未验收。
 
-③初版接口：`bind/unbind/assert_bound` 管理本地已批准 binding；
+当前接口：`bind/assert_bound/detach_row` 管理本地已批准 row attachment；
 `begin_forward` / `write_layer` / `end_forward` / `poll_completed` 提交写入和完成事实。
 `KVWriteExpectation` 使用全序列 position，D 在 writer 内减 prompt length。
 eager/capture 检查层覆盖；replay 使用外部 begin/end 边界与捕获的设备计数。
@@ -78,9 +79,15 @@ eager/capture 检查层覆盖；replay 使用外部 begin/end 边界与捕获的
 capture 拒绝 live binding/pending work；binding 更新在统一 scheduler stream 提交，
 forward stream 等待安装事件。
 
-2026-10-01 已确认的接口调整（待实现）：Req 投影集中到 Ascend service，真实字段为
-`req.kv.req_pool_idx`，runtime 仅接收明确 row/写入参数。`detach_row` 只清除本地
-row attachment，并返回不可变完成事实；control 的 persistent slot 不随之释放。
+2026-10-01 接口调整已写入工作区：`bind()` 返回不可变 `KVRowBinding`，接入层按
+request attempt 保存同一个本地对象。`assert_bound(row, binding)` 校验对象身份，
+不因 row/slot 数值相同就接受旧 attachment；协议 generation/session 不进入 runtime。
+真实 Req 投影集中到④的 Ascend service（待实现），字段为 `req.kv.req_pool_idx`，
+runtime 仅接收明确 row/写入参数。`detach_row(binding)` 只清除本地 attachment，
+返回不可变 `KVWriteReceipt(binding, submitted, completed)`，由接入层按 attempt
+保留；control 的 persistent slot 不随之释放。writer 只保留显式 metadata 接口。
+control 的 `snapshot()` 用不可变值暴露 phase/binding/实际 ownership/readiness，
+读取没有状态转换，后续 service/tick 不另存协议状态机。
 detach 前无 open forward/该 row 未消费 completion，且调用方保证无未来提交。
 正常 P 还须等原 handoff 成功及本地相关操作完成，才能回收原生 HBM KV/request row。
 **KV_READY 本身不够**：shadow 阶段旧 KV 仍可能通过 staging 传输。
