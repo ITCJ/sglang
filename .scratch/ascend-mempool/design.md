@@ -18,13 +18,16 @@ demo 暂不支持自动 retraction/rebootstrap；采用下文的精度验收标�
 
 进度：01 已验收，02① storage、②控制协议/单 rank 状态机已提交；
 ③ backend 数据路径及 runtime gate 已提交，用户反馈双机 writer gate 两端通过；
-④服务控制接线尚未实现，真实服务合同尚无实际运行验证结果。
+④服务控制、配置及Graph接线本轮已实现；真实服务合同尚无NPU运行验证结果。
 D1/D4/D5 已确认的策略见 [控制与 drain 设计](d1-d4-d5-design.md)。
 
 接下来按 [ticket02](issues/02-rank-pair-control-lifecycle.md) 的两部分执行：
 先优化 part1–part3 的 row detach、Req 适配、writer 单接口和只读 control snapshot，
-再实现 part4。第一部分的本地接口优化已写入工作区，检查/交付状态见 ticket；
-part4 尚未实现，本轮修改后的 NPU gate 与真实服务验收仍待用户执行。
+再实现 part4。第一部分接口优化已提交为 `cfcafb4810`，83项CPU测试通过；
+10月1日用户反馈修改后的双机 writer gate 两端各20条PASS、ALL_CHECKS_PASSED。
+part4本轮新增service/tick与已批准的薄接口，Mac共108项CPU测试通过，21个源文件通过
+strict mypy。代码保持unstaged，真实服务shadow gate由用户执行；top-k readback仍等待
+该gate确认。远端版本/JSON证据边界见ticket，启动增量和验证命令见测试README。
 
 保留已有8个生产文件；④仅新增 `disaggregation/ascend/mempool_service.py` 和
 `mempool_tick.py`。service 对接 SGLang 请求/原 transfer/native 回收与 drain，
@@ -42,7 +45,7 @@ Mempool 不依赖 `SparseKVCacheManager` 的创建或生命周期；尤其 P 为
 `PD_PREFILL_NATIVE` 时没有 sparse manager，也必须能创建 mempool 并执行双写。
 backend 是 forward 接入点；request ownership 决策仍由 Ascend 控制层和统一 tick 负责。
 
-以下路径相对仓库根目录，③已实现；④接线仍为待实现内容：
+以下路径相对仓库根目录，③与④接线均已实现，④尚待真实服务验收：
 
 | 路径 | 职责 / 拟改动 |
 | --- | --- |
@@ -79,7 +82,7 @@ eager/capture 检查层覆盖；replay 使用外部 begin/end 边界与捕获的
 capture 拒绝 live binding/pending work；binding 更新在统一 scheduler stream 提交，
 forward stream 等待安装事件。
 
-2026-10-01 接口调整已写入工作区：`bind()` 返回不可变 `KVRowBinding`，接入层按
+2026-10-01 接口调整已提交为 `cfcafb4810`：`bind()` 返回不可变 `KVRowBinding`，接入层按
 request attempt 保存同一个本地对象。`assert_bound(row, binding)` 校验对象身份，
 不因 row/slot 数值相同就接受旧 attachment；协议 generation/session 不进入 runtime。
 真实 Req 投影集中到④的 Ascend service（待实现），字段为 `req.kv.req_pool_idx`，

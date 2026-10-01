@@ -12,6 +12,7 @@ non-NPU hosts.
 
 from __future__ import annotations
 
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import AbstractContextManager, contextmanager
 from functools import partial
@@ -24,6 +25,7 @@ from sglang.srt.constants import GPU_MEMORY_TYPE_CUDA_GRAPH
 from sglang.srt.distributed.device_communicators.pynccl_allocator import (
     set_graph_pool_id,
 )
+from sglang.srt.hardware_backend.npu.mempool.runtime import model_forward_scope
 from sglang.srt.model_executor.runner.shape_key import ShapeKey
 from sglang.srt.model_executor.runner_backend.base_cuda_graph_backend import (
     BaseCudaGraphBackend,
@@ -53,6 +55,7 @@ class NPUCudaGraphBackend(BaseCudaGraphBackend):
         self._outputs: Dict[Any, Any] = {}
         self._pool = None
         self._device_module = cuda_graph_runner.device_module
+        self._attn_backend = cuda_graph_runner.model_runner.attn_backend
         self._device_id = self._device_module.current_device()
         self._tp_group = cuda_graph_runner.model_runner.tp_group
         self._capture_stream = None
@@ -96,7 +99,8 @@ class NPUCudaGraphBackend(BaseCudaGraphBackend):
         for _ in range(2):
             self._device_module.synchronize()
             self._tp_group.barrier()
-            forward_fn()
+            with model_forward_scope(self._attn_backend, capture=True):
+                forward_fn()
             if post_warmup_hook is not None:
                 post_warmup_hook()
 
@@ -120,6 +124,7 @@ class NPUCudaGraphBackend(BaseCudaGraphBackend):
             graph_ctx = torch.npu.graph
 
         with (
+            model_forward_scope(self._attn_backend, capture=True),
             skip_guard_context,
             graph_ctx(
                 graph,
@@ -132,6 +137,12 @@ class NPUCudaGraphBackend(BaseCudaGraphBackend):
 
         self._graphs[shape_key] = graph
         self._outputs[shape_key] = out
+        if getattr(self._attn_backend, "mempool_runtime", None) is not None:
+            logging.getLogger(__name__).info(
+                "mempool graph_captured device=npu:%s shape=%s",
+                self._device_id,
+                shape_key,
+            )
 
     def can_run(self, forward_batch: ForwardBatch, shape_key: ShapeKey) -> bool:
         return shape_key in self._graphs

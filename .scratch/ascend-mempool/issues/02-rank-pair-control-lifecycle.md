@@ -15,17 +15,18 @@
 ## 当前执行入口（2026-10-01 用户确认）
 
 本票接下来分为两部分：先完成 part1–part3 已有代码的复核优化，再实现 part4。
-第一部分的本地接口优化已写入工作区；未勾选项仍待接线/验证。
+第一部分接口优化已提交并推送为 `cfcafb4810`；用户反馈修改后的双机 writer gate 通过。
+未勾选项仍待接线/验证，硬件证据边界见本票最新 Comments。
 第一部分的勾选只表示本地实现与合同检查，不代表④的真实服务回收已经接通。
 本节及两部分任务替代较早的接口/文件组织提案；旧③ S1–S6 安排移至 Comments
 末尾保留历史。产品范围仍以父 spec 为准，D1/D4/D5 已确认的同步与安全要求不变。
 
 | 已有部分 | 已取得的证据 | 当前边界 |
 | --- | --- | --- |
-| ① storage | layout、BM manager/view、writer、rank-pair startup helper 已提交 | 尚未完成16对真实服务启动接入 |
-| ② control | 单 pair 协议/状态机、retirement 与 conn 消息入口已提交 | TP tick、真实请求接线尚未实现 |
-| ③ runtime/writer | `0ed22f0aa0`；已有77项CPU测试；用户反馈双机 writer gate 两端通过 | 合成 batch 的写入/Graph 证据不代表真实服务闭环；本轮接口优化已写入工作区；修改后的 NPU 回归待运行 |
-| ④ service integration | 本轮实现方案已确认 | 尚未实现、尚未完成服务验收 |
+| ① storage | layout、BM manager/view、writer、rank-pair startup helper 已提交；④已接入 | 16对真实服务启动待NPU验收 |
+| ② control | 单pair状态机已提交；④新增TP tick、真实请求接线 | Mac行为验证通过，真实TP待NPU验收 |
+| ③ runtime/writer | 接口优化 `cfcafb4810`；83项CPU测试通过；10月1日用户反馈双机 writer gate 两端各20条PASS | 合成 batch 的写入/Graph 已回归；真实服务闭环仍待④ |
+| ④ service integration | 已实现；108项CPU测试、21源文件strict mypy通过，保持unstaged | 等待用户核对及shadow服务gate；readback尚未实现 |
 
 保留 shadow 范围：P 原生 HBM cache、原 main-KV transfer、D staging/hostSHM、
 Index K/其他 metadata 传输和 attention 消费路径继续工作；P/D 额外写入 mempool。
@@ -49,7 +50,7 @@ Index K/其他 metadata 传输和 attention 消费路径继续工作；P/D 额�
   等实际所需字段）；返回 `KVWriteReceipt`，其中 `binding` 为本次 `bind()` 返回的
   `KVRowBinding` 对象。④ Ascend 接入层按已确认的 request attempt 保存，不再依赖旧 row
   查询进度。记录完成事实后再清映射/归还原生资源。
-- [ ] ④实际接线：正常 P native cleanup 同时要求原 handoff 成功、本地相关读写完成、无后续
+- [x] ④实际接线：正常 P native cleanup 同时要求原 handoff 成功、本地相关读写完成、无后续
   forward 使用该 row；完整 prompt 写入及 KV_READY 已作为独立事实记录。
   **仅收到/发布 KV_READY 不允许回收 P HBM cache**：此时原 KV 仍可能通过 staging
   路径传输。取消/失败走原 transfer 安全条件与取消/drain 流程，不能套用正常成功条件。
@@ -76,12 +77,12 @@ D 停止该请求提交并 drain -> DONE
 - [x] 消除 `runtime.assert_bound()` 对 `req.req_pool_idx` 的错误假设；真实字段是
   `req.kv.req_pool_idx`。runtime 的校验接口接收明确的 row/写入期望等数据，不直接
   解析 SGLang Req、fake marker 或协议 phase。
-- [ ] 将真实 Req/fake 标识/attempt 与 row 对应关系的投影集中在第二部分的
+- [x] 将真实 Req/fake 标识/attempt 与 row 对应关系的投影集中在第二部分的
   `mempool_service.py`。A阶段建立明确的 runtime 输入合同；B阶段补齐真实调用，
   不新增第三个 Req adapter 文件。不得只因 row 数字相同就认可新 request 的旧 binding。
 - [x] A阶段以真实 `kv.req_pool_idx` 字段形状投影到 runtime，验证 missing/stale
   attachment 必须失败，包括完全相同 row/slot/prompt 的重用。fake 标识不进入 runtime。
-- [ ] B阶段验证 service 只有既有 fake 标识可跳过，真实请求必须持有批准的 binding；
+- [x] B阶段验证 service 只有既有 fake 标识可跳过，真实请求必须持有批准的 binding；
   不得靠 invalid mask 静默接受接线错误。
 - [x] 顺带检查现有公开方法：能在所属模块内完成的简单 offset/角色映射留在内部，
   不新增要求调用者记忆顺序的透传接口；必要的身份、容量、完成条件检查继续保留。
@@ -119,10 +120,13 @@ D 停止该请求提交并 drain -> DONE
   phase/free set；保留可变行数、零有效行 launch、固定地址及 overlap counter 快照测试。
 - [x] 运行 `ascend-mempool-test/` 适用 CPU suite、现有配置的严格 mypy、Ruff
   F/UP037/format、isort 与 `git diff --check`；记录本次实际结果，不沿用旧计数冒充重测。
-- [ ] 向用户核对改动后的接口和释放时序，再接第二部分。若实际改动影响 writer/Graph
-  行为，交付同步更新的双机 gate 供用户回归；历史通过不自动证明修改后的硬件行为。
+- [x] 已交付接口/释放时序说明，用户授权提交推送并反馈修改后的双机 writer gate
+  两端通过（10月1日日志，详见 Comments）。第二部分仍待后续实施。
 
 ## 第二部分：part4 服务接入实现
+
+B节的勾选表示本轮代码与Mac检查完成，不代表真实TP、NPU Graph或模型精度验收。
+真实shadow服务与readback的硬件项继续保持未勾选；本票仍为open。
 
 ### B1. 模块组织与已确认路径
 
@@ -170,85 +174,85 @@ queue 内部 readiness 字段来减少共享文件数。
 
 ### B2. 配置、BM/runtime 与 control 的两阶段启动
 
-- [ ] `SGLANG_NPU_ENABLE_MEMPOOL=1` 同时要求 sparse KV offload；校验 NPU、Ascend
+- [x] `SGLANG_NPU_ENABLE_MEMPOOL=1` 同时要求 sparse KV offload；校验 NPU、Ascend
   PD、角色、TP16/DP1/CP1/PP1、BF16 MLA 及 peer 配置，拒绝 MLAPO/prefix reuse/draft
   等 demo 不支持组合。P 的 `PD_PREFILL_NATIVE` 也要启用 mempool。
-- [ ] `B_slots=16`，`S_P/S_D` 为 server args，默认16384；层数和 compact KV dim 取
+- [x] `B_slots=16`，`S_P/S_D` 为 server args，默认16384；层数和 compact KV dim 取
   实际模型配置。启动 settings/校验集中在已有 `mempool/config.py`，不再建第二套配置。
-- [ ] P_i 启动 `base_port+i` store、D_i 连接，同 pool 局部 rank 为0/1；每个
+- [x] P_i 启动 `base_port+i` store、D_i 连接，同 pool 局部 rank 为0/1；每个
   `AscendAttnBackend` 持有本进程 runtime。先完成 BM 映射/baseptr/固定设备表，再捕图；
   P 没有 sparse manager 时也必须正常初始化。核对共享 MF 与原 TransferEngine 生命周期。
-- [ ] 原 AscendKVManager/ZMQ 创建后 attach control/service，首个真实请求前完成
+- [x] 原 AscendKVManager/ZMQ 创建后 attach control/service，首个真实请求前完成
   role/rank、session、布局等握手和 BM peer 与 ZMQ peer 对应检查。mapping ready
   与 control ready 分开；不让 capture 等待尚未创建的 PD manager。
   对应关系校验需要实际读回 probe/nonce；仅写 probe 和交换 PROBED 不构成证明。
 
 ### B3. TP tick 与唯一状态来源
 
-- [ ] tick 在 `Scheduler.ingest_requests()` 处理输入后、返回前统一执行，覆盖 P/D
+- [x] tick 在 `Scheduler.ingest_requests()` 处理输入后、返回前统一执行，覆盖 P/D
   normal/overlap 且在 paused 判断前；不在四条循环重复接线。未启用模式保持原行为。
-- [ ] 依次执行固定 snapshot all-gather、统一候选排序/plan、preflight、commit、
+- [x] 依次执行固定 snapshot all-gather、统一候选排序/plan、preflight、commit、
   执行状态汇总；全部成功后发送 outbox 并允许模型调度。空输入也参与，P/D 各用本侧
   TP CPU group，不建立跨32-rank collective，不按本地消息数改变 collective 顺序。
-- [ ] observations 保留到可统一处理；跨TP按逻辑 room/attempt 对齐，pair session/proof
+- [x] observations 保留到可统一处理；跨TP按逻辑 room/attempt 对齐，pair session/proof
   在本 pair 内验证。只读取 A4 snapshot，不访问/复制 control 的私有可变 record。
-- [ ] 所有 ownership 变化统一批准；安全 release 先于新 acquire，旧 release 出站消息
+- [x] 所有 ownership 变化统一批准；安全 release 先于新 acquire，旧 release 出站消息
   先于新 acquire。普通容量不足等待；一致 preflight 后意外部分提交失败采用 fail-stop。
-- [ ] acquire 等待计入既有 PD bootstrap deadline，重试/换队列不重置；timeout/cancel
+- [x] acquire 等待计入既有 PD bootstrap deadline，重试/换队列不重置；timeout/cancel
   由统一决策处理。tick 持续推进状态，不是固定间隔重置。
 
 ### B4. 准入、原 transfer 事实与联合 readiness
 
-- [ ] D 独立 acquire 后请求 P acquire；两侧各自16 ranks 一致后提交，P/D slot 可不同。
+- [x] D 独立 acquire 后请求 P acquire；两侧各自16 ranks 一致后提交，P/D slot 可不同。
   安装/校验真实 row mapping 必须基于已批准的精确 attempt/binding。
-- [ ] P 在 `finalize_bootstrap()` 的 metadata 分配/sender init 之前只读 gate；未批准
+- [x] P 在 `finalize_bootstrap()` 的 metadata 分配/sender init 之前只读 gate；未批准
   返回 False。关闭 optimistic prefill，检查包括测试强制 retry 在内的旁路不能绕过 gate。
-- [ ] D 在原 preallocation 循环的分配副作用前检查 approval；不靠返回 None 的
+- [x] D 在原 preallocation 循环的分配副作用前检查 approval；不靠返回 None 的
   `_pre_alloc()` 或过滤整个 `rids_to_check` 实现等待，以免漏掉失败处理/清理。
-- [ ] D 正常推进 `_poll_with_metadata_gate()` / `_poll_with_staging()`，在
+- [x] D 正常推进 `_poll_with_metadata_gate()` / `_poll_with_staging()`，在
   `pop_transferred()` 的汇合处统一记录原始 success/failure，再查询 tick 批准的
   mempool readiness。READY 与原 transfer 任意先后都可推进，failure 不降为 waiting。
-- [ ] sender/receiver 普通 cleanup 不释放 persistent control record/P slot；
+- [x] sender/receiver 普通 cleanup 不释放 persistent control record/P slot；
   KV_READY 只证明 mempool prompt readiness，不证明原 KV/Index K/metadata 传输已结束。
 
 ### B5. forward scope、真实双写与 Graph 接入
 
-- [ ] 实际 eager、每次 warmup/capture、每次 replay 分别建立 runtime forward scope；
+- [x] 实际 eager、每次 warmup/capture、每次 replay 分别建立 runtime forward scope；
   scope 内完成期望行数校验、binding event 等待、begin/end 和完成记录。
   异常登记 fatal，不能执行正常 end 并伪造成功；具体协议处理仍在 service/tick。
-- [ ] NPU capture 的每次 run_once 直接调用模型，会绕过 ModelRunner；两次 warmup
+- [x] NPU capture 的每次 run_once 直接调用模型，会绕过 ModelRunner；两次 warmup
   和一次 capture 分别包装，不能用一个 scope 包住全部导致重复层计数。
   replay 不执行 Python write_layer，但每次真实 replay 必须记账/记录完成事件。
-- [ ] P 保持 eager；D 固定 Graph metadata 地址、原地更新内容、同 stream 写入；
+- [x] P 保持 eager；D 固定 Graph metadata 地址、原地更新内容、同 stream 写入；
   保留逐层计数和历史快照。真实 batch、fake warmup、padding、空有效行明确区分，
   所有真实请求均核对 `req.kv.req_pool_idx` 与 attempt，不能全 invalid 静默通过。
-- [ ] P/D temporary compact KV 经既有 backend hook shadow 双写，原 cache/transfer/
+- [x] P/D temporary compact KV 经既有 backend hook shadow 双写，原 cache/transfer/
   attention 继续运行；覆盖 chunk prefix、D 首次 local position=0、skip_topk 层及边界。
   完成 callback 只向 tick 提供事实，不直接发送 READY/DONE 或释放 slot。
 
 ### B6. native 回收、drain、idle 与 fault
 
-- [ ] 所有结束入口委托同一 service：记录 request attempt、原回收动作/`is_insert`
+- [x] 所有结束入口委托同一 service：记录 request attempt、原回收动作/`is_insert`
   及完成条件，每个动作只执行一次；保留原结果处理和输出。回调只登记，不递归 drain，
   不破坏 allocator free-group 的成对/非嵌套要求。
-- [ ] 正常 P 遵循 A1：原 handoff 完成且本地安全后 detach/free native resources，
+- [x] 正常 P 遵循 A1：原 handoff 完成且本地安全后 detach/free native resources，
   不等待 D 整个 decode 结束；persistent P slot 继续等待 DONE。取消/transfer failure
   还须满足原 transfer 的安全条件，本地 event 不证明远端 transfer writer 已停止。
-- [ ] D 统一暂停新 batch，排空 result_queue、delayed sampling、其他未来 host 提交
+- [x] D 统一暂停新 batch，排空 result_queue、delayed sampling、其他未来 host 提交
   和已提交设备访问；随后清理旧 row 引用、回收 native resources、统一释放 D slot，
   全部成功后发 DONE。正常结束、abort、零 decode 都覆盖；恢复未结束请求调度。
-- [ ] P 全 ranks 收到精确 DONE 且自身无未完成写入后统一 release，再发 RELEASE_ACK；
+- [x] P 全 ranks 收到精确 DONE 且自身无未完成写入后统一 release，再发 RELEASE_ACK；
   D 可复用已释放 slot，但保留旧确认记录到 ACK。旧消息不能操作新 owner。
-- [ ] 独立 pending release 纳入 idle/资源检查/sleep，保留 health-check 特有语义；
+- [x] 独立 pending release 纳入 idle/资源检查/sleep，保留 health-check 特有语义；
   不使用原 deferred release 的超时强制 free。demo 需要 retract 时转明确 cancel，
   不进入假定同步释放完成的自动 retraction/rebootstrap 路径。
-- [ ] 接通基础 fatal：本侧可协调 fault 经固定 tick 汇总；死/卡 rank 用有界 timeout/
+- [x] 接通基础 fatal：本侧可协调 fault 经固定 tick 汇总；死/卡 rank 用有界 timeout/
   watchdog。故障感知覆盖原 handoff cleanup 后的整个生命周期。报错/失联不等于 drain，
   不伪造 DONE/ACK，不自动复用未确认 slot/销毁 BM；交付双侧协调停止/重启说明。
 
 ### 第二部分检查与交付
 
-- [ ] Mac：从 service/tick 的完整入口验证16个 control 的乱序/迟到消息、空 tick、
+- [x] Mac：从 service/tick 的完整入口验证16个 control 的乱序/迟到消息、空 tick、
   acquire/release 一致性；P row 已复用但旧 P slot 仍占用；READY/transfer 两种到达
   顺序；zero-decode、abort、overlap drain、恰好一次回收和不安全释放拒绝。
   复用第一部分和现有算法/协议回归，使用真实字段形状，不以浅层 wrapper 测试代替行为。
@@ -259,7 +263,7 @@ queue 内部 readiness 字段来减少共享文件数。
   正常输出、完整生命周期与释放；先不读回 mempool。补测实际影响到的 writer/Graph 路径。
 - [ ] 用户确认前一 gate 后，增加独立 UniDexCopy top-k（含2048规模）BM readback，
   对照原路径的有效 KV；读回结果不作为 attention 输入。两阶段通过才可关闭02。
-- [ ] 日志记录 role/rank、room/attempt、P/D slot/generation、native handoff、write
+- [x] 日志记录 role/rank、room/attempt、P/D slot/generation、native handoff、write
   completion、row detach、DONE/ACK 和实际回收；记录 tick/drain 耗时，优化留待 demo 后。
 
 两部分的代码修改均先保持 unstaged，只有用户另行明确要求才 add/commit/push。
@@ -321,6 +325,97 @@ NPU 上由用户启动全部 16 对 rank，验证启动兼容性检查、正常 
 故障注入的系统验证归06，active cancel/peer fault 完整矩阵归07。
 
 ## Comments
+
+### 2026-10-01：授权推送与GLM5.1启动脚本
+
+Codex / GPT-6：用户授权提交推送本轮part4，并要求基于已跑通的 `glm51dis.sh` 提供
+实际启动入口。在相邻 `ascend-sglang-script` 仓库新增
+`pd-disaggregation/glm51mempool.sh`，提供 `p/d/router/test/check` 子命令；IP、网卡、
+模型路径可通过环境变量覆盖。默认SP/SD=8192、context=16384，保留P eager、D Graph BS16，
+追加已实现的mempool server args并保存launch命令、代码版本和完整日志。
+顺序为先P、随后D（不等P ready）、双侧ready后router、请求gate、汇总双侧日志检查。
+Mac执行bash语法/help及5个子命令的参数/环境构造检查通过（替换Python进程边界，未启动NPU）。
+此前108项CPU/静态检查结果沿用，本轮未改动服务实现；真实服务验收仍待用户执行，ticket保持open。
+
+### 2026-10-01：part4 服务接入（工作区，等待用户核对与NPU验收）
+
+Codex / GPT-6：按本票B1–B6及已确认的service＋tick结构实现。未add、commit或push。
+本条的代码基线为 `cfcafb4810`；本次工作区包含先前用户writer gate结果的文档记录，
+这些记录被保留。B节勾选表示实现及本地检查，Acceptance中硬件项继续保持未勾选。
+
+实际接线：
+
+- 新增 `disaggregation/ascend/mempool_service.py`：真实Req/fake/attempt适配，
+  native队列成功接纳后track，固定原bootstrap deadline，batch前安装精确row binding，
+  联合readiness，P handoff与row detach，独立pending release，D host/device drain。
+- 新增 `disaggregation/ascend/mempool_tick.py`：同侧TP CPU group的3次固定all-gather；
+  保留迟到消息，统一plan，control预执行校验，commit后全rank成功才放行outbox。
+  所有slot变化均在tick；网络线程只排队。无消息/暂停调度期间也继续tick。
+- `mempool/{config,manager,runtime}.py`：启动组合校验、模型尺寸/容量、16对BM启动，
+  固定设备表；P/D都挂在attention backend。BM映射在capture前完成，control后创建；
+  握手读回实际64字节nonce，不只交换metadata。MF全局生命周期不由单个request关闭。
+- `ascend/conn.py`：异步查询原P bootstrap的rank地址，复用原ZMQ reader/PUSH socket，
+  配对及HEARTBEAT；native abort复用既有ABORT_ACK，但不使用通用deferred的超时强制free。
+- 两个NPU Graph文件和ModelRunner薄scope：独立包装两次warmup、capture、eager和
+  每次replay；replay不依赖Python layer hook重新执行。异常保留fatal，不伪造end/completion。
+- 共享改动仍只有已批准的7个路径：environ、arg_groups/fields/disagg、scheduler、
+  prefill、decode、batch_result_processor、model_runner。未修改mem_cache/common或
+  base_prefix_cache；没有新queue子类/第三个接入文件。既有attention writer hook无需改写。
+
+本轮review修正了native取消边界：Failed状态及staging内部finally不能提前归还目的buffer；
+ACK tracker在发ABORT前只arm一次；D取消清理保留原metadata room清零和handler unregister；
+P sender.clear后不再poll已删除的native status；尚无ACQUIRE的P失败也要先drain。
+原grammar/fake取消继续工作，被native intake拒绝的请求不进入acquire。
+P完成原handoff后可detach/free native row，persistent slot仍等待D DONE；
+D排空delayed sampling/result_queue和设备访问后才free/DONE。等待native ACK不会重复整侧drain。
+
+部署细节：新增环境开关与mempool server args。NIC URL作为基址，每对使用port+2*i，
+MF再加本地BM rank；store使用base_port+i。默认容量仍16384，首轮建议用已讨论的8192。
+自动retraction/rebootstrap仍不支持；D必须使用新的bootstrap room，拒绝复用已跟踪room。
+startup/heartbeat/tick watchdog与native drain使用mempool-timeout；acquire沿用PD bootstrap timeout。
+不能确认drain的故障保留ownership并报错，重启须协调停止整个P/D；不自动关闭BM或合成ACK。
+
+Mac实际验证：108项CPU测试通过，21个源文件strict mypy通过；Ruff、format、isort、
+AST与diff检查通过。新增测试覆盖16个真实control的统一tick/迟到/preflight故障、容量等待，
+service的P row复用且旧slot仍占用、native先到/READY先到、zero-decode、取消后等native ACK、
+overlap delayed sampling/result drain和exactly-once回收。少量native seam测试执行源文件的
+真实方法体（包含staging finally），只替换系统边界，避免Mac导入NPU依赖。
+Standards review无发现，Spec review的问题修正后复核无剩余发现。
+
+交付 `ascend-mempool-test/scripts/verify_shadow_service.py` 和测试README中的启动参数增量。
+`requests`通过已有router发送zero-decode、decode、reuse三个请求并保存完整输出；
+`check-logs`要求两侧全16 ranks的完整生命周期、各D设备capture/real replay与最终16 free slots。
+P/D日志包含room/attempt、两侧slot/generation、native handoff/write-ready、detach、DONE/ACK
+以及tick/drain耗时。这里的日志判据不证明KV内容或模型精度。
+
+尚未运行：16对真实BM＋TE共存、真实GLM5.1 server warmup/capture/replay、真实TP collective、
+原transfer与mempool联合服务gate。本机没有NPU，以上由用户人工执行。
+请按README交付命令回传双方版本/launch命令、完整日志与request/lifecycle JSON。
+用户确认无readback的shadow gate后再添加top-k对照；本票保持open，后续依赖票不解锁。
+
+### 2026-10-01：接口优化后的双机 writer gate 回归通过
+
+Codex / GPT-6：用户回传 P/D 两端 2026-10-01 15:52:03–15:52:05 的控制台日志。
+本轮交付版本为已推送的 `cfcafb4810`；日志未包含远端 git hash，因此没有独立核验
+服务器 checkout。环境沿用此前用户提供的 MF 1.1.4 / Ascend910_9382 等配置，本次
+没有新的 check-env 输出。运行入口为上一轮提供的 `run_writer_gate.sh` 双机命令，
+P为npu1-31、D为npu1-32，各使用device 0；日志确认pool ID103和控制端口18774。
+
+结果：两端各20条 PASS，其中10条为 decode replay，最后均为 ALL_CHECKS_PASSED。
+覆盖24/48 cores；P eager prompt写入、D decode Graph capture/replay写入及对端
+逐元素读回；包含chunk prefix、同slot改写、rebind、全invalid和最后一行边界。
+每个P数据case核对147456元素，每个D数据case核对294912元素。两端MAPPED输出一致。
+D对0x280040000000先发生两次GVA转换重试，之后映射成功；没有持续mapping错误，
+没有数值/计数差异、timeout或teardown失败。其余WARN没有阻止本次gate完成。
+
+证据是本会话粘贴的控制台日志；没有收到JSON报告文件，不声称已读取其status/checks。
+按交付命令，报告预期位于P的`/tmp/mempool-02-review-p/writer-rank0.{log,json}`和
+D的`/tmp/mempool-02-review-d/writer-rank1.{log,json}`，未独立访问服务器文件。
+
+第一部分接口优化的独立writer硬件回归通过。该脚本不验证16对真实TP控制、service
+的Req/fake适配、native handoff gate或真实GLM5.1端到端精度。④服务接入、真实服务
+shadow与top-k readback仍待完成，ticket02保持open。本次仅更新验收记录/进度文档，
+未修改代码、未重新运行本地或NPU测试、未add/commit/push。
 
 ### 2026-10-01：第一部分 A1–A4 接口优化（工作区，等待核对）
 

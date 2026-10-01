@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
+import logging
 from collections import deque
 from collections.abc import Callable, Sequence
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
-from typing import Any, Optional, Protocol
+from typing import Any, Iterator, Optional, Protocol
 
 import torch
 from torch import Tensor
 
+from .config import MempoolConfig
 from .layout import check_index, positive_int
 from .manager import MempoolKVManager
 from .offload import MempoolKVOffload
 from .rows import derive_kv_rows
+
+logger = logging.getLogger(__name__)
 
 
 class WriteEvent(Protocol):
@@ -124,6 +129,7 @@ class MempoolRuntime:
         positive_int("max_context_len", max_context_len)
         if type(start_layer) is not int or start_layer < 0:
             raise ValueError("start_layer must be a nonnegative integer")
+        self.config: Optional[MempoolConfig] = None
         self.manager = manager
         manager.bases(manager.rank)
         self.layout = manager.layout.layout_for_rank(manager.rank)
@@ -157,11 +163,14 @@ class MempoolRuntime:
             else:
                 wait_event = lambda event: None
         self._wait_event = wait_event
+        self.fault: Optional[str] = None
+        self._prepared: Optional[tuple[KVWriteExpectation, ...]] = None
         self._bindings: dict[int, _Binding] = {}
         self._slot_totals = [0] * self.layout.slots
         self._pending: deque[_Completion] = deque()
         self._active: Optional[_Forward] = None
         self._capture_validated = False
+        self._logged_replay = False
         self._binding_update: Optional[WriteEvent] = None
         self._record_binding_update()
 
@@ -185,6 +194,8 @@ class MempoolRuntime:
 
     def bind(self, req_pool_idx: int, *, slot: int, prompt_tokens: int) -> KVRowBinding:
         """Install an approved allocation and return its local attachment identity."""
+        if self.fault is not None:
+            raise RuntimeError(f"mempool runtime fault: {self.fault}")
         if self._active is not None:
             raise RuntimeError("cannot change bindings during an open forward")
         self._row(req_pool_idx)
@@ -212,6 +223,8 @@ class MempoolRuntime:
         native resources. It must prove native transfer safety and no future row
         submissions (and D drain on decode); this method never releases a BM slot.
         """
+        if self.fault is not None:
+            raise RuntimeError(f"mempool runtime fault: {self.fault}")
         if self._active is not None:
             raise RuntimeError("cannot change bindings during an open forward")
         req_pool_idx = binding.req_pool_idx
@@ -237,6 +250,54 @@ class MempoolRuntime:
         progress = self._bindings.get(req_pool_idx)
         if binding is None or progress is None or progress.attachment is not binding:
             raise RuntimeError("request row has no matching mempool binding")
+
+    def prepare_forward(self, writes: Sequence[KVWriteExpectation]) -> None:
+        """Save scheduler-approved host expectations for exactly one model call."""
+        if self.fault is not None:
+            raise RuntimeError(f"mempool runtime fault: {self.fault}")
+        if self._prepared is not None or self._active is not None:
+            raise RuntimeError("mempool forward preparation was not consumed")
+        self._prepared = tuple(writes)
+
+    @contextmanager
+    def forward_scope(
+        self, *, replay: bool = False, capture: bool = False
+    ) -> Iterator[None]:
+        """Bracket one eager/replay call or one capture warmup; fail closed."""
+        try:
+            if capture:
+                if self._prepared is not None:
+                    raise RuntimeError("capture cannot consume a scheduled request")
+                writes: tuple[KVWriteExpectation, ...] = ()
+            else:
+                if self._prepared is None:
+                    raise RuntimeError(
+                        "mempool model call lacks scheduler expectations"
+                    )
+                writes = self._prepared
+                self._prepared = None
+            self.begin_forward(writes, replay=replay, capture=capture)
+            yield
+            self.end_forward()
+            if replay and writes and not self._logged_replay:
+                logger.info(
+                    "mempool graph_replay real_requests=%s device=%s",
+                    len(writes),
+                    self.row_slot.device,
+                )
+                self._logged_replay = True
+        except Exception as exc:
+            self.fault = str(exc)
+            # Do not publish completion or detach storage after a partial launch.
+            raise
+
+    def next_position(self, binding: KVRowBinding) -> int:
+        """Return the next contiguous write coordinate for an approved attachment."""
+        self.assert_bound(binding.req_pool_idx, binding)
+        progress = self._bindings[binding.req_pool_idx]
+        return progress.submitted + (
+            binding.prompt_tokens if self.manager.rank == 1 else 0
+        )
 
     def begin_forward(
         self,
@@ -398,3 +459,74 @@ class MempoolRuntime:
             self.writes_done(req_pool_idx)
             and binding.completed == binding.attachment.prompt_tokens
         )
+
+
+def model_forward_scope(
+    backend: Any, *, replay: bool = False, capture: bool = False
+) -> Any:
+    """Return a runtime scope when this attention backend owns mempool storage."""
+    runtime = getattr(backend, "mempool_runtime", None)
+    return (
+        runtime.forward_scope(replay=replay, capture=capture)
+        if runtime is not None
+        else nullcontext()
+    )
+
+
+def initialize_for_model_runner(model_runner: Any) -> None:
+    """Map BM and attach one runtime before model graph capture, on P and D."""
+    import importlib
+
+    args = model_runner.server_args
+    if args.device != "npu":
+        raise ValueError("mempool requires device='npu'")
+    backend = model_runner.attn_backend
+    from sglang.srt.environ import envs
+    from sglang.srt.hardware_backend.npu.attention.mla_preprocess import (
+        is_mla_preprocess_enabled,
+    )
+
+    config = MempoolConfig.from_server_args(
+        args,
+        sparse_enabled=envs.SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD.get(),
+        mla=model_runner.use_mla_backend,
+        dtype=str(model_runner.kv_cache_dtype).removeprefix("torch."),
+        mlapo=is_mla_preprocess_enabled(),
+    )
+    if not hasattr(backend, "attach_mempool_runtime"):
+        raise ValueError("mempool requires the Ascend MLA attention backend")
+    layout = config.make_mla_layout(
+        num_layers=model_runner.layer_info.end_layer
+        - model_runner.layer_info.start_layer,
+        kv_lora_rank=model_runner.model_config.kv_lora_rank,
+        qk_rope_head_dim=model_runner.model_config.qk_rope_head_dim,
+    )
+    mf = importlib.import_module("memfabric_hybrid")
+    if mf.initialize() != 0:
+        raise RuntimeError("MemFabric initialization failed")
+    # BM and TransferEngine share process-wide MF. No per-request/global MF
+    # uninitialize, atexit pool destroy, or fault-path close is permitted here.
+    manager = MempoolKVManager.initialize_rank_pair(
+        layout=layout,
+        role=args.disaggregation_mode,
+        tp_rank=model_runner.ps.tp_rank,
+        device_id=model_runner.gpu_id,
+        store_host=config.prefill_host,
+        base_port=config.base_port,
+        nic_url=config.nic_for_rank(model_runner.ps.tp_rank),
+        pool_id=config.pool_id,
+        timeout=config.timeout,
+    )
+    runtime = MempoolRuntime(
+        manager,
+        req_pool_rows=model_runner.req_to_token_pool.req_to_token.shape[0],
+        max_context_len=model_runner.model_config.context_len,
+        start_layer=model_runner.layer_info.start_layer,
+        device=str(model_runner.req_to_token_pool.req_to_token.device),
+    )
+    runtime.config = config
+    seen = set()
+    for candidate in (backend, model_runner.decode_attn_backend):
+        if candidate is not None and id(candidate) not in seen:
+            candidate.attach_mempool_runtime(runtime)
+            seen.add(id(candidate))

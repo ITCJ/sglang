@@ -83,6 +83,26 @@ class TestMempoolRuntime(unittest.TestCase):
         )
         return runtime, targets, events
 
+    def test_forward_scope_requires_preparation_and_keeps_exceptions_fatal(self):
+        """Host scopes record real forwards once and cannot disguise failed launches."""
+        runtime, _, events = self.make_runtime(layers=1)
+        binding = runtime.bind(1, slot=2, prompt_tokens=2)
+        runtime.prepare_forward([KVWriteExpectation(1, 0, 1)])
+        k = torch.ones((1, 2), dtype=torch.bfloat16)
+        with runtime.forward_scope():
+            runtime.write_layer(5, k, k, prefill_batch((1,), (0,), (1,)))
+        events[-1].done = True
+        runtime.poll_completed()
+        self.assertEqual(runtime.written_tokens(1), 1)
+        runtime.prepare_forward([KVWriteExpectation(1, 1, 1)])
+        with self.assertRaisesRegex(RuntimeError, "device failure"):
+            with runtime.forward_scope():
+                raise RuntimeError("device failure")
+        self.assertIn("device failure", runtime.fault)
+        self.assertEqual(runtime.written_tokens(1), 1)
+        with self.assertRaisesRegex(RuntimeError, "fault"):
+            runtime.detach_row(binding)
+
     def test_detach_preserves_completed_facts_before_request_row_reuse(self):
         """Consume local completion before detaching; retain old KV after row reuse."""
         runtime, targets, events = self.make_runtime(layers=1)

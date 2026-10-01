@@ -112,6 +112,20 @@ class SchedulerBatchResultProcessor:
     output_streamer: SchedulerOutputStreamer
     beam_coordinator: BeamCoordinator
     abort_request: Callable
+    defer_kv_release: Optional[Callable] = None
+
+    def _release_kv_cache(
+        self, req: Req, is_insert: bool = True, *, prepare: bool = False
+    ) -> None:
+        """Delegate persistent-lifetime cleanup before freeing any native resource."""
+        if self.defer_kv_release is not None and self.defer_kv_release(req, is_insert):
+            return
+        prepare_release = getattr(
+            self.model_worker, "prepare_for_kv_cache_release", None
+        )
+        if prepare and callable(prepare_release):
+            prepare_release(req)
+        release_kv_cache(req, self.tree_cache, is_insert=is_insert)
 
     def process_batch_result_prebuilt(self, batch: ScheduleBatch):
         assert self.disaggregation_mode == DisaggregationMode.DECODE
@@ -125,7 +139,7 @@ class SchedulerBatchResultProcessor:
                 req.time_stats.set_quick_finish_time()
                 if get_memory().enable_hisparse:
                     self.hisparse_coordinator.request_finished(req)
-                release_kv_cache(req, self.tree_cache)
+                self._release_kv_cache(req)
 
         # Note: Logprobs should be handled on the prefill engine.
         self.output_streamer.stream_output(batch.reqs, batch.return_logprob)
@@ -468,7 +482,7 @@ class SchedulerBatchResultProcessor:
                     req.update_finish_state()
 
                     if req.finished():
-                        release_kv_cache(req, self.tree_cache)
+                        self._release_kv_cache(req)
                         req.time_stats.set_completion_time()
                     else:
                         maybe_cache_unfinished_req(req, self.tree_cache)
@@ -1246,12 +1260,7 @@ class SchedulerBatchResultProcessor:
         else:
             if get_memory().enable_hisparse:
                 self.hisparse_coordinator.request_finished(req)
-            prepare_release = getattr(
-                self.model_worker, "prepare_for_kv_cache_release", None
-            )
-            if callable(prepare_release):
-                prepare_release(req)
-            release_kv_cache(req, self.tree_cache, is_insert=False)
+            self._release_kv_cache(req, is_insert=False, prepare=True)
         req.time_stats.set_completion_time()
 
     def _handle_finish_state_updated_req(
@@ -1330,17 +1339,12 @@ class SchedulerBatchResultProcessor:
             else:
                 if get_memory().enable_hisparse:
                     self.hisparse_coordinator.request_finished(req)
-                prepare_release = getattr(
-                    self.model_worker, "prepare_for_kv_cache_release", None
-                )
-                if callable(prepare_release):
-                    prepare_release(req)
                 is_insert = (
                     req.mamba_lazy_is_insert
                     if get_exec().mamba.enable_mamba_extra_buffer_lazy
                     else True
                 )
-                release_kv_cache(req, self.tree_cache, is_insert=is_insert)
+                self._release_kv_cache(req, is_insert=is_insert, prepare=True)
 
             req.time_stats.set_completion_time()
 

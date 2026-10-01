@@ -70,6 +70,28 @@ class Disagg(msgspec.Struct):
             choices=DISAGG_TRANSFER_BACKEND_CHOICES,
         ),
     ] = "mooncake"
+    mempool_prefill_capacity: A[int, "Maximum prompt KV tokens per mempool slot."] = (
+        16384
+    )
+    mempool_decode_capacity: A[int, "Maximum decode KV tokens per mempool slot."] = (
+        16384
+    )
+    mempool_prefill_host: A[
+        Optional[str], "Fixed P host for paired BM stores and PD bootstrap."
+    ] = None
+    mempool_nic: A[
+        Optional[str], "Local MemFabric NIC base URL; reserve PORT through PORT+31."
+    ] = None
+    mempool_base_port: A[int, "First BM store port; pair i uses base_port+i."] = 19000
+    mempool_bootstrap_port: A[
+        int, "Existing P PD bootstrap HTTP port for control discovery."
+    ] = 8998
+    mempool_pool_id: A[
+        int, "BM entity ID shared by each independent rank pair, below 256."
+    ] = 104
+    mempool_timeout: A[
+        float, "Seconds allowed for mapping, control startup and peer liveness."
+    ] = 120.0
     disaggregation_enable_kv_checksum: A[
         bool,
         "Compute an Adler-32 checksum over each request's KV pages on prefill "

@@ -29,7 +29,7 @@ from sglang.srt.disaggregation.mooncake.conn import (
     MooncakeKVSender,
 )
 from sglang.srt.runtime_context import get_parallel
-from sglang.srt.utils.network import get_local_ip_auto
+from sglang.srt.utils.network import NetworkAddress, get_local_ip_auto
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +57,8 @@ class AscendKVManager(MooncakeKVManager):
     ):
         self.sparse_pd_decode_staging = None
         self.mempool_control: Optional[MempoolPDControl] = None
+        self._mempool_discovery = None
+        self._mempool_discovery_executor = None
         self._mempool_frame_router = MempoolFrameRouter()
 
         sparse_kv_manager = get_sparse_pd_manager()
@@ -97,9 +99,10 @@ class AscendKVManager(MooncakeKVManager):
                     f"native state entries={state_entry_count}, "
                     f"state layer ids={len(state_layer_ids)}."
                 )
-            if len(args.kv_data_lens) != total_entry_count or len(
-                args.kv_item_lens
-            ) != total_entry_count:
+            if (
+                len(args.kv_data_lens) != total_entry_count
+                or len(args.kv_item_lens) != total_entry_count
+            ):
                 raise RuntimeError(
                     "Ascend sparse KV PD decode received inconsistent transfer "
                     "buffer metadata."
@@ -120,6 +123,12 @@ class AscendKVManager(MooncakeKVManager):
             )
 
         super().__init__(args, disaggregation_mode, server_args, is_mla_backend)
+        from sglang.srt.environ import envs
+
+        if envs.SGLANG_NPU_ENABLE_MEMPOOL.get():
+            # Keep native abort drain ACKs alive; mempool never uses the generic
+            # deferred-release timeout that frees unconfirmed buffers.
+            self.enable_deferred_decode_kv_release = True
 
     def attach_mempool_control(self, control: MempoolPDControl) -> None:
         """Attach the mapped pool's request control after PD manager startup."""
@@ -143,6 +152,55 @@ class AscendKVManager(MooncakeKVManager):
         if self.mempool_control is None:
             raise RuntimeError("Ascend mempool control is not attached")
         self._send_multipart_locked(endpoint, encode_message(message), is_ipv6=is_ipv6)
+
+    def discover_mempool_peer(
+        self, host: str, port: int, tp_rank: int
+    ) -> Optional[str]:
+        """Poll the existing P bootstrap registry without blocking TP intake."""
+        if self._mempool_discovery_executor is None:
+            self._mempool_discovery_executor = concurrent.futures.ThreadPoolExecutor(
+                max_workers=1
+            )
+        if self._mempool_discovery is None:
+            self._mempool_discovery = self._mempool_discovery_executor.submit(
+                self._query_mempool_peer, host, port, tp_rank
+            )
+            return None
+        if not self._mempool_discovery.done():
+            return None
+        endpoint = self._mempool_discovery.result()
+        self._mempool_discovery = None
+        return endpoint
+
+    @staticmethod
+    def _query_mempool_peer(host: str, port: int, tp_rank: int) -> Optional[str]:
+        """Resolve P_i's existing PULL endpoint, fixing DP/CP/PP at zero."""
+        import requests
+
+        try:
+            response = requests.get(
+                NetworkAddress(host, port).to_url() + "/route",
+                params={
+                    "prefill_dp_rank": 0,
+                    "prefill_cp_rank": 0,
+                    "target_tp_rank": tp_rank,
+                    "target_pp_rank": 0,
+                },
+                timeout=2,
+            )
+            if response.status_code != 200:
+                return None
+            info = response.json()
+            return NetworkAddress(info["rank_ip"], int(info["rank_port"])).to_tcp()
+        except (requests.RequestException, KeyError, ValueError):
+            return None
+
+    def mempool_prefill_transfer_drained(self, room: int) -> bool:
+        """Require terminal native status and no transfer worker using P pages."""
+        return (
+            self.check_status(room) in (KVPoll.Success, KVPoll.Failed)
+            and self._staging_outstanding.get(room, 0) == 0
+        )
 
     def _make_worker_recv(
         self, socket: Any, timeout_ms: int = 500
@@ -405,9 +463,7 @@ class AscendKVManager(MooncakeKVManager):
             item_len: int,
         ) -> List[Tuple[int, int, int]]:
             transfer_blocks = []
-            for prefill_index, decode_index in zip(
-                prefill_kv_blocks, dst_kv_blocks
-            ):
+            for prefill_index, decode_index in zip(prefill_kv_blocks, dst_kv_blocks):
                 src_addr = src_ptr + int(prefill_index[0]) * item_len
                 dst_addr = dst_ptr + int(decode_index[0]) * item_len
                 length = item_len * len(prefill_index)
@@ -427,9 +483,7 @@ class AscendKVManager(MooncakeKVManager):
         def process_layers(layers_params: List[Tuple[int, int, int, int]]) -> int:
             transfer_blocks = []
             for _, src_ptr, dst_ptr, item_len in layers_params:
-                transfer_blocks.extend(
-                    set_transfer_blocks(src_ptr, dst_ptr, item_len)
-                )
+                transfer_blocks.extend(set_transfer_blocks(src_ptr, dst_ptr, item_len))
             return self._transfer_data(mooncake_session_id, transfer_blocks)
 
         if self.enable_custom_mem_pool:
@@ -467,9 +521,7 @@ class AscendKVManager(MooncakeKVManager):
             "K and V layer-id groups."
         )
 
-    def _get_sparse_pd_source_layer_ids(
-        self, dst_layer_ids: List[int]
-    ) -> List[int]:
+    def _get_sparse_pd_source_layer_ids(self, dst_layer_ids: List[int]) -> List[int]:
         """Build P-local ids for native K/V plus compact DSA index state."""
         if int(getattr(self.kv_args, "num_draft_entries", 0)) != 0:
             raise NotImplementedError(
@@ -524,8 +576,10 @@ class AscendKVManager(MooncakeKVManager):
                 try:
                     metadata = staging.offload_room_to_host(
                         bootstrap_room,
-                        release=True,
+                        release=self.mempool_control is None,
                     )
+                    if self.mempool_control is not None:
+                        staging.release_room(bootstrap_room)
                     logger.debug(
                         "Ascend sparse KV PD staged transfer committed: "
                         "room=%s slot=%s req_pool_idx=%s token_count=%s",
@@ -535,14 +589,15 @@ class AscendKVManager(MooncakeKVManager):
                         metadata.token_count,
                     )
                 except Exception as exc:
-                    staging.release_room(bootstrap_room)
+                    if self.mempool_control is None:
+                        staging.release_room(bootstrap_room)
                     self.record_failure(
                         bootstrap_room,
                         "Failed to offload Ascend sparse KV PD staging buffer "
                         f"to host sparse KV cache: {exc}",
                     )
                     return super().update_status(bootstrap_room, KVPoll.Failed)
-            elif status == KVPoll.Failed:
+            elif status == KVPoll.Failed and self.mempool_control is None:
                 staging.release_room(bootstrap_room)
 
         return super().update_status(bootstrap_room, status)
@@ -592,10 +647,21 @@ class AscendKVReceiver(MooncakeKVReceiver):
         return super().clear()
 
     def abort(self):
-        staging = getattr(self.kv_mgr, "sparse_pd_decode_staging", None)
-        if staging is not None:
-            staging.release_room(self.bootstrap_room)
+        """Retain staging on mempool cancellation until native writers acknowledge drain."""
+        if self.kv_mgr.mempool_control is None:
+            staging = getattr(self.kv_mgr, "sparse_pd_decode_staging", None)
+            if staging is not None:
+                staging.release_room(self.bootstrap_room)
         return super().abort()
+
+    def _send_abort_notification(self):
+        """Arm drain accounting before either explicit abort or poll failure sends."""
+        if self.kv_mgr.mempool_control is not None and not getattr(
+            self, "_mempool_abort_armed", False
+        ):
+            self.kv_mgr.register_deferred_abort_room(self.bootstrap_room)
+            self._mempool_abort_armed = True
+        return super()._send_abort_notification()
 
 
 class AscendKVBootstrapServer(MooncakeKVBootstrapServer):

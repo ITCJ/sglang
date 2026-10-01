@@ -683,6 +683,7 @@ class Scheduler(
         self.maybe_init_rust_server()
 
         # Init prefill-decodedisaggregation
+        self.mempool_service = None
         self.init_disaggregation()
 
         # Init overlap schedule
@@ -1646,6 +1647,13 @@ class Scheduler(
                 scheduler=self,
             )
 
+        if envs.SGLANG_NPU_ENABLE_MEMPOOL.get():
+            from sglang.srt.disaggregation.ascend.mempool_service import (
+                MempoolPDService,
+            )
+
+            self.mempool_service = MempoolPDService.from_scheduler(self)
+
     def init_overlap(self):
         self.device_module = torch.get_device_module(self.device)
 
@@ -2103,6 +2111,8 @@ class Scheduler(
         if recv_reqs:
             self.metrics_reporter.record_scheduler_active()
         self.process_input_requests(recv_reqs)
+        if self.mempool_service is not None:
+            self.mempool_service.advance()
         return recv_reqs
 
     @scheduler_stage_method(SCHEDULER_STAGE_PROCESS_REQUESTS)
@@ -2543,6 +2553,9 @@ class Scheduler(
             output_streamer=self.output_streamer,
             beam_coordinator=self.beam_coordinator,
             abort_request=self.abort_request,
+            defer_kv_release=self.mempool_service.defer_release
+            if self.mempool_service
+            else None,
         )
 
     def init_req_max_new_tokens(self, req):
@@ -3275,6 +3288,8 @@ class Scheduler(
         self.output_streamer.stream_output([req], req.return_logprob)
 
     def _add_request_to_queue(self, req: Req, is_retracted: bool = False):
+        if self.mempool_service is not None and is_retracted:
+            raise RuntimeError("mempool demo cannot rebootstrap an active request")
         if not self._set_or_validate_priority(req):
             self._release_aborted_request(req)
             return
@@ -4203,6 +4218,9 @@ class Scheduler(
         if (kv_full_retract_flag := not batch.check_decode_mem()) or (
             TEST_RETRACT and self.forward_ct % TEST_RETRACT_INTERVAL == 0
         ):
+            if self.mempool_service is not None:
+                self.mempool_service.cancel_for_retraction(batch)
+                return batch
             old_available_tokens = self.token_to_kv_pool_allocator.available_size()
             old_ratio = self.new_token_ratio_tracker.current
             mamba_allocator = getattr(
@@ -4367,6 +4385,9 @@ class Scheduler(
         # Place holder handling for pd-disagg decode event loop
         if batch.forward_mode.is_prebuilt():
             return self._run_batch_prebuilt(batch)
+
+        if self.mempool_service is not None:
+            self.mempool_service.prepare_batch(batch)
 
         # PD prefill: early-send cached prefix KV, overlapping the suffix forward.
         if self.disaggregation_mode == DisaggregationMode.PREFILL:
@@ -5004,6 +5025,12 @@ class Scheduler(
             self.metrics_reporter.record_scheduler_active()
 
     def is_fully_idle(self, for_health_check=False) -> bool:
+        if (
+            not for_health_check
+            and self.mempool_service is not None
+            and self.mempool_service.has_pending_work()
+        ):
+            return False
         # Health check piggybacks on running requests in process_output.
         # Only running_batch + waiting_queue guarantee active GPU processing;
         # disagg queues (bootstrap/prealloc/transfer) may have items without
@@ -5434,8 +5461,19 @@ class Scheduler(
         }
 
     def abort_request(self, recv_req: AbortReq):
+        if self.mempool_service is not None:
+            self.mempool_service.abort_matching(
+                recv_req.rid, abort_all=recv_req.abort_all
+            )
+
+        def should_abort(req: Req) -> bool:
+            """Keep original abort handling for requests outside mempool ownership."""
+            return (recv_req.abort_all or req.rid.startswith(recv_req.rid)) and (
+                self.mempool_service is None or not self.mempool_service.tracks(req)
+            )
+
         if (chunked_req := self.chunked_req) is not None:
-            if recv_req.abort_all or chunked_req.rid.startswith(recv_req.rid):
+            if should_abort(chunked_req):
                 self._pending_chunked_abort_req = chunked_req
 
         # todo hisparse, release resources for abort requests in hisparse coordinator
@@ -5446,7 +5484,7 @@ class Scheduler(
         # Delete requests in the waiting queue
         to_del = []
         for i, req in enumerate(self.waiting_queue):
-            if recv_req.abort_all or req.rid.startswith(recv_req.rid):
+            if should_abort(req):
                 to_del.append(i)
 
         # Sort in reverse order to avoid index issues when deleting
@@ -5509,7 +5547,7 @@ class Scheduler(
         if self.disaggregation_mode == DisaggregationMode.PREFILL:
             # Abort requests that have not yet been bootstrapped
             for req in self.disagg_prefill_bootstrap_queue.queue:
-                if recv_req.abort_all or req.rid.startswith(recv_req.rid):
+                if should_abort(req):
                     logger.debug(f"Abort bootstrap queue request. {req.rid=}")
                     self._release_aborted_request(req)
 
@@ -5520,7 +5558,7 @@ class Scheduler(
 
             # Abort in-flight requests
             for req in self.disagg_prefill_inflight_queue:
-                if recv_req.abort_all or req.rid.startswith(recv_req.rid):
+                if should_abort(req):
                     logger.debug(f"Abort inflight queue request. {req.rid=}")
                     if hasattr(req.disagg_kv_sender, "abort"):
                         req.disagg_kv_sender.abort()
@@ -5528,7 +5566,7 @@ class Scheduler(
         elif self.disaggregation_mode == DisaggregationMode.DECODE:
             # Abort requests that have not yet finished preallocation
             for decode_req in self.disagg_decode_prealloc_queue.queue:
-                if recv_req.abort_all or decode_req.req.rid.startswith(recv_req.rid):
+                if should_abort(decode_req.req):
                     logger.debug(f"Abort prealloc queue request. {decode_req.req.rid=}")
                     decode_req.kv_receiver.abort()
                     if get_parallel().pp_size > 1:
@@ -5536,7 +5574,7 @@ class Scheduler(
 
             # Abort requests waiting for kvcache to release tree cache
             for decode_req in self.disagg_decode_transfer_queue.queue:
-                if recv_req.abort_all or decode_req.req.rid.startswith(recv_req.rid):
+                if should_abort(decode_req.req):
                     logger.debug(f"Abort transfer queue request. {decode_req.req.rid=}")
                     receiver = decode_req.kv_receiver
                     receiver.abort()
@@ -5558,7 +5596,7 @@ class Scheduler(
             if self.disagg_decode_prealloc_queue.retracted_queue:
                 remaining_retracted = []
                 for decode_req in self.disagg_decode_prealloc_queue.retracted_queue:
-                    if recv_req.abort_all or decode_req.rid.startswith(recv_req.rid):
+                    if should_abort(decode_req):
                         retraction_discard(
                             decode_req,
                             self.tree_cache,
@@ -5573,9 +5611,7 @@ class Scheduler(
 
         # Delete requests in the running batch
         for req in self.collect_inflight_reqs():
-            if not req.finished() and (
-                recv_req.abort_all or req.rid.startswith(recv_req.rid)
-            ):
+            if not req.finished() and should_abort(req):
                 # Abort method 3: set `to_finish`
                 # The request will still run one decode forward pass.
                 # Then we reuse all existing code to clean up the KV cache allocation.
@@ -5594,6 +5630,9 @@ class Scheduler(
     def pause_generation(self, recv_req: PauseGenerationReqInput):
         assert recv_req.mode in ("in_place", "retract")
         self._engine_paused = True
+        if self.mempool_service is not None and recv_req.mode == "retract":
+            self.mempool_service.abort_matching("", abort_all=True)
+            return
 
         if recv_req.mode == "in_place":
             # In-place pause: just set the flag and return immediately.
@@ -5882,6 +5921,10 @@ class Scheduler(
             self.session_controller.close(recv_req)
 
     def maybe_sleep_on_idle(self):
+        if self.mempool_service is not None:
+            # PD control uses a different PULL socket; keep ticking heartbeats.
+            time.sleep(0.001)
+            return
         if self.idle_sleeper is not None:
             self.idle_sleeper.maybe_sleep()
 

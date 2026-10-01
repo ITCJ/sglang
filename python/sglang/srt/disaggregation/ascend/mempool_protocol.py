@@ -17,6 +17,7 @@ class MessageType(str, Enum):
 
     POOL_HELLO = "POOL_HELLO"
     POOL_READY = "POOL_READY"
+    HEARTBEAT = "HEARTBEAT"
     ACQUIRE = "ACQUIRE"
     ACQUIRED = "ACQUIRED"
     BOUND_ACK = "BOUND_ACK"
@@ -175,6 +176,7 @@ class SlotLease:
 _REQUIRED: dict[MessageType, frozenset[str]] = {
     MessageType.POOL_HELLO: frozenset(("peer", "reply_to")),
     MessageType.POOL_READY: frozenset(("peer", "receiver_session")),
+    MessageType.HEARTBEAT: frozenset(("peer", "receiver_session")),
     MessageType.ACQUIRE: frozenset(
         ("request", "d_slot", "reply_to", "prompt_tokens", "decode_tokens")
     ),

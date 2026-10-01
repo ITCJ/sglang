@@ -1,8 +1,9 @@
 # Ascend mempool storage
 
 提供 ticket02 的存储布局、BM handle/view、临时 KV writer 和 backend runtime。
-①–③及本轮 A1–A4 接口优化已实现；④的 scheduler/参数/真实服务接入尚未完成。
-shadow 双写保留原 sparse PD 路径，当前没有在服务中创建 mempool runtime。
+①–③、A1–A4接口优化及④的scheduler/配置/Graph接线已实现。
+开启 `SGLANG_NPU_ENABLE_MEMPOOL=1` 时，BM/runtime在Graph前创建，service/control在
+既有AscendKVManager建立后附加。shadow双写保留原sparse PD路径；真实服务尚待NPU验收。
 
 ## 文件与接口
 
@@ -17,6 +18,12 @@ shadow 双写保留原 sparse PD 路径，当前没有在服务中创建 mempool
 | `rows.py` | `derive_kv_rows()` | 从普通 forward 张量推导 request row、全序列 token position 和 valid；目前有意保留 sparse manager 行推导的副本。 |
 | `runtime.py` | `MempoolRuntime` | 持有固定设备 binding 表、per-layer writer、forward/Graph 边界及本地写入计数/完成事件。 |
 | `runtime.py` | `KVRowBinding` / `KVWriteReceipt` | 标识一次本地 row attachment，保留 detach 后的完成事实；不表示 PD slot ownership。 |
+| `runtime.py` | `initialize_for_model_runner()` / `model_forward_scope()` | Graph前建立BM/runtime；逐次eager、warmup/capture和replay的host边界。 |
+
+PD接入仅新增 `disaggregation/ascend/mempool_service.py` 和 `mempool_tick.py`：
+service投影真实Req并延迟native清理，tick统一TP observations/preflight/commit/outbox。
+协议仍由原control拥有；服务读取实际BM nonce确认ZMQ peer与BM peer一致。
+`config.py` 集中校验启动组合；NIC基址为每对留出2个端口，store仍为 `base_port+i`。
 
 每侧 KV payload 为 `L * B_slots * S * N * D * 2` 字节；MLA 的 `N=1`，
 `D=kv_lora_rank+qk_rope_head_dim`。每 rank 加 64 字节 probe，再向 1 GiB 对齐。
@@ -65,11 +72,12 @@ shadow 双写保留原 sparse PD 路径，当前没有在服务中创建 mempool
 CPU 行为测试放在仓库根目录 `ascend-mempool-test/tests/unit/`，见
 [测试与两机运行说明](../../../../../../ascend-mempool-test/README.md)。
 `test_pair_startup.py` 使用 BM SDK boundary fake 检查 16 对端口、BM rank、错误参数与
-失败清理。它不代表 16 对真实 BM 会话已在服务中启动；第④部分接入时仍需用户运行
-NPU 测试。
+失败清理。它不代表16对真实BM会话已在NPU服务中通过；④代码已接线，用户仍需运行
+README中的shadow服务gate。
 独立测试通过自己的 package path 加载本目录模块，绕过 `sglang/__init__.py`，
 无需安装 SGLang 或启动 server；01 的 `pool` import 保留兼容入口。
 
 01 的 remote fetch Graph、③旧版本的双机 runtime writer gate 已由用户反馈通过。
-本轮 bind/detach/writer 接口调整后的 NPU 回归仍待运行；真实 server shadow 验收
-还需要④，不能从 CPU 测试或旧版本硬件结果推断本轮通过。
+10月1日用户回传了 bind/detach/writer 接口调整后的双机日志，两端均为20条PASS和
+ALL_CHECKS_PASSED；详情及版本证据边界见ticket02。
+④新增service/tick及native释放边界回归后，Mac共108项CPU测试通过；不替代真实server验收。

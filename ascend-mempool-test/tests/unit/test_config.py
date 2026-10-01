@@ -22,6 +22,57 @@ class TestMempoolConfig(unittest.TestCase):
         self.assertEqual(layout.contribution_bytes(1), 23622320128)
         self.assertEqual(layout.rank_stride_bytes, 23622320128)
 
+    def test_service_config_rejects_unsupported_launch_before_bm(self):
+        """P native mode is supported; incompatible serving modes are rejected."""
+        from types import SimpleNamespace
+
+        args = SimpleNamespace(
+            device="npu",
+            tp_size=16,
+            dp_size=1,
+            pp_size=1,
+            attn_cp_size=1,
+            disaggregation_mode="prefill",
+            disaggregation_transfer_backend="ascend",
+            disable_radix_cache=True,
+            speculative_algorithm=None,
+            disable_cuda_graph=True,
+            optimistic_prefill_attempts=0,
+            mempool_prefill_host="10.0.0.1",
+            mempool_nic="tcp://10.0.0.1:24670",
+        )
+        config = MempoolConfig.from_server_args(
+            args, sparse_enabled=True, mla=True, dtype="bfloat16", mlapo=False
+        )
+        self.assertEqual(config.prefill_host, "10.0.0.1")
+        self.assertEqual(config.nic_for_rank(0), "tcp://10.0.0.1:24670")
+        self.assertEqual(config.nic_for_rank(15), "tcp://10.0.0.1:24700")
+        for key, value in (
+            ("device", "cuda"),
+            ("tp_size", 8),
+            ("disaggregation_transfer_backend", "mooncake"),
+            ("disable_radix_cache", False),
+            ("speculative_algorithm", "EAGLE"),
+            ("mempool_nic", "tcp://10.0.0.1:65520"),
+            ("mempool_nic", "tcp://10.0.0.1"),
+        ):
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                MempoolConfig.from_server_args(
+                    SimpleNamespace(**(vars(args) | {key: value})),
+                    sparse_enabled=True,
+                    mla=True,
+                    dtype="bfloat16",
+                    mlapo=False,
+                )
+        with self.assertRaisesRegex(ValueError, "MLAPO"):
+            MempoolConfig.from_server_args(
+                args, sparse_enabled=True, mla=True, dtype="bfloat16", mlapo=True
+            )
+        with self.assertRaisesRegex(ValueError, "sparse"):
+            MempoolConfig.from_server_args(
+                args, sparse_enabled=False, mla=True, dtype="bfloat16", mlapo=False
+            )
+
     def test_defaults_and_unsupported_model_storage(self):
         """Keep 16K defaults and reject non-BF16 or kernel-incompatible storage."""
         config = MempoolConfig()

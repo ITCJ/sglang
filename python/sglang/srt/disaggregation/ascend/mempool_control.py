@@ -8,7 +8,8 @@ import json
 import logging
 import secrets
 from collections import deque
-from dataclasses import dataclass
+from copy import copy
+from dataclasses import dataclass, replace
 from queue import Empty, SimpleQueue
 from threading import Lock
 from typing import Callable
@@ -271,6 +272,25 @@ class MempoolPDControl:
         """Report an attempt's durable lifecycle state for scheduler decisions."""
         return self._record(request).phase
 
+    def preflight(self, operation: Callable[[MempoolPDControl], object]) -> None:
+        """Validate a transaction using the same transitions on isolated state.
+
+        The scheduler owns this call. The preview cannot read the inbox or emit
+        messages; only the supplied control transitions are evaluated. Proofs
+        and retirement boundaries match the live owner, with no duplicated
+        validation algorithm in the TP coordinator.
+        """
+        preview = copy(self)
+        preview._records = {key: replace(value) for key, value in self._records.items()}
+        preview._terminal_order = deque(self._terminal_order)
+        preview._seen_d_generation = self._seen_d_generation.copy()
+        preview._room_owner = self._room_owner.copy()
+        preview._slot_owner = self._slot_owner.copy()
+        preview._generation = self._generation.copy()
+        preview._retired_generation = self._retired_generation.copy()
+        preview._inbox = SimpleQueue()
+        operation(preview)
+
     def reply_endpoint(self, request: RequestIdentity) -> str:
         """Return the D rank's existing ZMQ endpoint for P-side replies."""
         self._require_role("prefill")
@@ -477,6 +497,13 @@ class MempoolPDControl:
             self._accept_peer(message.peer)
             return None
 
+        if message.kind == MessageType.HEARTBEAT:
+            if (
+                message.peer != self._require_peer()
+                or message.receiver_session != self.local.session
+            ):
+                raise ValueError("mempool heartbeat uses a different pool session")
+            return None
         self._validate_request(message.request)
         if message.kind == MessageType.ACQUIRE:
             return self._accept_acquire(message)

@@ -709,6 +709,8 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
             decode_req = self._create_receiver_and_enqueue(
                 req, is_rebootstrap=is_rebootstrap
             )
+            if self.scheduler.mempool_service is not None:
+                self.scheduler.mempool_service.track(req)
 
             # NOTE: fake transfer does not need to resolve prefill dp rank in the pending queue
             if _is_fake_transfer(req):
@@ -1229,6 +1231,8 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
             if rids_to_check is not None and decode_req.req.rid not in rids_to_check:
                 continue
             if isinstance(decode_req.req.finished_reason, FINISH_ABORT):
+                if self.scheduler.mempool_service is not None:
+                    self.scheduler.mempool_service.bootstrap_failed(decode_req.req)
                 if not getattr(decode_req.req, "finished_output", False):
                     self.scheduler.output_streamer.stream_output(
                         [decode_req.req],
@@ -1284,6 +1288,9 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
                 continue
 
             if not decode_req.waiting_for_input:
+                continue
+            service = self.scheduler.mempool_service
+            if service is not None and not service.can_preallocate(decode_req.req):
                 continue
 
             if self.req_to_token_pool.available_size() <= 0:
@@ -2449,6 +2456,10 @@ class DecodeTransferQueue(DecodeHiCacheTransferMixin):
             if (
                 poll == KVPoll.Failed
                 or hicache_restore_status == HiCacheRestoreResult.FAILED
+                or (
+                    self.scheduler.mempool_service is not None
+                    and isinstance(decode_req.req.finished_reason, FINISH_ABORT)
+                )
             ):
                 error_message = (
                     f"Decode transfer failed for request rank={self.tp_rank} "
@@ -2479,6 +2490,14 @@ class DecodeTransferQueue(DecodeHiCacheTransferMixin):
                 if self.scheduler.enable_hisparse:
                     self.scheduler.hisparse_coordinator.request_finished(decode_req.req)
                 if (
+                    self.scheduler.mempool_service is not None
+                    and self.scheduler.mempool_service.native_failure(
+                        decode_req.req, decode_req
+                    )
+                ):
+                    deferred_indices.add(i)
+                    indices_to_remove.add(i)
+                elif (
                     self.enable_deferred_kv_release
                     and decode_req.kv_receiver.kv_mgr.enable_deferred_decode_kv_release
                     and decode_req.kv_receiver.abort_notified
@@ -2505,6 +2524,11 @@ class DecodeTransferQueue(DecodeHiCacheTransferMixin):
                     and hicache_restore_status == HiCacheRestoreResult.PENDING
                 ):
                     continue
+                service = self.scheduler.mempool_service
+                if service is not None and not service.transfer_complete(
+                    decode_req.req
+                ):
+                    continue
                 self._commit_transfer_to_req(decode_req)
                 indices_to_remove.add(i)
                 # Check if request was aborted due to corruption
@@ -2518,7 +2542,12 @@ class DecodeTransferQueue(DecodeHiCacheTransferMixin):
                             decode_req.req
                         )
                     self._clean_hicache_prefetch_resources(decode_req)
-                    release_kv_cache(decode_req.req, self.tree_cache, is_insert=False)
+                    if service is None or not service.defer_release(
+                        decode_req.req, is_insert=False
+                    ):
+                        release_kv_cache(
+                            decode_req.req, self.tree_cache, is_insert=False
+                        )
                     if self.scheduler.metrics_reporter.enable_metrics:
                         self.scheduler.metrics_collector.increment_transfer_failed_reqs()
                 else:
@@ -2815,7 +2844,10 @@ class SchedulerDisaggregationDecodeMixin:
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
         )
         self.output_streamer.stream_output([req], req.return_logprob)
-        release_kv_cache(req, self.tree_cache, is_insert=False)
+        if self.mempool_service is None or not self.mempool_service.defer_release(
+            req, is_insert=False
+        ):
+            release_kv_cache(req, self.tree_cache, is_insert=False)
         if self.metrics_reporter.enable_metrics:
             self.metrics_collector.increment_transfer_failed_reqs()
 

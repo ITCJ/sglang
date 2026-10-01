@@ -387,6 +387,9 @@ class PrefillBootstrapQueue:
         """Initialize the sender after bootstrap completes.
         Returns False if no metadata buffer is available (non-terminal)."""
         assert req.pending_bootstrap, "finalize_bootstrap is not idempotent"
+        service = self.scheduler.mempool_service
+        if service is not None and not service.can_prefill(req):
+            return False
         if not self.ensure_metadata_buffer(req):
             return False
 
@@ -416,6 +419,8 @@ class PrefillBootstrapQueue:
         if not self.create_sender(req, num_kv_heads):
             return
         self.queue.append(req)
+        if self.scheduler.mempool_service is not None:
+            self.scheduler.mempool_service.track(req)
 
     def extend(self, reqs: List[Req], num_kv_heads: int) -> None:
         for req in reqs:
@@ -496,7 +501,9 @@ class PrefillBootstrapQueue:
                 failed_reqs.append(req)
             elif poll == KVPoll.Bootstrapping:
                 if (
-                    req.prefill_attempt_count < get_disagg().optimistic_prefill_attempts
+                    self.scheduler.mempool_service is None
+                    and req.prefill_attempt_count
+                    < get_disagg().optimistic_prefill_attempts
                     and not req.is_retracted  # engine paused
                 ):
                     if not self.ensure_metadata_buffer(req):
@@ -509,7 +516,9 @@ class PrefillBootstrapQueue:
                         self.scheduler.processed_tokens_counter
                     )
             elif poll == KVPoll.WaitingForInput:
-                if should_force_retry(req):  # skip checking for testing
+                if self.scheduler.mempool_service is None and should_force_retry(
+                    req
+                ):  # test hook
                     if not self.ensure_metadata_buffer(req):
                         continue  # no more metadata buffer
                     req.prefill_attempt_count += 1
@@ -1018,12 +1027,18 @@ class SchedulerDisaggregationPrefillMixin:
             elif poll == KVPoll.Success:  # transfer done
                 if not isinstance(req.finished_reason, FINISH_ABORT):
                     req.finished_reason = FINISH_LENGTH(length=0)
-                release_kv_cache(req, self.tree_cache)  # unlock the tree
+                deferred = (
+                    self.mempool_service is not None
+                    and self.mempool_service.defer_release(req, handoff=True)
+                )
+                if not deferred:
+                    release_kv_cache(req, self.tree_cache)  # unlock the tree
                 self.tree_cache.finish(
                     req.cache_request_handle, CacheRequestOutcome.SUCCESS
                 )
                 # FIXME: clean up req's data in transfer engine
-                req.disagg_kv_sender.clear()
+                if not deferred:
+                    req.disagg_kv_sender.clear()
                 done_reqs.append(req)
                 req.time_stats.set_prefill_kv_transfer_finish_time()
             elif poll == KVPoll.Failed:
@@ -1064,9 +1079,10 @@ class SchedulerDisaggregationPrefillMixin:
         for req in done_reqs:
             req: Req
 
-            maybe_release_metadata_buffer(
-                req, self.req_to_metadata_buffer_idx_allocator
-            )
+            if self.mempool_service is None or self.mempool_service.is_fake(req):
+                maybe_release_metadata_buffer(
+                    req, self.req_to_metadata_buffer_idx_allocator
+                )
 
         self.disagg_prefill_inflight_queue = undone_reqs
 
@@ -1092,7 +1108,8 @@ class SchedulerDisaggregationPrefillMixin:
         else:
             logger.warning(error_message)
         req.time_stats.trace_ctx.abort(abort_info={"reason": error_message})
-        release_kv_cache(req, self.tree_cache)  # unlock the tree
+        if self.mempool_service is None or not self.mempool_service.native_failure(req):
+            release_kv_cache(req, self.tree_cache)  # unlock the tree
         self._release_aborted_request(req)
         if not isinstance(req.finished_reason, FINISH_ABORT):
             prepare_abort(
@@ -1132,10 +1149,17 @@ class SchedulerDisaggregationPrefillMixin:
 
         if req.to_finish is not None and not req.finished():
             req.update_finish_state()
-        maybe_release_metadata_buffer(req, self.req_to_metadata_buffer_idx_allocator)
+        deferred = (
+            self.mempool_service is not None
+            and self.mempool_service.native_failure(req)
+        )
+        if not deferred:
+            maybe_release_metadata_buffer(
+                req, self.req_to_metadata_buffer_idx_allocator
+            )
         req.pending_bootstrap = False
         self.tree_cache.finish(req.cache_request_handle, CacheRequestOutcome.ABORT)
-        if req.kv.holds_kv or req.kv.holds_mamba:
+        if not deferred and (req.kv.holds_kv or req.kv.holds_mamba):
             release_kv_cache(req, self.tree_cache, is_insert=False)
         return True
 
@@ -1157,9 +1181,16 @@ class SchedulerDisaggregationPrefillMixin:
         else:
             logger.warning(error_message)
         req.time_stats.trace_ctx.abort(abort_info={"reason": error_message})
-        if req.kv.holds_kv or req.kv.holds_mamba:
-            release_kv_cache(req, self.tree_cache)
-        maybe_release_metadata_buffer(req, self.req_to_metadata_buffer_idx_allocator)
+        deferred = (
+            self.mempool_service is not None
+            and self.mempool_service.native_failure(req)
+        )
+        if not deferred:
+            if req.kv.holds_kv or req.kv.holds_mamba:
+                release_kv_cache(req, self.tree_cache)
+            maybe_release_metadata_buffer(
+                req, self.req_to_metadata_buffer_idx_allocator
+            )
         req.pending_bootstrap = False
         prepare_abort(req, error_message, status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
         self.output_streamer.stream_output([req], req.return_logprob)

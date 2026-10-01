@@ -248,6 +248,23 @@ class MempoolKVManager:
             raise ValueError("mapping probe size differs from the reserved range")
         self._copy_tensor_to_gva(marker, gva)
 
+    def verify_local_probe(self, expected: bytes, device: str) -> None:
+        """Read the actual BM marker to prove the ZMQ peer is this pool's peer."""
+        import torch
+
+        if len(expected) != self.layout.probe_bytes:
+            raise ValueError("pool identity probe must occupy exactly 64 bytes")
+        marker = torch.empty(len(expected), dtype=torch.uint8, device=device)
+        gva = self.bases(self.rank)[0] + self.layout.probe_offset(self.rank)
+        ret = self._handle.copy_data(
+            gva, marker.data_ptr(), len(expected), self._bm.BmCopyType.G2L, 0
+        )
+        if ret != 0:
+            raise RuntimeError(f"BM identity probe read failed: {ret}")
+        torch.npu.synchronize()
+        if bytes(marker.cpu().tolist()) != expected:
+            raise RuntimeError("BM peer marker differs from the ZMQ peer session")
+
     def _copy_tensor_to_gva(self, values: Any, gva: int) -> None:
         """Synchronously write setup data; runtime graph writes use UniDexCopy."""
         import torch

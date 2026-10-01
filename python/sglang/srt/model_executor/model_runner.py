@@ -1053,6 +1053,12 @@ class ModelRunner:
         self.attn_backend = backends.attn_backend
         self.decode_attn_backend = backends.decode_attn_backend
         self.decode_attn_backend_group = backends.decode_attn_backend_group
+        if envs.SGLANG_NPU_ENABLE_MEMPOOL.get():
+            from sglang.srt.hardware_backend.npu.mempool.runtime import (
+                initialize_for_model_runner,
+            )
+
+            initialize_for_model_runner(self)
         self.kv_index_translator.bind_and_verify_backends(
             [self.attn_backend, self.decode_attn_backend]
         )
@@ -1934,9 +1940,20 @@ class ModelRunner:
                 can_run_graph = True
             else:
                 # Eager: decode / extend / idle dispatched inside the runner.
-                ret = self.eager_runner.execute(
-                    forward_batch, pp_proxy_tensors=pp_proxy_tensors
-                )
+                scope = contextlib.nullcontext()
+                if (
+                    envs.SGLANG_NPU_ENABLE_MEMPOOL.get()
+                    and not forward_batch.forward_mode.is_idle()
+                ):
+                    from sglang.srt.hardware_backend.npu.mempool.runtime import (
+                        model_forward_scope,
+                    )
+
+                    scope = model_forward_scope(self.attn_backend)
+                with scope:
+                    ret = self.eager_runner.execute(
+                        forward_batch, pp_proxy_tensors=pp_proxy_tensors
+                    )
 
             if (
                 forward_batch.global_num_tokens_cpu is not None

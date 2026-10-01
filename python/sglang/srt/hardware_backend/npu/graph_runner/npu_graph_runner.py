@@ -44,6 +44,7 @@ from sglang.srt.distributed.parallel_state import (
     GroupCoordinator,
 )
 from sglang.srt.environ import envs
+from sglang.srt.hardware_backend.npu.mempool.runtime import model_forward_scope
 from sglang.srt.model_executor.runner import DecodeCudaGraphRunner
 from sglang.srt.model_executor.runner.decode_cuda_graph_runner import (
     build_replay_fb_view,
@@ -240,6 +241,16 @@ class NPUGraphRunner(DecodeCudaGraphRunner):
         forward_batch: ForwardBatch,
         pp_proxy_tensors: Optional[PPProxyTensors] = None,
     ) -> Union[LogitsProcessorOutput, PPProxyTensors]:
+        """Count one real replay outside the captured Python layer hooks."""
+        with model_forward_scope(self.model_runner.attn_backend, replay=True):
+            return self._execute(forward_batch, pp_proxy_tensors)
+
+    def _execute(
+        self,
+        forward_batch: ForwardBatch,
+        pp_proxy_tensors: Optional[PPProxyTensors] = None,
+    ) -> Union[LogitsProcessorOutput, PPProxyTensors]:
+        """Load static graph inputs, submit the replay and expose live outputs."""
         if forward_batch.needs_forward_metadata_init():
             self.load_batch(forward_batch, pp_proxy_tensors)
         else:
