@@ -326,6 +326,44 @@ NPU 上由用户启动全部 16 对 rank，验证启动兼容性检查、正常 
 
 ## Comments
 
+### 2026-10-02：CPU亲和性关闭仍卡住，准备小容量服务对照并记录NUMA需求
+
+用户确认D侧`SGLANG_SET_CPU_AFFINITY=0`仍卡住，计划恢复1；这说明关闭开关不足以
+解除阻塞，尚不能排除CPU位置对原hostSHM分布的影响。独立BM测试再次由用户确认顺利
+结束，NUMA采样从运行中途开始、正常结束后停止；不能把首个采样当作分配前基线。
+该时间段的大额分配主要消耗node0/2/4/6，具体驱动节点选择机制未证实。
+
+最新服务快照总Shmem约191.08GiB，独立测试中途约4.50GiB；差值186.57GiB与此前
+日志中原hostSHM `12519816192 bytes/rank * 16 = 186.56GiB`接近。最新node6的
+Shmem约63.52GiB、MemFree约15.06GiB，node4分别约0.94/115.05GiB。各轮总Shmem
+接近但落点变化，尚不足以证明某节点耗尽或页碎片是根因。
+宿主机CPU范围依次为node0=0–79至node7=560–639，结合旧绑核日志可知每个TP的
+CPU集合跨两个NUMA节点；本轮已关闭亲和性，不能直接套用旧CPU掩码。
+
+按用户计划，将外部启动样例的P/D两段均改为context=1024、S_P=S_D=512，亲和性=1。
+日志改存`/tmp/mempool-02-service-small`以保留旧服务目录，样例的请求/检查命令同步更新。
+按原78层/17行/context+4/576维BF16布局估算，D原hostSHM变为23.40GiB/机；
+BM按现有PoolLayout计算为1GiB/rank、16GiB/机（旧配置6GiB/rank、96GiB/机）。
+小容量先用于验证完整服务机制；同时缩小两类存储不能单独证明hostSHM因果关系。
+若通过，再保持context=1024、仅恢复S_P/S_D=4096，比较context相关内存压力和BM容量。
+context也会影响其他缓冲，仍需根据CONFIG、分配阶段和NUMA数据解释结果。
+
+用户要求后续重视mempool NUMA配置，即使原hostSHM退役后也要保留这一需求：
+
+- [ ] 设计BM本地DRAM的显式NUMA选择，支持各机器/TP按拓扑配置，并记录实际策略。
+- [ ] 核实部署版本的Python BM flags、C API及驱动语义；本地MF源码已有
+  `SMEM_BM_BIND_NUMA_FLAG_*`和performance flag，以及传入指定NUMA的HAL分支，
+  但当前SGLang manager尚未暴露此配置，远端MF 1.1.4二进制的行为尚未验收。
+- [ ] 在NPU上核对实际分配落点、内存压力下的失败/回退行为和跨NUMA访问性能；
+  CPU绑核不能代替BM内存分配策略。
+
+HostSHM退役时仍须保留/迁移sparse manager承担的HBM sparse cache和top-k读取能力，
+本轮继续验证shadow路径。小容量启动、Graph、真实请求和完整生命周期等待用户实测；
+ticket保持open，不将缩小配置记录为根因修复。
+
+Mac实际检查：启动脚本`bash -n`通过，两个仓库`git diff --check`通过；直接调用现有
+KVLayout/PoolLayout核算上述三组容量，BM贡献分别为6/1/6GiB每rank。没有执行NPU服务。
+
 ### 2026-10-01：独立16pair全部通过，复核服务BM建立流程并增加诊断
 
 用户回传两侧run_bm_startup_gate.sh完整runner输出，device0–15各自均PASSED，

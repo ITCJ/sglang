@@ -143,8 +143,8 @@ runner为每次调用新建`REPORT_DIR/run.XXXXXX`，打印完整路径，保存
 
 ## 真实服务BM启动重测：增加诊断输出
 
-更新两端相同版本的SGLang后，在原Docker中保留此前卡住那轮的模型、容量、context和
-CPU绑定参数。独立BM gate已通过，这轮直接重跑原P/D服务，增加以下环境变量即可：
+更新两端相同版本的SGLang后，在原Docker中重跑P/D服务。复现此前卡住条件时，保留
+该轮模型、容量、context和CPU绑定参数；小容量对照见下节。开启以下诊断变量：
 
 ```bash
 export SGLANG_NPU_MEMPOOL_DIAGNOSTICS=1
@@ -153,8 +153,9 @@ export PYTHONUNBUFFERED=1
 
 然后分别运行原P/D启动脚本，例如在已有`ascend-sglang-script`目录内执行
 `bash pd-disaggregation/glm51mempool.sh`（沿用各机已经设置好的`LOCAL_HOST1`等配置）。
+当前脚本默认采用下节的1024/512/512小容量配置；复现旧条件需恢复对应长度。
 先P后D，P开始等待BM时就启动D，无需等P服务ready。该脚本已有`tee`保存
-`/tmp/mempool-02-service/p.log`或`d.log`；重跑前保留旧日志。此次诊断不要求先启动router
+`/tmp/mempool-02-service-small/p.log`或`d.log`；重跑前保留旧日志。此次诊断不要求先启动router
 或发送请求。首先核对`CONFIG`/`bm.create2`中的实际字节数；若与旧记录11811160064不同，
 说明容量条件也变了，应随结果注明。
 
@@ -162,9 +163,9 @@ export PYTHONUNBUFFERED=1
 
 ```bash
 # P
-tail -F /tmp/mempool-02-service/p.log
+tail -F /tmp/mempool-02-service-small/p.log
 # D
-tail -F /tmp/mempool-02-service/d.log
+tail -F /tmp/mempool-02-service-small/d.log
 ```
 
 每条`[MEMPOOL_INIT]`包含步骤以及PID；`END`给出耗时，超过15秒未返回会持续`WAIT`。
@@ -180,11 +181,40 @@ tail -F /tmp/mempool-02-service/d.log
 
 ```bash
 rg 'MEMPOOL_INIT|Mempool BM|Try HalMemCreate|AllocReserve|alloc mem success|export vmm|import rank|Mmap|Traceback' \
-  /tmp/mempool-02-service/d.log
+  /tmp/mempool-02-service-small/d.log
 ```
 
 完成诊断后移除`SGLANG_NPU_MEMPOOL_DIAGNOSTICS`即可在下一次启动关闭后台采样和主动
 设置MF INFO；基本阶段日志保留。诊断仅增强可观测性，尚未认定或修复服务卡住的根因。
+
+### 小容量服务对照（2026-10-02）
+
+用户确认关闭D侧CPU亲和性后仍卡住，下一轮恢复`SGLANG_SET_CPU_AFFINITY=1`。
+两侧`glm51mempool.sh`使用以下参数，TP16、16 slots和D Graph BS16沿用原配置：
+
+```bash
+--context-length 1024 \
+--mempool-prefill-capacity 512 \
+--mempool-decode-capacity 512
+```
+
+按此前GLM-5.1日志的78层、576维BF16、D原hostSHM 17行及context额外4列计算：
+
+| 对照 | context | S_P / S_D | D原hostSHM，16 ranks | BM本地贡献，每机16 ranks |
+| --- | ---: | ---: | ---: | ---: |
+| 旧服务配置 | 8192 | 4096 / 4096 | 186.56 GiB | 96 GiB |
+| 本轮小容量 | 1024 | 512 / 512 | 23.40 GiB | 16 GiB |
+| 后续只放大BM | 1024 | 4096 / 4096 | 23.40 GiB | 96 GiB |
+
+BM包含64字节probe并按1GiB对齐；实际大小以两侧`[MEMPOOL_INIT] CONFIG`为准。
+小容量同时改变hostSHM、BM及部分context相关缓冲，单轮通过不能独立归因为hostSHM。
+先确认两侧全部16 ranks的BM/runtime就绪、D Graph capture完成及服务ready，再使用
+下文的短prompt/32输出token请求和日志检查验证shadow生命周期。
+若通过，再保持context=1024，仅恢复两侧S_P/S_D=4096，使用新的`LOG_DIR`重复运行。
+该对照进一步区分context相关内存压力和BM容量影响；仍不能宣称只改变了hostSHM。
+
+从服务启动前开始采集NUMA状态，保留本轮P/D完整日志、实际参数与`CONFIG`字节数。
+若仍卡住，记录具体`WAIT stage`和内核栈，不将不同阶段的等待合并为同一个故障。
 
 ## 02 Ascend 控制协议检查
 
