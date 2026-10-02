@@ -132,10 +132,16 @@ gate 同时要求：
 - 后两个请求逐层检查次数等于 `78 × forwards`，写入和比较 forward 数一致，
   有真实 readback replay，top-k 宽度始终为 2048；每层都有有效 KV，且每 rank 都有
   P、D、prompt 尾行和 D position 0 的比较证据。
-- 每个 rank 至少两个不同 decode attempts 实际复用了同一组 row、P slot 和 D slot；
-  报告的 `reuse` 列出对应 room/attempt 和物理位置。
+- 每个 rank 至少两个不同 decode attempts 实际复用了同一组 P slot 和 D slot；
+  报告的 `reuse` 列出对应 room/attempt、物理位置及两次的 `rows`。
+  D 的 request row 按 FIFO 分配，释放后放回队尾，因此 row 从 2 换到 3 等正常轮换
+  不影响物理 slot 复用。`row_reused=false` 只表示这两个请求未复用 request row。
 
-HTTP 完成不代表 DONE/ACK 已完成。如果提示 `no actual row/P/D slot reuse`，
+旧版检查器把 row 和 P/D slot 绑成一组，可能误报 `no actual row/P/D slot reuse`。
+更新检查脚本后，先对现有完整日志重新执行上面的 `check-logs`，无需重启服务或重新
+发送请求。只有物理 P/D slot 确实复用才会通过，不会跳过数值、Graph 或释放检查。
+
+HTTP 完成不代表 DONE/ACK 已完成。如果新版提示 `no actual P/D slot reuse`，
 等全部 `RELEASE_ACK` 后再次发送这三个请求，requests JSON 换一个输出文件名，
 保留同轮完整日志再执行 `check-logs`；不能仅凭串行请求推断已验证复用。
 
@@ -164,7 +170,8 @@ position、feature、P/D slot。发现差异后停止本轮，不继续用该进
 第一个 token，D 有 31 次 forward，因此 `written_kv=forwards=31`、
 `layer_checks=78×31=2418`。检查器还要求 `replay_forwards>0`、
 `prompt_kv/decode_kv/prompt_boundary_kv/decode_first_kv>0`、
-`min_topk=max_topk=2048`。`row/prompt_slot/decode_slot` 用于核对下一请求真实复用。
+`min_topk=max_topk=2048`。`prompt_slot/decode_slot` 用于核对下一请求真实存储复用；
+`row` 是独立的请求表位置，不能用其变化判断 mempool slot 是否复用。
 比较失败会抛出异常并记录 `mempool KV readback failed`，不会用成功汇总掩盖差异。
 
 快速看关键行（D 机器，或已汇集两侧日志的机器；只筛选显示，不改原日志）：
@@ -187,7 +194,8 @@ CPU 校验结果。后续 replay 复用 scratch 不会覆盖尚未消费的快�
 短 context 下，2048 是选择宽度，许多列是 padding；通过不等于验证 2048 个有效 token，
 也不等于完成 8192/16384 容量测试或 AIME 精度验收。P/D 不同 slot、zero-valid source
 和 row reuse 有 CPU 回归及此前独立 gate 支撑；本轮真实服务会记录实际 slot，不强行
-改变分配器制造不同 slot。
+改变分配器制造不同 slot。三请求 gate 要求物理 P/D slot 复用；若 `row_reused=false`，
+这轮不能作为真实服务 request row 复用的硬件证据。
 
 请回传两侧代码版本、完整 P/D 日志、requests JSON 和 result JSON。
 本地 CPU 检查无法替代远端 BM/真实模型/NPU Graph 的证据；ticket 02 在本轮用户 NPU

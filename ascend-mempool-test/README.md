@@ -578,7 +578,8 @@ python3 ascend-mempool-test/scripts/verify_shadow_service.py check-logs \
 
 每个选项也可以传入该侧16个worker的独立日志。此gate假定设备ID为0–15，与现有样例一致。
 通过输出为 `SHADOW_READBACK_PASSED`，JSON status为 `shadow_readback_passed`。
-报告包含全rank的逐请求数值对照和不同attempt实际复用同一组row/P/D slot的证据。
+报告包含全rank的逐请求数值对照和不同attempt实际复用同一组P/D物理slot的证据。
+request row独立记录在`rows`与`row_reused`中；D按FIFO轮换row不导致物理slot复用检查失败。
 若尚未复用，等全部ACK后再次发送请求并保留同轮日志，详见[读回验收说明](READBACK_SERVICE.md)。
 省略 `--require-readback` 时，仍可执行旧的
 生命周期检查，结果为 `SHADOW_LIFECYCLE_PASSED (no KV readback)`，不能用于本轮数值验收。

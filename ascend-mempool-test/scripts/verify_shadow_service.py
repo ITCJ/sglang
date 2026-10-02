@@ -275,36 +275,41 @@ def check_readback(
 def check_readback_reuse(
     reports: dict[tuple[int, int], dict[str, Any]], rooms: list[int]
 ) -> list[dict[str, Any]]:
-    """Require actual row and P/D slot reuse across distinct completed attempts."""
+    """Require physical P/D slot reuse; transient request rows may rotate."""
     evidence: list[dict[str, Any]] = []
-    names = ("row", "prompt_slot", "decode_slot")
+    slots = ("prompt_slot", "decode_slot")
     for rank in range(16):
-        seen: dict[tuple[int, ...], tuple[int, str]] = {}
+        seen: dict[tuple[int, ...], tuple[int, str, int]] = {}
         reused = None
         for room in rooms:
             entry = reports[rank, room]
             data = entry["data"]
-            for name in names:
+            # A request-pool row is not a BM slot; decode preallocation can
+            # provide more rows than the fixed physical slot count.
+            for name in ("row", *slots):
                 value = data.get(name)
-                lower = 1 if name == "row" else 0
-                upper = 16 if name == "row" else 15
-                if type(value) is not int or not lower <= value <= upper:
+                valid = type(value) is int and (
+                    value > 0 if name == "row" else 0 <= value < 16
+                )
+                if not valid:
                     raise RuntimeError(
                         f"readback rank={rank} room={room}: invalid attachment {name}={value}"
                     )
-            attachment = tuple(data[name] for name in names)
+            attachment = tuple(data[name] for name in slots)
             previous = seen.get(attachment)
             if previous is not None and previous[1] != entry["attempt"]:
                 reused = {
                     "rank": rank,
                     "rooms": [previous[0], room],
                     "attempts": [previous[1], entry["attempt"]],
-                    **dict(zip(names, attachment)),
+                    "rows": [previous[2], data["row"]],
+                    "row_reused": previous[2] == data["row"],
+                    **dict(zip(slots, attachment)),
                 }
-            seen[attachment] = (room, entry["attempt"])
+            seen[attachment] = (room, entry["attempt"], data["row"])
         if reused is None:
             raise RuntimeError(
-                f"readback rank={rank}: no actual row/P/D slot reuse across decode attempts; "
+                f"readback rank={rank}: no actual P/D slot reuse across decode attempts; "
                 "wait for all RELEASE_ACKs, send the requests again, and retain this run's logs"
             )
         evidence.append(reused)

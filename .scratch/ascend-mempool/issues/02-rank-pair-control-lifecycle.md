@@ -14,8 +14,9 @@
 
 ## 当前执行入口（2026-10-02：继续demo，NUMA排查独立跟进）
 
-小容量真实服务已有单请求、全部16ranks Graph replay及正常释放的用户反馈。
-接下来完成本票的**真实top-k KV读回比对**，并将已交付的三请求生命周期检查一并补齐。
+小容量真实服务的真实top-k KV读回已实现；用户反馈三请求HTTP成功，日志检查通过
+全rank数值、Graph及正常释放的前置条件，最后因检查器把request row与物理slot绑定而失败。
+接下来用修正后的离线检查器重查现有日志，确认物理P/D slot复用，见最新Comments。
 NUMA分配失败、大容量长尾和SDK失败清理的全部证据已汇总到
 [09: NUMA分配跟进](09-numa-allocation-followup.md)；用户决定延期排查，09不阻塞本票
 及03–08。以下历史Comments中的“下一轮NUMA实验”不再是当前执行要求。
@@ -51,17 +52,16 @@ NUMA分配失败、大容量长尾和SDK失败清理的全部证据已汇总到
 | 已有部分 | 已取得的证据 | 当前边界 |
 | --- | --- | --- |
 | ① storage | layout、BM manager/view、writer、rank-pair startup helper 已提交；④已接入 | 小容量16对真实服务已有成功反馈；大容量/NUMA问题独立记入09，延期跟进 |
-| ② control | 单pair状态机、TP tick与真实请求接线已提交 | 10月2日单个真实请求在全部16 ranks完成正常闭环；零decode/连续请求复用仍待验证 |
-| ③ runtime/writer | 接口优化 `cfcafb4810`；83项CPU测试通过；双机writer gate两端各20条PASS；真实D服务全部16 ranks有Graph replay | 真实服务KV内容尚无readback证据 |
-| ④ service integration | 已提交；用户反馈小容量启动及单请求成功；本轮实现真实 selected KV readback，Mac 146项CPU测试、23文件strict mypy通过 | 读回与三请求完整日志的NPU验收待执行 |
+| ② control | 单pair状态机、TP tick与真实请求接线已提交；用户三请求日志检查走过全rank正常闭环与最终free=16检查 | 物理P/D slot复用待修正检查器重检确认 |
+| ③ runtime/writer | 接口优化 `cfcafb4810`；双机writer gate两端各20条PASS；用户日志检查走过全rank真实readback与Graph条件 | 尚未收到完整日志和通过的result JSON |
+| ④ service integration | 真实 selected KV readback实现已提交；Mac 146项CPU测试、23文件strict mypy通过；用户三请求HTTP成功 | 离线检查器误将request row轮换判为物理slot未复用，修正后待重检 |
 
 保留 shadow 范围：P 原生 HBM cache、原 main-KV transfer、D staging/hostSHM、
 Index K/其他 metadata 传输和 attention 消费路径继续工作；P/D 额外写入 mempool。
 先验收无服务内 readback 的真实运行，再加入独立 top-k readback 完成本票。
 原 main-KV transfer/hostSHM 的移除属于后续 cutover，不能在本票提前关闭。
 
-无readback单请求真实运行已有用户反馈；本轮以此继续readback实现，三请求完整日志
-检查随下一轮功能验收补齐，不再等待NUMA/大容量实验完成。
+本轮继续完成readback三请求日志验收，不再等待NUMA/大容量实验完成。
 
 ## 第一部分：part1–part3 已有代码的复核优化
 
@@ -355,6 +355,41 @@ NPU 上由用户启动全部 16 对 rank，验证启动兼容性检查、正常 
 故障注入的系统验证归06，active cancel/peer fault 完整矩阵归07。
 
 ## Comments
+
+### 2026-10-02：三请求通过，修正读回复用检查对request row的错误约束
+
+用户在P机反馈 `verify_shadow_service.py requests --decode-tokens 32 --timeout 900`
+三项均成功，completion_tokens分别为1、32、32；请求报告位于
+`/tmp/mempool-02-readback-small/requests.json`。随后以 `/home/cryang/p.log`、
+`/home/cryang/d.log` 执行 `check-logs --requests 3 --require-readback --readback-layers 78`
+在 `check_readback_reuse` 报 `rank=0: no actual row/P/D slot reuse`。
+
+按检查器执行顺序，此异常说明前面的全16rank mapping、Graph capture/replay、逐请求
+生命周期和最终free=16、零decode与真实逐层KV数值/来源/分界覆盖检查均已走过。
+这是依据用户提供的控制台栈得出的部分验收证据；未读取远端完整日志或JSON，不能据此
+宣布物理slot复用已验证，用户尚未反馈本轮代码版本与生成文本检查结果。
+
+根因：离线检查器错误地要求不同attempt同时复用 `(row, prompt_slot, decode_slot)`。
+实际D使用 `DecodeReqToTokenPool`：从空闲列表头取row，释放时追加到队尾，因此即使
+P/D物理slot已复用，request row仍会正常轮换。`CONTEXT.md`定义request row与物理slot
+独立。检查器还错误地用BM的16slot上限约束row；D预分配的请求表可大于16行。
+
+修正仅影响离线验收：各rank仍须有不同decode attempts实际复用同一P/D物理slot组合；
+row保留正整数校验，报告独立输出 `rows` 和 `row_reused`。不改变服务分配策略。
+若 `row_reused=false`，本轮不声明取得真实服务row复用的硬件证据；全feature的独立
+request-row复用覆盖要求仍保留。数值、Graph、ACK及物理slot复用要求均继续检查。
+
+Mac先添加FIFO row轮换、P/D存储复用的完整日志回归，复现用户同一异常（红），修复后
+6项日志检查测试通过（绿）。覆盖row 2→3和16→17，并保留物理slot不复用、非法位置
+及相同attempt的拒绝。完整CPU suite 147项通过，修改的检查器strict mypy通过，
+两份Python文件Ruff、format、isort通过；启动脚本 `bash -n` 与两仓库
+`git diff --check` 通过。本机未安装pre-commit，未运行仓库全量hooks。
+规范与spec两条独立复核均无finding。启动脚本的验收注释同步为
+`ascend-sglang-script/main` 提交 `5e35b2f`。
+
+更新检查脚本后，对原日志重新运行原 `check-logs` 命令即可，无需重启NPU服务或重发
+请求。若新版仍报 `no actual P/D slot reuse`，才按读回说明在全部ACK后补请求。
+**等待用户重检NPU日志并确认验收**；本票保持open，不推进03。
 
 ### 2026-10-02：同步glm51mempool启动脚本并精简诊断输出
 

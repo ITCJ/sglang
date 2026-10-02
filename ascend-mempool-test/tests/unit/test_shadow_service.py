@@ -168,15 +168,15 @@ class TestShadowLogGate(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "failure"):
             gate.check_logs([self.p], [self.d], 3, require_readback=True)
 
-    def test_readback_gate_requires_actual_attachment_reuse(self):
+    def test_readback_gate_requires_actual_physical_slot_reuse(self):
         """Two HTTP completions do not prove that the next attempt reused storage."""
         self.add_readback()
         text = self.d.read_text()
         for field, value in (
-            ("row", 15),
             ("prompt_slot", 5),
             ("decode_slot", 6),
             ("row", None),
+            ("row", 0),
             ("decode_slot", -1),
             ("prompt_slot", 16),
             ("attempt", "test-43"),
@@ -205,6 +205,30 @@ class TestShadowLogGate(unittest.TestCase):
         evidence = result["readback"]["reuse"]
         self.assertEqual(len(evidence), 16)
         self.assertEqual(evidence[15]["rooms"], [43, 44])
-        self.assertEqual(evidence[15]["row"], 16)
+        self.assertEqual(evidence[15]["rows"], [16, 16])
+        self.assertTrue(evidence[15]["row_reused"])
         self.assertEqual(evidence[15]["prompt_slot"], 2)
         self.assertEqual(evidence[15]["decode_slot"], 3)
+
+    def test_physical_slot_reuse_with_rotating_request_rows(self):
+        """Decode FIFO rows can change while the same P/D storage is reused."""
+        self.add_readback()
+        text = self.d.read_text()
+        for rows in ([2, 3], [16, 17]):
+            with self.subTest(rows=rows):
+                lines = []
+                for line in text.splitlines():
+                    if "readback_result" in line and "room=43 " in line:
+                        line = line.replace('"row": 16', f'"row": {rows[0]}')
+                    elif "readback_result" in line and "room=44 " in line:
+                        line = line.replace('"row": 16', f'"row": {rows[1]}')
+                    lines.append(line)
+                self.d.write_text("\n".join(lines))
+                result = gate.check_logs([self.p], [self.d], 3, require_readback=True)
+                self.assertEqual(result["status"], "shadow_readback_passed")
+                for rank, evidence in enumerate(result["readback"]["reuse"]):
+                    self.assertEqual(evidence["rank"], rank)
+                    self.assertEqual(evidence["rows"], rows)
+                    self.assertFalse(evidence["row_reused"])
+                    self.assertEqual(evidence["prompt_slot"], 2)
+                    self.assertEqual(evidence["decode_slot"], 3)
