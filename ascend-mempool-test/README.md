@@ -87,6 +87,11 @@ handle lifetime。它们不执行 BM 或 NPU kernel，不证明远端读和 Grap
 
 ## BM多卡启动诊断
 
+当前偶数NUMA规避验证用 `run_bm_startup_gate.sh --even-numa`：两侧固定device0–15，
+每池1GiB，NUMA0/2/4/6各4池，并自动核对HAL成功分配、peer probe与进程退出码。
+完整逐机命令与成功判据见[偶数NUMA测试](BM_NUMA_DIAGNOSTIC.md)。下文不带该选项的
+原诊断模式保留11GiB/rank容量。
+
 用于区分单pair正常、模型服务中的16pair创建很慢这一现象。2026-10-01用户反馈
 device0单pair的1GiB和11GiB writer gate均通过；11GiB的HalMemCreate耗时P约1.17秒、
 D约2.01秒。下一步只验证多卡同时持有BM池，避免重复大量KV读写和Graph检查。
@@ -197,7 +202,10 @@ export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT=8
 bash pd-disaggregation/glm51mempool.sh
 ```
 
-服务按真实`tp_rank % 8`分配本地BM DRAM：TP0/8→NUMA0，TP1/9→NUMA1，依此类推。
+2026-10-02临时规避：服务只在本机偶数节点间轮转，`N=8`时使用
+`numa_node = 2 * (tp_rank % 4)`，因此TP0/4/8/12→NUMA0，TP1/5/9/13→NUMA2，
+TP2/6/10/14→NUMA4，TP3/7/11/15→NUMA6。`N`仍为全部本地节点数，8节点机器
+继续填8。一般规则为`2 * (tp_rank % ((N + 1) // 2))`，节点ID始终小于N。
 P/D可以使用不同节点数。未设置变量时保持`flags=0`的默认策略；回到默认模式用
 `unset SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT`。空值、0、负数、非整数、超过127
 均报错，不会静默改用默认模式。配置生效需重启进程，已存在的pool不会迁移。
@@ -207,7 +215,7 @@ P/D可以使用不同节点数。未设置变量时保持`flags=0`的默认策�
 真实服务仍可保留下一节的1GiB/rank小容量，先检查NUMA选择再扩大容量。
 
 核对每个rank的`Creating mempool BM pool`或`BEGIN stage=bm.create2`日志：
-`local_numa_node_count=8`，`numa_node=tp_rank % 8`，`bm_flags=128+numa_node`。
+`local_numa_node_count=8`，`numa_node=2*(tp_rank % 4)`，`bm_flags=128+numa_node`。
 这些字段记录请求的策略；开启上述启动诊断后，还应核对MF的`Try HalMemCreate`节点、
 返回值和分配前后NUMA内存快照。P/D全部rank须完成BM/runtime ready，独立gate须两侧
 全部PASSED；参数不匹配、HAL错误或持续卡住均不算通过。回传两侧完整日志、实际节点数、

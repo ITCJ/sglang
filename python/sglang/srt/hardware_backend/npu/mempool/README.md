@@ -75,10 +75,22 @@ P端缺少rank1映射时应结合D日志判断：D未返回`create2()`时，该�
 export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT=8
 ```
 
-设置为 `N` 后，每个 worker 的 BM 本地 DRAM 使用 `numa_node = tp_rank % N`，
-传给 `bm.create2()` 的 `flags = 0x80 | numa_node`。例如 `N=8` 时，
-TP0/8使用NUMA0，TP1/9使用NUMA1，依此类推。节点编号须为本机可用的连续 `0..N-1`；
-这是显式分配请求，实际物理落点仍需通过 MF 日志和各节点内存增量核对。
+2026-10-02 临时规避：显式绑定时跳过奇数 NUMA 节点，以避开当前机器上的
+`HalMemCreate ret:6`。`N` 仍表示本机全部连续节点 `0..N-1` 的数量；worker在其中的
+偶数节点间轮转，即 `numa_node = 2 * (tp_rank % ((N + 1) // 2))`，
+传给 `bm.create2()` 的 `flags = 0x80 | numa_node`。`N=8` 时：
+
+| TP ranks | 请求 NUMA 节点 | BM flags |
+| --- | --- | --- |
+| 0、4、8、12 | 0 | 128 |
+| 1、5、9、13 | 2 | 130 |
+| 2、6、10、14 | 4 | 132 |
+| 3、7、11、15 | 6 | 134 |
+
+8节点机器继续设置`N=8`；设为4只会选择0/2。此规避改变了原先`tp_rank % N`的
+绑定规则，不代表SDK的奇数节点分配或失败清理问题已修复。实际物理落点仍需通过
+MF日志和各节点内存增量核对。双机16池测试见
+[偶数 NUMA 测试说明](../../../../../../ascend-mempool-test/BM_NUMA_DIAGNOSTIC.md)。
 
 未设置变量时传 `flags=0`，沿用驱动默认策略。显式空值、非整数、0、负数及超过127
 会在BM分配前报错；127是节点数上限，因为节点ID127被MF保留为自动亲和模式。

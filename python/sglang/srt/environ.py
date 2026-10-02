@@ -962,7 +962,8 @@ class Envs:
     SGLANG_NPU_MOE_SITU_MXFP8_FUSED = EnvBool(True)
     SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD = EnvBool(False)
     SGLANG_NPU_ENABLE_MEMPOOL = EnvBool(False)
-    # Unset: default BM allocation. Set N: bind local DRAM to tp_rank % N.
+    # Unset: default BM allocation. Set N: cycle TP ranks over even IDs below N
+    # as a temporary workaround for HAL allocation failures on odd NUMA nodes.
     SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT = EnvInt(None)
     # Startup-only MF INFO, procfs snapshots and 15s wait diagnostics (0/1).
     SGLANG_NPU_MEMPOOL_DIAGNOSTICS = EnvBool(False)

@@ -84,7 +84,7 @@ class MempoolKVManager:
         *,
         tp_rank: int | None = None,
     ) -> MempoolKVManager:
-        """Allocate local DRAM, optionally binding it by TP rank and NUMA count."""
+        """Allocate local DRAM, optionally cycling TP ranks over even NUMA nodes."""
         layout.layout_for_rank(rank)
         numa_env = "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT"
         # Invalid explicit bindings must fail rather than use an env parser fallback.
@@ -101,7 +101,10 @@ class MempoolKVManager:
                 raise ValueError(f"{numa_env} must be an integer in [1, 127]")
             if type(tp_rank) is not int or tp_rank < 0:
                 raise ValueError(f"{numa_env} requires a nonnegative integer tp_rank")
-            numa_node = tp_rank % numa_count
+            # Temporary workaround for HalMemCreate failures on odd NUMA IDs.
+            # N still counts all local nodes; choose only even IDs below N.
+            even_node_count = (numa_count + 1) // 2
+            numa_node = 2 * (tp_rank % even_node_count)
         # MF's performance bit enables the NUMA ID in the low seven bits.
         bm_flags = 0 if numa_node == -1 else (1 << 7) | numa_node
         if bm_module is None:

@@ -326,6 +326,115 @@ NPU 上由用户启动全部 16 对 rank，验证启动兼容性检查、正常 
 
 ## Comments
 
+### 2026-10-02：临时跳过奇数NUMA，并交付P/D各16池的小容量测试
+
+用户要求先避免奇数NUMA节点，再做P/D各16个mempool平均分布于偶数节点的测试。
+显式COUNT配置现改为`2 * (tp_rank % ((N + 1) // 2))`；N仍为全部本地节点数。
+N=8时TP0/4/8/12→0，TP1/5/9/13→2，TP2/6/10/14→4，TP3/7/11/15→6，
+P/D按相同规则独立选择。未配置仍为flags=0。此临时策略取代早先`tp_rank % N`的
+显式绑定行为，用于规避已观察到的奇数节点HAL6，不宣称修复驱动或SDK失败清理。
+
+扩展已有`run_bm_startup_gate.sh --even-numa`，复用原create/join、peer probe、
+本机ready barrier及双侧drain/close。该模式固定device0–15、COUNT=8、诊断开启，
+78层/16slots/512tokens/BF16 dim576，对齐后每池1GiB、本机16GiB、每个偶数节点4GiB。
+每个worker到齐前保持池存活；均到齐后验证双侧完成并退出。不加载模型、不执行Graph。
+不带新选项的11GiB/rank模式保留。两侧命令与端口、前置条件、结果边界已补入
+`ascend-mempool-test/BM_NUMA_DIAGNOSTIC.md`，并更新两个README和环境变量注释。
+
+runner新增`exits.tsv`记录真实子进程退出码。新`check_bm_even_numa.py`逐卡核对
+退出0、1GiB贡献、64字节peer probe、16池同时ready、实际create flags和HAL成功日志。
+要求0/2/4/6各4个成功池，生成`even-numa-summary.json`；缺失worker、错节点、
+缺少HAL证据、错误容量或成功报告后SIGABRT/134均不能通过。同节点页大小fallback允许。
+HAL日志确认调用时的NUMA选择，物理页落点仍需结合NUMA内存观测。
+
+Mac实际检查：
+
+- 先将SDK边界NUMA回归改成偶数节点期望，原实现失败；修改manager后通过。
+- `PYTHONPATH=ascend-mempool-test/src:ascend-mempool-test/tests/unit python3 -m unittest
+  test_pair_startup test_bm_startup_gate test_pool test_startup_diagnostics -q`：33项通过。
+  覆盖P/D16rank分配、奇偶节点数边界、两侧16worker命令和1GiB布局、报告校验及退出134。
+- 严格mypy检查NPU mempool包及新checker：9个源文件通过；本机没有torch，使用
+  `--ignore-missing-imports`，不代表torch/NPU运行时通过。未重跑依赖torch的完整CPU suite。
+- Ruff F/I/UP037（first-party与既有isort配置一致）、5个改动Python文件format、
+  runner与5个文档bash代码块的`bash -n`、布局`--describe`、checker`--help`通过。
+
+等待用户执行NPU验收：P/D两侧均须退出0、显示`ALL_EVEN_NUMA_CHECKS_PASSED`且
+counts为`{0:4,2:4,4:4,6:4}`，回传本轮summary、退出码表及异常卡完整日志。
+此次只交付本地实现和可运行测试，未执行服务器双机测试；真实服务及KV readback仍待验收。
+本票保持open。
+
+### 2026-10-02：失败日志尾部确认 RESULT 后 HYBM 析构异常和堆损坏
+
+用户补齐 `/tmp/bm-numa.qDNtCX/device-{0,1}-node-1.log` 尾部。两组次序相同：
+HAL在node1分配返回6 → create2抛出RuntimeError → store/BM uninitialize结束 →
+Python打印RESULT → 约1–2秒后HYBM继续析构预留地址 → glibc abort。
+最后的 `timeout: the monitored command dumped core` 是子进程崩溃报告；
+本次并未耗尽90秒时限。
+
+原生退出阶段的直接证据：
+
+1. 对同一 `0x280040000000`，首次 `FreeReserveLva` 找到记录后，
+   `HalMemAddressFree` 返回-8。
+2. 后续同地址释放再次进入，记录已不存在；segment仍保留reserved VA状态，
+   最后 `~HybmVmmBasedSegment` 报 `Destructor cleanup failed, ret:-6`。
+3. glibc报 `malloc_consolidate(): invalid chunk size`，进程SIGABRT/134。
+   这证实原生堆状态损坏被检测到；仅日志不能确定最早的越界写/UAF/double-free位置，
+   也不能把反复清理日志直接当作重复成功释放同一物理块的证据。
+
+本地MF参考代码 `hybm_def.h` 定义 `BM_UNDER_API_UNLOAD=-8`，
+`DlHalApi::HalMemAddressFree` 在函数指针为空时直接返回-8；`hybm_uninit()`
+调用 `DlApi::CleanupLibrary()` 清空指针。该路径与BM uninit之后继续析构的日志吻合，
+强烈支持失败对象未在底层API卸载前清理完毕。`UnReserveMemorySpace`在调用HAL前
+先移除VA管理记录，HAL失败后保留segment状态，解释后续“record not found”提示。
+
+还找到本地已有提交 `2e47225066f0372c62e524008f9c79f41ea1ac8c`
+(`[core] fix: rollback bm init state when failed`)：初始化失败时先设置inited_
+以确保UnInitalize执行，并在create2失败分支移除manager中的entry。这是应与服务器
+构建核对的相关修复。当前部署commit `c01f3ad842b9ff7412681a44b67141ce7a124c6d`
+不在本地Git对象库，无法证明其缺失此修复，也未验证该提交能修复本例堆损坏。
+
+首发node1分配失败与后续退出异常均有证据。修复退出清理后，非法/不可分配请求应
+被报告并以正常非零码结束，仍需独立解决HAL6。原探针保持不变，可用于对比SDK构建；
+如需定位abort调用栈，用GDB运行device0/node1最小case并在SIGABRT处取所有线程栈。
+节点2..7与D侧的能力验证仍待执行。本轮只补充记录/说明，diff检查通过，未改SDK或
+运行脚本，未提交/推送，未执行新的NPU测试。本票保持open。
+
+### 2026-10-02 15:24–15:26：P 独立交叉测试确认失败随请求 node1 变化
+
+用户在P容器 `npu1-31` / `10.120.72.31` 执行已推送的独立探针入口
+`ascend-mempool-test/scripts/probe_bm_numa.py`，world_size=1、每case独立进程串行、
+1GiB HOST/SDMA，日志目录 `/tmp/bm-numa.qDNtCX`。脚本已随 `0c49f55296`
+推送；未单独核实服务器HEAD。用户回传全部六组退出码与HAL/RESULT摘要。
+
+| device | 默认（flags0） | node0（flags128） | node1（flags129） |
+| --- | --- | --- | --- |
+| 0 | HAL0，allocation_ok=true，exit0 | HAL0，allocation_ok=true，exit0 | HAL6两次，create2失败，exit134 |
+| 1 | HAL0，allocation_ok=true，exit0 | HAL0，allocation_ok=true，exit0 | HAL6两次，create2失败，exit134 |
+
+node1两次HAL调用：device0为44/18微秒，device1为49/17微秒，均为1GiB页失败后
+2MiB页重试失败；成功分配约101–126毫秒。脚本总耗时约9秒含导入和SDK初始化/清理，
+不能误认为HAL本身耗时9秒。默认路径numa:4294967295表示传入-1，未证明物理落点。
+
+结论：在测试过的device0/1与node0/1组合中，失败随指定node1变化；奇数device1
+在node0能成功。服务模型加载、TP16并发、跨机join和Graph不是复现该故障的必要条件。
+结合14:59两侧奇数节点充足MemFree仍失败，优先检查指定节点上的HAL/P2P DDR分配
+条件或驱动问题。没有证据宣布全部奇数NUMA节点永久不支持，也不能从P测试替代D验收。
+
+失败两组均已输出 `failed_stage=bm.create2`、`allocation_ok=false`、
+`cleanup_errors=[]` 的RESULT，然后shell报告Aborted/134。134对应SIGABRT；
+捕获的Python RuntimeError按脚本应返回1。因此还存在RESULT之后的原生退出异常，
+尚未定位库/线程/析构点，cleanup_errors仅表示显式Python清理没有捕获到异常。
+下一步保留两份失败日志最后80行；不能用强制os._exit绕过退出来掩盖这个证据。
+
+现有探针已可用于固定device1测试node2..7，补齐候选节点，并在D独立验证。
+NUMA_COUNT=4只会轮转0/1/2/3；若实测可用集合为0/2/4/6，需要显式列表配置，
+不能将现有count变量静默解释为偶数节点数。恢复既有默认路径可移除COUNT变量，
+但默认路径成功不等于指定节点能力或大容量验收通过。
+
+本轮仅记录用户NPU结果并补充诊断说明，未改运行代码，未执行新的NPU测试或推送。
+公开驱动头文件确认NUMA参数含义，未查到可证明本部署奇数节点限制的依据；
+具体驱动分配约束仍须原生日志/当前版本实现确认。本票保持open。
+
 ### 2026-10-02 14:59：清缓存后仍按奇偶分化，准备独立 device/NUMA 交叉诊断
 
 用户清理干净页缓存后再次启动相同1GiB/rank、TP16、NUMA_COUNT=8配置。

@@ -230,13 +230,16 @@ class TestPairStartup(unittest.TestCase):
                     self.assertTrue(sdk.handle.destroyed)
                     self.assertEqual(sdk.uninit_calls, 1)
 
-    def test_numa_binding_uses_tp_rank_on_each_side(self):
-        """Distribute TP workers independently of the NPU ID and P/D BM rank."""
+    def test_numa_binding_cycles_even_nodes_on_each_side(self):
+        """Keep both sides on even nodes, independent of the NPU ID and BM rank."""
         for count, expected_flags in (
             (1, [128] * 16),
-            (4, [128, 129, 130, 131] * 4),
-            (8, list(range(128, 136)) * 2),
-            (127, list(range(128, 144))),
+            (2, [128] * 16),
+            (3, [128, 130] * 8),
+            (4, [128, 130] * 8),
+            (7, [128, 130, 132, 134] * 4),
+            (8, [128, 130, 132, 134] * 4),
+            (127, list(range(128, 160, 2))),
         ):
             os.environ[NUMA_COUNT_ENV] = str(count)
             for tp_rank, flags in enumerate(expected_flags):
