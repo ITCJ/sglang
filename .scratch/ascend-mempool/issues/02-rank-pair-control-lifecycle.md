@@ -356,6 +356,25 @@ NPU 上由用户启动全部 16 对 rank，验证启动兼容性检查、正常 
 
 ## Comments
 
+### 2026-10-02：同步glm51mempool启动脚本并精简诊断输出
+
+用户要求更新 `ascend-sglang-script/pd-disaggregation/glm51mempool.sh` 并推送两仓库。
+脚本P/D实际参数从context16384、各8192恢复到本轮context1024、各512，TP16与D Graph
+width16保持一致；开启 `SGLANG_NPU_MEMPOOL_READBACK=1` 和偶数NUMA列表。
+设置 `SGLANG_NPU_MEMPOOL_DIAGNOSTICS=0`，关闭周期WAIT/内存/栈快照及主动提升MF INFO；
+保留默认INFO的readback结果、Graph、DONE/ACK，供完整日志验收。
+两侧可通过 `LOCAL_HOST1` 指定本机地址，日志统一在 `/tmp/mempool-02-readback-small`，
+`LOG_DIR`可指定新目录。脚本尾部已更新三请求和 `--require-readback` 检查命令。
+原TransferEngine的 `ASCEND_MF_STORE_URL` 改为从 `P_IP[0]` 派生，修改P地址时无需另改。
+脚本提交为 `ascend-sglang-script/main` 的 `8074c0c`。
+
+[读回说明](../../../ascend-mempool-test/READBACK_SERVICE.md)同步增加直接启动脚本、router
+命令、日志关键字及数值字段解释，区分HTTP成功、单rank数值成功和全rank验收通过。
+Mac已通过 `bash -n`、两仓库 `git diff --check`，并用CLI帮助核对交付参数。
+规范审查无finding；spec审查指出的独立store地址遗漏已修复并定向复核通过。
+本次仅改脚本与交付文档；真实读回实现为 `c4ec7c6b67`，其146项CPU测试已在前轮通过。
+仍等待用户执行小容量NPU验收，本票保持open。
+
 ### 2026-10-02：02真实selected KV读回实现，准备小容量验收
 
 用户要求先保存基线，再完成本票真实KV读回并以小容量测试。原运行代码已提交；

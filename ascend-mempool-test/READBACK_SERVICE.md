@@ -6,9 +6,28 @@ NUMA 的容量/分配长尾已经移到 09，本轮使用已启动成功的小�
 
 ## 更新和启动
 
-P/D 使用本次同一提交，分别保存 `git rev-parse HEAD` 和 `git diff --stat`。
-以下基于已跑通的 `glm51dis.sh`，保留原来的本地权重路径、DeepEP、网卡和 router 配置。
-在脚本实际启动 Python 的 shell 中设置（P/D 均可设置；读回只在 D 执行）：
+P/D 使用同一提交，至少包含读回实现 `c4ec7c6b67`；分别保存 `git rev-parse HEAD`
+和 `git diff --stat`。同时更新 `ascend-sglang-script` 仓库的 `main` 分支，
+至少包含脚本提交 `8074c0c`。
+
+更新后的 `ascend-sglang-script/pd-disaggregation/glm51mempool.sh` 已包含本页全部
+启动增量。核对脚本中的 P_IP、D_IP、MODEL_PATH 和网卡名后，在各自机器的脚本仓库执行：
+
+```bash
+# P 机器先执行；将 <P_IP> 换成脚本中的 P 地址。
+LOCAL_HOST1='<P_IP>' bash pd-disaggregation/glm51mempool.sh
+
+# D 机器随后执行；无需等 P 完全 ready。
+LOCAL_HOST1='<D_IP>' bash pd-disaggregation/glm51mempool.sh
+```
+
+脚本的原 TransferEngine store 地址 `ASCEND_MF_STORE_URL` 自动使用 `P_IP[0]:24670`。
+脚本默认日志目录为 `/tmp/mempool-02-readback-small`，P 写 `p.log`、D 写 `d.log`。
+可在命令前用 `LOG_DIR=/tmp/<新的目录>` 覆盖；每次启动覆盖该目录内的本侧日志。
+下文命令使用默认目录。每轮保留完整日志，读日志时再筛选。
+
+若继续使用已有 `glm51dis.sh`，保留本地权重、DeepEP、网卡和 router 配置，
+在实际启动 Python 的 shell 中加入下面的环境变量（两侧均设置；读回只在 D 执行）：
 
 ```bash
 cd /home/cryang/sglang
@@ -16,10 +35,16 @@ export SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD=1
 export SGLANG_NPU_ENABLE_MEMPOOL=1
 export SGLANG_NPU_MEMPOOL_READBACK=1
 export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6
+export SGLANG_NPU_MEMPOOL_DIAGNOSTICS=0
 export SGLANG_DISAGGREGATION_BOOTSTRAP_TIMEOUT=600
 ```
 
-把两侧现有 `sglang.launch_server` 的对应参数替换为下面的小容量值，避免同时保留旧值：
+`DIAGNOSTICS=0` 关闭周期性 WAIT、内存/栈快照，以及 mempool 主动提升 MF INFO 的操作。
+基本的 `[MEMPOOL_INIT] BEGIN/END/FAIL/READY` 和验收日志仍保留。保持 SGLang 默认
+INFO 日志级别；全局改成 WARNING/ERROR 会丢失数值和生命周期验收证据。
+
+两侧 `sglang.launch_server` 的参数应为以下小容量值。新版 `glm51mempool.sh` 已设置；
+其他脚本须替换对应参数，避免同时保留旧值：
 
 ```text
 --context-length 1024
@@ -51,22 +76,34 @@ P 用 `--disable-cuda-graph`，D 用 `--cuda-graph-bs-decode 16`。
 两侧使用新日志文件，不追加旧运行记录，例如：
 
 ```text
-P: /tmp/mempool-02-readback-p.log
-D: /tmp/mempool-02-readback-d.log
+P: /tmp/mempool-02-readback-small/p.log
+D: /tmp/mempool-02-readback-small/d.log
 ```
 
-待双方 mapping/control ready、D Graph capture 完成后，启动已有 PD router。
-详细端口和旧服务启动约定见 [README 的服务 gate](README.md#启动参数增量)。
+待双方 mapping/control ready、D Graph capture 完成并进入服务循环后，另开终端启动 router：
+
+```bash
+python3 -m sglang_router.launch_router \
+  --pd-disaggregation --policy round_robin \
+  --prefill 'http://<P_IP>:8000' 8995 \
+  --decode 'http://<D_IP>:8001' \
+  --host 127.0.0.1 --port 6699 --mini-lb
+```
+
+这里的 8995 与脚本的 P bootstrap port 一致；若改了端口需一并更新。
+后面的请求命令在 router 所在机器运行，可使用 `http://127.0.0.1:6699`。
+已有 router 可直接沿用。详细旧服务启动约定见 [README 的服务 gate](README.md#启动参数增量)。
 
 ## 三个请求及日志检查
 
-在可访问 router 的机器运行，把 `<ROUTER_IP>:<ROUTER_PORT>` 换成已有地址：
+在 sglang 仓库根目录运行；示例在 router 所在机器访问 6699 端口，按实际部署调整：
 
 ```bash
+mkdir -p /tmp/mempool-02-readback-small
 python3 ascend-mempool-test/scripts/verify_shadow_service.py requests \
-  --url http://<ROUTER_IP>:<ROUTER_PORT> \
+  --url http://127.0.0.1:6699 \
   --decode-tokens 32 --timeout 900 \
-  --output /tmp/mempool-02-readback-requests.json
+  --output /tmp/mempool-02-readback-small/requests.json
 ```
 
 这会依次发送首 token 结束（零 decode）、实际 decode、下一请求复用三项。
@@ -76,10 +113,10 @@ python3 ascend-mempool-test/scripts/verify_shadow_service.py requests \
 
 ```bash
 python3 ascend-mempool-test/scripts/verify_shadow_service.py check-logs \
-  --prefill-logs /tmp/mempool-02-readback-p.log \
-  --decode-logs /tmp/mempool-02-readback-d.log \
+  --prefill-logs /tmp/mempool-02-readback-small/p.log \
+  --decode-logs /tmp/mempool-02-readback-small/d.log \
   --requests 3 --require-readback --readback-layers 78 \
-  --output /tmp/mempool-02-readback-result.json
+  --output /tmp/mempool-02-readback-small/result.json
 ```
 
 如每 rank 独立日志，可在对应选项后列出 16 个文件。不要同时提供合并日志和重复的
@@ -109,6 +146,36 @@ HTTP 完成不代表 DONE/ACK 已完成。如果提示 `no actual row/P/D slot r
 `mempool KV readback failed` 包含 TP rank、layer、request room/rid/attempt、逻辑
 position、feature、P/D slot。发现差异后停止本轮，不继续用该进程验证复用。
 保留失败完整日志及 JSON，避免仅截取最后几行。
+
+## 怎样读当前输出
+
+| 输出 | 表示什么 | 接下来关注什么 |
+| --- | --- | --- |
+| `[MEMPOOL_INIT] READY` | 本 worker 的 BM/runtime 初始化完成 | 继续等待 control 和整个服务 ready |
+| `mempool mapping_ready`、`POOL_HELLO`/`POOL_READY` | 各 rank 映射和 P/D 控制握手的证据 | 两侧全 16 ranks 到齐，由检查器核对 |
+| `mempool graph_captured` | D 已捕图 | 请求后须出现真实 `graph_replay` |
+| `PASS case=zero_decode/decode/reuse`、`REQUESTS_PASSED` | 三个 HTTP 请求成功返回指定 token 数 | 仍需等待释放及离线日志检查；查看生成文本 |
+| `mempool readback_result ... data=...` | D 对该请求、本 rank 的已完成读回汇总 | 看 status、数值覆盖及实际位置；这条在 drain 后输出 |
+| `event=DONE`、`event=RELEASE_ACK` | 控制协议完成释放确认 | 最后全 ranks 的 `free=16`，并有实际复用证据 |
+| `SHADOW_READBACK_PASSED` | 离线检查的所有数值、Graph、生命周期和复用条件通过 | 保存 requests/result JSON 与完整 P/D 日志 |
+
+`readback_result` 中，首 token 结束的请求应为 `status="zero_decode"`、`forwards=0`，
+这属于正常成功。另两个请求应为 `status="passed"`：生成 32 tokens 时通常由 P 产生
+第一个 token，D 有 31 次 forward，因此 `written_kv=forwards=31`、
+`layer_checks=78×31=2418`。检查器还要求 `replay_forwards>0`、
+`prompt_kv/decode_kv/prompt_boundary_kv/decode_first_kv>0`、
+`min_topk=max_topk=2048`。`row/prompt_slot/decode_slot` 用于核对下一请求真实复用。
+比较失败会抛出异常并记录 `mempool KV readback failed`，不会用成功汇总掩盖差异。
+
+快速看关键行（D 机器，或已汇集两侧日志的机器；只筛选显示，不改原日志）：
+
+```bash
+rg 'mempool (mapping_ready|graph_captured|graph_replay|readback_result)|event=(DONE|RELEASE_ACK)|KV readback (failed|mismatch)|Traceback' \
+  /tmp/mempool-02-readback-small/d.log
+```
+
+最终以带 `--require-readback` 的 `check-logs` 为准；单条某 rank 的 `status="passed"`
+只覆盖该请求和该 rank，不能代表全 16 ranks 通过。
 
 ## 本轮的证据边界
 
