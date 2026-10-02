@@ -326,6 +326,90 @@ NPU 上由用户启动全部 16 对 rank，验证启动兼容性检查、正常 
 
 ## Comments
 
+### 2026-10-02 14:59：清缓存后仍按奇偶分化，准备独立 device/NUMA 交叉诊断
+
+用户清理干净页缓存后再次启动相同1GiB/rank、TP16、NUMA_COUNT=8配置。
+本次失败时的快照中，P/D各NUMA节点仍有约160–200GiB空闲内存，
+Mems_allowed_list=0-7，可见memory cgroup failcnt=0、limit近似无限。
+因此撤回“清掉缓存即可恢复”的预期；普通节点空闲容量不足无法解释本轮失败。
+这不等于证明驱动所需页类型、P2P可分配区域或其他限制均已满足。
+
+- P/D都出现奇数TP→奇数NUMA节点的本地HAL分配失败；可见D TP1/3/5/7/9
+  在对应node1/3/5/7的1GiB页和2MiB页尝试均返回6，TP11/13/15也有create2失败栈。
+  HAL失败调用通常仅几十微秒；create2整体约0.2秒包括其他SDK初始化。
+- 偶数rank成功分配、跨机import/mmap，并到达mapping/runtime ready；D若干rank
+  随后开始Graph capture。其他rank失败触发SIGQUIT关闭服务，不能据此确认Graph完成。
+- D本次已连接P store并亲自执行create2，不能沿用14:08那轮“D只因P退出等不到store”
+  的解释。部分初始MAPPING_PENDING后约1秒变为ready，是异步join期间的暂态。
+- HugePages_Total/Free=0、缺libhcom和extend library提示也出现在成功rank，
+  这些信息不能单独解释失败。普通MemFree和HAL可分配P2P DDR不是同一指标。
+- 当前device_id=tp_rank，numa_node=tp_rank%8，device与node奇偶性完全重合。
+  尚不能断言奇数NUMA永久不支持或奇数device故障。新一轮P的TASK_QUEUE_ENABLE=1、
+  MULTI_STREAM未设置，D为0/1，也应在后续服务对照中记录环境差异。
+
+已核对本地MF参考源码：显式节点经flags进入MEM_HOST_NUMA_SIDE的prop.devid；
+host申请使用MEM_P2P_DDR_TYPE，仅在同节点从giant降为huge页重试。
+公开CANN驱动头文件也明确该side下devid是NUMA ID，但未确认当前部署驱动的节点资格限制。
+参考链接：https://gitcode.com/cann/driver/blob/master/pkg_inc/ascend_hal_base.h
+
+新增独立诊断脚本 `ascend-mempool-test/scripts/probe_bm_numa.py` 和运行说明
+`ascend-mempool-test/BM_NUMA_DIAGNOSTIC.md`：串行world_size=1、每case独立进程，
+固定1GiB HOST/SDMA，分别组合device0/1与默认/node0/node1。直接传独立节点flags，
+无需模型/对端/Graph；保留失败stage、allocation结果与cleanup错误。
+用于区分节点约束、device上下文、只在模型/并发条件下出现的失败；不改变服务绑定语义。
+
+Mac实际验证：6个describe case的device/node/flags/容量、3个无效输入拒绝、help、
+Python语法及说明中bash命令语法通过；Ruff F/I/UP037通过，已按formatter格式化。
+未执行真实HAL分配，NPU上的复现与结论仍待用户运行。未提交或推送，本票保持open。
+
+### 2026-10-02 14:08：显式 NUMA 选择生效，P 部分节点的 HAL 分配失败
+
+用户提供启用 `SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT=8` 后的 P/D 日志。
+本地已推送 NUMA 改动 `c89416cd4c`，未独立读取服务器 HEAD；服务器 MF 报告
+1.1.4 / `c01f3ad842b9ff7412681a44b67141ce7a124c6d`，驱动
+`V100R001C10SPC009B220`。本次仍是 TP16、16 slots、78层、S_P/S_D=512，
+实际 BM 本地贡献 1GiB/rank，即每机16GiB、按8节点轮转计划每节点2GiB。
+
+可直接确认的执行事实：
+
+- P TP15→node7/flags135、TP9→node1/flags129、TP5→node5/flags133、
+  TP11→node3/flags131；HAL 日志中的 `numa` 与请求节点一致。
+  这些 rank 的 1GiB 分配先尝试1GiB页，返回6后改用2MiB页，仍在同一节点返回6，
+  随后 `bm.create2` 失败。后续 TP1/3/7/13 的栈也停在 create2。
+- P TP8→node0、TP4→node4 的 HAL 返回0；TP10→node2 有 create2 END。
+  已贴片段没有所有成功 rank 的完整 HAL 结果，不能据此宣称全部偶数节点都验收通过。
+- 本地 MF 参考源码把6定义为 `HAL_OUT_OF_MEMORY_ERROR`；host 分配路径仅在同一
+  指定节点上从 giant page 降到 huge page，未实现跨节点重试。服务器日志也显示
+  同节点两次失败。参考源码与服务器 MF commit 不完全相同，不能扩大推断其他驱动行为。
+- P 约14:08:51–52在失败清理后抛出 scheduler 异常，父进程收到子进程 SIGQUIT 并
+  调用 `kill_process_tree`。日志末尾的 Killed 有应用退出链路证据，不能直接定性为
+  Linux/cgroup OOM killer。D 约14:08:53才开始等 P store，之后 Connection refused；
+  此次所贴 D 日志尚未进入 BM create2，未验证 D 的指定节点分配。
+- 成功创建的 P rank 当时报告 `MAPPING_PENDING missing_rank=1`，与 D 尚未加入
+  相符；这些等待日志不构成独立的 KV layout、Graph 或控制协议故障证据。
+
+P 失败附近快照的 MemFree（GiB，多个 rank 并发采样，非隔离的前后差值）：
+
+| NUMA node | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| MemFree | 67.24 | 0.92 | 65.21 | 0.25 | 35.08 | 0.15 | 24.95 | 0.25 |
+
+所见失败节点的 MemFree 均小于单次1GiB申请，但全机 MemAvailable 仍约1.76TiB。
+这支持优先排查指定节点上的驱动可分配内存，尚不能区分局部内存压力、可回收缓存、
+大页碎片或驱动分配限制，更不能宣称奇数节点永久不可用。Mems_allowed_list=0-7；
+可见 cgroup limit 近似无限、failcnt=0。HugePages_Free=0 同时出现在成功分配的节点，
+不能单独用它解释失败。
+
+下一轮可先在 P 采集完整 `/sys/devices/system/node/node*/meminfo` 与
+`/proc/buddyinfo`，补齐现有快照缺少的缓存/可回收内存和空闲块分布；必要时对照驱动
+分配日志。保持服务容量不变、移除该 NUMA 变量可对照此前默认分配模式；需先结束
+本轮仍在等待的 D 进程。是否恢复启动以两侧全部 rank 的 mapping/runtime ready 为准，
+成功不等于已确认物理落点或大容量可用。节点数设为4只会使用0/1/2/3，不能表达
+0/2/4/6；若需后者，应另行支持显式候选节点列表，不能静默改写现有取模语义。
+
+本轮只核对日志、参考源码并记录证据；未修改运行代码，未执行新的 CPU/NPU 测试，
+也未提交或推送。本票保持 open，真实服务 KV readback 与大容量验收仍未完成。
+
 ### 2026-10-02：按本地 NUMA 节点数和 TP rank 显式分配 BM
 
 用户要求优先处理NUMA分配：新增环境变量，只有显式设置本机节点数后才按TP rank选择节点。
