@@ -4,26 +4,29 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
-from .pool import MempoolKVView
+from .layout import UINT32_MAX, positive_int
+from .manager import MempoolKVView
 
 if TYPE_CHECKING:
-    from sglang.srt.hardware_backend.npu.mempool.layout import UINT32_MAX, positive_int
     from torch import Tensor
-else:
-    from .layout import UINT32_MAX, positive_int
 
 
 @dataclass(frozen=True)
 class CopyIndices:
+    """Describe one source's masked rows and their destination positions."""
+
     src_index: Tensor
     dst_index: Tensor
     valid: Tensor
 
 
 class SparseCopyInputs:
+    """Keep source bindings and logical positions at stable capture addresses."""
+
     def __init__(self, batch_rows: int, topk: int, device: str) -> None:
+        """Allocate an initially inactive selection, including padded top-k columns."""
         import torch
 
         positive_int("batch_rows", batch_rows)
@@ -45,6 +48,8 @@ class SparseCopyInputs:
 
 
 class SparseKVCopy:
+    """Gather selected prompt and decode rows into one compact KV buffer."""
+
     def __init__(
         self,
         prompt: MempoolKVView,
@@ -52,7 +57,9 @@ class SparseKVCopy:
         inputs: SparseCopyInputs,
         block_dim: int = 48,
         kernel: Any = None,
+        output: Optional[Tensor] = None,
     ) -> None:
+        """Allow sequential layers to share scratch storage on the submission stream."""
         import torch
 
         positive_int("block_dim", block_dim)
@@ -67,16 +74,27 @@ class SparseKVCopy:
         self.inputs = inputs
         self.block_dim = block_dim
         self._kernel = kernel
-        self.output = torch.empty(
-            (inputs.batch_rows, inputs.topk, prompt.layout.heads, prompt.layout.dim),
-            dtype=torch.bfloat16,
-            device=inputs.positions.device,
-        )
+        shape = (inputs.batch_rows, inputs.topk, prompt.layout.heads, prompt.layout.dim)
+        if output is None:
+            output = torch.empty(
+                shape, dtype=torch.bfloat16, device=inputs.positions.device
+            )
+        if (
+            tuple(output.shape) != shape
+            or output.dtype != torch.bfloat16
+            or output.device != inputs.positions.device
+            or not output.is_contiguous()
+        ):
+            raise ValueError(
+                "copy output must be contiguous BF16 storage matching the selection"
+            )
+        self.output = output
         # Raw-pointer mode checks dtype, not source storage size. A meta tensor
         # would select Meta dispatch instead of the registered NPU kernel.
         self._source_dtype = torch.empty(1, dtype=torch.bfloat16, device="cpu")
 
     def routes(self) -> tuple[CopyIndices, CopyIndices]:
+        """Mask unwritten positions and translate each role's independent slot."""
         import torch
 
         inputs = self.inputs
@@ -118,6 +136,7 @@ class SparseKVCopy:
         )
 
     def gather(self) -> Tensor:
+        """Enqueue both sources, including zero-valid sources, without host reads."""
         import torch
 
         if self._kernel is None:

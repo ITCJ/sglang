@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import secrets
 import time
@@ -10,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from sglang.srt.hardware_backend.npu.mempool.runtime import (
+    KVReadbackError,
     KVRowBinding,
     KVWriteExpectation,
     KVWriteReceipt,
@@ -338,7 +340,10 @@ class MempoolPDService:
                 if lease is None or not state.owns_slot:
                     raise RuntimeError("approved request has no owned mempool slot")
                 record.binding = self.runtime.bind(
-                    row, slot=lease.slot, prompt_tokens=state.prompt_limit
+                    row,
+                    slot=lease.slot,
+                    prompt_tokens=state.prompt_limit,
+                    prompt_slot=state.p_slot.slot if state.p_slot is not None else None,
                 )
             self.runtime.assert_bound(row, record.binding)
             if batch.forward_mode.is_decode():
@@ -376,7 +381,7 @@ class MempoolPDService:
 
     def _observations(self) -> list[RequestObservation]:
         """Consume device completion and project live or detached write facts."""
-        self.runtime.poll_completed()
+        self._poll_completed()
         facts = []
         for room, record in self._requests.items():
             state = self._protocol(record)
@@ -452,6 +457,31 @@ class MempoolPDService:
             )
         return facts
 
+    def _poll_completed(self) -> None:
+        """Attach rank and request identity to numerical failures before fault consensus."""
+        try:
+            self.runtime.poll_completed()
+        except KVReadbackError as exc:
+            matches = [
+                {
+                    "room": room,
+                    "rid": record.req.rid,
+                    "attempt": record.identity.attempt if record.identity else "NONE",
+                    "prompt_slot": record.binding.prompt_slot,
+                    "decode_slot": record.binding.slot,
+                }
+                for room, record in self._requests.items()
+                if record.binding is not None and record.binding.req_pool_idx == exc.row
+            ]
+            logger.error(
+                "mempool KV readback failed role=%s rank=%s error=%s requests=%s",
+                self.control.local.role,
+                self.control.local.tp_rank,
+                exc,
+                json.dumps(matches, sort_keys=True),
+            )
+            raise
+
     def advance(self) -> None:
         """Run one complete scheduler tick, preserving faults for same-side consensus."""
         self._tick_started = self.clock()
@@ -520,7 +550,7 @@ class MempoolPDService:
             started = self.clock()
             self._drain_host()
             self._synchronize()
-            self.runtime.poll_completed()
+            self._poll_completed()
             for record in self._requests.values():
                 if record.release or record.cancel:
                     record.drained = True
@@ -540,6 +570,16 @@ class MempoolPDService:
             if record.cancelled_at is None:
                 record.cancelled_at = self.clock()
         elif kind == "native_release" and not record.native_freed:
+            readback = self.runtime.readback_report(record.binding)
+            if readback is not None:
+                readback["cancelled"] = record.cancel
+                logger.info(
+                    "mempool readback_result role=decode rank=%s room=%s attempt=%s data=%s",
+                    self.control.local.tp_rank,
+                    room,
+                    record.identity.attempt if record.identity else "NONE",
+                    json.dumps(readback, sort_keys=True),
+                )
             if record.binding is not None:
                 record.receipt = self.runtime.detach_row(record.binding)
                 record.binding = None

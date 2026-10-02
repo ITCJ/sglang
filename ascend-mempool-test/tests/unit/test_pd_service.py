@@ -1,5 +1,6 @@
 """Verify real Req projection and native ownership through the service boundary."""
 
+import json
 import sys
 import unittest
 from types import SimpleNamespace
@@ -259,7 +260,7 @@ class TestMempoolPDService(unittest.TestCase):
         """A first-token finish owns D native pages even without a model forward."""
         helper = test_runtime.TestMempoolRuntime()
         self.addCleanup(helper.doCleanups)
-        runtime, _, _ = helper.make_runtime(rank=1, layers=1)
+        runtime, _, _ = helper.make_runtime(rank=1, layers=1, readback_enabled=True)
         effects = []
         sent = []
         service = MempoolPDService(
@@ -291,7 +292,13 @@ class TestMempoolPDService(unittest.TestCase):
         service.advance()
         self.assertEqual(effects, ["host-drain", "device-drain"])
         self.assertNotIn(0, self.d.available_slots())
-        service.advance()
+        with self.assertLogs("ascend_mempool_pd.mempool_service", level="INFO") as logs:
+            service.advance()
+        report_line = next(line for line in logs.output if "readback_result" in line)
+        self.assertIn("rank=0 room=7", report_line)
+        report = json.loads(report_line.split(" data=", 1)[1])
+        self.assertEqual(report["status"], "zero_decode")
+        self.assertEqual(report["written_kv"], 0)
         self.assertEqual(effects, ["host-drain", "device-drain", "free"])
         self.assertIn(0, self.d.available_slots())
         service.advance()
@@ -299,6 +306,110 @@ class TestMempoolPDService(unittest.TestCase):
         from ascend_mempool_pd.mempool_protocol import MessageType
 
         self.assertEqual(len([m for m in sent if m.kind == MessageType.DONE]), 1)
+
+    def test_service_readback_uses_peer_slot_and_reports_the_request(self):
+        """Approved unequal slots reach the reader; failure keeps native resources owned."""
+        import test_readback
+
+        for corrupt in (False, True):
+            with self.subTest(corrupt=corrupt):
+                helper = test_readback.TestKVReadback()
+                helper.setUp()
+                self.addCleanup(helper.doCleanups)
+                runtime = helper.runtime
+                descriptor = PoolDescriptor(
+                    2, 16, 8, 8, 1, 4, "bfloat16", 2**30, 2**30, 2**30
+                )
+                p = MempoolPDControl(PoolPeer("p2", "prefill", 0, 16, 1, 7, descriptor))
+                d = MempoolPDControl(PoolPeer("d2", "decode", 0, 16, 1, 7, descriptor))
+                d.apply(p.apply(d.begin_handshake("tcp://d:1")))
+                freed = []
+                service = MempoolPDService(
+                    runtime,
+                    d,
+                    gather=lambda value: [value] * 16,
+                    send=lambda *args: None,
+                    reply_to="tcp://d:1",
+                    endpoint="tcp://p:1",
+                    native_release=lambda req, insert: freed.append(req.rid),
+                    drain_host=lambda: None,
+                    synchronize=lambda: None,
+                    cancel_request=lambda req: None,
+                    clock=lambda: 1.0,
+                )
+                req = self.request(70, 1)
+                req.origin_input_ids = [1, 2, 3, 4]
+                service.track(req)
+                acquire = d.acquire_decode(70, req.rid, 3, 4, 4, "tcp://d:1")
+                p.apply(acquire)
+                p.apply(d.apply(p.acquire_prefill(acquire.request, 2)))
+                p.start_prefill(acquire.request)
+                p.finish_prefill_writes(acquire.request)
+                d.apply(p.publish_kv_ready(acquire.request, 4))
+                d.transfer_succeeded(acquire.request)
+                d.start_decode(acquire.request)
+                service.transfer_complete(req)
+                batch = prefill_batch((1,), (0,), (1,))
+                batch.forward_mode = SimpleNamespace(
+                    is_decode=lambda: True,
+                    is_idle=lambda: False,
+                    is_prebuilt=lambda: False,
+                )
+                batch.seq_lens = torch.tensor([5])
+                batch.reqs = [req]
+                service.prepare_batch(batch)
+                with runtime.forward_scope():
+                    for layer in (5, 6):
+                        helper.p[layer - 5][2, 3] = 103
+                        k = torch.full((1, 2), 201, dtype=torch.bfloat16)
+                        runtime.write_layer(layer, k, k, batch)
+                        reference = (
+                            torch.tensor(
+                                [103, 999 if corrupt else 201], dtype=torch.bfloat16
+                            )
+                            .view(1, 2, 1, 1)
+                            .expand(1, 2, 1, 4)
+                        )
+                        runtime.compare_selected_kv(
+                            layer,
+                            batch.req_pool_indices,
+                            torch.tensor([[3, 4]]),
+                            reference,
+                        )
+                service.advance()
+                self.assertEqual(freed, [])
+                helper.events[-1].done = True
+                if corrupt:
+                    with self.assertLogs(
+                        "ascend_mempool_pd.mempool_service", level="ERROR"
+                    ) as logs:
+                        with self.assertRaises(RuntimeError):
+                            service.advance()
+                    text = "\n".join(logs.output)
+                    self.assertIn("rank=0", text)
+                    self.assertIn('"room": 70', text)
+                    self.assertIn('"rid": "req-70"', text)
+                    self.assertIn("layer=5 row=1 position=4", text)
+                    self.assertEqual(freed, [])
+                    self.assertNotIn(3, d.available_slots())
+                else:
+                    service.advance()
+                    service.defer_release(req)
+                    with self.assertLogs(
+                        "ascend_mempool_pd.mempool_service", level="INFO"
+                    ) as logs:
+                        service.advance()
+                        service.advance()
+                    line = next(
+                        line for line in logs.output if "readback_result" in line
+                    )
+                    report = json.loads(line.split(" data=", 1)[1])
+                    self.assertEqual(report["status"], "passed")
+                    self.assertEqual(
+                        (report["prompt_slot"], report["decode_slot"]), (2, 3)
+                    )
+                    self.assertEqual(report["written_kv"], 1)
+                    self.assertEqual(freed, [req.rid])
 
     def test_overlap_result_and_delayed_sampling_finish_before_release(self):
         """Host drain can discover another finished request before the single fence."""

@@ -19,6 +19,8 @@ from .diagnostics import diagnostics_enabled, startup_stage
 from .layout import check_index, positive_int
 from .manager import MempoolKVManager
 from .offload import MempoolKVOffload
+from .readback import KVReadback
+from .readback import KVReadbackError as KVReadbackError
 from .rows import derive_kv_rows
 
 logger = logging.getLogger(__name__)
@@ -57,6 +59,7 @@ class KVRowBinding:
     req_pool_idx: int
     slot: int
     prompt_tokens: int
+    prompt_slot: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -85,6 +88,7 @@ class _Forward:
     replay: bool
     capture: bool
     layers: set[int] = field(default_factory=set)
+    readback_layers: set[int] = field(default_factory=set)
 
 
 @dataclass
@@ -96,6 +100,8 @@ class _Completion:
     rows: tuple[int, ...]
     totals: tuple[int, ...]
     slot_totals: tuple[int, ...]
+    readback: Optional[Tensor]
+    replay: bool
 
 
 class MempoolRuntime:
@@ -124,6 +130,8 @@ class MempoolRuntime:
         kernels: Optional[Sequence[Any]] = None,
         event_factory: Optional[Callable[[], WriteEvent]] = None,
         wait_event: Optional[Callable[[WriteEvent], None]] = None,
+        readback_enabled: bool = False,
+        readback_kernel: Any = None,
     ) -> None:
         """Allocate stable bindings/counters after BM mappings are ready."""
         if mlapo_enabled:
@@ -144,6 +152,15 @@ class MempoolRuntime:
             (req_pool_rows,), -1, dtype=torch.int64, device=device
         )
         self.row_prompt_len = torch.full_like(self.row_slot, -1)
+        self.row_prompt_slot = torch.full_like(self.row_slot, -1)
+        self.row_decode_len = torch.zeros_like(self.row_slot)
+        self._readback = (
+            KVReadback(
+                manager, req_pool_rows, start_layer, device, block_dim, readback_kernel
+            )
+            if readback_enabled and manager.rank == 1
+            else None
+        )
         self._write_counts = torch.zeros(
             (self.layout.layers, self.layout.slots), dtype=torch.int32, device=device
         )
@@ -195,7 +212,14 @@ class MempoolRuntime:
         self._binding_update = self._event_factory()
         self._binding_update.record()
 
-    def bind(self, req_pool_idx: int, *, slot: int, prompt_tokens: int) -> KVRowBinding:
+    def bind(
+        self,
+        req_pool_idx: int,
+        *,
+        slot: int,
+        prompt_tokens: int,
+        prompt_slot: Optional[int] = None,
+    ) -> KVRowBinding:
         """Install an approved allocation and return its local attachment identity."""
         if self.fault is not None:
             raise RuntimeError(f"mempool runtime fault: {self.fault}")
@@ -206,14 +230,24 @@ class MempoolRuntime:
         positive_int("prompt_tokens", prompt_tokens)
         if prompt_tokens > self.manager.layout.prompt.tokens:
             raise ValueError("prompt length exceeds P mempool capacity")
+        if self._readback is not None:
+            if prompt_slot is None:
+                raise ValueError("readback requires the approved prompt slot")
+            check_index("prompt slot", prompt_slot, self.manager.layout.prompt.slots)
         if req_pool_idx in self._bindings or self._row_in_flight(req_pool_idx):
             raise RuntimeError("request row is already bound or in-flight")
         if any(binding.attachment.slot == slot for binding in self._bindings.values()):
             raise RuntimeError("mempool slot is already bound")
-        attachment = KVRowBinding(req_pool_idx, slot, prompt_tokens)
+        attachment = KVRowBinding(req_pool_idx, slot, prompt_tokens, prompt_slot)
         self._bindings[req_pool_idx] = _Binding(attachment)
         self.row_slot[req_pool_idx] = slot
         self.row_prompt_len[req_pool_idx] = prompt_tokens
+        self.row_prompt_slot[req_pool_idx] = (
+            prompt_slot if prompt_slot is not None else -1
+        )
+        self.row_decode_len[req_pool_idx] = 0
+        if self._readback is not None:
+            self._readback.bind(req_pool_idx)
         self._write_counts[:, slot].zero_()
         self._slot_totals[slot] = 0
         self._record_binding_update()
@@ -239,6 +273,8 @@ class MempoolRuntime:
         receipt = KVWriteReceipt(binding, progress.submitted, progress.completed)
         self.row_slot[req_pool_idx] = -1
         self.row_prompt_len[req_pool_idx] = -1
+        self.row_prompt_slot[req_pool_idx] = -1
+        self.row_decode_len[req_pool_idx] = 0
         del self._bindings[req_pool_idx]
         self._record_binding_update()
         return receipt
@@ -315,6 +351,8 @@ class MempoolRuntime:
         no real expectations; replay uses this boundary even though Python
         layer hooks do not execute. Use the stream that submits the forward.
         """
+        if self.fault is not None:
+            raise RuntimeError(f"mempool runtime fault: {self.fault}")
         if self._active is not None:
             raise RuntimeError("a mempool forward is already open")
         if capture and (writes or replay):
@@ -349,6 +387,18 @@ class MempoolRuntime:
                 raise ValueError("expected writes exceed request KV capacity")
         if self._binding_update is not None:
             self._wait_event(self._binding_update)
+        if self._readback is not None:
+            self._readback.reset()
+            for write in writes:
+                if write.rows != 1:
+                    raise ValueError(
+                        "shadow readback requires one decode KV row per request"
+                    )
+                # Each layer's local write precedes readback on this stream,
+                # including D offset zero. Never infer this bound from output tokens.
+                self.row_decode_len[write.req_pool_idx] = (
+                    self._bindings[write.req_pool_idx].submitted + write.rows
+                )
         self._active = _Forward(tuple(writes), replay, capture)
 
     def write_layer(
@@ -400,6 +450,51 @@ class MempoolRuntime:
         self._write_counts[layer].scatter_add_(0, safe_slot, valid.to(torch.int32))
         active.layers.add(layer)
 
+    def compare_selected_kv(
+        self, layer_id: int, req_rows: Tensor, positions: Tensor, reference: Tensor
+    ) -> None:
+        """Enqueue shadow comparison after the old selected KV's producer events."""
+        if self._readback is None:
+            return
+        active = self._active
+        layer = layer_id - self.start_layer
+        if active is None or active.replay or layer not in active.layers:
+            raise RuntimeError("readback requires this layer's eager/captured KV write")
+        if layer in active.readback_layers:
+            raise RuntimeError("duplicate mempool readback for one forward layer")
+        self._readback.compare(
+            layer,
+            req_rows,
+            positions,
+            reference,
+            self.row_prompt_slot,
+            self.row_slot,
+            self.row_prompt_len,
+            self.row_decode_len,
+        )
+        active.readback_layers.add(layer)
+
+    def readback_report(
+        self, binding: Optional[KVRowBinding]
+    ) -> Optional[dict[str, Any]]:
+        """Return completed evidence before detach; never turn pending work into a pass."""
+        if self._readback is None:
+            return None
+        if self.fault is not None:
+            raise RuntimeError(f"mempool runtime fault: {self.fault}")
+        row = binding.req_pool_idx if binding is not None else None
+        if row is not None:
+            self.assert_bound(row, binding)
+            if self._row_in_flight(row):
+                raise RuntimeError("cannot report an in-flight readback")
+        return {
+            **self._readback.report(row),
+            "row": row,
+            "prompt_slot": binding.prompt_slot if binding is not None else None,
+            "decode_slot": binding.slot if binding is not None else None,
+            "written_kv": self._bindings[row].completed if row is not None else 0,
+        }
+
     def end_forward(self) -> None:
         """Record completion after eager work or replay, without synchronizing."""
         active = self._active
@@ -407,6 +502,12 @@ class MempoolRuntime:
             raise RuntimeError("no mempool forward is open")
         if not active.replay and len(active.layers) != self.layout.layers:
             raise RuntimeError("mempool forward is missing local layer writes")
+        if (
+            self._readback is not None
+            and not active.replay
+            and len(active.readback_layers) != self.layout.layers
+        ):
+            raise RuntimeError("mempool forward is missing local layer readbacks")
         if active.capture:
             self._capture_validated = True
             self._active = None
@@ -418,10 +519,19 @@ class MempoolRuntime:
             self._slot_totals[binding.attachment.slot] = binding.submitted
         totals = tuple(self._bindings[row].submitted for row in rows)
         snapshot = self._write_counts.clone()
+        readback = self._readback.stats.clone() if self._readback is not None else None
         event = self._event_factory()
         event.record()
         self._pending.append(
-            _Completion(event, snapshot, rows, totals, tuple(self._slot_totals))
+            _Completion(
+                event,
+                snapshot,
+                rows,
+                totals,
+                tuple(self._slot_totals),
+                readback,
+                active.replay,
+            )
         )
         self._active = None
 
@@ -432,9 +542,16 @@ class MempoolRuntime:
             item = self._pending[0]
             counts = item.snapshot.cpu().tolist()
             if any(tuple(layer) != item.slot_totals for layer in counts):
-                raise RuntimeError(
-                    "mempool valid write counts differ from expected rows"
-                )
+                self.fault = "mempool valid write counts differ from expected rows"
+                raise RuntimeError(self.fault)
+            if self._readback is not None and item.readback is not None:
+                try:
+                    self._readback.complete(
+                        item.readback, item.rows, replay=item.replay
+                    )
+                except KVReadbackError as exc:
+                    self.fault = str(exc)
+                    raise
             for row, total in zip(item.rows, item.totals):
                 self._bindings[row].completed = total
                 completed.append(row)
@@ -578,6 +695,7 @@ def initialize_for_model_runner(model_runner: Any) -> None:
             max_context_len=model_runner.model_config.context_len,
             start_layer=model_runner.layer_info.start_layer,
             device=str(model_runner.req_to_token_pool.req_to_token.device),
+            readback_enabled=envs.SGLANG_NPU_MEMPOOL_READBACK.get(),
         )
     runtime.config = config
     seen = set()

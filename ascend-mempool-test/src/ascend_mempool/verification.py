@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from sglang.srt.hardware_backend.npu.mempool.copy import SparseCopyInputs
     from sglang.srt.hardware_backend.npu.mempool.layout import PoolLayout
     from torch import Tensor
 
-    from .copy import SparseCopyInputs
 else:
     from .layout import PoolLayout
 

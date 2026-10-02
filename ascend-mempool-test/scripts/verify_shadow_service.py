@@ -76,7 +76,12 @@ def request_gate(url: str, output: Path, timeout: float, decode_tokens: int) -> 
 
 
 def check_logs(
-    prefill: list[Path], decode: list[Path], requests: int
+    prefill: list[Path],
+    decode: list[Path],
+    requests: int,
+    *,
+    require_readback: bool = False,
+    readback_layers: int = 78,
 ) -> dict[str, Any]:
     """Require every TP rank's normal lifecycle and actual graph evidence."""
     events: dict[tuple[str, int, int], set[str]] = {}
@@ -84,6 +89,7 @@ def check_logs(
     mapping: dict[str, set[int]] = {"prefill": set(), "decode": set()}
     captured: set[int] = set()
     replayed: set[int] = set()
+    readback: dict[tuple[int, int], dict[str, Any]] = {}
     for role, paths in (("prefill", prefill), ("decode", decode)):
         for path in paths:
             for line in path.read_text(errors="replace").splitlines():
@@ -96,6 +102,9 @@ def check_logs(
                         "watchdog expired",
                         "mempool valid write counts differ",
                         "native transfer drain unconfirmed",
+                        "mempool KV readback mismatch",
+                        "mempool KV readback coverage mismatch",
+                        "mempool KV readback failed",
                     )
                 ):
                     raise RuntimeError(f"failure in {path}: {line}")
@@ -109,6 +118,19 @@ def check_logs(
                 if fields.get("role") != role or "rank" not in fields:
                     continue
                 rank = int(fields["rank"])
+                if role == "decode" and "mempool readback_result " in line:
+                    room = int(fields["room"])
+                    key = (rank, room)
+                    if key in readback:
+                        raise RuntimeError(
+                            f"duplicate readback result rank={rank} room={room}; use fresh logs"
+                        )
+                    readback[key] = {
+                        "rank": rank,
+                        "room": room,
+                        "attempt": fields["attempt"],
+                        "data": json.loads(line.split(" data=", 1)[1]),
+                    }
                 if "mapping_ready" in line:
                     mapping[role].add(rank)
                 if "event" not in fields or "room" not in fields:
@@ -155,13 +177,138 @@ def check_logs(
         raise RuntimeError(
             "not all ranks have returned to 16 available slots; wait for ACK or inspect logs"
         )
+    numerical: Any = "not run"
+    if require_readback:
+        numerical = check_readback(readback, rooms, readback_layers)
     return {
-        "status": "shadow_lifecycle_passed",
+        "status": "shadow_readback_passed"
+        if require_readback
+        else "shadow_lifecycle_passed",
         "rooms": rooms,
         "ranks_per_side": 16,
-        "readback": "not run",
+        "readback": numerical,
         "accuracy": "inspect output; full model evaluation deferred",
     }
+
+
+def check_readback(
+    reports: dict[tuple[int, int], dict[str, Any]],
+    rooms: list[int],
+    layers: int,
+) -> dict[str, Any]:
+    """Require completed real comparisons for every worker and both decode requests."""
+    if layers < 1:
+        raise ValueError("--readback-layers must be positive")
+    zero_rooms: list[int] = []
+    decode_rooms: list[int] = []
+    for room in rooms:
+        statuses = set()
+        for rank in range(16):
+            context = f"readback rank={rank} room={room}"
+            entry = reports.get((rank, room))
+            if entry is None:
+                raise RuntimeError(f"missing {context}")
+            data = entry["data"]
+            steps = data["forwards"]
+            if entry["attempt"] == "NONE" or data["cancelled"]:
+                raise RuntimeError(f"{context}: missing attempt or cancelled request")
+            if data["layers"] != layers or data["layer_checks"] != layers * steps:
+                raise RuntimeError(f"{context}: incomplete layer coverage")
+            if data["written_kv"] != steps:
+                raise RuntimeError(f"{context}: readback/write forward counts differ")
+            statuses.add(data["status"])
+            if data["status"] == "zero_decode":
+                if any(
+                    data[name] != 0
+                    for name in (
+                        "forwards",
+                        "replay_forwards",
+                        "prompt_kv",
+                        "decode_kv",
+                        "prompt_boundary_kv",
+                        "decode_first_kv",
+                        "max_topk",
+                    )
+                ):
+                    raise RuntimeError(
+                        f"{context}: zero-decode request has KV evidence"
+                    )
+            elif data["status"] == "passed":
+                if steps < 1 or not 0 < data["replay_forwards"] <= steps:
+                    raise RuntimeError(f"{context}: missing real readback Graph replay")
+                if data["min_topk"] != 2048 or data["max_topk"] != 2048:
+                    raise RuntimeError(f"{context}: expected top-k width 2048")
+                if any(
+                    data[name] is None or data[name] <= 0
+                    for name in (
+                        "prompt_kv",
+                        "decode_kv",
+                        "prompt_boundary_kv",
+                        "decode_first_kv",
+                        "min_valid_per_layer",
+                    )
+                ):
+                    raise RuntimeError(
+                        f"{context}: missing valid P/D KV or boundary evidence"
+                    )
+            else:
+                raise RuntimeError(f"{context}: comparison did not pass")
+        if len(statuses) != 1:
+            raise RuntimeError(
+                f"readback room={room}: workers disagree about zero-decode"
+            )
+        (zero_rooms if "zero_decode" in statuses else decode_rooms).append(room)
+    if not zero_rooms or len(decode_rooms) < 2:
+        raise RuntimeError(
+            "readback requires zero-decode plus two real decode/reuse requests"
+        )
+    return {
+        "status": "passed",
+        "zero_decode_rooms": zero_rooms,
+        "decode_rooms": decode_rooms,
+        "reuse": check_readback_reuse(reports, decode_rooms),
+        "reports": [reports[key] for key in sorted(reports)],
+        "scope": "valid selected KV at width 2048; not 2048 valid tokens or full-capacity coverage",
+    }
+
+
+def check_readback_reuse(
+    reports: dict[tuple[int, int], dict[str, Any]], rooms: list[int]
+) -> list[dict[str, Any]]:
+    """Require actual row and P/D slot reuse across distinct completed attempts."""
+    evidence: list[dict[str, Any]] = []
+    names = ("row", "prompt_slot", "decode_slot")
+    for rank in range(16):
+        seen: dict[tuple[int, ...], tuple[int, str]] = {}
+        reused = None
+        for room in rooms:
+            entry = reports[rank, room]
+            data = entry["data"]
+            for name in names:
+                value = data.get(name)
+                lower = 1 if name == "row" else 0
+                upper = 16 if name == "row" else 15
+                if type(value) is not int or not lower <= value <= upper:
+                    raise RuntimeError(
+                        f"readback rank={rank} room={room}: invalid attachment {name}={value}"
+                    )
+            attachment = tuple(data[name] for name in names)
+            previous = seen.get(attachment)
+            if previous is not None and previous[1] != entry["attempt"]:
+                reused = {
+                    "rank": rank,
+                    "rooms": [previous[0], room],
+                    "attempts": [previous[1], entry["attempt"]],
+                    **dict(zip(names, attachment)),
+                }
+            seen[attachment] = (room, entry["attempt"])
+        if reused is None:
+            raise RuntimeError(
+                f"readback rank={rank}: no actual row/P/D slot reuse across decode attempts; "
+                "wait for all RELEASE_ACKs, send the requests again, and retain this run's logs"
+            )
+        evidence.append(reused)
+    return evidence
 
 
 def main() -> None:
@@ -181,15 +328,38 @@ def main() -> None:
     logs.add_argument("--prefill-logs", type=Path, nargs="+", required=True)
     logs.add_argument("--decode-logs", type=Path, nargs="+", required=True)
     logs.add_argument("--requests", type=int, default=3)
+    logs.add_argument("--require-readback", action="store_true")
+    logs.add_argument(
+        "--readback-layers",
+        type=int,
+        default=78,
+        help="Expected local model layers (GLM-5.1: 78)",
+    )
     logs.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "requests":
         request_gate(args.url, args.output, args.timeout, args.decode_tokens)
     else:
-        result = check_logs(args.prefill_logs, args.decode_logs, args.requests)
         args.output.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            result = check_logs(
+                args.prefill_logs,
+                args.decode_logs,
+                args.requests,
+                require_readback=args.require_readback,
+                readback_layers=args.readback_layers,
+            )
+        except Exception as exc:
+            args.output.write_text(
+                json.dumps({"status": "failed", "error": str(exc)}, indent=2) + "\n"
+            )
+            raise
         args.output.write_text(json.dumps(result, indent=2) + "\n")
-        print("SHADOW_LIFECYCLE_PASSED (no KV readback)")
+        print(
+            "SHADOW_READBACK_PASSED"
+            if args.require_readback
+            else "SHADOW_LIFECYCLE_PASSED (no KV readback)"
+        )
 
 
 if __name__ == "__main__":

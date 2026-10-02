@@ -53,7 +53,7 @@ NUMA分配失败、大容量长尾和SDK失败清理的全部证据已汇总到
 | ① storage | layout、BM manager/view、writer、rank-pair startup helper 已提交；④已接入 | 小容量16对真实服务已有成功反馈；大容量/NUMA问题独立记入09，延期跟进 |
 | ② control | 单pair状态机、TP tick与真实请求接线已提交 | 10月2日单个真实请求在全部16 ranks完成正常闭环；零decode/连续请求复用仍待验证 |
 | ③ runtime/writer | 接口优化 `cfcafb4810`；83项CPU测试通过；双机writer gate两端各20条PASS；真实D服务全部16 ranks有Graph replay | 真实服务KV内容尚无readback证据 |
-| ④ service integration | 已提交；此前108项CPU测试、21源文件strict mypy通过；用户反馈小容量启动及单请求成功 | 三请求shadow gate与完整日志检查待执行；服务readback尚未实现 |
+| ④ service integration | 已提交；用户反馈小容量启动及单请求成功；本轮实现真实 selected KV readback，Mac 146项CPU测试、23文件strict mypy通过 | 读回与三请求完整日志的NPU验收待执行 |
 
 保留 shadow 范围：P 原生 HBM cache、原 main-KV transfer、D staging/hostSHM、
 Index K/其他 metadata 传输和 attention 消费路径继续工作；P/D 额外写入 mempool。
@@ -355,6 +355,50 @@ NPU 上由用户启动全部 16 对 rank，验证启动兼容性检查、正常 
 故障注入的系统验证归06，active cancel/peer fault 完整矩阵归07。
 
 ## Comments
+
+### 2026-10-02：02真实selected KV读回实现，准备小容量验收
+
+用户要求先保存基线，再完成本票真实KV读回并以小容量测试。原运行代码已提交；
+本轮开始时的未提交文档整理为基线 `7eed14f9d0`
+（`docs(npu): baseline mempool readback plan and defer NUMA investigation`）。
+
+实现路径：
+
+- `SGLANG_NPU_MEMPOOL_READBACK=1` 默认关闭，仅D执行。将01的`SparseKVCopy`
+  提升到生产mempool目录供gate和服务共用；新增`readback.py`集中设备比较与完成证据。
+  这是第二个gate新增的存储代码，不新增协议、queue或第三层Req adapter。
+- 旧路径hit/miss事件已等待后，从P/D独立slot读取实际top-k位置，与旧selected KV
+  逐元素比较。attention仍使用旧buffer；本轮不关闭hostSHM或原main-KV transfer。
+- service从批准的control snapshot传P slot；runtime固定表保存P/D slot、prompt
+  length及本轮实际提交的decode写入范围。同stream先写本层KV再读回，包括D position0。
+  负索引/padding排除；正索引超过已写范围会失败，不能当成无效列吞掉。
+- 各层共用同shape的scratch。forward末尾clone小型逐层结果并记录事件，事件完成后
+  才读host快照、核对层/请求覆盖并累计汇总；overlap和后续replay不能覆盖前一轮证据。
+  差异进入fault，错误给出rank/layer/room/rid/attempt/position/feature及P/D slot。
+- D drain覆盖新增读取。正常detach前输出逐请求`readback_result`；零decode只报告
+  `zero_decode`，不声称存在KV比对。P仍按原DONE/ACK协议释放slot。
+- `verify_shadow_service.py check-logs --require-readback --readback-layers 78`
+  同时检查全rank生命周期、真实readback replay、完整逐层次数、两来源/分界内容证据。
+  每个rank必须有不同decode attempts实际复用同一组row/P/D slot，不能把两个串行
+  HTTP响应当成复用证据。任一缺失不通过，数值及复用报告随JSON保存；旧生命周期
+  模式保留但不能替代本轮验收。
+
+Mac实际执行：新增用例按runtime/device事件、SDK copy及日志边界红→绿；完整CPU suite
+146项通过，23个源文件strict mypy通过，Ruff检查、格式检查及isort通过。
+回归包含不同P/D slot、D首行、错误逻辑位置、内容差异、pending event、overlap快照、
+16×2048 padding、zero-valid捕图调用、row复用、service故障保留、缺rank/layer报告，
+以及验收日志未真实复用/位置缺失或越界/重复attempt的拒绝。
+
+`code-review`已按规范与spec两条独立审查完成：修复新增数据容器未用msgspec.Struct、
+交付文档地址未使用占位符，以及日志gate未核对真实复用三项。两位审查者定向复核
+确认问题均已解决，无剩余finding；最后一次146项完整CPU suite和23文件strict mypy通过。
+
+交付命令：[READBACK_SERVICE.md](../../../ascend-mempool-test/READBACK_SERVICE.md)。
+context1024、P/D各512、偶数NUMA、TP16/slots16、D Graph width16；零decode、decode、
+复用三个请求，回传P/D完整日志、requests/result JSON及代码版本。
+**等待用户执行NPU验收**；本地检查不代表BM真实数值、NPU Graph或模型精度通过。
+top-k2048宽度只验证valid entries，不声称2048个有效token或8192容量已覆盖。
+本票保持open；09仍延期，本轮验收确认后再进入03。
 
 ### 2026-10-02：用户决定将NUMA排查移出demo主线
 

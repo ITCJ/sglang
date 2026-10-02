@@ -16,6 +16,8 @@
 | `manager.py` | `MempoolKVView` | 提供一个 layer 的逻辑 tensor、元素地址和同步 setup 写入；持有 manager 引用。 |
 | `diagnostics.py` | `startup_stage()` | 记录启动步骤和耗时；诊断开关打开后采样执行线程、主机/容器内存，后台线程不调用 BM/NPU。 |
 | `offload.py` | `MempoolKVOffload.write(values, *, slots, positions, valid)` | 通过显式 metadata 将 temporary KV 写入本侧 BM；不持有另一套输入缓存。 |
+| `copy.py` | `SparseCopyInputs` / `SparseKVCopy` | 从独立 gate 提升的共享 P/D UniDexCopy 路由；支持逐层复用读回 scratch。 |
+| `readback.py` | `KVReadback` | D selected KV 的设备数值比较、小型快照和完成后的验证汇总；不持有 PD 身份。 |
 | `rows.py` | `derive_kv_rows()` | 从普通 forward 张量推导 request row、全序列 token position 和 valid；目前有意保留 sparse manager 行推导的副本。 |
 | `runtime.py` | `MempoolRuntime` | 持有固定设备 binding 表、per-layer writer、forward/Graph 边界及本地写入计数/完成事件。 |
 | `runtime.py` | `KVRowBinding` / `KVWriteReceipt` | 标识一次本地 row attachment，保留 detach 后的完成事实；不表示 PD slot ownership。 |
@@ -183,6 +185,22 @@ Docker可能禁止读内核栈，日志会明确写`unavailable(PermissionError,
    关闭后的 Python view 拒绝返回地址，但已捕获的 raw pointer 无法靠 Python 检查拦截。
 
 ## 检查与当前边界
+
+开启 `SGLANG_NPU_MEMPOOL_READBACK=1` 后，D 在旧 selected KV 的 hit/miss 事件已等待
+的位置额外读 BM 并比较 BF16 值。service 将批准的 P slot 传给 `bind(..., prompt_slot=...)`，
+runtime 持有稳定的 P/D slot、prompt length 和实际 decode 写入范围表。当前 layer 的
+BM 写先于同 stream 的读回，因此当前 D position 0 也可参与比较。
+
+设备比较覆盖实际选中的 P/D 数据，包括原 HBM cache 命中；负索引/padding 不计入。
+正索引落在尚未写入的范围会失败。逐层共用 scratch，forward 末尾 clone 小型结果并
+记录事件；`poll_completed()` 只在事件完成后读取快照，失败进入 runtime fault。
+service 为错误补充 TP rank、room/rid/attempt 和两侧 slot；正常 D drain 后、detach 前
+输出逐请求 `readback_result`。capture 只构图，不报告真实 KV 通过。
+
+attention 使用原 selected KV，原 hostSHM/main-KV transfer 在本阶段保留。
+本次新增 copy/readback 两个存储模块是 02 第二个 gate 的实现；此前“保留八个模块”
+约束针对已交付的第一阶段 runtime/service 接线，未新增协议或 queue 适配层。
+小容量运行与报告判据见 [真实服务读回说明](../../../../../../ascend-mempool-test/READBACK_SERVICE.md)。
 
 CPU 行为测试放在仓库根目录 `ascend-mempool-test/tests/unit/`，见
 [测试与两机运行说明](../../../../../../ascend-mempool-test/README.md)。

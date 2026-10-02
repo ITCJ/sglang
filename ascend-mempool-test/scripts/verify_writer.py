@@ -14,7 +14,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from verify_graph import make_layout, parse_args, run
 
 from ascend_mempool.control import TestChannel
-from ascend_mempool.copy import SparseCopyInputs, SparseKVCopy
 from ascend_mempool.writer_cases import (
     WRITER_SENTINEL,
     WriterCase,
@@ -23,12 +22,17 @@ from ascend_mempool.writer_cases import (
 )
 
 if TYPE_CHECKING:
+    from sglang.srt.hardware_backend.npu.mempool.copy import (
+        SparseCopyInputs,
+        SparseKVCopy,
+    )
     from sglang.srt.hardware_backend.npu.mempool.manager import MempoolKVManager
     from sglang.srt.hardware_backend.npu.mempool.runtime import (
         KVRowBinding,
         MempoolRuntime,
     )
 else:
+    from ascend_mempool.copy import SparseCopyInputs, SparseKVCopy
     from ascend_mempool.pool import MempoolKVManager
     from ascend_mempool.runtime import KVRowBinding, MempoolRuntime
 

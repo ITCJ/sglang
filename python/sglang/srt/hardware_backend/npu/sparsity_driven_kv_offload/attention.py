@@ -178,6 +178,14 @@ def forward_sparsity_driven_kv_offload(
         _wait_stream_event(stream, sparse_kv_manager.hit_done)
         _wait_stream_event(stream, sparse_kv_manager.miss_done)
 
+        if backend.mempool_runtime is not None:
+            backend.mempool_runtime.compare_selected_kv(
+                layer.layer_id,
+                forward_batch.req_pool_indices[:batch_size],
+                topk_2d,
+                selected_kv_buffer,
+            )
+
         selected_k_nope, selected_k_rope = selected_kv_buffer.split(
             [nope_head_dim, rope_head_dim], dim=-1
         )

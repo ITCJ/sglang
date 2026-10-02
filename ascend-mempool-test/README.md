@@ -1,6 +1,10 @@
 # Ascend mempool 功能与服务测试
 
 Ticket 01 与02③的独立硬件验证入口，以及02④的真实服务 shadow gate。
+
+**当前执行入口：** [02 小容量真实 KV 读回](READBACK_SERVICE.md)。使用 context1024、
+P/D 各512、TP16、D Graph width16，开启真实 selected KV 对照及三请求生命周期检查。
+NUMA/大容量分配排查已延期到 ticket09。
 以下独立测试的目标环境为同一 superpod 的两台 Ascend 机器，
 原 graph/writer gate 每侧使用一张 NPU，BM启动诊断可选1到16张；使用MemFabric Hybrid
 **1.1.4**。不启动 SGLang server、router 或模型。
@@ -10,7 +14,7 @@ BM API 参考本地 `release/1.1` 的 `9fa9afbb`；两端运行时版本写入�
 
 ```text
 ascend-mempool-test/
-  src/ascend_mempool/  runtime 加载入口、双来源 copy、验证数据
+  src/ascend_mempool/  production 模块加载入口、验证数据
   scripts/            双机测试入口与两轮 gate runner
   tests/unit/         CPU 行为测试
   reports/            默认运行日志与 JSON 报告，已 gitignore
@@ -19,6 +23,7 @@ ascend-mempool-test/
 02 第一部分已将 `layout.py` 与 BM manager/view 移入
 `python/sglang/srt/hardware_backend/npu/mempool/`，并新增容量配置与 runtime offload。
 本测试 package 直接加载这些模块，绕过 SGLang public API；`pool.py` 保留兼容 import。
+02 读回阶段也将 `copy.py` 提升至该生产目录，独立 gate 和真实服务共用其路由实现。
 因此运行测试需要完整仓库 checkout，仍不依赖 SGLang server 或 SGLang 安装。
 
 - `KVLayout` 表达每 layer 的 `[B_slots, S, N, D]` BF16 逻辑布局，校验坐标和
@@ -60,11 +65,11 @@ python3 ascend-mempool-test/scripts/verify_graph.py --describe
 python3 ascend-mempool-test/scripts/verify_graph.py --describe --s-d 32768
 ```
 
-CPU 测试需要 CPU PyTorch。用独立虚拟环境安装开发检查工具，不安装 SGLang：
+CPU 测试需要 CPU PyTorch 和 msgspec。用独立虚拟环境安装开发检查工具，不安装 SGLang：
 
 ```bash
 python3 -m venv /tmp/ascend-mempool-dev
-/tmp/ascend-mempool-dev/bin/pip install torch mypy ruff isort
+/tmp/ascend-mempool-dev/bin/pip install torch msgspec mypy ruff isort
 PYTHONPATH=ascend-mempool-test/src /tmp/ascend-mempool-dev/bin/python -m unittest discover -s ascend-mempool-test/tests/unit -v
 /tmp/ascend-mempool-dev/bin/mypy --config-file ascend-mempool-test/pyproject.toml ascend-mempool-test/src ascend-mempool-test/scripts
 /tmp/ascend-mempool-dev/bin/mypy --config-file ascend-mempool-test/pyproject.toml python/sglang/srt/hardware_backend/npu/mempool
@@ -248,7 +253,8 @@ BM包含64字节probe并按1GiB对齐；实际大小以两侧`[MEMPOOL_INIT] CON
 小容量同时改变hostSHM、BM及部分context相关缓冲，单轮通过不能独立归因为hostSHM。
 先确认两侧全部16 ranks的BM/runtime就绪、D Graph capture完成及服务ready，再使用
 下文的短prompt/32输出token请求和日志检查验证shadow生命周期。
-若通过，再保持context=1024，仅恢复两侧S_P/S_D=4096，使用新的`LOG_DIR`重复运行。
+若后续恢复ticket09的NUMA排查，可保持context=1024，仅恢复两侧S_P/S_D=4096，
+使用新的`LOG_DIR`重复运行；当前demo不执行这项容量对照。
 该对照进一步区分context相关内存压力和BM容量影响；仍不能宣称只改变了hostSHM。
 
 从服务启动前开始采集NUMA状态，保留本轮P/D完整日志、实际参数与`CONFIG`字节数。
@@ -474,9 +480,10 @@ ALL_CHECKS_PASSED；交付版本为 `cfcafb4810`，远端hash与JSON文件未独
 本轮 Mac 检查通过不表示服务已在NPU运行。先核对本轮代码，再把同一版本部署到两侧；
 保存各侧 `git rev-parse HEAD` 和 `git diff --stat`，避免只更新其中一台。
 
-这一轮继续使用原 native KV/Index K/metadata 传输与 attention，P/D额外写入mempool；
-校验逐层写入计数及控制生命周期。**不做KV内容readback或AIME精度验收**。
-shadow服务通过并由用户确认后，再加入UniDexCopy top-k对照，完成02的第二个gate。
+这一轮继续使用原 native KV/Index K/metadata 传输与 attention，P/D额外写入mempool。
+在已反馈成功的小容量服务基础上，开启独立 BM top-k 读回，与旧路径 selected KV 比较；
+逐层写入计数、控制生命周期同时检查。具体实现和证据边界见
+[真实 KV 读回说明](READBACK_SERVICE.md)，AIME 精度验收仍留在后续阶段。
 
 ### 启动参数增量
 
@@ -486,6 +493,8 @@ shadow服务通过并由用户确认后，再加入UniDexCopy top-k对照，完�
 ```bash
 export SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD=1
 export SGLANG_NPU_ENABLE_MEMPOOL=1
+export SGLANG_NPU_MEMPOOL_READBACK=1
+export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6
 export SGLANG_DISAGGREGATION_BOOTSTRAP_TIMEOUT=600
 ```
 
@@ -498,8 +507,8 @@ export SGLANG_DISAGGREGATION_BOOTSTRAP_TIMEOUT=600
 --mempool-base-port 19000
 --mempool-pool-id 104
 --mempool-nic tcp://<LOCAL_IP>:25670
---mempool-prefill-capacity 8192
---mempool-decode-capacity 8192
+--mempool-prefill-capacity 512
+--mempool-decode-capacity 512
 --mempool-timeout 600
 ```
 
@@ -527,7 +536,7 @@ P/D的device mapping查询在失败后等待1秒再重试，最后一次等待�
 prefix复用、two-batch overlap或自动rebootstrap。普通scheduler overlap仍受支持。
 一次新请求需使用新的bootstrap room，当前demo不接续同room的重试。
 
-可以把两侧 `--context-length` 先改成16384、`--max-prefill-tokens` 改成8192，
+本轮两侧 `--context-length` 使用1024、`--max-prefill-tokens` 使用512，
 保留16个running requests上限。mempool固定16个slots，原D hostSHM同时存在；
 实际token预算和DRAM占用按你的机器调整，不能只按mempool容量推断整体内存。
 本轮脚本只发送短prompt及最多32个输出token。
@@ -563,12 +572,16 @@ python3 ascend-mempool-test/scripts/verify_shadow_service.py requests \
 python3 ascend-mempool-test/scripts/verify_shadow_service.py check-logs \
   --prefill-logs /tmp/mempool-02-service-p.log \
   --decode-logs /tmp/mempool-02-service-d.log \
-  --requests 3 --output /tmp/mempool-02-service-lifecycle.json
+  --requests 3 --require-readback --readback-layers 78 \
+  --output /tmp/mempool-02-service-lifecycle.json
 ```
 
 每个选项也可以传入该侧16个worker的独立日志。此gate假定设备ID为0–15，与现有样例一致。
-通过输出为 `SHADOW_LIFECYCLE_PASSED (no KV readback)`，JSON status为
-`shadow_lifecycle_passed`；它与独立writer的 `ALL_CHECKS_PASSED` 含义不同。
+通过输出为 `SHADOW_READBACK_PASSED`，JSON status为 `shadow_readback_passed`。
+报告包含全rank的逐请求数值对照和不同attempt实际复用同一组row/P/D slot的证据。
+若尚未复用，等全部ACK后再次发送请求并保留同轮日志，详见[读回验收说明](READBACK_SERVICE.md)。
+省略 `--require-readback` 时，仍可执行旧的
+生命周期检查，结果为 `SHADOW_LIFECYCLE_PASSED (no KV readback)`，不能用于本轮数值验收。
 
 检查器要求每侧16个rank的mapping、每个D设备的capture和真实replay、每个真实room的完整
 `ACQUIRE/ACQUIRED/BOUND_ACK → READY + native transfer → decode → drain/DONE/ACK`
