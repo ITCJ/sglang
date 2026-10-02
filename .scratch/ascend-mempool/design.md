@@ -14,6 +14,11 @@ demo 暂不支持自动 retraction/rebootstrap；采用下文的精度验收标�
 每个任务单独一个文件，并记录状态、验收条件及 blocking edges。
 旧的 `agent-mission-track/sglang-npu-develop.md` 不再作为项目维护入口。
 
+2026-10-02当前优先级：用户决定继续demo，NUMA/大容量分配排查汇总到
+[09](issues/09-numa-allocation-followup.md)并延期。当前主线是02剩余真实top-k读回、
+03正式attention切换并移除旧hostSHM、04正式Graph/模型验收；具体执行入口见
+[02最新计划](issues/02-rank-pair-control-lifecycle.md)。下文较早的实施进度按其日期解读。
+
 ## ticket02 接线方案（2026-10-01 更新，已确认实施入口）
 
 进度：01 已验收，02① storage、②控制协议/单 rank 状态机已提交；

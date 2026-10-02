@@ -1,5 +1,10 @@
 # BM 本地 NUMA 分配交叉诊断
 
+2026-10-02用户决定：NUMA/大容量分配排查延期，全部证据与后续事项集中在
+[ticket09](../.scratch/ascend-mempool/issues/09-numa-allocation-followup.md)。
+本文保留复现命令供后续使用；当前demo主线先完成真实KV读回、attention切换和旧hostSHM
+移除，不要求继续节点扫描或重复已通过的BM gate。
+
 ## 双机16池：临时只使用偶数NUMA节点
 
 当前代码通过`SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6`选择节点，
@@ -80,18 +85,17 @@ HAL日志确认成功调用所用的NUMA参数；若要确认物理页落点，�
 ### 2026-10-02 双机实测结果
 
 用户在交付`5b100c0001`后回传此模式两侧终端汇总。当时该模式使用旧COUNT=8配置，
-仍对应同一0/2/4/6分配；新节点列表配置尚待NPU复测。P目录
+仍对应同一0/2/4/6分配；新列表后来已在D实际服务日志中确认生效，但该轮大容量
+全部rank的最终结果尚未收到。P目录
 `/tmp/bm-even-numa-p/run.aAPaAl`，D目录`/tmp/bm-even-numa-d/run.EreEQi`。
 两侧device0–15全部PASSED，均有`ALL_EVEN_NUMA_CHECKS_PASSED`，
 counts均为`{0:4,2:4,4:4,6:4}`。本轮32个worker均正常退出，HAL节点、64字节
 peer probe与同时持池检查通过，未重现create2失败或退出134。用户确认结果无异常。
 
-偶数节点规避在独立1GiB/rank配置下通过。下一步重测原模型服务，仍使用context1024、
-P/D capacity512；两侧启动前显式export `SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6`，
-先P后D，并确认所有rank的
-BM/runtime ready、D Graph capture和最终服务ready。测试runner中的export不会设置
-其父shell环境。原始逐卡日志和JSON仍在上述服务器目录，本轮仅收到终端汇总；
-此结果不证明奇数节点故障已修复，也不替代真实模型KV内容验证。
+偶数节点规避在独立1GiB/rank配置下通过。服务使用该策略时，两侧启动前须显式export
+`SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6`；测试runner中的export不会设置其父shell。
+原始逐卡日志和JSON仍在上述服务器目录，本轮仅收到终端汇总；此结果不证明奇数节点
+故障已修复，也不替代真实模型KV内容验证。当前执行顺序见ticket02；NUMA实验按09延期。
 
 ## 单device/node交叉探针
 

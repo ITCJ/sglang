@@ -12,6 +12,26 @@
 
 **State:** open
 
+## 执行顺序（2026-10-02）
+
+用户决定优先完成demo，NUMA/大容量分配排查已移到
+[09](09-numa-allocation-followup.md)，延期且不阻塞本票；02剩余工作见其最新执行入口。
+本票以02真实KV读回验证过的读取路径为基础，按以下顺序完成切换：
+
+1. 将P/D BM sparse fetch接入D attention的selected KV输入，复用02的路由、索引、
+   有效掩码及同步逻辑，继续验证HBM cache hit/miss和两路Graph copy。
+2. 在完整的mempool模式切换中停用旧compact-KV offload、PD main-KV注册/传输与
+   D staging/长期hostSHM申请。保留P原生HBM prefill cache、HBM Index K、HBM sparse
+   cache/materialization及必要state/aux/metadata传输；逐个buffer核对其用途后调整。
+   旧SparseKVCacheManager的这些剩余职责必须有明确承接位置。
+3. 用小容量真实请求验收读取内容、Graph及释放，并证明旧hostSHM和main-KV traffic
+   确已关闭；随后04做固定greedy请求的baseline对照。大容量性能复测在正式路径上按需
+   恢复09，不把shadow阶段的双份DRAM占用当作最终服务的容量要求。
+
+具体改动入口为NPU `sparsity_driven_kv_offload/attention.py`的selected KV materialization、
+`manager.py`中的cache/host/staging职责，以及Ascend PD的main-KV buffer管理。
+实现时复用02的mempool runtime/control，不再新建一套binding或ownership状态。
+
 ## Acceptance criteria
 
 - [ ] 复用02 backend runtime、P/D writer、统一 tick、准入和 drain，不重复开发真实 P

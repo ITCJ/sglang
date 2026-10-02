@@ -89,14 +89,31 @@ comparison against the existing sparse PD TransferEngine baseline.
 
 ## Implementation Decisions
 
+### Demo Priority and Deferred NUMA Investigation (2026-10-02)
+
+The user chose to continue the functional demo and defer further NUMA/allocation
+debugging to [ticket09](issues/09-numa-allocation-followup.md). It records node-specific
+HAL failures, native cleanup crashes, large-allocation latency, existing workarounds,
+and all available evidence. It does not block tickets 02–08 and is not an additional
+demo acceptance gate. Deferral does not establish that these problems are fixed.
+
+Continue ticket02's actual top-k BM readback and normal lifecycle checks using the
+working small-capacity profile and explicit NUMA list `0,2,4,6`. The observed service
+baseline is context1024, prompt/decode capacities512, TP16, and graph batch width16.
+Next, ticket03 connects verified BM reads to attention and removes duplicate old
+hostSHM, main compact-KV transfer, and staging while retaining the required HBM
+cache/Index K and auxiliary transfers. Ticket04 verifies the formal Graph/model path.
+Larger-capacity allocation investigations should use the final storage configuration
+when resumed; actual KV correctness and ownership/drain requirements remain in force.
+
 ### Ticket 02 Staging
 
 The user confirmed a shadow integration stage before replacing the ordinary sparse
 PD storage path. Run real GLM-5.1 P/D servers, preserve native P HBM KV writes,
 main-KV transfer, D staging/hostSHM and attention reads, and additionally write
 temporary KV to P/D BM. Keep P BM ownership through D drain/DONE even though the
-ordinary transfer has completed. Test capacities may be reduced to 8192 on each
-side; configurable storage defaults remain 16384.
+ordinary transfer has completed. Tests may use smaller capacities, including the
+working 512-token-per-side service profile; configurable storage defaults remain 16384.
 
 First verify ordinary server operation with shadow writes and the real control
 lifecycle, without BM readback. After the user's NPU confirmation, add independent

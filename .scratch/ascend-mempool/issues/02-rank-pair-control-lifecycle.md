@@ -12,9 +12,36 @@
 
 **State:** open
 
-## 当前执行入口（2026-10-01 用户确认）
+## 当前执行入口（2026-10-02：继续demo，NUMA排查独立跟进）
 
-本票接下来分为两部分：先完成 part1–part3 已有代码的复核优化，再实现 part4。
+小容量真实服务已有单请求、全部16ranks Graph replay及正常释放的用户反馈。
+接下来完成本票的**真实top-k KV读回比对**，并将已交付的三请求生命周期检查一并补齐。
+NUMA分配失败、大容量长尾和SDK失败清理的全部证据已汇总到
+[09: NUMA分配跟进](09-numa-allocation-followup.md)；用户决定延期排查，09不阻塞本票
+及03–08。以下历史Comments中的“下一轮NUMA实验”不再是当前执行要求。
+
+具体推进顺序：
+
+1. 使用`SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6`和已可运行的小容量配置，
+   TP16、slots16、D graph batch width16。已有服务基线为context1024、P/D各512；
+   本阶段不要求先复现或解决context16384的大容量启动长尾。
+2. 在D实际selected top-k KV处接入独立BM读回buffer，复用已有view/UniDexCopy，
+   从P prompt与D decode两处按prompt length及实际written range取数，对照旧路径的
+   有效KV。旧路径继续供attention使用；读回比较须覆盖capture/replay后的真实数据，
+   比较/报告放在完成事件之后，不在capture中做host同步或读取未完成的buffer。
+3. 覆盖prompt/decode分界、D本地position0、slot映射、padding及zero-valid来源；
+   top-k宽度2048下只比对valid entries。小context中无效列较多，不能声称覆盖了
+   2048个有效token或8192容量的内容验证。错误报告包含rank/layer/请求及逻辑位置。
+4. 同一轮真实服务测试完成零decode、实际decode、下一请求复用与全rank DONE/ACK，
+   保存已有`verify_shadow_service.py`报告及新增数值比对结果。确认后完成02，进入03。
+
+本票关闭仍以真实KV内容和正常生命周期证据为依据。03负责将读回路径变成attention
+正式数据来源，并同时移除重复hostSHM/main-KV transfer；关闭hostSHM不是本票的临时
+分配优化。小配置足以推进功能接线，较大容量及性能问题由09后续处理。
+
+### 已完成实施安排与证据
+
+本票此前分为两部分：part1–part3 已有代码的复核优化，以及part4服务接入。
 第一部分接口优化已提交并推送为 `cfcafb4810`；用户反馈修改后的双机 writer gate 通过。
 未勾选项仍待接线/验证，硬件证据边界见本票最新 Comments。
 第一部分的勾选只表示本地实现与合同检查，不代表④的真实服务回收已经接通。
@@ -23,7 +50,7 @@
 
 | 已有部分 | 已取得的证据 | 当前边界 |
 | --- | --- | --- |
-| ① storage | layout、BM manager/view、writer、rank-pair startup helper 已提交；④已接入 | 10月2日用户反馈小容量16对真实服务启动成功；大容量/NUMA问题未解决 |
+| ① storage | layout、BM manager/view、writer、rank-pair startup helper 已提交；④已接入 | 小容量16对真实服务已有成功反馈；大容量/NUMA问题独立记入09，延期跟进 |
 | ② control | 单pair状态机、TP tick与真实请求接线已提交 | 10月2日单个真实请求在全部16 ranks完成正常闭环；零decode/连续请求复用仍待验证 |
 | ③ runtime/writer | 接口优化 `cfcafb4810`；83项CPU测试通过；双机writer gate两端各20条PASS；真实D服务全部16 ranks有Graph replay | 真实服务KV内容尚无readback证据 |
 | ④ service integration | 已提交；此前108项CPU测试、21源文件strict mypy通过；用户反馈小容量启动及单请求成功 | 三请求shadow gate与完整日志检查待执行；服务readback尚未实现 |
@@ -32,6 +59,9 @@
 Index K/其他 metadata 传输和 attention 消费路径继续工作；P/D 额外写入 mempool。
 先验收无服务内 readback 的真实运行，再加入独立 top-k readback 完成本票。
 原 main-KV transfer/hostSHM 的移除属于后续 cutover，不能在本票提前关闭。
+
+无readback单请求真实运行已有用户反馈；本轮以此继续readback实现，三请求完整日志
+检查随下一轮功能验收补齐，不再等待NUMA/大容量实验完成。
 
 ## 第一部分：part1–part3 已有代码的复核优化
 
@@ -325,6 +355,48 @@ NPU 上由用户启动全部 16 对 rank，验证启动兼容性检查、正常 
 故障注入的系统验证归06，active cancel/peer fault 完整矩阵归07。
 
 ## Comments
+
+### 2026-10-02：用户决定将NUMA排查移出demo主线
+
+用户认为可以继续推进；最终设计会关闭旧hostSHM，因此不在shadow阶段继续耗费时间
+优化BM分配。已新建09，汇总环境/版本、NUMA策略演变、已完成对照、最小复现、退出
+异常、大容量长尾、日志路径、未证实假设及未来验收；保留本票历史原文供追溯。
+09延期且不增加blocking edge。当前工作转向本票剩余top-k readback，随后03正式读取
+切换和移除重复存储、04短请求Graph/模型验收。三请求回归和读回仍待完成，未据此关闭02。
+本轮仅整理ticket/执行顺序，未修改运行代码，未执行新NPU测试。
+
+### 2026-10-02 20:42–20:45：context 16384、P/D各8192时D侧大页分配出现长尾
+
+用户回传D侧服务日志片段，`max_context_len=16384`，P/D布局均为78层、16 slots、
+8192 tokens、1 head、576维、bfloat16。服务提交号及完整日志路径未提供；日志确认
+`SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6`生效，所示TP按列表轮转，
+HAL的numa与选定节点一致。
+
+- 每rank逻辑KV为10.96875GiB，加probe并按1GiB对齐后本地BM为11GiB；
+  16rank单机合计176GiB，0/2/4/6各4池、44GiB。22GiB的GVA保留范围涵盖
+  P/D两方贡献，不代表每个worker都在本机分配22GiB物理内存。
+- 日志中单worker原有hostSHM为25,033,522,176 bytes（约23.31GiB）；
+  若16worker均采用此配置，原hostSHM合计约373.03GiB，与BM合计约549.03GiB，
+  尚不含权重及其他内存。此前双机偶数NUMA gate仅为1GiB/池、4GiB/节点。
+- TP13/14/12/11的create2约1.4–1.7秒完成。部分rank的1GiB页尝试返回6，
+  SDK保持所选NUMA并改用2MiB页后成功：TP1为21.302秒、TP5为79.821秒、
+  TP2为153.213秒、TP9为169.444秒。这些rank随后join、映射检查、runtime
+  初始化均完成，并进入decode Graph capture。
+- WAIT快照中TP1/2出现`alloc_contig_range`、`lru_add_drain_all`或
+  `__drain_all_pages`；TP5/6在`devmm_master_alloc_numa_large_pages`，
+  TP9/10在giant-page分配调用中的`devmm_master_free_giant_pages` /
+  `devmm_master_free_one_page_by_size`。等待定位于驱动本地物理页分配/释放；
+  片段不足以区分碎片化、并发争用及驱动行为各自的影响。
+- 快照仍有大量空闲内存、可见memory.failcnt=0，未出现总内存或cgroup OOM证据。
+  `HugePages_Total=0`也出现在已成功rank的快照中，不能单凭此值判定分配失败原因。
+- 截至片段末尾，TP6/10（均node4）已各等待约165秒；二者约150秒的1GiB页
+  尝试返回6后正在2MiB页路径。尚无二者最终END/FAIL；其他遗漏rank的完成状态
+  也不能从此片段补全。`[MEMPOOL_INIT] READY`仅表示该worker的BM/runtime就绪，
+  未证明本轮全部16rank、Graph capture、PD握手或服务请求完成。
+
+本轮agent在Mac核对现有layout/runtime及本地MF分配源码，计算容量并记录用户硬件
+反馈；仅修改本记录，未修改运行代码、未执行新NPU测试。继续等待本轮剩余rank、
+Graph及服务完成日志；ticket保持open。
 
 ### 2026-10-02：实际服务改用显式NUMA节点列表，无效配置提示并整体回退
 
