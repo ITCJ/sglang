@@ -326,6 +326,64 @@ NPU 上由用户启动全部 16 对 rank，验证启动兼容性检查、正常 
 
 ## Comments
 
+### 2026-10-02：实际服务改用显式NUMA节点列表，无效配置提示并整体回退
+
+用户要求取消COUNT变量，以`SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6`
+让实际服务按TP rank平均分到所选节点；配置不存在的节点时提示并恢复默认分配。
+此配置取代下方历史记录中的COUNT用法，不把旧版本的NPU结果记为新版本验收。
+
+- `mempool/manager.py`的共用创建入口按`nodes[tp_rank % len(nodes)]`选择节点，
+  保留列表顺序，使用真实TP rank；16rank选择0/2/4/6时各4池。
+- 在BM分配前读取本机`/sys/devices/system/node/online`校验整份列表。任一节点
+  不存在或未在线时，WARNING列出无效ID与本机在线节点，整份配置回退`flags=0`。
+  空值、重复ID、非法格式、超出MF可显式编码的0..126或拓扑无法读取/解析，也提示后回退。
+  没有配置时直接使用flags=0。显式绑定不会在HAL失败后尝试再次create2。
+- 删除COUNT的环境变量注册和读取；ENV诊断及创建日志改记新变量和`local_numa_nodes`。
+  `run_bm_startup_gate.sh --even-numa`也改为export节点列表，checker要求该列表及
+  每卡HAL节点与预期一致，默认分配不能满足偶数节点gate。
+- 池容量、BM句柄ownership及双侧drain/close协议沿用已有实现；新增检查只决定
+  本地DRAM分配flags。修改列表后须重启服务，已有pool不会迁移。
+
+Mac实际验证：先运行新增的不存在节点告警用例，旧实现因无告警失败；实现后
+`test_pair_startup test_bm_startup_gate test_pool test_startup_diagnostics`共36项通过。
+覆盖16rank/P/D映射、非顺序/不连续/单节点列表、无效列表整体回退、拓扑读取失败、
+旧COUNT无效、默认分配未访问拓扑，以及gate拒绝默认或错误节点列表。
+Ruff F/I/UP037、format、mempool及checker的严格mypy（9文件，ignore-missing-imports）
+通过；launcher的bash语法及三份运行文档的bash代码块语法通过（IP/NIC占位符先替换），
+git diff --check通过。本机无torch/NPU环境，未运行真实BM分配或模型服务。
+
+等待用户执行NPU验收：P/D同步本次代码后，在各自启动服务的shell中export新变量
+`SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6`，先P后D，沿用context1024、
+P/D capacity512，核对全部16rank的NUMA节点、BM/runtime ready、D Graph及服务ready。
+需要独立确认新配置入口时，仍使用[双机16池命令](../../../ascend-mempool-test/BM_NUMA_DIAGNOSTIC.md)，
+要求两侧全部worker退出0且两项startup/even-NUMA汇总通过。回传代码版本和两侧日志；
+最新双机通过记录仍是下方旧COUNT版本，本票保持open，真实KV及其余生命周期验收继续待测。
+
+### 2026-10-02：用户确认P/D偶数NUMA、各16个1GiB池全部通过
+
+用户回传`run_bm_startup_gate.sh --even-numa`两侧完整终端汇总，并确认“感觉没有问题”。
+对应交付版本为`5b100c0001`；本次未另外回传服务器git rev-parse或原始逐卡JSON。
+
+- P：`npu1-31` / `10.120.72.31`，rank0，目录`/tmp/bm-even-numa-p/run.aAPaAl`。
+- D：`npu1-32` / `10.120.72.32`，rank1，目录`/tmp/bm-even-numa-d/run.EreEQi`。
+- 两侧device0–15全部PASSED，均输出`ALL_EVEN_NUMA_CHECKS_PASSED`和
+  `ALL_BM_STARTUP_CHECKS_PASSED`，NUMA统计均为`{0:4,2:4,4:4,6:4}`。
+- 每侧16个1GiB贡献同时存活，每个偶数节点请求4GiB；双侧共32个worker均正常退出。
+  按checker通过条件，HAL成功分配节点、映射后64字节peer probe、本机ready barrier、
+  双侧drain/close及exit0检查通过。本轮未重现create2失败或退出134。
+
+- [x] 本次临时规避的独立双机16池验收：每侧NUMA0/2/4/6各4个1GiB池通过。
+- [ ] 模型加载、原D hostSHM等实际服务上下文中重测偶数NUMA策略。
+- [ ] 本票其余真实服务生命周期与KV readback验收。
+
+结论限于当前独立1GiB/rank配置：偶数节点规避已获双机实测支持；不代表奇数节点
+HAL6或SDK失败析构问题已修复，也不替代Graph/真实KV验收。无需重复相同独立gate。
+下一步两侧在启动原服务前显式export COUNT=8（测试runner的export不回传父shell），
+先P后D，保持context1024、P/D capacity512和每rank1GiB。核对全部16rank的NUMA选择、
+BM/runtime READY、D Graph capture和最终服务ready，再继续真实请求验证。
+用户提供的是终端汇总；原始逐卡日志、exits.tsv和summary保留在上述服务器目录。
+本轮仅记录实际反馈并核对本地服务启动配置，未执行新NPU测试；本票保持open。
+
 ### 2026-10-02：临时跳过奇数NUMA，并交付P/D各16池的小容量测试
 
 用户要求先避免奇数NUMA节点，再做P/D各16个mempool平均分布于偶数节点的测试。

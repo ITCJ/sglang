@@ -144,7 +144,7 @@ class TestStartupLauncher(unittest.TestCase):
                         "MEMPOOL_TEST_PYTHON": sys.executable,
                         "MEMPOOL_TEST_DRY_RUN": "1",
                         "MEMPOOL_TEST_DEVICES": "0",
-                        "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT": "4",
+                        "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE": "0",
                     },
                     text=True,
                     capture_output=True,
@@ -200,7 +200,7 @@ class TestEvenNumaReports(unittest.TestCase):
             (directory / f"device-{device}.json").write_text(json.dumps(report))
             (directory / f"device-{device}.log").write_text(
                 f"Creating mempool BM pool: tp_rank={device} "
-                f"local_numa_node_count=8 numa_node={node} bm_flags={128 + node}\n"
+                f"local_numa_nodes=0,2,4,6 numa_node={node} bm_flags={128 + node}\n"
                 f"Try HalMemCreate ret:0 numa:{node} spend time:100 size:1073741824\n"
                 f"[BM_STARTUP] LOCAL_POOLS_READY rank={rank} device={device} "
                 f"devices={list(range(16))}\n"
@@ -233,6 +233,8 @@ class TestEvenNumaReports(unittest.TestCase):
             ("size:1073741824", "size:2147483648"),
             ("Try HalMemCreate", "unrelated log"),
             ("LOCAL_POOLS_READY", "STILL_WAITING"),
+            ("local_numa_nodes=0,2,4,6", "local_numa_nodes=default"),
+            ("local_numa_nodes=0,2,4,6", "local_numa_nodes=0,6,4,2"),
         ):
             with self.subTest(change=after), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)

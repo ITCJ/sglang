@@ -6,17 +6,63 @@ import importlib
 import logging
 import math
 import os
+import re
 import socket
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 
 from .diagnostics import startup_stage
 from .layout import KVLayout, PoolLayout, check_index
 
 logger = logging.getLogger(__name__)
+_NUMA_NODE_ENV = "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE"
+
+
+def _configured_numa_nodes() -> tuple[int, ...]:
+    """Validate the whole ordered node list before BM allocation, or use defaults."""
+    value = os.environ.get(_NUMA_NODE_ENV)
+    if value is None:
+        return ()
+    try:
+        parts = [part.strip() for part in value.split(",")]
+        if any(not part.isascii() or not part.isdecimal() for part in parts):
+            raise ValueError("expected a comma-separated list of NUMA node IDs")
+        nodes = tuple(int(part) for part in parts)
+        # MF reserves the low-seven-bit value 127 for automatic affinity.
+        if any(node > 126 for node in nodes):
+            raise ValueError("NUMA node IDs must be in [0, 126]")
+        if len(nodes) != len(set(nodes)):
+            raise ValueError("NUMA node IDs must not repeat")
+
+        online = Path("/sys/devices/system/node/online").read_text().strip()
+        online_nodes: set[int] = set()
+        for part in online.split(","):
+            match = re.fullmatch(r"([0-9]+)(?:-([0-9]+))?", part)
+            if match is None:
+                raise ValueError(f"invalid local NUMA topology: {online!r}")
+            first = int(match[1])
+            last = int(match[2]) if match[2] is not None else first
+            if first > last:
+                raise ValueError(f"invalid local NUMA topology: {online!r}")
+            online_nodes.update(range(first, last + 1))
+        missing = [node for node in nodes if node not in online_nodes]
+        if missing:
+            raise ValueError(
+                f"nodes {missing} are not online on this host (online nodes: {online})"
+            )
+        return nodes
+    except (OSError, ValueError) as error:
+        logger.warning(
+            "Cannot apply %s=%r: %s; falling back to default BM allocation (flags=0)",
+            _NUMA_NODE_ENV,
+            value,
+            error,
+        )
+        return ()
 
 
 class BMHandle(Protocol):
@@ -84,27 +130,16 @@ class MempoolKVManager:
         *,
         tp_rank: int | None = None,
     ) -> MempoolKVManager:
-        """Allocate local DRAM, optionally cycling TP ranks over even NUMA nodes."""
+        """Allocate local DRAM, optionally cycling TP ranks over configured nodes."""
         layout.layout_for_rank(rank)
-        numa_env = "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT"
-        # Invalid explicit bindings must fail rather than use an env parser fallback.
-        numa_count_value = os.environ.get(numa_env)
-        numa_count = None
+        numa_nodes = _configured_numa_nodes()
         numa_node = -1
-        if numa_count_value is not None:
-            try:
-                numa_count = int(numa_count_value)
-            except ValueError:
-                raise ValueError(f"{numa_env} must be an integer in [1, 127]") from None
-            # MF reserves the low-seven-bit value 127 for automatic affinity.
-            if not 1 <= numa_count <= 127:
-                raise ValueError(f"{numa_env} must be an integer in [1, 127]")
+        if numa_nodes:
             if type(tp_rank) is not int or tp_rank < 0:
-                raise ValueError(f"{numa_env} requires a nonnegative integer tp_rank")
-            # Temporary workaround for HalMemCreate failures on odd NUMA IDs.
-            # N still counts all local nodes; choose only even IDs below N.
-            even_node_count = (numa_count + 1) // 2
-            numa_node = 2 * (tp_rank % even_node_count)
+                raise ValueError(
+                    f"{_NUMA_NODE_ENV} requires a nonnegative integer tp_rank"
+                )
+            numa_node = numa_nodes[tp_rank % len(numa_nodes)]
         # MF's performance bit enables the NUMA ID in the low seven bits.
         bm_flags = 0 if numa_node == -1 else (1 << 7) | numa_node
         if bm_module is None:
@@ -113,13 +148,13 @@ class MempoolKVManager:
         logger.info(
             "Creating mempool BM pool: bm_rank=%d pool_id=%d "
             "local_dram_bytes=%d rank_stride_bytes=%d "
-            "tp_rank=%s local_numa_node_count=%s numa_node=%d bm_flags=%d",
+            "tp_rank=%s local_numa_nodes=%s numa_node=%d bm_flags=%d",
             rank,
             pool_id,
             local_bytes,
             layout.rank_stride_bytes,
             tp_rank,
-            numa_count,
+            ",".join(map(str, numa_nodes)) or "default",
             numa_node,
             bm_flags,
         )
@@ -134,7 +169,7 @@ class MempoolKVManager:
             max_hbm_bytes=0,
             data_op="SDMA",
             tp_rank=tp_rank,
-            local_numa_node_count=numa_count,
+            local_numa_nodes=numa_nodes,
             numa_node=numa_node,
             bm_flags=bm_flags,
         ):

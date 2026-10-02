@@ -9,7 +9,7 @@ from test_pool import FakeBM
 from ascend_mempool.layout import KVLayout, PoolLayout
 from ascend_mempool.pool import MempoolKVManager
 
-NUMA_COUNT_ENV = "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT"
+NUMA_NODE_ENV = "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE"
 
 
 class FakeBMConfig:
@@ -92,7 +92,11 @@ class TestPairStartup(unittest.TestCase):
         environment_patch = patch.dict(os.environ)
         environment_patch.start()
         self.addCleanup(environment_patch.stop)
-        os.environ.pop(NUMA_COUNT_ENV, None)
+        os.environ.pop(NUMA_NODE_ENV, None)
+        os.environ.pop("SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT", None)
+        topology_patch = patch("pathlib.Path.read_text", return_value="0-7\n")
+        self.read_topology = topology_patch.start()
+        self.addCleanup(topology_patch.stop)
 
     def start(self, sdk, **overrides):
         """Start one worker with valid defaults and selected overrides."""
@@ -230,21 +234,19 @@ class TestPairStartup(unittest.TestCase):
                     self.assertTrue(sdk.handle.destroyed)
                     self.assertEqual(sdk.uninit_calls, 1)
 
-    def test_numa_binding_cycles_even_nodes_on_each_side(self):
-        """Keep both sides on even nodes, independent of the NPU ID and BM rank."""
-        for count, expected_flags in (
-            (1, [128] * 16),
-            (2, [128] * 16),
-            (3, [128, 130] * 8),
-            (4, [128, 130] * 8),
-            (7, [128, 130, 132, 134] * 4),
-            (8, [128, 130, 132, 134] * 4),
-            (127, list(range(128, 160, 2))),
+    def test_numa_binding_cycles_selected_nodes_on_each_side(self):
+        """Use the ordered list and TP rank, independent of the NPU ID and BM rank."""
+        for nodes, online, expected_flags in (
+            ("0,2,4,6", "0-7\n", [128, 130, 132, 134] * 4),
+            (" 6, 0 ,4 ", "0,2,4,6\n", [134, 128, 132] * 5 + [134]),
+            ("3", "0-3,6-7\n", [131] * 16),
+            ("126", "0-7,126\n", [254] * 16),
         ):
-            os.environ[NUMA_COUNT_ENV] = str(count)
+            os.environ[NUMA_NODE_ENV] = nodes
+            self.read_topology.return_value = online
             for tp_rank, flags in enumerate(expected_flags):
                 for role, bm_rank in (("prefill", 0), ("decode", 1)):
-                    with self.subTest(count=count, tp_rank=tp_rank, role=role):
+                    with self.subTest(nodes=nodes, tp_rank=tp_rank, role=role):
                         sdk = FakePairBM()
                         manager = self.start(
                             sdk, tp_rank=tp_rank, role=role, device_id=5
@@ -260,21 +262,96 @@ class TestPairStartup(unittest.TestCase):
                         finally:
                             manager.close(drain=lambda: None)
 
-    def test_invalid_numa_count_never_allocates_and_cleans_up_bm(self):
-        """Reject an explicit invalid count without falling back to flags=0."""
-        for count in ("", "0", "-1", "128", "1.5", "eight"):
-            with self.subTest(count=count):
-                os.environ[NUMA_COUNT_ENV] = count
+    def test_invalid_numa_list_warns_and_allocates_with_default_flags(self):
+        """A bad list falls back as a whole before attempting a native allocation."""
+        for nodes, online in (
+            ("", "0-7"),
+            (" ", "0-7"),
+            ("-1", "0-7"),
+            ("127", "0-127"),
+            ("128", "0-128"),
+            ("1.5", "0-7"),
+            ("eight", "0-7"),
+            ("0,", "0-7"),
+            ("0,,2", "0-7"),
+            ("0,0,2", "0-7"),
+            ("0-6", "0-7"),
+            ("0,2,4,8", "0-7"),
+            ("0,1", "0,2,4,6"),
+        ):
+            with self.subTest(nodes=nodes, online=online):
+                os.environ[NUMA_NODE_ENV] = nodes
+                self.read_topology.return_value = online
                 sdk = FakePairBM()
-                with self.assertRaisesRegex(ValueError, NUMA_COUNT_ENV):
-                    self.start(sdk)
-                self.assertIsNone(sdk.handle)
+                with (
+                    self.assertLogs("ascend_mempool.manager", level="WARNING") as logs,
+                    patch.object(sdk, "create2", wraps=sdk.create2) as create,
+                ):
+                    manager = self.start(sdk, tp_rank=0)
+                    try:
+                        create.assert_called_once()
+                        self.assertEqual(create.call_args.kwargs["flags"], 0)
+                        self.assertEqual(sdk.handle.options["flags"], 0)
+                    finally:
+                        manager.close(drain=lambda: None)
+                self.assertIn(NUMA_NODE_ENV, logs.output[0])
+                self.assertIn("falling back to default BM allocation", logs.output[0])
                 self.assertEqual(sdk.uninit_calls, 1)
-                self.assertFalse(sdk.initialized)
+
+    def test_nonexistent_node_warning_identifies_requested_and_available_nodes(self):
+        """Report the offending node even when this TP rank would select a valid one."""
+        os.environ[NUMA_NODE_ENV] = "0,8"
+        sdk = FakePairBM()
+        with self.assertLogs("ascend_mempool.manager", level="WARNING") as logs:
+            manager = self.start(sdk, tp_rank=0)
+            try:
+                self.assertEqual(sdk.handle.options["flags"], 0)
+            finally:
+                manager.close(drain=lambda: None)
+        self.assertIn("[8]", logs.output[0])
+        self.assertIn("online nodes: 0-7", logs.output[0])
+
+    def test_unavailable_or_invalid_topology_warns_and_uses_default(self):
+        """Do not guess valid node IDs if local sysfs cannot be read or parsed."""
+        os.environ[NUMA_NODE_ENV] = "0,2"
+        for failure in (
+            FileNotFoundError("missing sysfs"),
+            PermissionError("sysfs"),
+            "",
+            "0-",
+            "3-1",
+            "0,,2",
+        ):
+            with self.subTest(failure=failure):
+                self.read_topology.side_effect = (
+                    failure if isinstance(failure, OSError) else None
+                )
+                self.read_topology.return_value = failure
+                sdk = FakePairBM()
+                with self.assertLogs("ascend_mempool.manager", level="WARNING"):
+                    manager = self.start(sdk)
+                    try:
+                        self.assertEqual(sdk.handle.options["flags"], 0)
+                    finally:
+                        manager.close(drain=lambda: None)
+
+    def test_unset_and_removed_count_use_default_without_reading_topology(self):
+        """The removed COUNT variable must not silently reactivate explicit binding."""
+        for old_count in (None, "8"):
+            with self.subTest(old_count=old_count):
+                if old_count is not None:
+                    os.environ["SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT"] = old_count
+                sdk = FakeBM(1)
+                manager = MempoolKVManager.create(self.layout, 1, bm_module=sdk)
+                try:
+                    self.assertEqual(sdk.handle.options["flags"], 0)
+                    self.read_topology.assert_not_called()
+                finally:
+                    manager.close(drain=lambda: None)
 
     def test_direct_create_requires_tp_rank_for_numa_binding(self):
         """Never substitute P/D BM rank for an absent or invalid TP rank."""
-        os.environ[NUMA_COUNT_ENV] = "8"
+        os.environ[NUMA_NODE_ENV] = "0,2,4,6"
         for tp_rank in (None, -1, True, 1.5):
             with self.subTest(tp_rank=tp_rank):
                 sdk = FakeBM(1)

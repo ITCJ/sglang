@@ -69,16 +69,15 @@ P端缺少rank1映射时应结合D日志判断：D未返回`create2()`时，该�
 
 ### 按 TP rank 指定本地 NUMA 节点
 
-在每台机器启动服务前，按本机实际 NUMA 节点数设置：
+在P、D各自启动服务的shell中，列出希望使用的本机NUMA节点：
 
 ```bash
-export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT=8
+export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6
 ```
 
-2026-10-02 临时规避：显式绑定时跳过奇数 NUMA 节点，以避开当前机器上的
-`HalMemCreate ret:6`。`N` 仍表示本机全部连续节点 `0..N-1` 的数量；worker在其中的
-偶数节点间轮转，即 `numa_node = 2 * (tp_rank % ((N + 1) // 2))`，
-传给 `bm.create2()` 的 `flags = 0x80 | numa_node`。`N=8` 时：
+worker按列表顺序轮转，`numa_node = nodes[tp_rank % len(nodes)]`，
+传给`bm.create2()`的`flags = 0x80 | numa_node`。这里使用真实TP rank，
+与P/D的BM rank、NPU device ID无关。选择`0,2,4,6`时：
 
 | TP ranks | 请求 NUMA 节点 | BM flags |
 | --- | --- | --- |
@@ -87,20 +86,29 @@ export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT=8
 | 2、6、10、14 | 4 | 132 |
 | 3、7、11、15 | 6 | 134 |
 
-8节点机器继续设置`N=8`；设为4只会选择0/2。此规避改变了原先`tp_rank % N`的
-绑定规则，不代表SDK的奇数节点分配或失败清理问题已修复。实际物理落点仍需通过
-MF日志和各节点内存增量核对。双机16池测试见
+节点ID可不连续，顺序保留，允许逗号两侧有空白；例如`6,0`让TP0/2/4/...选6、
+TP1/3/5/...选0。TP数量不能整除节点数时，各节点池数最多相差1。P/D可配置不同列表。
+`0,2,4,6`用于规避当前机器奇数节点的`HalMemCreate ret:6`，不代表SDK问题已修复。
+节点存在性检查也不能证明HAL支持在该节点分配。实际物理落点仍需通过MF日志和
+各节点内存增量核对。双机16池测试见
 [偶数 NUMA 测试说明](../../../../../../ascend-mempool-test/BM_NUMA_DIAGNOSTIC.md)。
 
-未设置变量时传 `flags=0`，沿用驱动默认策略。显式空值、非整数、0、负数及超过127
-会在BM分配前报错；127是节点数上限，因为节点ID127被MF保留为自动亲和模式。
-P/D各自读取本地环境变量，数量可以不同；使用真实TP rank，不使用P/D的BM rank或NPU ID。
-该变量只影响mempool的本地DRAM创建，CPU绑核、原hostSHM及pool容量仍由原配置控制。
+创建池前会用`/sys/devices/system/node/online`检查整份列表。若包含本机不存在或
+未在线的节点，打印WARNING，指出无效ID及本机在线节点，整份配置回退为`flags=0`。
+空列表、重复ID、非法格式、ID不在0..126内或无法读取/解析本机拓扑，也提示后回退；
+ID127被MF保留为自动亲和模式。回退发生在调用BM分配之前，不在HAL分配失败后重试。
+例如本机在线节点为`0-7`时，`0,8`整体回退，TP0也不会显式绑定到0。
+
+未设置变量时直接使用`flags=0`，不读取拓扑。恢复默认模式可执行
+`unset SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE`。旧的
+`SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT`已移除，不再影响分配。
+配置在创建新pool时生效，修改环境变量后须重新启动服务，已存在的pool不会迁移。
+该变量控制mempool本地DRAM的NUMA请求，不设置CPU绑核或原hostSHM的策略。
 
 `Creating mempool BM pool`和`BEGIN stage=bm.create2`会记录`tp_rank`、
-`local_numa_node_count`、`numa_node`和`bm_flags`；未启用时分别显示节点`-1`和flags`0`。
+`local_numa_nodes`、`numa_node`和`bm_flags`；未启用或回退时节点为`-1`、flags为`0`。
 `local_dram_bytes`仍为该rank的完整贡献，按同一NUMA上的rank数累计预算。
-直接调用`MempoolKVManager.create()`时，启用此变量须同时提供`tp_rank`。
+直接调用`MempoolKVManager.create()`时，有效的显式绑定须同时提供非负整数`tp_rank`。
 
 ## 启动卡住时的诊断输出
 

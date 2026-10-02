@@ -194,32 +194,36 @@ rg 'MEMPOOL_INIT|Mempool BM|Try HalMemCreate|AllocReserve|alloc mem success|expo
 
 ### 按 TP rank 分配 NUMA（可选）
 
-需要显式分配时，在P、D各自的容器中按本机可用的连续NUMA节点数设置变量。
-以下以每机节点编号为0..7为例，在`ascend-sglang-script`目录运行已有服务启动脚本：
+需要显式分配时，在P、D各自的容器中列出希望使用的本机NUMA节点。
+以下选择0/2/4/6，在`ascend-sglang-script`目录运行已有服务启动脚本，先P后D：
 
 ```bash
-export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT=8
+export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6
 bash pd-disaggregation/glm51mempool.sh
 ```
 
-2026-10-02临时规避：服务只在本机偶数节点间轮转，`N=8`时使用
-`numa_node = 2 * (tp_rank % 4)`，因此TP0/4/8/12→NUMA0，TP1/5/9/13→NUMA2，
-TP2/6/10/14→NUMA4，TP3/7/11/15→NUMA6。`N`仍为全部本地节点数，8节点机器
-继续填8。一般规则为`2 * (tp_rank % ((N + 1) // 2))`，节点ID始终小于N。
-P/D可以使用不同节点数。未设置变量时保持`flags=0`的默认策略；回到默认模式用
-`unset SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT`。空值、0、负数、非整数、超过127
-均报错，不会静默改用默认模式。配置生效需重启进程，已存在的pool不会迁移。
+服务使用`numa_node = nodes[tp_rank % len(nodes)]`按列表顺序轮转。
+上述配置中TP0/4/8/12→NUMA0，TP1/5/9/13→NUMA2，TP2/6/10/14→NUMA4，
+TP3/7/11/15→NUMA6。支持单节点、不连续ID及逗号两侧空白，P/D可使用不同列表。
+创建前用本机`/sys/devices/system/node/online`校验整份列表；若任一节点不存在或
+未在线，会打印WARNING并整体回退默认分配`flags=0`，不会只保留有效节点。
+空值、重复ID、非法格式、ID不在0..126内、拓扑读取/解析失败也提示后回退。
+未设置变量时直接使用默认策略；回到默认模式用
+`unset SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE`。旧的
+`SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT`已取消。配置生效需重启进程，已存在的pool不会迁移。
 
 独立`run_bm_startup_gate.sh`也继承该变量；其每卡worker用`device_id`作为模拟TP rank，
 按同一规则分配。这一入口原有的11GiB/rank容量不变，应先确认每节点累计预算。
 真实服务仍可保留下一节的1GiB/rank小容量，先检查NUMA选择再扩大容量。
 
-核对每个rank的`Creating mempool BM pool`或`BEGIN stage=bm.create2`日志：
-`local_numa_node_count=8`，`numa_node=2*(tp_rank % 4)`，`bm_flags=128+numa_node`。
+核对每个rank的`Creating mempool BM pool`日志：`local_numa_nodes=0,2,4,6`，
+`numa_node=2*(tp_rank % 4)`，`bm_flags=128+numa_node`；对应字段也会出现在
+`BEGIN stage=bm.create2`中。
 这些字段记录请求的策略；开启上述启动诊断后，还应核对MF的`Try HalMemCreate`节点、
 返回值和分配前后NUMA内存快照。P/D全部rank须完成BM/runtime ready，独立gate须两侧
-全部PASSED；参数不匹配、HAL错误或持续卡住均不算通过。回传两侧完整日志、实际节点数、
-启动参数和代码版本；CPU测试不证明NPU机器的物理落点或内存压力下的驱动行为。
+全部PASSED；显式配置回退、参数不匹配、HAL错误或持续卡住均不算偶数节点验证通过。
+回传两侧完整日志、实际在线节点和选择列表、启动参数和代码版本；
+CPU测试不证明NPU机器的物理落点或内存压力下的驱动行为。
 
 ### 小容量服务对照（2026-10-02）
 

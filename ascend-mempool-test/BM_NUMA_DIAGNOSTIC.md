@@ -2,9 +2,9 @@
 
 ## 双机16池：临时只使用偶数NUMA节点
 
-本次代码将显式NUMA绑定改为在`0..N-1`的偶数节点间轮转，
-`SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT=N`仍表示全部本地节点数。
-8节点机器用N=8，16个TP worker按`2 * (tp_rank % 4)`分配；每侧布局如下：
+当前代码通过`SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6`选择节点，
+实际服务和独立测试均按`nodes[tp_rank % len(nodes)]`轮转。
+16个TP worker平均分到四个偶数节点；每侧布局如下：
 
 | NUMA节点 | device / 模拟TP rank | 池数 | 本地BM DRAM |
 | --- | --- | --- | --- |
@@ -21,7 +21,7 @@
 随后完成双侧drain/close并退出。
 
 先把本次修改同步到P、D相同版本的SGLang仓库，在原容器和Python/CANN环境中运行。
-要求每机有device0–15、连续NUMA节点0–7，偶数节点各有至少4GiB可分配余量；
+要求每机有device0–15、在线NUMA节点0/2/4/6，各有至少4GiB可分配余量；
 停止模型服务及此前测试的遗留worker，保持设备和下列测试端口空闲。
 沿用已有gate依赖：torch、torch_npu、MF，以及已安装的sgl-kernel-npu。
 每对device i使用P store `18773+2*i`、control `18774+2*i`、
@@ -43,11 +43,16 @@ bash ascend-mempool-test/scripts/run_bm_startup_gate.sh --even-numa \
   1 10.120.72.31 10.120.72.32 /tmp/bm-even-numa-d
 ```
 
-此选项在runner内设置COUNT=8、启动诊断=1、device0–15，覆盖调用环境中的旧COUNT
-或device子集。它只影响本次runner子进程；随后重跑真实服务仍须在两侧设置
-`export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT=8`。默认timeout=600秒，
+此选项在runner内设置`SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6`、启动诊断=1、
+device0–15，覆盖调用环境中的节点列表或device子集。它只影响本次runner子进程；
+随后重跑真实服务仍须在两侧设置
+`export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6`。默认timeout=600秒，
 可用`MEMPOOL_TEST_TIMEOUT`调整；`MEMPOOL_TEST_PYTHON`可指定服务器解释器。
 `MEMPOOL_TEST_DRY_RUN=1`仅打印16条命令，不创建任何BM池，不能算硬件通过。
+
+节点列表若含不存在或未在线的ID，manager会提示后整份回退为`flags=0`；其他非法
+列表或拓扑读取失败也会回退。本gate要求明确选择0/2/4/6，因此回退后即使BM创建成功
+也不会判为偶数节点测试通过。旧`SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT`已取消。
 
 runner打印本轮唯一`reports=.../run.XXXXXX`目录，每卡保存`.log/.json`，另有
 `pids.tsv`与`exits.tsv`。所有worker退出后自动生成`even-numa-summary.json`，
@@ -72,6 +77,22 @@ HAL日志确认成功调用所用的NUMA参数；若要确认物理页落点，�
 时gate可能保留池。没有最终汇总或进程未退出不算通过；按本轮`pids.tsv`和两侧日志
 定位存活worker。runner不会自动清理其他进程。
 
+### 2026-10-02 双机实测结果
+
+用户在交付`5b100c0001`后回传此模式两侧终端汇总。当时该模式使用旧COUNT=8配置，
+仍对应同一0/2/4/6分配；新节点列表配置尚待NPU复测。P目录
+`/tmp/bm-even-numa-p/run.aAPaAl`，D目录`/tmp/bm-even-numa-d/run.EreEQi`。
+两侧device0–15全部PASSED，均有`ALL_EVEN_NUMA_CHECKS_PASSED`，
+counts均为`{0:4,2:4,4:4,6:4}`。本轮32个worker均正常退出，HAL节点、64字节
+peer probe与同时持池检查通过，未重现create2失败或退出134。用户确认结果无异常。
+
+偶数节点规避在独立1GiB/rank配置下通过。下一步重测原模型服务，仍使用context1024、
+P/D capacity512；两侧启动前显式export `SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6`，
+先P后D，并确认所有rank的
+BM/runtime ready、D Graph capture和最终服务ready。测试runner中的export不会设置
+其父shell环境。原始逐卡日志和JSON仍在上述服务器目录，本轮仅收到终端汇总；
+此结果不证明奇数节点故障已修复，也不替代真实模型KV内容验证。
+
 ## 单device/node交叉探针
 
 用于区分 2026-10-02 TP16 服务中 `HalMemCreate ret:6` 与请求 NUMA 节点、
@@ -82,7 +103,7 @@ torch、torch_npu、memfabric_hybrid；不导入 SGLang 或自定义算子，不
 每个独立进程初始化 world_size=1 的 BM，申请 1 GiB HOST/SDMA 池（pool_id=105），
 核对本地实际容量后 destroy/uninitialize。测试在 join 和数据传输之前结束。
 `--numa-node=-1` 传 flags=0，其他节点传 `0x80 | node`；直接使用探针参数，
-不读取 `SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT`，因此可以独立选择 device 与节点。
+不读取 `SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE`，因此可以独立选择 device 与节点。
 
 先停止失败服务及遗留 worker，在原服务容器、原 Python/CANN 环境运行。保持当前
 内存状态，不需要再执行 drop_caches。选用空闲 device 0/1 和端口23300/23301；
@@ -174,8 +195,8 @@ timeout --kill-after=5s 120s gdb --batch \
 对照，不能用P的结果替代。若P的2/4/6成功、3/5/7失败，可进一步固定实际候选
 节点集合，再由驱动日志解释限制原因。
 
-上述六组结果采集时，服务使用原先`tp_rank % N`规则。当前临时修复已改为只使用
-偶数节点：8节点机器须设置COUNT=8才能选择0/2/4/6，COUNT=4只选择0/2。
+上述六组结果采集时，服务使用原先COUNT的`tp_rank % N`规则。当前代码已取消COUNT，
+选择偶数节点用`SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6`。
 单节点探针仍直接使用`--numa-node`，可继续复现奇数节点失败。恢复默认分配路径可
-在启动worker前unset该COUNT变量，并核对启动脚本没有重新export；`--even-numa`
-测试模式会主动设置COUNT=8。默认分配成功仍不构成物理落点、所有节点能力或大容量验收。
+在启动worker前unset该节点列表变量，并核对启动脚本没有重新export；`--even-numa`
+测试模式会主动设置0/2/4/6。默认分配成功仍不构成物理落点、所有节点能力或大容量验收。

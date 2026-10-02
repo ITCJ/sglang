@@ -962,9 +962,9 @@ class Envs:
     SGLANG_NPU_MOE_SITU_MXFP8_FUSED = EnvBool(True)
     SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD = EnvBool(False)
     SGLANG_NPU_ENABLE_MEMPOOL = EnvBool(False)
-    # Unset: default BM allocation. Set N: cycle TP ranks over even IDs below N
-    # as a temporary workaround for HAL allocation failures on odd NUMA nodes.
-    SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT = EnvInt(None)
+    # Comma-separated local NUMA IDs, e.g. 0,2,4,6; cycle by TP rank.
+    # Unset or invalid: warn for invalid values and use default BM allocation.
+    SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE = EnvStr(None)
     # Startup-only MF INFO, procfs snapshots and 15s wait diagnostics (0/1).
     SGLANG_NPU_MEMPOOL_DIAGNOSTICS = EnvBool(False)
     # Use FIAS V2 for DSpark MLA target verify and MHA draft paths. Graph

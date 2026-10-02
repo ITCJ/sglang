@@ -14,7 +14,7 @@ GIB = 1 << 30
 EXPECTED_NODES = (0, 2, 4, 6) * 4
 CREATE = re.compile(
     r"Creating mempool BM pool:.*\btp_rank=(\d+) "
-    r"local_numa_node_count=(\d+) numa_node=(-?\d+) bm_flags=(\d+)"
+    r"local_numa_nodes=([0-9,]+) numa_node=(-?\d+) bm_flags=(\d+)"
 )
 HAL = re.compile(r"Try HalMemCreate ret:(-?\d+) numa:(\d+).*?\bsize:(\d+)")
 
@@ -64,8 +64,11 @@ def check_reports(directory: Path, rank: int) -> dict[str, Any]:
             ):
                 raise ValueError("missing 64-byte peer probe for the 16-device run")
             log = (directory / f"device-{device}.log").read_text(errors="replace")
-            requested = [tuple(map(int, match)) for match in CREATE.findall(log)]
-            if requested != [(device, 8, expected_node, 0x80 | expected_node)]:
+            requested = [
+                (int(tp_rank), nodes, int(node), int(flags))
+                for tp_rank, nodes, node, flags in CREATE.findall(log)
+            ]
+            if requested != [(device, "0,2,4,6", expected_node, 0x80 | expected_node)]:
                 raise ValueError(f"unexpected BM NUMA request: {requested}")
             attempts = [tuple(map(int, match)) for match in HAL.findall(log)]
             worker["hal_attempts"] = attempts
