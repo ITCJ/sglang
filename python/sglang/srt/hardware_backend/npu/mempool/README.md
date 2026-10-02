@@ -67,6 +67,29 @@ P端缺少rank1映射时应结合D日志判断：D未返回`create2()`时，该�
 计算错误。映射完成后，runtime分配固定binding/counter表和逐层writer，再attach到backend。
 `[MEMPOOL_INIT] READY`仅表示这部分完成，服务准入还需要后续PD control ready。
 
+### 按 TP rank 指定本地 NUMA 节点
+
+在每台机器启动服务前，按本机实际 NUMA 节点数设置：
+
+```bash
+export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT=8
+```
+
+设置为 `N` 后，每个 worker 的 BM 本地 DRAM 使用 `numa_node = tp_rank % N`，
+传给 `bm.create2()` 的 `flags = 0x80 | numa_node`。例如 `N=8` 时，
+TP0/8使用NUMA0，TP1/9使用NUMA1，依此类推。节点编号须为本机可用的连续 `0..N-1`；
+这是显式分配请求，实际物理落点仍需通过 MF 日志和各节点内存增量核对。
+
+未设置变量时传 `flags=0`，沿用驱动默认策略。显式空值、非整数、0、负数及超过127
+会在BM分配前报错；127是节点数上限，因为节点ID127被MF保留为自动亲和模式。
+P/D各自读取本地环境变量，数量可以不同；使用真实TP rank，不使用P/D的BM rank或NPU ID。
+该变量只影响mempool的本地DRAM创建，CPU绑核、原hostSHM及pool容量仍由原配置控制。
+
+`Creating mempool BM pool`和`BEGIN stage=bm.create2`会记录`tp_rank`、
+`local_numa_node_count`、`numa_node`和`bm_flags`；未启用时分别显示节点`-1`和flags`0`。
+`local_dram_bytes`仍为该rank的完整贡献，按同一NUMA上的rank数累计预算。
+直接调用`MempoolKVManager.create()`时，启用此变量须同时提供`tp_rank`。
+
 ## 启动卡住时的诊断输出
 
 默认在调用边界记录`[MEMPOOL_INIT] BEGIN/END/FAIL`，含stage、PID/TID和耗时。

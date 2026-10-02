@@ -1,5 +1,6 @@
 """Check BM rank-pair startup at the MemFabric SDK boundary."""
 
+import os
 import unittest
 from unittest.mock import patch
 
@@ -7,6 +8,8 @@ from test_pool import FakeBM
 
 from ascend_mempool.layout import KVLayout, PoolLayout
 from ascend_mempool.pool import MempoolKVManager
+
+NUMA_COUNT_ENV = "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT"
 
 
 class FakeBMConfig:
@@ -86,6 +89,10 @@ class TestPairStartup(unittest.TestCase):
         connection_patch = patch("socket.create_connection")
         self.connect = connection_patch.start()
         self.addCleanup(connection_patch.stop)
+        environment_patch = patch.dict(os.environ)
+        environment_patch.start()
+        self.addCleanup(environment_patch.stop)
+        os.environ.pop(NUMA_COUNT_ENV, None)
 
     def start(self, sdk, **overrides):
         """Start one worker with valid defaults and selected overrides."""
@@ -215,12 +222,64 @@ class TestPairStartup(unittest.TestCase):
                     self.assertEqual(config.nic_url, "tcp://10.120.72.31:24670")
                     self.assertEqual(config.init_timeout, 1)
                     self.assertEqual(manager.rank, expected_rank)
+                    self.assertEqual(sdk.handle.options["flags"], 0)
                     self.assertGreater(
                         manager.view(1 - expected_rank, 0).device_base, 0
                     )
                     manager.close(drain=lambda: None)
                     self.assertTrue(sdk.handle.destroyed)
                     self.assertEqual(sdk.uninit_calls, 1)
+
+    def test_numa_binding_uses_tp_rank_on_each_side(self):
+        """Distribute TP workers independently of the NPU ID and P/D BM rank."""
+        for count, expected_flags in (
+            (1, [128] * 16),
+            (4, [128, 129, 130, 131] * 4),
+            (8, list(range(128, 136)) * 2),
+            (127, list(range(128, 144))),
+        ):
+            os.environ[NUMA_COUNT_ENV] = str(count)
+            for tp_rank, flags in enumerate(expected_flags):
+                for role, bm_rank in (("prefill", 0), ("decode", 1)):
+                    with self.subTest(count=count, tp_rank=tp_rank, role=role):
+                        sdk = FakePairBM()
+                        manager = self.start(
+                            sdk, tp_rank=tp_rank, role=role, device_id=5
+                        )
+                        try:
+                            self.assertEqual(sdk.handle.options["flags"], flags)
+                            self.assertEqual(manager.rank, bm_rank)
+                            self.assertEqual(sdk.init_calls[0][2], 5)
+                            self.assertEqual(
+                                sdk.handle.options["local_dram_size"],
+                                self.layout.contribution_bytes(bm_rank),
+                            )
+                        finally:
+                            manager.close(drain=lambda: None)
+
+    def test_invalid_numa_count_never_allocates_and_cleans_up_bm(self):
+        """Reject an explicit invalid count without falling back to flags=0."""
+        for count in ("", "0", "-1", "128", "1.5", "eight"):
+            with self.subTest(count=count):
+                os.environ[NUMA_COUNT_ENV] = count
+                sdk = FakePairBM()
+                with self.assertRaisesRegex(ValueError, NUMA_COUNT_ENV):
+                    self.start(sdk)
+                self.assertIsNone(sdk.handle)
+                self.assertEqual(sdk.uninit_calls, 1)
+                self.assertFalse(sdk.initialized)
+
+    def test_direct_create_requires_tp_rank_for_numa_binding(self):
+        """Never substitute P/D BM rank for an absent or invalid TP rank."""
+        os.environ[NUMA_COUNT_ENV] = "8"
+        for tp_rank in (None, -1, True, 1.5):
+            with self.subTest(tp_rank=tp_rank):
+                sdk = FakeBM(1)
+                with self.assertRaisesRegex(ValueError, "requires.*tp_rank"):
+                    MempoolKVManager.create(
+                        self.layout, 1, bm_module=sdk, tp_rank=tp_rank
+                    )
+                self.assertIsNone(sdk.handle)
 
     def test_invalid_identity_and_network_settings_fail_before_bm_initialization(self):
         """Reject roles, ranks, ports, and addresses that cannot identify a pair."""

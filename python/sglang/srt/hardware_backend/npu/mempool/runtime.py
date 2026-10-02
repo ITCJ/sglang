@@ -545,6 +545,7 @@ def initialize_for_model_runner(model_runner: Any) -> None:
                         "SGLANG_SET_CPU_AFFINITY",
                         "SGLANG_NUMA_BIND_V2",
                         "SGLANG_AUTO_NUMA_BIND",
+                        "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT",
                         "PYTORCH_NPU_ALLOC_CONF",
                         "SGLANG_NPU_USE_MULTI_STREAM",
                         "TASK_QUEUE_ENABLE",

@@ -81,19 +81,44 @@ class MempoolKVManager:
         rank: int,
         pool_id: int = 0,
         bm_module: Any = None,
+        *,
+        tp_rank: int | None = None,
     ) -> MempoolKVManager:
-        """Allocate one two-rank DRAM pool through an already initialized BM SDK."""
+        """Allocate local DRAM, optionally binding it by TP rank and NUMA count."""
         layout.layout_for_rank(rank)
+        numa_env = "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT"
+        # Invalid explicit bindings must fail rather than use an env parser fallback.
+        numa_count_value = os.environ.get(numa_env)
+        numa_count = None
+        numa_node = -1
+        if numa_count_value is not None:
+            try:
+                numa_count = int(numa_count_value)
+            except ValueError:
+                raise ValueError(f"{numa_env} must be an integer in [1, 127]") from None
+            # MF reserves the low-seven-bit value 127 for automatic affinity.
+            if not 1 <= numa_count <= 127:
+                raise ValueError(f"{numa_env} must be an integer in [1, 127]")
+            if type(tp_rank) is not int or tp_rank < 0:
+                raise ValueError(f"{numa_env} requires a nonnegative integer tp_rank")
+            numa_node = tp_rank % numa_count
+        # MF's performance bit enables the NUMA ID in the low seven bits.
+        bm_flags = 0 if numa_node == -1 else (1 << 7) | numa_node
         if bm_module is None:
             bm_module = importlib.import_module("memfabric_hybrid").bm
         local_bytes = layout.contribution_bytes(rank)
         logger.info(
             "Creating mempool BM pool: bm_rank=%d pool_id=%d "
-            "local_dram_bytes=%d rank_stride_bytes=%d",
+            "local_dram_bytes=%d rank_stride_bytes=%d "
+            "tp_rank=%s local_numa_node_count=%s numa_node=%d bm_flags=%d",
             rank,
             pool_id,
             local_bytes,
             layout.rank_stride_bytes,
+            tp_rank,
+            numa_count,
+            numa_node,
+            bm_flags,
         )
         with startup_stage(
             "bm.create2",
@@ -105,6 +130,10 @@ class MempoolKVManager:
             local_hbm_bytes=0,
             max_hbm_bytes=0,
             data_op="SDMA",
+            tp_rank=tp_rank,
+            local_numa_node_count=numa_count,
+            numa_node=numa_node,
+            bm_flags=bm_flags,
         ):
             handle = bm_module.create2(
                 id=pool_id,
@@ -113,6 +142,7 @@ class MempoolKVManager:
                 local_hbm_size=0,
                 max_hbm_size=0,
                 data_op_type=bm_module.BmDataOpType.SDMA,
+                flags=bm_flags,
             )
             if handle is None:
                 raise RuntimeError("BM create2 returned no handle")
@@ -220,7 +250,7 @@ class MempoolKVManager:
             try:
                 if bm_module.bm_rank_id() != rank:
                     raise RuntimeError("BM initialized with an unexpected rank ID")
-                manager = cls.create(layout, rank, pool_id, bm_module)
+                manager = cls.create(layout, rank, pool_id, bm_module, tp_rank=tp_rank)
                 manager.join(timeout)
             except Exception:
                 try:

@@ -187,6 +187,32 @@ rg 'MEMPOOL_INIT|Mempool BM|Try HalMemCreate|AllocReserve|alloc mem success|expo
 完成诊断后移除`SGLANG_NPU_MEMPOOL_DIAGNOSTICS`即可在下一次启动关闭后台采样和主动
 设置MF INFO；基本阶段日志保留。诊断仅增强可观测性，尚未认定或修复服务卡住的根因。
 
+### 按 TP rank 分配 NUMA（可选）
+
+需要显式分配时，在P、D各自的容器中按本机可用的连续NUMA节点数设置变量。
+以下以每机节点编号为0..7为例，在`ascend-sglang-script`目录运行已有服务启动脚本：
+
+```bash
+export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT=8
+bash pd-disaggregation/glm51mempool.sh
+```
+
+服务按真实`tp_rank % 8`分配本地BM DRAM：TP0/8→NUMA0，TP1/9→NUMA1，依此类推。
+P/D可以使用不同节点数。未设置变量时保持`flags=0`的默认策略；回到默认模式用
+`unset SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT`。空值、0、负数、非整数、超过127
+均报错，不会静默改用默认模式。配置生效需重启进程，已存在的pool不会迁移。
+
+独立`run_bm_startup_gate.sh`也继承该变量；其每卡worker用`device_id`作为模拟TP rank，
+按同一规则分配。这一入口原有的11GiB/rank容量不变，应先确认每节点累计预算。
+真实服务仍可保留下一节的1GiB/rank小容量，先检查NUMA选择再扩大容量。
+
+核对每个rank的`Creating mempool BM pool`或`BEGIN stage=bm.create2`日志：
+`local_numa_node_count=8`，`numa_node=tp_rank % 8`，`bm_flags=128+numa_node`。
+这些字段记录请求的策略；开启上述启动诊断后，还应核对MF的`Try HalMemCreate`节点、
+返回值和分配前后NUMA内存快照。P/D全部rank须完成BM/runtime ready，独立gate须两侧
+全部PASSED；参数不匹配、HAL错误或持续卡住均不算通过。回传两侧完整日志、实际节点数、
+启动参数和代码版本；CPU测试不证明NPU机器的物理落点或内存压力下的驱动行为。
+
 ### 小容量服务对照（2026-10-02）
 
 用户确认关闭D侧CPU亲和性后仍卡住，下一轮恢复`SGLANG_SET_CPU_AFFINITY=1`。

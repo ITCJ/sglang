@@ -23,10 +23,10 @@
 
 | 已有部分 | 已取得的证据 | 当前边界 |
 | --- | --- | --- |
-| ① storage | layout、BM manager/view、writer、rank-pair startup helper 已提交；④已接入 | 16对真实服务启动待NPU验收 |
-| ② control | 单pair状态机已提交；④新增TP tick、真实请求接线 | Mac行为验证通过，真实TP待NPU验收 |
-| ③ runtime/writer | 接口优化 `cfcafb4810`；83项CPU测试通过；10月1日用户反馈双机 writer gate 两端各20条PASS | 合成 batch 的写入/Graph 已回归；真实服务闭环仍待④ |
-| ④ service integration | 已实现；108项CPU测试、21源文件strict mypy通过，保持unstaged | 等待用户核对及shadow服务gate；readback尚未实现 |
+| ① storage | layout、BM manager/view、writer、rank-pair startup helper 已提交；④已接入 | 10月2日用户反馈小容量16对真实服务启动成功；大容量/NUMA问题未解决 |
+| ② control | 单pair状态机、TP tick与真实请求接线已提交 | 10月2日单个真实请求在全部16 ranks完成正常闭环；零decode/连续请求复用仍待验证 |
+| ③ runtime/writer | 接口优化 `cfcafb4810`；83项CPU测试通过；双机writer gate两端各20条PASS；真实D服务全部16 ranks有Graph replay | 真实服务KV内容尚无readback证据 |
+| ④ service integration | 已提交；此前108项CPU测试、21源文件strict mypy通过；用户反馈小容量启动及单请求成功 | 三请求shadow gate与完整日志检查待执行；服务readback尚未实现 |
 
 保留 shadow 范围：P 原生 HBM cache、原 main-KV transfer、D staging/hostSHM、
 Index K/其他 metadata 传输和 attention 消费路径继续工作；P/D 额外写入 mempool。
@@ -325,6 +325,87 @@ NPU 上由用户启动全部 16 对 rank，验证启动兼容性检查、正常 
 故障注入的系统验证归06，active cancel/peer fault 完整矩阵归07。
 
 ## Comments
+
+### 2026-10-02：按本地 NUMA 节点数和 TP rank 显式分配 BM
+
+用户要求优先处理NUMA分配：新增环境变量，只有显式设置本机节点数后才按TP rank选择节点。
+实现`SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT=N`，本地节点为`tp_rank % N`，
+传入`bm.create2(flags=0x80 | numa_node)`；未设置时仍传`flags=0`。
+变量在P/D各自本机读取，不进入peer layout或控制协议的兼容性检查，允许两侧节点数不同。
+N须为1..127的整数，假设节点连续编号0..N-1；空值/0/负数/非整数/超范围在BM分配前报错，
+不会使用默认策略替代。MF低7位的127保留为自动亲和，当前策略最多选择节点126。
+
+`MempoolKVManager.create()`增加keyword-only `tp_rank`；服务rank-pair入口传真实TP rank，
+独立graph/writer/BM gate共享的`verify_graph.run()`传device index作为模拟TP rank。
+启用变量却未提供有效TP rank时拒绝创建，避免把P/D BM rank 0/1当作TP rank。
+BM创建日志和startup stage记录TP rank、节点数、请求节点及flags；runtime诊断环境快照
+也包含新变量。仅决定BM本地DRAM分配位置，容量、CPU绑核及原hostSHM配置不变。
+
+Mac实际检查：
+
+- `test_pair_startup`、`test_pool`、`test_startup_diagnostics`、`test_bm_startup_gate`
+  共**28项通过**。新增用例验证1/4/8/127节点数下全部16个TP的P/D SDK flags、NPU ID
+  与TP rank不同、默认flags=0、非法配置不分配pool并清理BM context、缺失TP rank拒绝。
+- 改动的5个Python文件通过Ruff F/UP037、format及import排序检查。
+- 标准strict mypy检查因本机缺少PyTorch报告3处torch import错误；在同一严格配置追加
+  `--ignore-missing-imports`后，mempool包及独立gate共9个源码文件通过。
+  本轮未重跑依赖PyTorch的完整CPU suite，也未执行NPU测试。
+
+运行说明已补充到mempool模块README和`ascend-mempool-test/README.md`：本机8节点示例
+`export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT=8`，重启后TP0/8→NUMA0等；
+同时交代unset恢复默认、独立gate继承变量、期望flags/HAL日志及逐节点内存增量核对。
+等待用户执行NPU验收，实际物理落点、内存压力下驱动失败/回退行为及大容量启动问题仍未验证。
+本票保持open，单请求Graph/正常释放的已有证据不等于NUMA或KV内容验收通过。
+
+### 2026-10-02：小容量真实服务启动、单请求Graph与正常释放闭环通过
+
+用户反馈本轮P/D成功launch，随后curl小学数学题得到正确回答，并粘贴启动与请求日志。
+沿用前轮小容量配置context=1024、S_P=S_D=512、CPU亲和性=1；本地已推送入口版本为
+sglang `ecf91a4144`、启动脚本 `4f8879e`，未独立读取两台NPU机器的实际HEAD/完整参数。
+D TP14的`mapping_ready`确认P_bytes/D_bytes/stride均为1073741824，即每rank各侧
+贡献1GiB；全部16 ranks随后完成POOL_HELLO/POOL_READY，并实际处理同一个请求。
+
+启动时序及代码核对：
+
+- P在01:19:02完成本机warmup并输出ready；D日志记录decode graph capture耗时96.94秒，
+  01:20:25完成全部16 ranks的control握手，01:20:28完成本机warmup并输出ready。
+- `initialize_for_model_runner()`在Graph capture前完成BM映射及runtime安装。
+  `MempoolPDService.from_scheduler()`在BM/Graph初始化后接入原Ascend transport，
+  其`mapping_ready`日志是接入时再次报告已有映射，不能作为BM刚完成分配的时间。
+- HTTP启动warmup携带FAKE_BOOTSTRAP_HOST，mempool service跳过其真实请求ownership。
+  因此P可以在D control ready之前完成本机warmup；单侧HTTP ready不代表整个PD链路ready。
+- 日志中`smem_trans_entry`、`RegisterLocalMemory Hbm:1`、`memType:DEVICE`及随后
+  `IpcOpenMemory`属于原TransferEngine的设备内存注册/连接，不是重新分配DRAM BM。
+
+真实请求身份为room=`8783841730712016187`、attempt=`94e4f933c285d4ed6ab0ff1bbde52c03`，
+两侧均slot=0/generation=1。所贴片段覆盖以下全部16 ranks的事实：
+
+| 时间 | 可观察事件与结果 |
+| --- | --- |
+| 01:28:22 | D acquire_decode/ACQUIRED，发ACQUIRE/BOUND_ACK，free从16到15 |
+| 01:28:23 | D收到KV_READY，仍为WAITING_READY，等待原native transfer |
+| 01:28:27 | P native_handoff后row_detach（row=16、completed=47）及native_free；P仍WAITING_DONE、free=15 |
+| 01:28:27 | D native_transfer_ready后start_decode/DECODING，device0–15均有graph_replay real_requests=1；随后decode batch显示npu graph=True |
+| 01:28:40 | D响应200；各rank完成约89ms drain，再row_detach（row=2、completed=128）/native_free，发DONE并恢复free=16 |
+| 01:28:40 | P收到DONE后RELEASED、发RELEASE_ACK、free=16；D收到ACK后CLOSED、free=16 |
+
+这验证了当前小容量配置下的单请求正常生命周期、真实Graph replay，以及P原生row资源
+早于persistent mempool slot归还的时序。本次可见请求没有遗留占用slot；尚未覆盖连续
+复用、零decode、多请求容量压力或失败路径。completed为runtime完成计数，不能替代
+实际BM KV字节/数值比对。P片段缺较早的start_prefill/BOUND_ACK/ready，启动片段也未
+给出全rank的mapping_ready/graph_captured；没有对这些片段运行完整日志检查器。
+
+用户判断Graph与正常状态转换可用、容量/NUMA和KV正确性仍需验证，与上述证据一致。
+容量结论限定为小配置已分配成功：此次同时缩小原hostSHM与BM，不能证明hostSHM是
+此前阻塞的唯一原因，也不能确认大容量或指定NUMA分配已解决。当前attention仍消费
+原cache/transfer/hostSHM路径，正确回答只验证shadow接入下的输出；服务内mempool
+KV内容、跨侧实际top-k读取尚未验收。独立writer已有的合成数据gate不替代这项验证。
+
+下一步保留当前成功服务，执行已有verify_shadow_service.py的三个串行请求（零decode、
+实际decode、后续请求复用），等待ACK后检查两侧完整日志并保存requests/lifecycle JSON。
+完整shadow gate确认后再添加服务top-k readback。大容量对照与显式NUMA配置继续保留为
+待验证事项，ticket保持open。本轮只更新记录与进度表，Mac执行git diff --check；
+NPU结果来自用户反馈，agent未执行远端服务或完整日志检查。
 
 ### 2026-10-02：CPU亲和性关闭仍卡住，准备小容量服务对照并记录NUMA需求
 

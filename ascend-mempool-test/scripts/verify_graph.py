@@ -418,7 +418,10 @@ def run(
         if ret != 0:
             raise RuntimeError(f"bm.initialize failed: {ret}")
         bm_initialized = True
-        manager = MempoolKVManager.create(layout, args.rank, args.pool_id)
+        # Independent gates use the device index as their simulated TP rank.
+        manager = MempoolKVManager.create(
+            layout, args.rank, args.pool_id, tp_rank=args.device_id
+        )
         manager.join(args.timeout)
         report["mappings"] = [
             dict(
