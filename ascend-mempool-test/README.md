@@ -75,11 +75,11 @@ python3 ascend-mempool-test/scripts/verify_graph.py --describe
 python3 ascend-mempool-test/scripts/verify_graph.py --describe --s-d 32768
 ```
 
-CPU 测试需要 CPU PyTorch 和 msgspec。用独立虚拟环境安装开发检查工具，不安装 SGLang：
+CPU 测试需要 CPU PyTorch、NumPy 和 msgspec。用独立虚拟环境安装开发检查工具，不安装 SGLang：
 
 ```bash
 python3 -m venv /tmp/ascend-mempool-dev
-/tmp/ascend-mempool-dev/bin/pip install torch msgspec mypy ruff isort
+/tmp/ascend-mempool-dev/bin/pip install torch numpy msgspec mypy ruff isort
 PYTHONPATH=ascend-mempool-test/src /tmp/ascend-mempool-dev/bin/python -m unittest discover -s ascend-mempool-test/tests/unit -v
 /tmp/ascend-mempool-dev/bin/mypy --config-file ascend-mempool-test/pyproject.toml ascend-mempool-test/src ascend-mempool-test/scripts
 /tmp/ascend-mempool-dev/bin/mypy --config-file ascend-mempool-test/pyproject.toml python/sglang/srt/hardware_backend/npu/mempool
@@ -104,10 +104,58 @@ HBM hit/refill/reset、原host miss分支、实际attention输入、短top-k/多
 以及目标更换后Graph metadata的持有。测试fixture不执行正式服务资源构造器。
 `test_fetch_gate.py`验证fetch CLI的固定K=2048约束、双机setup前拒绝非法宽度，
 以及原copy-only gate的可变K兼容性；materialization另覆盖固定宽度下的小context和padding。
+`test_sparse_resources.py`执行真实manager构造/host读写/请求hooks，验证正式模式旧资源为零、
+普通/shadow恢复旧路径，并覆盖实际PD adapter的方法体。CPU替换SDK和serving allocator边界；
+完整构造链及真实NPU copy用下面的S3 gate验证。
 `test_pair_startup.py` 检查 `P_i/D_i` 的 store 端口及 BM rank 映射、启动参数和失败清理，
 并用模拟时钟覆盖 P 晚90秒监听、P始终不可达、TCP连接超时、P不等待自身store及SDK错误直报。
 生产 BM 启动入口位于 `MempoolKVManager.initialize_rank_pair()`；01 gate 保留原测试
 初始化与控制流程，其通过记录不能替代新入口在真实 16 对 worker 中的验收。
+
+## 03 S3：旧 host/staging 资源停用 gate（待用户执行）
+
+新增`scripts/verify_resources.py`，使用实际NPU native/sparse pool、request/page allocator。
+它检查正式P保留native K/V，正式D保留Index K和HBM cache，旧host SHM/mapping及
+main-KV staging为零；普通/shadow执行staging→host、旧host写入/读取和miss→hit回归。
+请求row复用和clear也必须通过。正式服务仍受S4–S5保护，环境开关仍选择shadow；
+此gate显式传入组件mode，既不启动模型也不连接BM peer。
+
+前置条件：当前checkout的完整SGLang环境、受支持的Python（用户现有3.11）、
+torch_npu、sgl_kernel_npu及CANN配置；任选一台机器的空闲NPU，下面使用device0。
+各mode在独立进程运行；没有P/D启动先后、NIC或端口要求，不使用Python `-O`。
+仓库根目录执行：
+
+```bash
+bash -o pipefail <<'SH'
+set -eu
+export PYTHONPATH="$PWD/python${PYTHONPATH:+:$PYTHONPATH}"
+git rev-parse HEAD > /tmp/ticket03-s3-version.txt
+for mode in pd_prefill_mempool pd_decode_mempool local_offload pd_decode_offload pd_decode_mempool_shadow; do
+  python3 -u ascend-mempool-test/scripts/verify_resources.py \
+    --mode "$mode" --device-id 0 \
+    --report "/tmp/ticket03-s3-${mode}.json" \
+    2>&1 | tee "/tmp/ticket03-s3-${mode}.log"
+done
+SH
+```
+
+固定配置：2层、2个真实request rows+row0、context16、page128、native tokens256、
+KV维度512+64、Index K128、BF16、top-k2048。top-k仅位置0/2有效，其余-1。
+
+| mode | host KV/映射/length metadata | staging bytes | HBM cache | native K/V | Index K |
+| --- | --- | --- | --- | --- | --- |
+| `pd_prefill_mempool` | 0 | 0 | 0 | >0 | >0 |
+| `pd_decode_mempool` | 0 | 0 | >0 | 0 | >0 |
+| `local_offload` | >0 | 0 | >0 | 0 | >0 |
+| `pd_decode_offload` / `pd_decode_mempool_shadow` | >0 | >0 | >0 | 0 | >0 |
+
+需要5条`RESOURCE_PASS`、5份`success=true` JSON及全部进程退出0；任意断言、
+`RESOURCE_FAIL`、非零退出或缺失mode都判失败。回传`/tmp/ticket03-s3-version.txt`、
+5份JSON及对应log。JSON记录实际保留buffer的字节数，正式D另将SHM分配入口设为失败陷阱。
+PD adapter使用完整模块与构造器，只替换父transport启动/发送/状态sink；不发送真实跨机数据。
+它不替代S4–S6的正式服务验证，S3代码完成也不代表ticket03关闭。
+完整文件清单、Mac检查与registered回归命令见
+[S3交付总结](../.scratch/ascend-mempool/ticket-03-s3-summary.md)。
 
 ## 03 S2：BM fetch / HBM cache / Graph gate（独立NPU验证已通过）
 

@@ -27,6 +27,9 @@ class CPUStream:
         if not event.ready:
             raise AssertionError("consumer ran before its producer event")
 
+    def synchronize(self):
+        pass
+
 
 class CPUEvent:
     def __init__(self):
@@ -130,6 +133,9 @@ class TestMaterialize(unittest.TestCase):
         npu.npu_sparse_flash_attention = attention
         with patch.dict(sys.modules, {"torch_npu": npu}):
             module = importlib.import_module("ascend_sparse.attention")
+        npu_patch = patch.object(module, "torch_npu", npu)
+        npu_patch.start()
+        self.addCleanup(npu_patch.stop)
         h = self.helper
         h.runtime.bind(1, slot=3, prompt_tokens=4, prompt_slot=2)
         h.runtime.bind(2, slot=5, prompt_tokens=2, prompt_slot=7)
@@ -166,7 +172,7 @@ class TestMaterialize(unittest.TestCase):
             k,
             layer,
             batch,
-            save_kv_cache=False,
+            save_kv_cache=True,
             q_rope=k,
             k_rope=k,
             topk_indices=torch.tensor([[0, 4], [0, 2], [0, 2]]),

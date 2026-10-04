@@ -78,7 +78,8 @@ class SparseKVCacheManager:
         from sglang.srt.mem_cache.memory_pool import MLATokenToKVPool
         from sglang.srt.utils.torch_memory_saver_adapter import TorchMemorySaverAdapter
 
-        mode.validate_runtime_support()
+        # Resource construction is also used by standalone verification. The
+        # model runner and attention backend guard unsupported service modes.
         if not mode.uses_sparse_kv_cache:
             raise ValueError("SparseKVCacheManager requires a sparse HBM cache mode")
         self.mode = mode
@@ -182,31 +183,33 @@ class SparseKVCacheManager:
         self.host_ptr_list: list[int] = []
         self.dev_ptr_list: list[int] = []
 
-        host_kv_shape = (
-            self.size,
-            self.max_context_len,
-            self.head_num,
-            self.head_dim,
-        )
-        logger.info("Sparse KV host buffer shape: %s", host_kv_shape)
-        device_id = torch.npu.current_device()
+        self.host_kv_ctx_len: Optional[torch.Tensor] = None
+        if mode.uses_host_kv_offload:
+            host_kv_shape = (
+                self.size,
+                self.max_context_len,
+                self.head_num,
+                self.head_dim,
+            )
+            logger.info("Sparse KV host buffer shape: %s", host_kv_shape)
+            device_id = torch.npu.current_device()
 
-        try:
-            for layer_idx in range(self.layer_num):
-                shm_cpu_tensor, host_ptr, dev_ptr = create_shm_tensor(
-                    shape=host_kv_shape,
-                    dtype=self.store_dtype,
-                    device_id=device_id,
-                    name=f"host_kv_layer_{layer_idx}_rank_{device_id}",
-                )
-                self.host_kv_buffer.append(shm_cpu_tensor)
-                self.host_ptr_list.append(host_ptr)
-                self.dev_ptr_list.append(dev_ptr)
-        except Exception as e:
-            self._raise_buffer_allocation_error("host_kv_buffer", e)
-        self.host_kv_ctx_len = torch.zeros(
-            (self.size, self.max_context_len), dtype=torch.int32, device="cpu"
-        )
+            try:
+                for layer_idx in range(self.layer_num):
+                    shm_cpu_tensor, host_ptr, dev_ptr = create_shm_tensor(
+                        shape=host_kv_shape,
+                        dtype=self.store_dtype,
+                        device_id=device_id,
+                        name=f"host_kv_layer_{layer_idx}_rank_{device_id}",
+                    )
+                    self.host_kv_buffer.append(shm_cpu_tensor)
+                    self.host_ptr_list.append(host_ptr)
+                    self.dev_ptr_list.append(dev_ptr)
+            except Exception as e:
+                self._raise_buffer_allocation_error("host_kv_buffer", e)
+            self.host_kv_ctx_len = torch.zeros(
+                (self.size, self.max_context_len), dtype=torch.int32, device="cpu"
+            )
         self.topk_indices_cpu = None
         self.token_on_device_cpu = None
         self.device_token_pos_cpu = None
@@ -219,12 +222,26 @@ class SparseKVCacheManager:
         self.pd_decode_k_staging: Optional[list[torch.Tensor]] = None
         self.pd_decode_v_staging: Optional[list[torch.Tensor]] = None
         self._pd_decode_staging_token_capacity = self.max_context_len
-        self._pd_decode_copy_stream = torch.npu.Stream()
+        self._pd_decode_copy_stream = (
+            torch.npu.Stream() if mode.uses_pd_decode_staging else None
+        )
+        # Empty containers keep release hooks uniform; only the staging path
+        # records host-copy metadata for live requests.
         self._pd_room_to_req_pool_idx: dict[int, int] = {}
         self._pd_room_to_input_len: dict[int, int] = {}
         self._pd_req_pool_idx_to_room: dict[int, int] = {}
 
         self._install_req_alloc_hook(req_to_token_pool)
+
+    def _require_host_kv(self) -> None:
+        if not self.mode.uses_host_kv_offload:
+            raise RuntimeError(f"Sparse host KV is disabled in mode={self.mode.value}")
+
+    def _require_pd_decode_staging(self) -> None:
+        if not self.mode.uses_pd_decode_staging:
+            raise RuntimeError(
+                f"Sparse PD decode staging is disabled in mode={self.mode.value}"
+            )
 
     def _raise_buffer_allocation_error(
         self,
@@ -289,6 +306,7 @@ class SparseKVCacheManager:
         slot_count: int = 1,
         page_size: Optional[int] = None,
     ) -> None:
+        self._require_pd_decode_staging()
         slot_count = int(slot_count)
         if slot_count <= 0:
             raise ValueError(
@@ -344,6 +362,7 @@ class SparseKVCacheManager:
         self,
         page_size: Optional[int] = None,
     ) -> tuple[list[int], list[int], list[int]]:
+        self._require_pd_decode_staging()
         if self.pd_decode_k_staging is None or self.pd_decode_v_staging is None:
             raise RuntimeError("Sparse KV PD decode staging buffer is not initialized.")
         transfer_page_size = int(page_size or self.paged_kv_cache.page_size)
@@ -365,6 +384,7 @@ class SparseKVCacheManager:
         )
 
     def get_pd_decode_staging_token_capacity(self) -> int:
+        self._require_pd_decode_staging()
         return int(self._pd_decode_staging_token_capacity)
 
     def get_pd_decode_pages_per_slot(self, page_size: Optional[int] = None) -> int:
@@ -377,6 +397,8 @@ class SparseKVCacheManager:
         return self.get_pd_decode_staging_token_capacity() // transfer_page_size
 
     def record_pd_request_metadata(self, req: Req) -> None:
+        if not self.mode.uses_pd_decode_staging:
+            return
         bootstrap_room = getattr(req, "bootstrap_room", None)
         req_pool_idx = req.kv.req_pool_idx
         if bootstrap_room is None or req_pool_idx is None:
@@ -416,6 +438,7 @@ class SparseKVCacheManager:
         bootstrap_room: int,
         decode_prefix_len: int = 0,
     ) -> tuple[int, int]:
+        self._require_pd_decode_staging()
         room = int(bootstrap_room)
         if room not in self._pd_room_to_req_pool_idx:
             raise RuntimeError(
@@ -438,6 +461,7 @@ class SparseKVCacheManager:
         token_count: int,
         stream: Optional[torch.npu.Stream] = None,
     ) -> None:
+        self._require_pd_decode_staging()
         if self.pd_decode_k_staging is None or self.pd_decode_v_staging is None:
             raise RuntimeError("Sparse KV PD decode staging buffer is not initialized.")
         slot_id = int(slot_id)
@@ -460,12 +484,14 @@ class SparseKVCacheManager:
                 f"max_context_len {self.max_context_len}."
             )
 
+        assert self.host_kv_ctx_len is not None
         self.host_kv_ctx_len[req_pool_idx] = token_count
         self.reset_requests([req_pool_idx])
         if token_count == 0:
             return
 
         actual_stream = stream if stream is not None else self._pd_decode_copy_stream
+        assert actual_stream is not None
         with torch.npu.stream(actual_stream):
             for layer_idx in range(self.layer_num):
                 dst = self.host_kv_buffer[layer_idx][req_pool_idx, :token_count]
@@ -487,8 +513,8 @@ class SparseKVCacheManager:
             raise RuntimeError(
                 "Cannot initialize sparse KV state before allocating a request pool slot"
             )
-        current_len = len(req.origin_input_ids)
-        self.host_kv_ctx_len[rid] = current_len
+        if self.host_kv_ctx_len is not None:
+            self.host_kv_ctx_len[rid] = len(req.origin_input_ids)
         self.reset_requests([rid])
 
     def reset_requests(self, req_ids: List[int]) -> None:
@@ -536,6 +562,10 @@ class SparseKVCacheManager:
 
         def clear_with_sparse_clear():
             self.clear_all_pd_request_metadata()
+            for slot_map in self.device_slot_map:
+                slot_map.copy_(self._device_slot_map_minus_one)
+            if self.host_kv_ctx_len is not None:
+                self.host_kv_ctx_len.zero_()
             return original_clear()
 
         setattr(req_to_token_pool, "alloc", alloc_with_sparse_reset)
@@ -550,6 +580,7 @@ class SparseKVCacheManager:
         forward_batch: ForwardBatch,
         stream: torch.npu.Stream,
     ):
+        self._require_host_kv()
         layer_idx = layer.layer_id - self.start_layer
         device = k.device
 
@@ -675,6 +706,7 @@ class SparseKVCacheManager:
         the final copy can be swapped to a custom kernel without changing the
         graph-friendly index construction.
         """
+        self._require_host_kv()
         layer_idx = layer.layer_id - self.start_layer
         device = k.device
 
@@ -897,6 +929,7 @@ class SparseKVCacheManager:
         device cache idea and avoids repeatedly copying the full prefix KV from
         host for every chunk.
         """
+        self._require_host_kv()
         layer_id = layer.layer_id if hasattr(layer, "layer_id") else int(layer)
         layer_idx = layer_id - self.start_layer
         if layer_idx < 0 or layer_idx >= self.layer_num:

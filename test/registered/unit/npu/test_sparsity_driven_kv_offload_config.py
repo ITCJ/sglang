@@ -164,6 +164,8 @@ class TestSparsityDrivenKVOffloadConfig(unittest.TestCase):
             (SparseKVOffloadMode.PD_DECODE_OFFLOAD, False),
             (SparseKVOffloadMode.PD_PREFILL_MEMPOOL_SHADOW, True),
             (SparseKVOffloadMode.PD_DECODE_MEMPOOL_SHADOW, False),
+            (SparseKVOffloadMode.PD_PREFILL_MEMPOOL, True),
+            (SparseKVOffloadMode.PD_DECODE_MEMPOOL, False),
         ):
             with self.subTest(mode=mode):
                 pool = NPUMLATokenToKVPool(

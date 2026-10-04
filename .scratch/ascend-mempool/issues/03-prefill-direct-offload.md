@@ -20,7 +20,9 @@
 完整SGLang环境的资源/启动单测及NPU回归待执行；见[S1交付总结](../ticket-03-s1-summary.md)。
 S2代码和独立NPU gate已提交为`9036be2b0f`；首次K=8参数错误修正为2048后，
 双机30个case及正常退出均通过，用户于2026-10-04确认S2独立NPU gate无问题；见
-[S2交付总结](../ticket-03-s2-summary.md)。S3–S6仍待实施，不表示正式服务数据路径或本票验收已完成。旧KV传输、D staging/host
+[S2交付总结](../ticket-03-s2-summary.md)。用户随后授权先提交当前修改，再实施S3；S2修正与
+验收记录已提交为`dd1f92f618`。S3代码与Mac检查完成，NPU资源gate待用户执行，见
+[S3交付总结](../ticket-03-s3-summary.md)。S4–S6仍待实施，不表示正式服务数据路径或本票验收已完成。旧KV传输、D staging/host
 写入及sparse attention的host SHM读取均关闭而不删除。S1用显式shadow模式保留02
 链路，正式模式暂拒绝启动；03完整交付后是否另保留shadow诊断模式仍是独立待定事项。
 继续使用context1024、P/D各512、TP16、D Graph width16、NUMA `0,2,4,6`的小容量配置。
@@ -78,7 +80,7 @@ HBM Index K -> indexer top-k -> HBM sparse cache 查询
 | --- | --- | --- |
 | S1 拆分配置与资源职责 | 明确运行模式、派生能力、资源归属及初始化合同 | 代码已实现；轻量CPU通过，完整环境及NPU回归待执行 |
 | S2 接入正式BM fetch | attention消费BM miss结果，保留HBM hit/refill | 实现已核对；K=2048独立NPU gate的30个case通过，用户已确认 |
-| S3 按模式停用重复存储 | 旧实现保留；正式模式host KV和main-KV staging分配为零 | 待实施 |
+| S3 按模式停用重复存储 | 旧实现保留；正式模式host KV和main-KV staging分配为零 | 代码已实现；Mac检查通过，等待用户执行NPU资源gate |
 | S4 精简PD传输 | 仅保留Index K和必要辅助数据，保留联合readiness | 待实施 |
 | S5 核对Graph与生命周期 | 固定地址、正确stream依赖、安全drain与释放 | 待实施 |
 | S6 测试与交付 | CPU验证、正式服务checker、用户NPU验收 | 待实施 |
@@ -421,6 +423,34 @@ HTTP 200或出现Graph日志本身不算通过。
 不能以04负责正式对照为由交付已知错误。
 
 ## Comments
+
+### 2026-10-04：S3代码交付，等待用户执行NPU资源验收
+
+按用户授权先提交S2 gate修正及验收记录为`dd1f92f618`，再实施S3。
+正式D按mode跳过旧host SHM/mapping/length tensor及staging copy stream；保留cache、
+Index K和必要stream/event。attention跳过旧host写入，BM writer/fetch沿用已有实现。
+host/staging入口有明确模式保护，普通/shadow路径保留；request init/alloc/free/clear
+在host metadata缺席时可执行，row复用清map，续跑chunk不清map。
+
+资源构造器允许独立验证正式模式。ModelRunner/backend/runtime工厂仍拒绝正式服务启动；
+native pool的PD发布入口同样保留保护，提示S4–S5。当前env开关仍选择shadow。
+本次不提前修改S4传输契约或把main-KV traffic为零记为通过。
+
+Mac独立CPU suite **176项通过**；mypy检查配置/BM/独立脚本 **27个源文件通过**；
+10个改动Python文件的Ruff lint/format与新文件isort通过。新增测试覆盖实际sparse构造、
+旧host入口拒绝、普通host读写、staging→host、实际PD adapter索引路由/Success分支与
+无host的请求复用。CPU替换SDK/serving依赖边界，不当作完整构造链/NPU证据。
+registered配置测试在本机Python3.9导入`str | None`时失败，未执行；完整环境回归待执行。
+
+规范审查无发现。规格审查发现gate的staging seed与copy stream缺少生产者同步，
+已在注入Success前同步NPU并通过复查；无剩余规格问题。修正后14项定向CPU回归、
+脚本Ruff lint/format与mypy检查通过，真实NPU同步仍待下述gate验证。
+
+新增`ascend-mempool-test/scripts/verify_resources.py`，在用户NPU环境按五种mode分别
+运行真实pool/allocator/Index K、资源计数和普通host copy回归。完整命令、预期资源矩阵、
+失败判据和待回传文件见[S3交付总结](../ticket-03-s3-summary.md)及独立测试README。
+PD父transport使用recorder，不进行跨机传输；S3资源gate和正式服务S4–S6均尚待硬件验证。
+Ticket03保持open，验收项不提前勾选。
 
 ### 2026-10-04：S2独立NPU gate重测通过，用户确认
 

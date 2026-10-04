@@ -12,8 +12,12 @@ ticket02已关闭。代码路径、请求时序及实测边界见
 正式模式在完整cutover前拒绝启动。交付边界与回归命令见
 [S1总结](../../../../../../.scratch/ascend-mempool/ticket-03-s1-summary.md)。
 03 S2已接入正式BM fetch到selected KV，保留HBM hit/refill，Mac检查通过；2026-10-04
-用户确认K=2048独立NPU gate的30个case及双侧正常退出通过。S3–S5未完成前仍保留正式启动保护，见
+用户确认K=2048独立NPU gate的30个case及双侧正常退出通过，见
 [S2总结与双机命令](../../../../../../.scratch/ascend-mempool/ticket-03-s2-summary.md)。
+03 S3已按模式跳过旧host SHM/mapping和main-KV staging，保留HBM cache、Index K及
+普通/shadow路径；Mac检查通过，实际NPU资源gate待用户执行。组件可独立构造，正式
+服务及PD buffer发布仍受S4–S5保护，见
+[S3总结与单机命令](../../../../../../.scratch/ascend-mempool/ticket-03-s3-summary.md)。
 
 ## 文件与接口
 
@@ -52,7 +56,10 @@ service投影真实Req并延迟native清理，tick统一TP observations/prefligh
 此时不导入MemFabric、不建立BM连接。容量估算、native pool、backend和sparse manager
 沿用同一mode，分别使用`uses_sparse_kv_cache`、`uses_host_kv_offload`、
 `uses_pd_decode_staging`、`uses_mempool_bm`表达职责；READBACK不参与资源策略。
-本阶段host/staging的实际分配仍保留，正式关闭分支由S3完成。
+S3中正式D不分配host SHM、指针映射、host length tensor和staging copy stream；
+host metadata容器保持为空。普通/shadow模式仍分配并使用原资源。
+ModelRunner/backend/runtime工厂与正式PD buffer发布保持S4–S5保护；只有组件构造
+可单独选择正式mode，供资源gate核对。P native K/V和D Index K仍分配。
 
 随后`ModelRunner.init_attention_backends()`构造attention backend，再调用
 `runtime.initialize_for_model_runner()`消费已校验配置。因此进入BM前，模型和原生NPU KV已存在；
@@ -218,7 +225,7 @@ fetch上界受本层实际write counts约束，防止陈旧Graph输入把漏写�
 同形状copy更换目标只更新destination，保留Graph仍可能引用的固定输入metadata。
 
 正式fetch与shadow READBACK不能同时启用；正式数据不与自身比较。
-服务启动仍由S3–S5保护，`verify_fetch.py`通过独立fixture验证真实materialization、
+服务启动仍由S4–S5保护，`verify_fetch.py`通过独立fixture验证真实materialization、
 BM与Graph。2026-10-04用户确认该gate在Graph width16、3个真实rows、top-k宽度2048、
 block_dim24/48下通过eager及两轮replay，覆盖P/D miss、mixed、all-hit和zero-valid。
 本结果不能替代正式服务分配/PD控制及NPU attention验收。详见上方S2总结。

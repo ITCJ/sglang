@@ -68,7 +68,7 @@ def forward_sparsity_driven_kv_offload(
         raise RuntimeError("formal mempool sparse attention only supports decode")
     stream = torch.npu.current_stream(backend.device)
 
-    if save_kv_cache:
+    if save_kv_cache and sparse_kv_manager.mode.uses_host_kv_offload:
         sparse_kv_manager.offload_v2(k_nope, k_pe, layer, forward_batch, stream)
 
     if is_prefill:

@@ -101,13 +101,13 @@ class SparseKVOffloadMode(str, Enum):
         )
 
     def validate_runtime_support(self) -> None:
-        """Do not launch before resource/transfer cutover and lifecycle checks."""
+        """Do not launch before transfer cutover and lifecycle checks."""
         if self in (
             SparseKVOffloadMode.PD_PREFILL_MEMPOOL,
             SparseKVOffloadMode.PD_DECODE_MEMPOOL,
         ):
             raise ValueError(
-                "Formal mempool mode still requires ticket03 S3-S5; "
+                "Formal mempool mode still requires ticket03 S4-S5; "
                 "only the existing shadow service path can be started."
             )
 

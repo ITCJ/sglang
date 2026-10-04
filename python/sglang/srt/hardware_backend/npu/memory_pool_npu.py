@@ -597,7 +597,8 @@ class NPUMLATokenToKVPool(MLATokenToKVPool):
     ):
         if sparse_kv_offload_mode is None:
             sparse_kv_offload_mode = resolve_sparse_kv_offload_mode()
-        sparse_kv_offload_mode.validate_runtime_support()
+        # Resource construction can be verified independently. Model startup
+        # and transfer publication still reject an incomplete service cutover.
         self.sparse_kv_offload_mode = sparse_kv_offload_mode
         # MLAPO historically owned NZ writes. Keep the allocation unchanged and
         # write into the NZ-addressed view below so ordinary MLA (including
@@ -816,6 +817,7 @@ class NPUMLATokenToKVPool(MLATokenToKVPool):
 
     # for disagg
     def get_contiguous_buf_infos(self):
+        self.sparse_kv_offload_mode.validate_runtime_support()
         if self.sparse_kv_offload_mode.uses_pd_decode_staging:
             if getattr(self, "index_k_buffer", None) is None:
                 raise RuntimeError(

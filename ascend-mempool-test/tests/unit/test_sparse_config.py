@@ -46,7 +46,7 @@ class TestSparseKVConfiguration(unittest.TestCase):
                     ),
                     expected_cell_size,
                 )
-                with self.assertRaisesRegex(ValueError, "S3.*S5"):
+                with self.assertRaisesRegex(ValueError, "S4.*S5"):
                     mode.validate_runtime_support()
 
     def test_startup_matrix_preserves_local_native_and_shadow_resources(self):

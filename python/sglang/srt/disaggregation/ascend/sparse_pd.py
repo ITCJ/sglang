@@ -54,6 +54,10 @@ class SparsePDDecodeStagingPool:
     """Single-process D-side staging slot pool for Ascend sparse PD."""
 
     def __init__(self, manager, page_size: int, slot_count: int = 1):
+        if not manager.mode.uses_pd_decode_staging:
+            raise RuntimeError(
+                f"Sparse PD decode staging is disabled in mode={manager.mode.value}"
+            )
         self.manager = manager
         self.page_size = int(page_size)
         self.slot_count = int(slot_count)
