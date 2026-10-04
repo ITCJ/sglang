@@ -349,16 +349,24 @@ class AscendAttnBackend(AttentionBackend):
         self.req_to_token = model_runner.req_to_token_pool.req_to_token
         self.graph_mode = False
         self.use_fa = get_bool_env_var("ASCEND_USE_FA", "False")
-        self.sparse_kv_offload_mode = resolve_sparse_kv_offload_mode(
-            model_config=model_runner.model_config,
-            use_mla_backend=model_runner.use_mla_backend,
+        self.sparse_kv_offload_mode = getattr(
+            self.token_to_kv_pool, "sparse_kv_offload_mode", None
         )
+        if self.sparse_kv_offload_mode is None:
+            self.sparse_kv_offload_mode = resolve_sparse_kv_offload_mode(
+                model_config=model_runner.model_config,
+                use_mla_backend=model_runner.use_mla_backend,
+            )
+        self.sparse_kv_offload_mode.validate_runtime_support()
         self.enable_sparsity_driven_kv_offload = (
-            self.sparse_kv_offload_mode.uses_host_kv_offload
+            self.sparse_kv_offload_mode.uses_sparse_kv_cache
         )
         self.sparse_kv_manager = None
         self.mempool_runtime: Optional[MempoolRuntime] = None
-        if self.sparse_kv_offload_mode is SparseKVOffloadMode.PD_PREFILL_NATIVE:
+        if self.sparse_kv_offload_mode in (
+            SparseKVOffloadMode.PD_PREFILL_NATIVE,
+            SparseKVOffloadMode.PD_PREFILL_MEMPOOL_SHADOW,
+        ):
             logger.info(
                 "Sparsity-driven KV offload is configured, but disabled on "
                 "PD prefill workers so native NPU KV cache remains the "
@@ -373,6 +381,7 @@ class AscendAttnBackend(AttentionBackend):
             self.sparse_kv_manager = SparseKVCacheManager(
                 model_runner.req_to_token_pool,
                 model_runner.token_to_kv_pool_allocator,
+                mode=self.sparse_kv_offload_mode,
                 sparse_context_len=get_sparsity_driven_kv_offload_sparse_context_len(
                     model_config=model_runner.model_config
                 ),
@@ -444,6 +453,8 @@ class AscendAttnBackend(AttentionBackend):
 
     def attach_mempool_runtime(self, runtime: MempoolRuntime) -> None:
         """Attach mapped shadow storage before capture; PD startup owns creation."""
+        if not self.sparse_kv_offload_mode.uses_mempool_bm:
+            raise ValueError("mempool runtime requires a mempool startup mode")
         if self.mempool_runtime is not None:
             raise RuntimeError("attention backend already has a mempool runtime")
         if is_mla_preprocess_enabled():

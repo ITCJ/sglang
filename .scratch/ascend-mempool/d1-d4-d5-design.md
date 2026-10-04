@@ -1,9 +1,11 @@
-# TP control tick、drain 与 fault 接入草案
+# TP control tick、drain 与 fault 接入设计
 
-日期：2026-09-29。状态：D1、D4 首版 drain 策略和 D5 直接报错终止策略已确认；已同步至 spec。故障检测与退出接线仍须实现时核对。
-范围：02③④接线设计。01、02①②③初版已有实现，③独立双机 writer gate 已获用户反馈通过；
-2026-10-01 的接口优化与④实施入口见 [ticket02](issues/02-rank-pair-control-lifecycle.md)。
-service/tick 接线仍待实现，本文不表示真实服务或 TP collective 已验收。
+设计确认：2026-09-29；状态更新：2026-10-03。D1、D4 首版 drain 策略和 D5
+直接报错终止策略已实现。用户已确认 02 真实服务 shadow readback 验收通过，
+[ticket 02](issues/02-rank-pair-control-lifecycle.md) 已关闭。
+本文记录 02③④的接线约定；代码路径、运行链路与验收证据见
+[02 总结](ticket-02-summary.md)。正常请求、零 decode、Graph 读回和 slot 复用已有
+本轮 NPU 证据；完整取消、故障注入矩阵仍由 06/07 验收，不能将本轮通过扩大到这些场景。
 
 ## D1：同侧统一推进
 
@@ -51,7 +53,8 @@ finish_drain、apply(DONE)，以及会消费 pending_done 的 finish_prefill_wri
 - P：所有 rank 收到各自精确 binding 的 DONE，且全部 P writes 完成 →
   同步提交 P slot release → 全部成功后发送各自 RELEASE_ACK。
 - D：收到全部对应 ACK 后关闭该逻辑 attempt；D slot 已可在 drain release 后复用。
-- 同一 tick 可在 release 成功后 acquire，但出站旧 release 消息先于新 acquire 消息。
+- 同一 tick 可包含 release 和 acquire，出站旧 release 消息先于新 acquire 消息。
+  acquire 候选取自 tick 开始时的 free-set snapshot，本 tick 刚释放的 slot 留待后续 tick。
 
 优先级：fatal 阻止正常推进；cancel/timeout 阻止同一 attempt 的新工作；
 安全 release 先于新 acquire。历史消息的幂等回复不应重新改变 ownership。
@@ -116,14 +119,15 @@ device synchronize 只能证明已提交设备工作完成，不能单独证明�
 进程仍能参与时，在 tick 汇总 fault 并阻止下一次模型调度。
 进程死亡/卡死无法依靠成功 collective 传播，需要有界 communicator timeout/watchdog。
 
-原有 PD heartbeat 不能覆盖 transfer Success 后的完整 mempool 生命周期。
+原有 PD heartbeat 不能覆盖 transfer Success 后的完整 mempool 生命周期；02 已增加
+mempool 独立 heartbeat、tick fault 汇总及 watchdog 接线。
 timeout 或失联不能作为 P slot reuse/BM destroy 的依据。
 本地 manager.close 的 drain 不证明远端 D 已停止读取；fatal teardown 必须有跨侧停机顺序，
 无法确认时保持资源不可复用并要求协调停止，而非将故障伪装成正常 DONE。
 报错不代表安全 drain，不伪造 DONE/ACK，不进入正常 slot 复用或未经确认的 BM 销毁。
 本侧可协调的错误先汇总后报错；进程死亡/卡死依靠有界 timeout/watchdog，不能等待
-一个必然成功的 collective。直接异常退出不能保证另一侧立即停机，跨侧故障感知及
-人工协调两侧停止/重启的操作说明仍是接线工作，不能声称已实现远端保护。
+一个必然成功的 collective。直接异常退出不能保证另一侧立即停机；跨侧故障检测与
+人工协调两侧停止/重启的操作说明已随 02 交付，完整故障时序的 NPU 注入验证留给 07。
 
 ## 代码依据
 
@@ -136,8 +140,10 @@ timeout 或失联不能作为 P slot reuse/BM destroy 的依据。
 - req_pool_idx 回收：mem_cache/common.py。
 - handoff heartbeat 和失败标记：disaggregation/common/conn.py。
 
-## 后续验证方向
+## 验证状态与后续范围
 
-Mac：16 个 control 实例模拟消息乱序/迟到、等待、cancel、同步 release 后复用，
-断言每个成功 tick 边界同侧 free set/ownership 一致。模拟不能替代真实 collective 验证。
-NPU：用户执行 normal/overlap、idle/paused、零 decode、abort、drain 后复用、故障停止验证。
+CPU 契约测试已覆盖消息乱序/迟到、容量等待、cancel、同步 release 后复用、tick
+一致性和部分失败处理；模拟不能替代实际进程故障下的 collective 验证。
+02 的 NPU 验收已完成真实 TP16 服务的零 decode、普通请求、Graph 读回与 drain 后
+slot 复用。具体计数及证据限制以 [02 总结](ticket-02-summary.md) 为准。
+后续由 05/06/07 补齐多请求压力、idle/paused、abort、容量边界和故障停止矩阵。

@@ -3,11 +3,11 @@ from typing import TYPE_CHECKING, Optional, Sequence
 import torch
 
 from sglang.srt.constants import GPU_MEMORY_TYPE_KV_CACHE
+from sglang.srt.environ import envs
 from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config import (
     SparseKVOffloadMode,
     resolve_sparse_kv_offload_mode,
 )
-from sglang.srt.environ import envs
 from sglang.srt.mem_cache.memory_pool import (
     MHATokenToKOnlyPool,
     MHATokenToKVPool,
@@ -593,7 +593,12 @@ class NPUMLATokenToKVPool(MLATokenToKVPool):
         end_layer: Optional[int] = None,
         indexer_layer_ids: Optional[Sequence[int]] = None,
         kv_cache_dim: Optional[int] = None,
+        sparse_kv_offload_mode: Optional[SparseKVOffloadMode] = None,
     ):
+        if sparse_kv_offload_mode is None:
+            sparse_kv_offload_mode = resolve_sparse_kv_offload_mode()
+        sparse_kv_offload_mode.validate_runtime_support()
+        self.sparse_kv_offload_mode = sparse_kv_offload_mode
         # MLAPO historically owned NZ writes. Keep the allocation unchanged and
         # write into the NZ-addressed view below so ordinary MLA (including
         # Kimi-K3 MTP) can use FIA NZ without MLAPO.
@@ -612,7 +617,6 @@ class NPUMLATokenToKVPool(MLATokenToKVPool):
         self.kv_lora_rank = kv_lora_rank
         self.qk_rope_head_dim = qk_rope_head_dim
         self.index_head_dim = index_head_dim
-        sparse_kv_offload_mode = resolve_sparse_kv_offload_mode()
         if (
             sparse_kv_offload_mode is not SparseKVOffloadMode.DISABLED
             and self.index_head_dim is None
@@ -659,7 +663,7 @@ class NPUMLATokenToKVPool(MLATokenToKVPool):
 
         with self.memory_saver_adapter.region(GPU_MEMORY_TYPE_KV_CACHE):
             # The padded slot 0 is used for writing dummy outputs from padded tokens.
-            if sparse_kv_offload_mode.uses_host_kv_offload:
+            if sparse_kv_offload_mode.uses_sparse_kv_cache:
                 self.k_buffer = None
                 self.v_buffer = None
             else:
@@ -812,7 +816,7 @@ class NPUMLATokenToKVPool(MLATokenToKVPool):
 
     # for disagg
     def get_contiguous_buf_infos(self):
-        if resolve_sparse_kv_offload_mode().uses_pd_decode_staging:
+        if self.sparse_kv_offload_mode.uses_pd_decode_staging:
             if getattr(self, "index_k_buffer", None) is None:
                 raise RuntimeError(
                     "Sparse KV PD decode transfer requires native NPU MLA "

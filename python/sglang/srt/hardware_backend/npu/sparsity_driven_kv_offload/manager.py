@@ -13,6 +13,9 @@ from sgl_kernel_npu.sparsity_driven_kv_offload import (
 )
 
 from sglang.srt.constants import GPU_MEMORY_TYPE_KV_CACHE
+from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config import (
+    SparseKVOffloadMode,
+)
 from sglang.srt.mem_cache.allocator import BaseTokenToKVPoolAllocator
 from sglang.srt.mem_cache.memory_pool import (
     MLATokenToKVPool,
@@ -75,7 +78,13 @@ class SparseKVCacheManager:
         req_to_token_pool: ReqToTokenPool,
         token_to_kv_pool_allocator: BaseTokenToKVPoolAllocator,
         sparse_context_len: int,
+        *,
+        mode: SparseKVOffloadMode,
     ) -> None:
+        mode.validate_runtime_support()
+        if not mode.uses_sparse_kv_cache:
+            raise ValueError("SparseKVCacheManager requires a sparse HBM cache mode")
+        self.mode = mode
         enable_memory_saver = False
         memory_saver_adapter = TorchMemorySaverAdapter.create(
             enable=enable_memory_saver
@@ -348,10 +357,7 @@ class SparseKVCacheManager:
             + [buf.data_ptr() for buf in self.pd_decode_v_staging],
             [buf.nbytes for buf in self.pd_decode_k_staging]
             + [buf.nbytes for buf in self.pd_decode_v_staging],
-            [
-                buf[0, 0].nbytes * transfer_page_size
-                for buf in self.pd_decode_k_staging
-            ]
+            [buf[0, 0].nbytes * transfer_page_size for buf in self.pd_decode_k_staging]
             + [
                 buf[0, 0].nbytes * transfer_page_size
                 for buf in self.pd_decode_v_staging
@@ -474,9 +480,7 @@ class SparseKVCacheManager:
         actual_stream.synchronize()
 
     def init_req(self, req: Req) -> None:
-        if getattr(
-            req, "inflight_middle_chunks", getattr(req, "is_chunked", 0)
-        ) > 0:
+        if getattr(req, "inflight_middle_chunks", getattr(req, "is_chunked", 0)) > 0:
             return
         rid = req.kv.req_pool_idx
         if rid is None:
@@ -527,9 +531,7 @@ class SparseKVCacheManager:
             return req_pool_indices
 
         def free_with_sparse_clear(req: Req):
-            self.clear_pd_request_metadata(
-                req_pool_idx=req.kv.req_pool_idx
-            )
+            self.clear_pd_request_metadata(req_pool_idx=req.kv.req_pool_idx)
             return original_free(req)
 
         def clear_with_sparse_clear():
@@ -788,9 +790,7 @@ class SparseKVCacheManager:
                 )
                 token_pos = (
                     flat_prefix_lens
-                    + torch.arange(
-                        extend_seq_lens_sum, device=device, dtype=torch.long
-                    )
+                    + torch.arange(extend_seq_lens_sum, device=device, dtype=torch.long)
                     - flat_seq_starts
                 )
                 dst_index = (

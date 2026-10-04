@@ -207,6 +207,9 @@ def _pp_local_per_request_bytes(
 
 if TYPE_CHECKING:
     from sglang.srt.distributed.parallel_state_wrapper import ParallelState
+    from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config import (
+        SparseKVOffloadMode,
+    )
     from sglang.srt.mem_cache.unified_memory_pool import (
         UnifiedKVPool,
         UnifiedPoolBundle,
@@ -283,6 +286,7 @@ class KVCacheConfigurator:
     memory_pool_config: Optional[MemoryPoolConfig]
     draft_model_idx: Optional[int] = None
     kv_cache_dtype_str: Optional[str] = None
+    sparse_kv_offload_mode: Optional[SparseKVOffloadMode] = None
     mambaish_config: Optional[Any] = field(init=False)
     hybrid_gdn_config: Optional[Any] = field(init=False)
     is_hybrid_swa_mtp_draft: bool = field(init=False)
@@ -1579,6 +1583,7 @@ class KVCacheConfigurator:
         )
         token_to_kv_pool = NPUMLATokenToKVPool(
             max_total_num_tokens,
+            sparse_kv_offload_mode=self.sparse_kv_offload_mode,
             page_size=self.pool_page_size,
             dtype=self.kv_cache_dtype,
             kv_lora_rank=self.model_config.kv_lora_rank,

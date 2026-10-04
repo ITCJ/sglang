@@ -14,30 +14,33 @@ demo 暂不支持自动 retraction/rebootstrap；采用下文的精度验收标�
 每个任务单独一个文件，并记录状态、验收条件及 blocking edges。
 旧的 `agent-mission-track/sglang-npu-develop.md` 不再作为项目维护入口。
 
-2026-10-02当前优先级：用户决定继续demo，NUMA/大容量分配排查汇总到
-[09](issues/09-numa-allocation-followup.md)并延期。当前主线是02剩余真实top-k读回、
-03正式attention切换并移除旧hostSHM、04正式Graph/模型验收；具体执行入口见
-[02最新计划](issues/02-rank-pair-control-lifecycle.md)。下文较早的实施进度按其日期解读。
+2026-10-03当前状态：01、02已获用户确认验收并关闭。02的代码路径、请求时序、
+实际KV读回与复用证据集中在[02总结](ticket-02-summary.md)。下一执行入口为
+[03正式attention切换](issues/03-prefill-direct-offload.md)，随后04做正式Graph/模型验收。
+03票面已按用户确认组织为S1–S6，列明buffer取舍与验收条件；当前讨论S1的模式、
+派生能力与资源职责。用户已明确旧main-KV传输、D staging/host写入及host sparse读取
+均按模式关闭、实现保留；同一版本关闭mempool后恢复普通sparse PD。具体接口仍为
+建议，尚未实现，逐入口接线和两种模式验收见03的S1/S6。
+NUMA/大容量分配排查汇总到[09](issues/09-numa-allocation-followup.md)并延期，不阻塞主线。
+下文带日期的早期实施记录按当时阶段解读。
 
-## ticket02 接线方案（2026-10-01 更新，已确认实施入口）
+## ticket02 已实现链路（2026-10-03 验收收尾）
 
-进度：01 已验收，02① storage、②控制协议/单 rank 状态机已提交；
-③ backend 数据路径及 runtime gate 已提交，用户反馈双机 writer gate 两端通过；
-④服务控制、配置及Graph接线本轮已实现；真实服务合同尚无NPU运行验证结果。
+02① storage、②控制协议/单rank状态机、③backend runtime、④真实服务接线及
+后续selected KV读回均已完成。独立writer gate、真实GLM-5.1服务Graph与正常释放、
+实际KV数值和物理slot复用已由用户确认通过。
 D1/D4/D5 已确认的策略见 [控制与 drain 设计](d1-d4-d5-design.md)。
 
-接下来按 [ticket02](issues/02-rank-pair-control-lifecycle.md) 的两部分执行：
-先优化 part1–part3 的 row detach、Req 适配、writer 单接口和只读 control snapshot，
-再实现 part4。第一部分接口优化已提交为 `cfcafb4810`，83项CPU测试通过；
-10月1日用户反馈修改后的双机 writer gate 两端各20条PASS、ALL_CHECKS_PASSED。
-part4本轮新增service/tick与已批准的薄接口，Mac共108项CPU测试通过，21个源文件通过
-strict mypy。代码保持unstaged，真实服务shadow gate由用户执行；top-k readback仍等待
-该gate确认。远端版本/JSON证据边界见ticket，启动增量和验证命令见测试README。
+实现先完成row detach、真实Req投影、writer单接口和只读control snapshot，
+再接service/tick与共享薄接口，最后增加独立readback。实际读回与复用在
+context1024、P/D各512、TP16、D Graph width16配置完成；准确版本、检查结果和
+证据边界见[ticket02](issues/02-rank-pair-control-lifecycle.md)及总结。
 
-保留已有8个生产文件；④仅新增 `disaggregation/ascend/mempool_service.py` 和
+第一阶段保留已有8个生产文件；④仅新增 `disaggregation/ascend/mempool_service.py` 和
 `mempool_tick.py`。service 对接 SGLang 请求/原 transfer/native 回收与 drain，
 tick 以一次 advance 封装完整 TP 协调；control 保持协议状态/ownership 的唯一来源，
-runtime 提供设备写入事实。不新增 integration.py 或 queue 子类层。
+runtime 提供设备写入事实。后续读回增加共享copy/readback存储模块，没有新增
+integration.py或queue子类层。
 共享路径确定为 environ.py、arg_groups/fields/disagg.py、managers/scheduler.py、
 disaggregation/prefill.py、disaggregation/decode.py、
 managers/scheduler_components/batch_result_processor.py 和 model_executor/model_runner.py，
@@ -50,33 +53,36 @@ Mempool 不依赖 `SparseKVCacheManager` 的创建或生命周期；尤其 P 为
 `PD_PREFILL_NATIVE` 时没有 sparse manager，也必须能创建 mempool 并执行双写。
 backend 是 forward 接入点；request ownership 决策仍由 Ascend 控制层和统一 tick 负责。
 
-以下路径相对仓库根目录，③与④接线均已实现，④尚待真实服务验收：
+以下路径相对仓库根目录，③④及独立readback已实现并通过本票硬件验收：
 
-| 路径 | 职责 / 拟改动 |
+| 路径 | 已实现职责 |
 | --- | --- |
 | `python/sglang/srt/hardware_backend/npu/mempool/rows.py`、`runtime.py` | 已实现：行推导、request-row binding、固定设备表、forward/replay 边界、有效行计数快照和完成事件 |
 | `python/sglang/srt/hardware_backend/npu/mempool/offload.py` | `MempoolKVOffload` 只保留显式 slots/positions/valid；已删除固定 inputs 兼容分支 |
 | `python/sglang/srt/hardware_backend/npu/attention/ascend_backend.py` | P/D temporary compact KV 的 mempool 写入入口；eager、capture/replay metadata 接入；避免按已有 host-offload 开关漏掉 P |
-| `python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/attention.py`、`manager.py` | 核对 D 当前实际调用链，必要时做小范围适配/共享 compact KV；不让 sparse manager 持有 mempool runtime 或成为 mempool writer 的唯一入口 |
+| `python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/attention.py` | 等原selected KV的hit/miss完成后调用runtime独立读回比较；原buffer继续供attention使用 |
+| `python/sglang/srt/hardware_backend/npu/mempool/copy.py`、`readback.py` | P/D独立slot与实际written range路由、两来源UniDexCopy、设备比较及完成后快照验证 |
 | `python/sglang/srt/disaggregation/ascend/` | conn attach、原 socket 消息传送、统一 TP control tick 适配；协调 scheduler 与 backend runtime |
 | PD scheduler 路径、`environ.py`、`arg_groups/fields/disagg.py` | 小范围接线：配置、初始化、准入、binding 更新、drain、正常 release 和 fatal error |
 | `ascend-mempool-test/tests/`、`scripts/` | Mac 索引/状态测试，独立 BM 写入 Graph 验证及用户执行的服务验证脚本 |
 
-最终目标是不再依赖原 sparse manager 的 host KV 管理。但当前类还承担 HBM sparse
-cache 和 top-k materialization；关闭整个类前必须迁移仍需要的功能。此迁移/最终读取
-切换不属于当前 shadow 双写阶段，不能以删除 host KV 为由同时删掉这些能力。
+正式路径保留 SparseKVCacheManager 的 HBM sparse cache、top-k materialization、
+hit/refill和reset职责，仅按启动模式停用旧host KV分配/映射/读写。旧实现继续供普通
+模式使用；materialization的miss分支选择host SHM或P/D BM，其余cache流程共享。
+该切换属于03待实施工作，02已验收shadow双写仍以原host路径作为attention输入。
 
 ### ③实施安排补充（2026-09-30）
 
 ③ S1–S6 是已交付初版的历史安排，存档于 [ticket02](issues/02-rank-pair-control-lifecycle.md)
-Comments；当前实施入口为该票前部的两部分任务。③初版不包括④的 tick、准入、drain、
+Comments；以下保留当时的实施边界。③初版不包括④的 tick、准入、drain、
 配置、BM startup 或服务运行；独立两机 runtime writer gate 已由用户反馈通过。
 
 已知重复：已新增 mempool/rows.py，复制 offload_v2 的行推导并独立测试，本轮不改
 sparse manager。修改 padding、seq_lens != 1 等条件时需同步核对两处，文件头和
 该 ticket Comments 留档；后续补特征测试后再考虑合并为共享纯函数。
 初版代码和77项CPU测试已完成；用户提供的 writer 日志含两端各20条PASS和
-ALL_CHECKS_PASSED，验证合成 batch 的 NPU Graph 写入/远端读回。真实服务尚未验收。
+ALL_CHECKS_PASSED，验证合成 batch 的 NPU Graph 写入/远端读回。当时真实服务尚未验收；
+后续④接线和真实服务 readback 已完成，当前状态见 [02 总结](ticket-02-summary.md)。
 
 当前接口：`bind/assert_bound/detach_row` 管理本地已批准 row attachment；
 `begin_forward` / `write_layer` / `end_forward` / `poll_completed` 提交写入和完成事实。
@@ -90,7 +96,7 @@ forward stream 等待安装事件。
 2026-10-01 接口调整已提交为 `cfcafb4810`：`bind()` 返回不可变 `KVRowBinding`，接入层按
 request attempt 保存同一个本地对象。`assert_bound(row, binding)` 校验对象身份，
 不因 row/slot 数值相同就接受旧 attachment；协议 generation/session 不进入 runtime。
-真实 Req 投影集中到④的 Ascend service（待实现），字段为 `req.kv.req_pool_idx`，
+真实 Req 投影已集中到④的 Ascend service，字段为 `req.kv.req_pool_idx`，
 runtime 仅接收明确 row/写入参数。`detach_row(binding)` 只清除本地 attachment，
 返回不可变 `KVWriteReceipt(binding, submitted, completed)`，由接入层按 attempt
 保留；control 的 persistent slot 不随之释放。writer 只保留显式 metadata 接口。
@@ -149,9 +155,10 @@ D5 不可恢复错误报错终止，不进行同进程恢复，也不以报错�
 4. 用户确认第3步后，增加独立 top-k BM readback，与原路径的有效 KV 对比；
    readback 不作为 attention 输入。通过后才满足 ticket02 的两阶段验收。
 
-服务脚本基于已跑通的 `ascend-sglang-script/pd-disaggregation/glm51dis.sh` 样例调整，
-实际 IP/权重路径以用户机器为准；可使用 S_P=S_D=8192 和较小 context 控制 shadow
-内存，必须计入旧 host KV 与 BM 两份 DRAM。默认容量仍为16384。
+上述四步已完成，服务脚本为 `ascend-sglang-script/pd-disaggregation/glm51mempool.sh`，
+本轮验收使用S_P=S_D=512、context1024，实际IP/权重路径以用户机器为准。
+shadow阶段同时占用旧host KV与BM；默认容量仍为16384。大容量分配问题归09，
+后续03先沿用已验收的小容量配置。
 
 ### 2026-09-30：外部 review 后的确认
 
@@ -238,7 +245,8 @@ Pool allocation、映射及 DVA 在 graph 使用期间保持有效。退出或�
 一个 rank 的逻辑 KV 布局按 layer 划分，每层为 `[B_slots, S, N, D]`。
 `N`、`D` 从实际模型 KV 布局确定；当前 MLA demo 的 `N=1`，
 `D` 包含 compact latent KV 与 RoPE key，避免将 index K 算入该区域。
-最终路径中，Mempool 替换原有长期 host KV allocation；保留 sparse HBM cache 和 index K。
+正式mempool模式跳过原长期host KV allocation，保留其代码及普通模式分支；继续使用
+sparse HBM cache和Index K。旧路径的可用性须在同一版本验证，不依赖切回历史提交。
 Ticket 02 是用户确认的 shadow 阶段：保留原有 main-KV transfer、D staging/hostSHM
 和 attention 读取，同时向 P/D BM 双写并维护真实 slot 生命周期。因此该阶段会同时
 分配旧 host KV 与 BM，需要将两份内存都计入节点预算。先通过无 BM readback 的服务验收，
@@ -322,8 +330,11 @@ P mempool slot 和持久 request 状态继续保留。
 
 Index K 继续位于 HBM，沿用 SGLang 管理和现有 Ascend 传输。
 其他需要的 state/aux/metadata 也保留原有路径。
-在 mempool 模式中关闭主 compact KV 的原有 PD transfer 及对应 D staging。
-接入时必须枚举实际 buffer 清单，防止关闭 KV transfer 时一并遗漏 index K。
+在正式mempool模式中关闭主compact KV的原PD transfer及对应D staging，保留旧
+构造/发送/索引重写/staging→host实现，普通模式仍执行这些分支。正式D同时关闭旧
+host KV写入与host SHM miss读取；分配、注册和执行选择均来自启动时解析的同一mode。
+切换模式需drain并重启P/D、重新capture Graph；READBACK不选择模式，运行中不静默
+回退到host路径。接入时必须枚举实际buffer清单，保留Index K及辅助数据真实handoff。
 
 D 只有在 `KV_READY` 和原有 index K/state/metadata 传输均成功后，才能运行 decode。
 现有 indexer 根据全量 index K 产生 top-k；sparse cache 的 miss 按来源拆分：
@@ -468,9 +479,12 @@ Ticket 01 已于 2026-09-27 经用户双机测试并确认完成：一个 P/D ra
 此前 remote DRAM benchmark 与普通 sparse PD UniDexCopy replay 是额外历史证据。
 
 01 使用同步 BM copy staging 后再读取，底层测试 KV 内容在 replay 期间不改变。
-尚未证明 02 的 UniDexCopy raw-destination 写入、写后远端可见性、同 slot 内容改写、
-16 对 pool 与 TransferEngine 的服务内并存、真实 GLM-5.1 服务生命周期及模型精度。
-这些是后续验收项，不能以 01 的通过结果替代。
+02 随后通过独立 writer gate 验证 UniDexCopy raw-destination 写入、远端读回和内容更新，
+并接通 16 对 pool 与 TransferEngine 并存的真实 GLM-5.1 服务。用户于 2026-10-03
+确认真实服务 shadow readback 验收通过，02 已关闭；具体覆盖与证据见
+[02 总结](ticket-02-summary.md)。
+当前 attention 仍消费旧路径，正式切换 mempool 后的模型输出一致性与精度仍属于
+03/04/08 的后续验收，不能以 shadow readback 的通过替代。
 
 ### 必须通过
 

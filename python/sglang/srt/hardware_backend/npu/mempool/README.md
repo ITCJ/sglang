@@ -3,7 +3,14 @@
 提供 ticket02 的存储布局、BM handle/view、临时 KV writer 和 backend runtime。
 ①–③、A1–A4接口优化及④的scheduler/配置/Graph接线已实现。
 开启 `SGLANG_NPU_ENABLE_MEMPOOL=1` 时，BM/runtime在Graph前创建，service/control在
-既有AscendKVManager建立后附加。shadow双写保留原sparse PD路径；真实服务尚待NPU验收。
+既有AscendKVManager建立后附加。shadow双写保留原sparse PD路径。
+2026-10-03用户确认小容量真实服务的KV读回、Graph、正常释放和物理slot复用通过，
+ticket02已关闭。代码路径、请求时序及实测边界见
+[02总结](../../../../../../.scratch/ascend-mempool/ticket-02-summary.md)；
+正式attention数据来源切换与旧hostSHM/main-KV路径停用由03继续完成，旧实现保留。
+03 S1已拆分启动模式和资源能力；现有开关继续选择明确的P/D shadow模式，预留的
+正式模式在S2–S5接通前拒绝启动。交付边界与回归命令见
+[S1总结](../../../../../../.scratch/ascend-mempool/ticket-03-s1-summary.md)。
 
 ## 文件与接口
 
@@ -35,16 +42,24 @@ service投影真实Req并延迟native清理，tick统一TP observations/prefligh
 
 ## 从模型加载到 mempool ready
 
-`ModelRunner.init_attention_backends()`先构造attention backend，再调用
-`runtime.initialize_for_model_runner()`。因此进入BM前，模型和原生NPU KV已存在；
+`ModelRunner.alloc_memory_pool()`先调用sparse配置模块的`configure_for_model_runner()`，
+解析并保存`SparseKVOffloadMode`，验证`MempoolConfig`及可提前确定的layout约束。
+此时不导入MemFabric、不建立BM连接。容量估算、native pool、backend和sparse manager
+沿用同一mode，分别使用`uses_sparse_kv_cache`、`uses_host_kv_offload`、
+`uses_pd_decode_staging`、`uses_mempool_bm`表达职责；READBACK不参与资源策略。
+本阶段host/staging的实际分配仍保留，正式关闭分支由S3完成。
+
+随后`ModelRunner.init_attention_backends()`构造attention backend，再调用
+`runtime.initialize_for_model_runner()`消费已校验配置。因此进入BM前，模型和原生NPU KV已存在；
 D的`SparseKVCacheManager`还已逐层分配并注册原hostSHM，P仍使用原生NPU KV。
 这是当前shadow双写路径的安排，独立BM gate没有这些前置分配。
 
 ```mermaid
 flowchart TD
-    A[模型与原生KV已加载] --> B[构建attention backend\nD创建原sparse hostSHM]
-    B --> C[校验MempoolConfig并计算PoolLayout]
-    C --> D[mf.initialize]
+    A[模型已加载，尚未分配KV] --> B[解析mode并校验MempoolConfig及layout]
+    B --> C[按同一mode估算容量并分配native KV / Index K]
+    C --> C1[构建attention backend\nshadow D创建原sparse cache与hostSHM]
+    C1 --> D[mf.initialize]
     D --> E[initialize_rank_pair\nD等P store可达，然后bm.initialize]
     E --> F[bm.create2\n分配本地DRAM并建立BM handle]
     F --> G[handle.join并等待两侧设备映射]
@@ -205,12 +220,13 @@ attention 使用原 selected KV，原 hostSHM/main-KV transfer 在本阶段保�
 CPU 行为测试放在仓库根目录 `ascend-mempool-test/tests/unit/`，见
 [测试与两机运行说明](../../../../../../ascend-mempool-test/README.md)。
 `test_pair_startup.py` 使用 BM SDK boundary fake 检查 16 对端口、BM rank、错误参数与
-失败清理。它不代表16对真实BM会话已在NPU服务中通过；④代码已接线，用户仍需运行
-README中的shadow服务gate。
+失败清理。该CPU测试只覆盖边界合同；真实16对BM服务、Graph和读回的硬件证据
+来自用户执行的shadow服务gate，已在02总结中记录。
 独立测试通过自己的 package path 加载本目录模块，绕过 `sglang/__init__.py`，
 无需安装 SGLang 或启动 server；01 的 `pool` import 保留兼容入口。
 
 01 的 remote fetch Graph、③旧版本的双机 runtime writer gate 已由用户反馈通过。
 10月1日用户回传了 bind/detach/writer 接口调整后的双机日志，两端均为20条PASS和
 ALL_CHECKS_PASSED；详情及版本证据边界见ticket02。
-④新增service/tick及native释放边界回归后，Mac共108项CPU测试通过；不替代真实server验收。
+后续增加读回和日志复用回归后，Mac CPU suite为147项通过；这些本地检查与用户提供的
+真实server/NPU验收分别记录，不能互相替代。

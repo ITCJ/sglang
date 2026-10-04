@@ -638,6 +638,7 @@ class ModelRunner:
             token_to_kv_pool_allocator=self.token_to_kv_pool_allocator,
             memory_pool_config=self.memory_pool_config,
             draft_model_idx=self.draft_model_idx,
+            sparse_kv_offload_mode=getattr(self, "sparse_kv_offload_mode", None),
         )
 
     def init_mindspore_runner(self):
@@ -908,6 +909,16 @@ class ModelRunner:
 
     def alloc_memory_pool(self, memory_pool_config: Optional[MemoryPoolConfig] = None):
         """Allocate KV cache memory pools only (no backends or cuda graphs)."""
+        if (
+            _is_npu
+            or envs.SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD.get()
+            or envs.SGLANG_NPU_ENABLE_MEMPOOL.get()
+        ):
+            from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config import (
+                configure_for_model_runner,
+            )
+
+            configure_for_model_runner(self)
         if memory_pool_config is not None:
             self.memory_pool_config = memory_pool_config
 
@@ -1053,7 +1064,8 @@ class ModelRunner:
         self.attn_backend = backends.attn_backend
         self.decode_attn_backend = backends.decode_attn_backend
         self.decode_attn_backend_group = backends.decode_attn_backend_group
-        if envs.SGLANG_NPU_ENABLE_MEMPOOL.get():
+        sparse_mode = getattr(self, "sparse_kv_offload_mode", None)
+        if sparse_mode is not None and sparse_mode.uses_mempool_bm:
             from sglang.srt.hardware_backend.npu.mempool.runtime import (
                 initialize_for_model_runner,
             )
@@ -1941,8 +1953,10 @@ class ModelRunner:
             else:
                 # Eager: decode / extend / idle dispatched inside the runner.
                 scope = contextlib.nullcontext()
+                sparse_mode = getattr(self, "sparse_kv_offload_mode", None)
                 if (
-                    envs.SGLANG_NPU_ENABLE_MEMPOOL.get()
+                    sparse_mode is not None
+                    and sparse_mode.uses_mempool_bm
                     and not forward_batch.forward_mode.is_idle()
                 ):
                     from sglang.srt.hardware_backend.npu.mempool.runtime import (

@@ -10,58 +10,46 @@
 
 **Status:** ready-for-agent
 
-**State:** open
+**State:** closed
 
-## 当前执行入口（2026-10-02：继续demo，NUMA排查独立跟进）
+## 当前状态（2026-10-03：用户验收通过，已关闭）
 
-小容量真实服务的真实top-k KV读回已实现；用户反馈三请求HTTP成功，日志检查通过
-全rank数值、Graph及正常释放的前置条件，最后因检查器把request row与物理slot绑定而失败。
-接下来用修正后的离线检查器重查现有日志，确认物理P/D slot复用，见最新Comments。
-NUMA分配失败、大容量长尾和SDK失败清理的全部证据已汇总到
-[09: NUMA分配跟进](09-numa-allocation-followup.md)；用户决定延期排查，09不阻塞本票
-及03–08。以下历史Comments中的“下一轮NUMA实验”不再是当前执行要求。
+用户确认“验证了没有问题”，本票的真实服务 shadow 双写、top-k KV 读回、Graph、
+正常生命周期与物理slot复用验收完成。三轮九请求的实际计数和日志定位过程见最新
+Comments；代码路径、完整请求链路、已解决问题及后续安排见
+[ticket 02 总结](../ticket-02-summary.md)。
 
-具体推进顺序：
+已验收配置为TP16、slots16、D Graph width16、context1024、P/D各512，
+显式NUMA列表为 `0,2,4,6`。宽度2048下比较实际valid KV，不代表2048有效token、
+大容量、并发batch、正式attention cutover或AIME精度已经通过。
 
-1. 使用`SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6`和已可运行的小容量配置，
-   TP16、slots16、D graph batch width16。已有服务基线为context1024、P/D各512；
-   本阶段不要求先复现或解决context16384的大容量启动长尾。
-2. 在D实际selected top-k KV处接入独立BM读回buffer，复用已有view/UniDexCopy，
-   从P prompt与D decode两处按prompt length及实际written range取数，对照旧路径的
-   有效KV。旧路径继续供attention使用；读回比较须覆盖capture/replay后的真实数据，
-   比较/报告放在完成事件之后，不在capture中做host同步或读取未完成的buffer。
-3. 覆盖prompt/decode分界、D本地position0、slot映射、padding及zero-valid来源；
-   top-k宽度2048下只比对valid entries。小context中无效列较多，不能声称覆盖了
-   2048个有效token或8192容量的内容验证。错误报告包含rank/layer/请求及逻辑位置。
-4. 同一轮真实服务测试完成零decode、实际decode、下一请求复用与全rank DONE/ACK，
-   保存已有`verify_shadow_service.py`报告及新增数值比对结果。确认后完成02，进入03。
-
-本票关闭仍以真实KV内容和正常生命周期证据为依据。03负责将读回路径变成attention
-正式数据来源，并同时移除重复hostSHM/main-KV transfer；关闭hostSHM不是本票的临时
-分配优化。小配置足以推进功能接线，较大容量及性能问题由09后续处理。
+[03](03-prefill-direct-offload.md)已解除阻塞，负责将BM读取接为attention正式数据来源，
+同时移除旧main compact-KV transfer、D staging/长期host KV。
+NUMA分配失败、大容量长尾和SDK失败清理由延期的[09](09-numa-allocation-followup.md)
+跟进；完整压力/故障矩阵仍分别归06/07。历史Comments按记录日期解读。
 
 ### 已完成实施安排与证据
 
 本票此前分为两部分：part1–part3 已有代码的复核优化，以及part4服务接入。
 第一部分接口优化已提交并推送为 `cfcafb4810`；用户反馈修改后的双机 writer gate 通过。
-未勾选项仍待接线/验证，硬件证据边界见本票最新 Comments。
-第一部分的勾选只表示本地实现与合同检查，不代表④的真实服务回收已经接通。
+当前检查项已完成，硬件证据边界见本票最新 Comments。
+异常分支勾选表示基础接线和CPU合同检查完成，不表示06/07的真实故障矩阵已验收。
 本节及两部分任务替代较早的接口/文件组织提案；旧③ S1–S6 安排移至 Comments
 末尾保留历史。产品范围仍以父 spec 为准，D1/D4/D5 已确认的同步与安全要求不变。
 
 | 已有部分 | 已取得的证据 | 当前边界 |
 | --- | --- | --- |
 | ① storage | layout、BM manager/view、writer、rank-pair startup helper 已提交；④已接入 | 小容量16对真实服务已有成功反馈；大容量/NUMA问题独立记入09，延期跟进 |
-| ② control | 单pair状态机、TP tick与真实请求接线已提交；用户三请求日志检查走过全rank正常闭环与最终free=16检查 | 物理P/D slot复用待修正检查器重检确认 |
-| ③ runtime/writer | 接口优化 `cfcafb4810`；双机writer gate两端各20条PASS；用户日志检查走过全rank真实readback与Graph条件 | 尚未收到完整日志和通过的result JSON |
-| ④ service integration | 真实 selected KV readback实现已提交；Mac 146项CPU测试、23文件strict mypy通过；用户三请求HTTP成功 | 离线检查器误将request row轮换判为物理slot未复用，修正后待重检 |
+| ② control | 单pair状态机、TP tick与真实请求接线已提交；九请求释放、物理P/D slot复用及最后全rank free=16；用户确认验证通过 | 正常生命周期验收完成；06/07覆盖压力及故障矩阵 |
+| ③ runtime/writer | 接口优化 `cfcafb4810`；双机writer gate两端各20条PASS；六请求在全16rank各完成32次Graph读回、2496次逐层检查 | 小容量真实内容验收完成；大容量另行验证 |
+| ④ service integration | Mac 147项CPU测试通过；真实服务双写、读回与回收接通；检查器修复和旧日志定位后用户确认无问题 | 本票关闭；03将BM数据接入attention |
 
 保留 shadow 范围：P 原生 HBM cache、原 main-KV transfer、D staging/hostSHM、
 Index K/其他 metadata 传输和 attention 消费路径继续工作；P/D 额外写入 mempool。
-先验收无服务内 readback 的真实运行，再加入独立 top-k readback 完成本票。
+已先验收无服务内 readback 的真实运行，再加入独立 top-k readback 完成本票。
 原 main-KV transfer/hostSHM 的移除属于后续 cutover，不能在本票提前关闭。
 
-本轮继续完成readback三请求日志验收，不再等待NUMA/大容量实验完成。
+本票验收完成，后续开发入口为03。
 
 ## 第一部分：part1–part3 已有代码的复核优化
 
@@ -151,21 +139,24 @@ D 停止该请求提交并 drain -> DONE
 - [x] 运行 `ascend-mempool-test/` 适用 CPU suite、现有配置的严格 mypy、Ruff
   F/UP037/format、isort 与 `git diff --check`；记录本次实际结果，不沿用旧计数冒充重测。
 - [x] 已交付接口/释放时序说明，用户授权提交推送并反馈修改后的双机 writer gate
-  两端通过（10月1日日志，详见 Comments）。第二部分仍待后续实施。
+  两端通过（10月1日日志，详见 Comments）。第二部分及后续真实 readback 也已完成验收。
 
 ## 第二部分：part4 服务接入实现
 
-B节的勾选表示本轮代码与Mac检查完成，不代表真实TP、NPU Graph或模型精度验收。
-真实shadow服务与readback的硬件项继续保持未勾选；本票仍为open。
+B节的实现项已完成，真实 shadow 服务和 readback 的硬件项也已获用户确认。
+CPU 契约检查与 NPU 实测覆盖分别以最新 Comments 为准；本票已关闭，正式 attention
+切换及模型精度验收仍由后续票完成。
 
 ### B1. 模块组织与已确认路径
 
-保留当前8个非 `__init__.py` 的生产文件：NPU mempool 的 `config.py`、`layout.py`、
+④核心接线在当时已有的8个非 `__init__.py` 生产文件上扩展：NPU mempool 的 `config.py`、`layout.py`、
 `manager.py`、`rows.py`、`offload.py`、`runtime.py`，以及 Ascend 的
 `mempool_protocol.py`、`mempool_control.py`。不以文件数量为目标合并已有明确职责。
 `rows.py` 继续保留与 `offload_v2` 的已知复制、来源及同步维护说明。
 
-④只新增以下两个生产文件；有关 dataclass 放在所属文件内，不另建 types/events/actions：
+④核心接线新增以下两个生产文件；有关 dataclass 放在所属文件内，不另建 types/events/actions。
+后续读回与启动诊断增加的 `copy.py`、`readback.py`、`diagnostics.py` 及完整路径见
+[02 总结](../ticket-02-summary.md)。
 
 | 新增路径（从 srt 开始） | 职责 |
 | --- | --- |
@@ -286,12 +277,12 @@ queue 内部 readiness 字段来减少共享文件数。
   acquire/release 一致性；P row 已复用但旧 P slot 仍占用；READY/transfer 两种到达
   顺序；zero-decode、abort、overlap drain、恰好一次回收和不安全释放拒绝。
   复用第一部分和现有算法/协议回归，使用真实字段形状，不以浅层 wrapper 测试代替行为。
-- [ ] 按 verification.md 与用户核对两部分实现，交付具体 launch 参数增量、P/D 顺序、
+- [x] 按 verification.md 与用户核对两部分实现，交付具体 launch 参数增量、P/D 顺序、
   请求脚本、日志关联字段、通过/失败判据。基于已跑通的 glm51dis.sh 样例，实际 IP/
   权重路径由用户环境决定；不把 Mac 检查标为 NPU/真实 collective 验收。
-- [ ] NPU 由用户执行：16对启动、真实 GLM5.1 warmup/capture/replay、单请求 shadow、
+- [x] NPU 由用户执行：16对启动、真实 GLM5.1 warmup/capture/replay、单请求 shadow、
   正常输出、完整生命周期与释放；先不读回 mempool。补测实际影响到的 writer/Graph 路径。
-- [ ] 用户确认前一 gate 后，增加独立 UniDexCopy top-k（含2048规模）BM readback，
+- [x] 用户确认前一 gate 后，增加独立 UniDexCopy top-k（含2048规模）BM readback，
   对照原路径的有效 KV；读回结果不作为 attention 输入。两阶段通过才可关闭02。
 - [x] 日志记录 role/rank、room/attempt、P/D slot/generation、native handoff、write
   completion、row detach、DONE/ACK 和实际回收；记录 tick/drain 耗时，优化留待 demo 后。
@@ -304,46 +295,46 @@ queue 内部 readiness 字段来减少共享文件数。
   kv.req_pool_idx 形状投影，runtime 不依赖 Req/fake/协议结构，writer 仅保留一种
   metadata 调用方式，control snapshot 只读且是协议状态的唯一来源。实际 Req/fake
   适配仍由④接入 service。
-- [ ] P 的 KV_READY 不单独触发 native cache/request-row 回收；原 handoff 完成且
+- [x] P 的 KV_READY 不单独触发 native cache/request-row 回收；原 handoff 完成且
   本地相关操作/未来提交排空后可 detach 并复用 row，旧 P mempool slot 仍保持 acquired
   直到对应 DONE 和统一 release；实际日志/测试验证两个生命周期可以分离。
-- [ ] ④按 service + tick 两个新增模块及已列明的7个共享路径薄接口完成；统一
+- [x] ④按 service + tick 两个新增模块及已列明的7个共享路径薄接口完成；统一
   ingest_requests tick，Graph/eager scope 分别接到真实执行位置，没有额外协调/queue层。
 
-- [ ] `SGLANG_NPU_ENABLE_MEMPOOL=1` 要求同时开启 sparse KV offload，并校验 NPU、
+- [x] `SGLANG_NPU_ENABLE_MEMPOOL=1` 要求同时开启 sparse KV offload，并校验 NPU、
   Ascend PD backend、P/D role、TP=16、PP=1 与 peer 配置；无效组合清晰报错。
   P 的 `PD_PREFILL_NATIVE` 状态不会因 host-offload 属性为 false 而错误禁用 mempool。
-- [ ] `B_slots=16`；`S_P` / `S_D` 可通过 server args 配置，默认均为 16384。
+- [x] `B_slots=16`；`S_P` / `S_D` 可通过 server args 配置，默认均为 16384。
   每个 P_i 启动 store，D_i 连接 `base_port+i`；全部 ranks 的 BM
   映射与固定 Graph buffer 在 D capture 前就绪；协议、role/rank、session、
   dtype/layout、容量与 stride 的 peer 兼容握手在首个请求准入前完成。
-- [ ] 在已有 PD receive path 处理 tagged mempool 消息，保持每个 PULL socket 一个 receiver。
+- [x] 在已有 PD receive path 处理 tagged mempool 消息，保持每个 PULL socket 一个 receiver。
   接收线程解析并排队，由顺序一致的 scheduler 协调执行 acquire、collective 和 release。
-- [ ] D 先独立 acquire，再请求 P acquire；每一侧 16 ranks 对同一请求取得相同 slot，
+- [x] D 先独立 acquire，再请求 P acquire；每一侧 16 ranks 对同一请求取得相同 slot，
   P/D slot 可不同。P 全 ranks acquired 且收到匹配的 `BOUND_ACK` 后才允许 prefill。
-- [ ] 用 shared bootstrap room、pool session/epoch、request attempt 和 slot generation
+- [x] 用 shared bootstrap room、pool session/epoch、request attempt 和 slot generation
   确认 binding；正常重复消息幂等，persistent ownership 不依赖 transient sender/receiver。
-- [ ] 真实 GLM-5.1 P/D server 保留现有 sparse PD 路径，同时把 temporary KV 写入 P/D
+- [x] 真实 GLM-5.1 P/D server 保留现有 sparse PD 路径，同时把 temporary KV 写入 P/D
   mempool，走通 `ACQUIRE`、`ACQUIRED`、`BOUND_ACK`、`KV_READY`、`DONE`、`RELEASE_ACK`。
   P mempool slot 的 ownership 持续到 D drain/DONE，普通 handoff cleanup 不释放它。
-- [ ] 先由用户确认无 mempool 读取的 shadow 服务运行，再添加独立 UniDexCopy readback
+- [x] 先由用户确认无 mempool 读取的 shadow 服务运行，再添加独立 UniDexCopy readback
   校验实际 top-k KV。校验数据不作为 attention 输入；有效内容正确且 decode 输出正常。
-- [ ] D 的最后一次读取排空后释放 D slot 并发 `DONE`；P 确认该 attempt 的 D drain
+- [x] D 的最后一次读取排空后释放 D slot 并发 `DONE`；P 确认该 attempt 的 D drain
   和自己的写入完成后释放 P slot 并回复 `RELEASE_ACK`。可从日志确认先后条件与最终可用 slot。
-- [ ] mempool 与 MLAPO 同开启动报错；P/D runtime 均从 attention backend 接入，
+- [x] mempool 与 MLAPO 同开启动报错；P/D runtime 均从 attention backend 接入，
   不依赖 sparse manager 生命周期。覆盖 skip_topk 层，避免 forward 漏写/重复写。
-- [ ] 保留 D1 snapshot all-gather/preflight/commit，空输入仍同步；所有 ownership
+- [x] 保留 D1 snapshot all-gather/preflight/commit，空输入仍同步；所有 ownership
   变化由 tick 批准，一致 preflight 后意外部分 acquire 失败报错终止。
-- [ ] P 在 finalize_bootstrap 副作用前检查 tick-approved binding，未就绪返回 False；
+- [x] P 在 finalize_bootstrap 副作用前检查 tick-approved binding，未就绪返回 False；
   optimistic prefill 关闭，其他入口不能绕过；hook 不自行 acquire/release。
-- [ ] D 在原 metadata/staging 两条 poll 路径均应用联合 readiness；原 staging
+- [x] D 在原 metadata/staging 两条 poll 路径均应用联合 readiness；原 staging
   继续推进，原 transfer 完成事实独立提交 tick，不与最终放行形成循环等待。
   覆盖 READY 先到/后到和原 transfer failure，失败不得隐藏为 waiting。
-- [ ] D4 独立 pending release 管理纳入 idle/leak/sleep 判断；同轮释放合并排空，
+- [x] D4 独立 pending release 管理纳入 idle/leak/sleep 判断；同轮释放合并排空，
   不沿用旧 deferred release 超时强制 free。涵盖 delayed sampling 和零 decode。
-- [ ] 基础 fatal fault 明确报错退出，不伪造 DONE 或复用未确认安全的 slot；
+- [x] 基础 fatal fault 明确报错退出，不伪造 DONE 或复用未确认安全的 slot；
   完整故障注入矩阵留给07，不能推迟正常服务依赖的 fault 接线。
-- [ ] 按[阶段交付流程](../verification.md)完成实现核对、测试脚本交付和用户 NPU 验收，
+- [x] 按[阶段交付流程](../verification.md)完成实现核对、测试脚本交付和用户 NPU 验收，
   在 `Comments` 中记录实际证据。
 
 ## Verification
@@ -355,6 +346,74 @@ NPU 上由用户启动全部 16 对 rank，验证启动兼容性检查、正常 
 故障注入的系统验证归06，active cancel/peer fault 完整矩阵归07。
 
 ## Comments
+
+### 2026-10-03：用户确认验证通过，关闭02并解除03阻塞
+
+用户在最新日志定位之后明确回复“可以，我验证了没有问题，我们的ticket2应该完成了”，
+并要求总结代码路径、mempool链路、已解决问题和更新文档。按[阶段交付流程](../verification.md)，
+记录本次实现及NPU验收确认，将本票设为closed，勾选当前验收项；历史Comments保持原样。
+
+实际硬件输出来自2026-10-02的两台Ascend服务：P `10.120.72.31`、D `10.120.72.32`，
+GLM-5.1、TP16、78层、slots16、context1024、P/D各512、D Graph width16、
+NUMA `0,2,4,6`。三轮九请求包含3个zero-decode和6个真实decode；后者在全16ranks
+均为passed，各32次replay、2496次逐层比较，P/D边界、D position0和物理slot复用均有
+实际读回证据。23:34:28全D ranks最终CLOSED、free=16，详细room/attempt见下一条记录。
+
+已交付的sglang版本为 `fb9a6cde5b`（包含 `c4ec7c6b67` 真实读回与 `5055182ba2`
+服务接线），启动脚本仓库为 `5e35b2f`。HTTP命令为
+`verify_shadow_service.py requests --decode-tokens 32 --timeout 900`；最后交付的
+重检命令使用P机 `/home/cryang/p.log`、`/home/cryang/d.log`，参数为
+`check-logs --requests 9 --require-readback --readback-layers 78`，建议输出
+`/tmp/mempool-02-readback-small/result-latest.json`。远端实际HEAD、最终JSON和实际
+输出文件位置未由agent单独读取；关闭依据为已有回传证据与本次用户明确确认。
+
+本轮文档收尾不重新运行NPU或重复此前CPU suite；实际实现的Mac结果为147项CPU回归
+通过，readback阶段23文件strict mypy通过。完整内容整理为
+[ticket 02 总结](../ticket-02-summary.md)，并更新spec、design、runtime及验证说明。
+
+03已解除阻塞，尚未开始实现；继续小容量正式attention切换和hostSHM/main-KV移除。
+06/07故障矩阵、08精度及延期09保持各自边界，不随02关闭标为完成。
+
+### 2026-10-03：D端已完成物理slot复用，P机离线检查读取旧D日志
+
+用户提供2026-10-02 22:52:59至23:34:28的D端输出，以及在P机 `npu1-31` 对
+`/home/cryang/d.log` 执行rank0读回汇总的结果。以下是用户反馈的NPU证据，
+agent未在Mac重新执行NPU测试，也未取得远端原始日志文件。
+
+D端共三轮九个请求：每轮一个 `zero_decode`、两个 `passed`。六个真实decode
+请求的rank0位置如下；其余15 ranks的读回结果及位置一致，各attempt均不同。
+
+| D读回时间 | room | attempt | row | P slot | D slot |
+| --- | --- | --- | --- | --- | --- |
+| 22:57:15 | 5031488166424055723 | 92915d309f1444e35d24b3ddb226c819 | 3 | 0 | 1 |
+| 22:57:27 | 2948569370053300662 | 64c711445a5b097c3ac142390cc918a6 | 4 | 0 | 0 |
+| 23:32:51 | 7210701163633124660 | 212c0883e248247b77a2f7b01a9a559d | 6 | 0 | 1 |
+| 23:33:00 | 7729946535641795741 | 0f54fff49e0ba1f18c6a25dfc7d87a88 | 7 | 0 | 0 |
+| 23:34:19 | 6179483509532073228 | 89a9511a2ad74655197b632e6cdbf89f | 9 | 0 | 1 |
+| 23:34:27 | 8603125035622002507 | 5be2cc8ae3f3edab41cedf58ff2017fd | 10 | 0 | 0 |
+
+每个真实decode在每个rank均为 `status=passed`，
+`forwards=replay_forwards=written_kv=32`、`layers=78`、
+`layer_checks=2496=78×32`；`min_topk=max_topk=2048`、
+`min_valid_per_layer=10`、`prompt_kv=22464`、`decode_kv=41184`，
+`prompt_boundary_kv=decode_first_kv=2496`。这些是实际读回计数，
+验收按 `layer_checks=layers×forwards` 核对，不要求固定31次forward。
+最后一个请求在23:34:28的全部16 D ranks均收到 `RELEASE_ACK`，
+`phase=CLOSED free=16`。三轮中 `(P=0,D=1)` 与 `(P=0,D=0)` 各复用三次，
+同时覆盖P/D slot不同；request row轮换，不能作为同row复用的硬件证据。
+
+P机汇总却只有 `zero_decode: 1, passed: 2`，三个room恰好对应第一轮：
+5783271692570999325、5031488166424055723、2948569370053300662。
+第一轮两个真实decode的位置分别为 `(0,1)` 与 `(0,0)`，因此即使修正row条件，
+仅凭这份旧副本也不能通过物理P/D组合复用检查。后续请求已在D服务执行，
+但未进入P机供检查器读取的D日志副本；此时无需再改分配器、放宽检查或补发请求。
+
+下一步将同次服务最新的完整D日志同步至P机 `/home/cryang/d.log`，
+并保证P日志也包含九个请求及启动阶段。rank0汇总应为
+`zero_decode: 3, passed: 6`；再运行 `check-logs --requests 9
+--require-readback --readback-layers 78`，保存新的result JSON。
+`--requests`为最少请求数，本轮用9可直接发现只保留第一轮的旧副本。
+完整P/D联合报告、运行代码版本和生成文本确认仍待用户反馈；本票保持open。
 
 ### 2026-10-02：三请求通过，修正读回复用检查对request row的错误约束
 

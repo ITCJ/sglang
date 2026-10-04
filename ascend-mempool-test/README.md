@@ -2,9 +2,14 @@
 
 Ticket 01 与02③的独立硬件验证入口，以及02④的真实服务 shadow gate。
 
-**当前执行入口：** [02 小容量真实 KV 读回](READBACK_SERVICE.md)。使用 context1024、
-P/D 各512、TP16、D Graph width16，开启真实 selected KV 对照及三请求生命周期检查。
-NUMA/大容量分配排查已延期到 ticket09。
+**当前状态（2026-10-03）：** 01、02已获用户确认验收并关闭。
+[02总结](../.scratch/ascend-mempool/ticket-02-summary.md)记录代码路径、链路和实际证据；
+[小容量真实KV读回](READBACK_SERVICE.md)保留为回归入口，配置为context1024、
+P/D各512、TP16、D Graph width16。下一开发入口是
+[03正式attention切换](../.scratch/ascend-mempool/issues/03-prefill-direct-offload.md)。
+03 S1的配置与资源职责拆分已实现，继续使用02 shadow数据路径；完整环境/NPU回归
+待执行，见[S1交付与复测](../.scratch/ascend-mempool/ticket-03-s1-summary.md)。
+NUMA/大容量分配排查已延期到ticket09。
 以下独立测试的目标环境为同一 superpod 的两台 Ascend 机器，
 原 graph/writer gate 每侧使用一张 NPU，BM启动诊断可选1到16张；使用MemFabric Hybrid
 **1.1.4**。不启动 SGLang server、router 或模型。
@@ -15,6 +20,7 @@ BM API 参考本地 `release/1.1` 的 `9fa9afbb`；两端运行时版本写入�
 ```text
 ascend-mempool-test/
   src/ascend_mempool/  production 模块加载入口、验证数据
+  src/ascend_sparse/   sparse mode/容量配置的轻量加载入口
   scripts/            双机测试入口与两轮 gate runner
   tests/unit/         CPU 行为测试
   reports/            默认运行日志与 JSON 报告，已 gitignore
@@ -85,6 +91,10 @@ CPU 测试使用真实 CPU tensor 运算和 BM SDK boundary fake，验证布局�
 handle lifetime。它们不执行 BM 或 NPU kernel，不证明远端读和 Graph capture/replay 已通过。
 `test_config.py` 覆盖实际 MLA 维度与 P/D 独立容量；`test_offload.py` 检查 raw destination
 写入的内容、bounds/padding mask、zero-valid warmup 与固定 metadata buffer 的重复使用。
+`test_sparse_config.py`覆盖普通/shadow/预留正式模式的资源能力、Index K容量计算及
+非法启动组合。真实native pool构造和runner启动配置测试位于SGLang registered suite，
+需要完整SGLang依赖和受支持的Python版本；执行命令见S1交付说明，不能以轻量suite
+通过代替该集成检查。
 `test_pair_startup.py` 检查 `P_i/D_i` 的 store 端口及 BM rank 映射、启动参数和失败清理，
 并用模拟时钟覆盖 P 晚90秒监听、P始终不可达、TCP连接超时、P不等待自身store及SDK错误直报。
 生产 BM 启动入口位于 `MempoolKVManager.initialize_rank_pair()`；01 gate 保留原测试
@@ -360,7 +370,8 @@ python3 -u ascend-mempool-test/scripts/verify_graph.py \
 回传两侧 `--check-env` 输出、等容量/不等容量的 `.log` 和 `.json`、实际代码版本及使用的命令。
 失败时保留完整 traceback、最后一个 PASS case、相关 MF 错误和 retained-pool 状态。
 我们据此核对实现并调整脚本。Ticket 01 已于 2026-09-27 经用户确认验收并关闭。
-02 的新增 runtime offload 与真实 server 集成仍待 NPU 验证。
+02的runtime writer、真实server shadow双写、top-k读回、Graph和正常释放/物理slot复用
+已于2026-10-03经用户确认通过并关闭，详细证据见[02总结](../.scratch/ascend-mempool/ticket-02-summary.md)。
 
 ## 02③ Runtime writer gate
 
@@ -466,7 +477,8 @@ Mac 新增 `test_rows.py` 与 `test_runtime.py`，覆盖四种行布局、chunk/
 真实 Req 字段投影与 missing/stale attachment、row reuse/旧 slot 保留、control
 snapshot 不可变，以及同一套gate案例的完整CPU参考值。真实 service 的 fake 过滤
 属于④；Mac 不执行实际NPU Graph。
-③与这个runtime gate同一轮交付NPU测试，ticket02保持open，仍需④及后续服务readback。
+③与这个runtime gate同一轮交付NPU测试；当时ticket02保持open，等待④及服务readback。
+后续两阶段验收已完成，当前状态见本页开头和02总结。
 
 2026-10-01 接口优化后，`verify_writer.py` 已改为保存 `bind()` 返回值并调用
 `detach_row(binding)`。上述两机命令、20条 checks/10条 replay 判据不变。
@@ -474,10 +486,10 @@ snapshot 不可变，以及同一套gate案例的完整CPU参考值。真实 ser
 ALL_CHECKS_PASSED；交付版本为 `cfcafb4810`，远端hash与JSON文件未独立核验，
 完整记录见 ticket02。本 gate 不替代④的真实 native handoff/TP 生命周期验收。
 
-## 02④ 真实 GLM-5.1 shadow 服务 gate（待用户执行）
+## 02④ 真实 GLM-5.1 shadow 服务 gate（已验收，保留回归入口）
 
 ④已接入 server 初始化、TP tick、真实请求准入、forward scope 和 native 回收。
-本轮 Mac 检查通过不表示服务已在NPU运行。先核对本轮代码，再把同一版本部署到两侧；
+本gate已由用户在NPU验收通过。后续复测先核对代码，再把同一版本部署到两侧；
 保存各侧 `git rev-parse HEAD` 和 `git diff --stat`，避免只更新其中一台。
 
 这一轮继续使用原 native KV/Index K/metadata 传输与 attention，P/D额外写入mempool。

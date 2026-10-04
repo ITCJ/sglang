@@ -4,10 +4,15 @@
 **Status:** ready-for-agent
 **State:** open
 
-**Review note (2026-09-28):** See [design and code review](design-review-2026-09-28.md)
-for confirmed implementation defects, missing integration contracts, and proposed
-decisions. Pending proposals there are not yet approved requirements. Ticket 02
-remains open; ticket 01 hardware acceptance is retained.
+**Current stage (2026-10-03):** Tickets 01 and 02 are accepted and closed. The user
+confirmed ticket 02's real-service shadow writes, selected-KV readback, Graph,
+normal lifecycle, and physical slot reuse. See the [ticket 02 summary](ticket-02-summary.md)
+for code paths and evidence. Ticket 03 is unblocked and remains unimplemented;
+the overall feature remains open through formal cutover and later acceptance.
+
+**Historical review (2026-09-28):** [Design and code review](design-review-2026-09-28.md)
+records the findings that informed subsequent work. Unapproved proposals there do
+not override the confirmed spec or later ticket decisions.
 
 ## Problem Statement
 
@@ -97,10 +102,10 @@ HAL failures, native cleanup crashes, large-allocation latency, existing workaro
 and all available evidence. It does not block tickets 02–08 and is not an additional
 demo acceptance gate. Deferral does not establish that these problems are fixed.
 
-Continue ticket02's actual top-k BM readback and normal lifecycle checks using the
-working small-capacity profile and explicit NUMA list `0,2,4,6`. The observed service
-baseline is context1024, prompt/decode capacities512, TP16, and graph batch width16.
-Next, ticket03 connects verified BM reads to attention and removes duplicate old
+Ticket02's actual top-k BM readback and normal lifecycle checks were accepted by
+the user on 2026-10-03 using the small-capacity profile and explicit NUMA list
+`0,2,4,6`: context1024, prompt/decode capacities512, TP16, and graph batch width16.
+Continue with ticket03, which connects verified BM reads to attention and removes duplicate old
 hostSHM, main compact-KV transfer, and staging while retaining the required HBM
 cache/Index K and auxiliary transfers. Ticket04 verifies the formal Graph/model path.
 Larger-capacity allocation investigations should use the final storage configuration
@@ -125,8 +130,9 @@ main-KV transfer remains a subsequent integration step in the final demo.
 ### Ticket 02 Review Optimizations and Part IV (2026-10-01)
 
 The user confirmed two implementation sections in [ticket02](issues/02-rank-pair-control-lifecycle.md):
-first optimize the existing parts I–III, then implement part IV. These changes
-remain pending; confirming their design does not establish implementation acceptance.
+first optimize the existing parts I–III, then implement part IV. Both are implemented,
+and the real-service hardware acceptance was confirmed on 2026-10-03. The following
+contracts remain the basis for subsequent integration.
 
 - Separate transient request-row attachment from persistent mempool slot ownership.
   In the shadow stage, KV_READY alone cannot release P native HBM KV or request rows:
@@ -182,6 +188,8 @@ The 2026-10-01 module organization is approved; its implementation remains pendi
 - Use two 16-NPU machines in the same superpod, TP=16 and PP=1, with fixed P rank i to D rank i pairing.
 - Create 16 independent BM pools. Within each pool, P is rank 0 and D is rank 1. P starts the store and D connects to P's base port plus i.
 - Require `SGLANG_NPU_ENABLE_MEMPOOL=1` together with the existing sparse KV offload switch. Validate NPU, Ascend PD backend, PD role, and peer compatibility before admitting requests.
+- Preserve the existing non-mempool implementations in the same revision. With mempool disabled, ordinary sparse PD must still allocate its original storage and execute main compact-KV transfer, D staging-to-host copy, D host KV writes, and sparse host-SHM reads. This requirement is separate from retaining ticket02 shadow mode.
+- Resolve the storage/transfer mode at startup before allocation and graph capture. Derive resource and execution choices from that mode; readback does not select the data source. Changing modes requires draining and restarting P/D. Reject incompatible peers or missing BM dependencies in formal mode; do not fall back to host storage. Non-mempool operation must not require BM initialization or MemFabric runtime dependencies.
 - P's native-prefill sparse offload mode does not itself enable host offload. Resolve mempool configuration explicitly; do not infer that the new mode is disabled from the existing host-offload property.
 - Set physical `B_slots=16` on each side. Expose configurable `S_P` and `S_D` server arguments, both defaulting to 16384. Graph batch width and physical slot count are separate quantities.
 - Establish BM pools, validate local-device mappings on all D ranks, and allocate/initialize fixed graph buffers before decode graph capture. Capture and warmup use invalid request slots and masks, so they do not read live KV. Keep handles and mappings alive until all captured work has drained.
@@ -194,7 +202,7 @@ The 2026-10-01 module organization is approved; its implementation remains pendi
 - Use BM `create2` with separately aligned local contributions and the same maximum DRAM size on both peers. The common maximum is the larger aligned contribution; it defines the rank address stride rather than requiring both peers to contribute that much physical DRAM.
 - Respect the selected backend's allocation alignment. The 910C GVA_V4 VMM DRAM backend requires 1 GiB alignment.
 - Supply a stable base pointer per layer to UniDexCopy. Enforce its current limits: each source/destination logical span fits `UINT32_MAX`, and each row is at most 32 KiB. Reject unsupported configurations at startup; the total rank pool may exceed 4 GiB.
-- Replace the old persistent host KV allocation with BM-backed storage. Retain the existing sparse HBM cache and Index K; do not create duplicate long-lived DRAM copies of the same KV.
+- In formal mempool mode, skip the old persistent host KV allocation/mapping and use BM-backed storage. Retain the old allocation code for ordinary mode, the existing sparse HBM cache, and Index K; do not create duplicate long-lived DRAM copies of the same KV in formal mode.
 - Provide a manager and typed logical KV views that own pool lifetime, shape/dtype/stride, mapped addresses, bounds, and logical-to-copy indexing. Callers supply logical layer/slot/token coordinates rather than manually discovering rank base pointers.
 - Distinguish GVA from current-process device VA. Translate BM peer addresses to local-device mappings for kernel access; another process's device pointer is not a valid wire-level address. Remote CPU access is not promised by the logical view.
 - Maintain explicit mappings between SGLang request-pool rows and mempool slots. Track the actual amount of written KV independently of output token count.
@@ -207,9 +215,9 @@ The 2026-10-01 module organization is approved; its implementation remains pendi
 - Retain native HBM KV writes for P attention and add direct offload from each forward's temporary compact KV to P mempool. Do not reread the entire native cache at prefill completion to populate BM.
 - Preserve temporary source-buffer lifetime across asynchronous offload. Publish `KV_READY` only after all prompt writes complete and the data is readable by D.
 - Preserve existing Index K, state, aux, and handoff-metadata management/transfers. Enumerate their actual buffers during integration so disabling main compact-KV transfer cannot also remove Index K.
-- Disable only main compact-KV transfer and its decode staging in this mode. Sender/receiver handoff cleanup and P native-page release remain separate from persistent BM ownership.
+- Disable only main compact-KV transfer and its decode staging in this mode; retain the legacy implementations behind startup-mode selection. Exclude main K/V from the formal transfer buffer list without removing P's native HBM cache. Sender/receiver handoff cleanup and P native-page release remain separate from persistent BM ownership.
 - Decode readiness requires both matching `KV_READY` and successful existing Index K/state/metadata transfer, across the relevant ranks. Their arrival order is immaterial.
-- Reuse the sparse HBM cache. Split misses into P prompt and D decode sources, and use separate UniDexCopy calls for the two layer views. D directly offloads newly produced compact KV into its BM portion.
+- Reuse the sparse HBM lookup/hit/refill path. Select the miss source by startup mode: the existing host-SHM implementation in ordinary mode, or P/D BM in formal mode. Split formal misses into P prompt and D decode sources, and use separate UniDexCopy calls for the two layer views. D directly offloads newly produced compact KV into its BM portion; formal mode neither submits legacy host writes nor reads legacy host KV.
 - Parallel copy streams may be used when destination rows do not conflict; attention waits for both sources and relevant writes. Correctness is the requirement, not a prescribed performance gain.
 - Require decode NPU Graph capture/replay with minimum graph batch width 16. Keep pool addresses, layer bases, HBM cache addresses, and metadata buffer addresses fixed throughout graph use.
 - Update slot bindings, lengths, batch mappings, indices, and valid masks through fixed device tensors. Capture both source paths even if one has no valid rows during capture.
@@ -355,7 +363,7 @@ passes; no fixed performance improvement is an acceptance condition.
 ## Further Notes
 
 - Treat commit `295132c4a5`, the initial upstream Ascend sparsity-driven KV offload merge in PR #33089, as this project's development baseline. The active feature branch is `cryang/dev/mempool`.
-- The user reports successful, fully checked sparse/dense remote DRAM benchmark runs on the intended machines. Ticket 01's combined remote BM fetch Graph and asymmetric contributions were accepted on 2026-09-27. The user subsequently supplied successful two-machine runtime writer/Graph logs dated 2026-09-30 (20 PASS checks per side, both ALL_CHECKS_PASSED); real-server integration, TP lifecycle and in-server top-k readback still require their own verification.
+- The user reports successful, fully checked sparse/dense remote DRAM benchmark runs on the intended machines. Ticket 01's combined remote BM fetch Graph and asymmetric contributions were accepted on 2026-09-27. Ticket 02 subsequently passed the two-machine writer/Graph gate (20 PASS checks per side), small-capacity real-service TP lifecycle, and selected-KV readback with physical slot reuse; the user confirmed acceptance on 2026-10-03. Formal attention cutover and its accuracy verification remain with tickets 03–08.
 - This is the parent feature spec. Subsequent tickets should declare blockers and deliver observable slices: the hardware graph gate, one complete PD request through release acknowledgement, request reuse/cancellation coverage, and accuracy acceptance.
 - Preserve explicit storage-owner and consumer identity and independent P/D slots, so that future NUMA sharing and different serving ratios do not depend on slot equality.
 - This local spec defines intended behavior; implementation and hardware acceptance have not been completed by publishing the spec.

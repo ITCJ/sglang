@@ -1,5 +1,9 @@
 # Ticket 02：小容量真实 KV 读回
 
+**状态（2026-10-03）：已获用户确认验收，ticket 02 已关闭。** 本页保留复测入口，
+实现路径和实测结果见[02总结](../.scratch/ascend-mempool/ticket-02-summary.md)。
+下一开发阶段为[03正式attention切换](../.scratch/ascend-mempool/issues/03-prefill-direct-offload.md)。
+
 本轮在真实 GLM-5.1 D 服务的 selected top-k KV 处，额外从 BM 读回并逐元素比较
 BF16 值。attention 仍使用原 selected KV；hostSHM 和原 main-KV transfer 保留到 03。
 NUMA 的容量/分配长尾已经移到 09，本轮使用已启动成功的小配置。
@@ -8,7 +12,8 @@ NUMA 的容量/分配长尾已经移到 09，本轮使用已启动成功的小�
 
 P/D 使用同一提交，至少包含读回实现 `c4ec7c6b67`；分别保存 `git rev-parse HEAD`
 和 `git diff --stat`。同时更新 `ascend-sglang-script` 仓库的 `main` 分支，
-至少包含脚本提交 `8074c0c`。
+至少包含脚本提交 `8074c0c`。离线检查器使用 `fb9a6cde5b` 或更新版本，
+避免旧版将request row轮换误判为物理slot未复用。
 
 更新后的 `ascend-sglang-script/pd-disaggregation/glm51mempool.sh` 已包含本页全部
 启动增量。核对脚本中的 P_IP、D_IP、MODEL_PATH 和网卡名后，在各自机器的脚本仓库执行：
@@ -145,6 +150,12 @@ HTTP 完成不代表 DONE/ACK 已完成。如果新版提示 `no actual P/D slot
 等全部 `RELEASE_ACK` 后再次发送这三个请求，requests JSON 换一个输出文件名，
 保留同轮完整日志再执行 `check-logs`；不能仅凭串行请求推断已验证复用。
 
+如果在P机检查从D复制的日志，每次补请求后都要重新同步最新P/D日志，保留本次服务的
+启动、capture及最后ACK部分。2026-10-02的实际排查中，D已跑完三轮九请求，P上的
+`d.log`却仍只含第一轮；仅重复发请求不会更新这个副本。该次最新rank0汇总应为
+`zero_decode: 3, passed: 6`。`--requests`是最少请求数，此类三轮重检可设为9，
+避免旧的三请求副本通过数量检查；这不是以后每次复测都必须发送九个请求。
+
 出现值不一致、正索引超出实际写入范围、缺层或缺 rank 时不通过；缺少读回变量、
 全 padding、只有 warmup、缺 release ACK 或协议 fault 也不能通过。失败时日志检查
 仍会保存 `status=failed` 及错误信息。
@@ -166,9 +177,10 @@ position、feature、P/D slot。发现差异后停止本轮，不继续用该进
 | `SHADOW_READBACK_PASSED` | 离线检查的所有数值、Graph、生命周期和复用条件通过 | 保存 requests/result JSON 与完整 P/D 日志 |
 
 `readback_result` 中，首 token 结束的请求应为 `status="zero_decode"`、`forwards=0`，
-这属于正常成功。另两个请求应为 `status="passed"`：生成 32 tokens 时通常由 P 产生
-第一个 token，D 有 31 次 forward，因此 `written_kv=forwards=31`、
-`layer_checks=78×31=2418`。检查器还要求 `replay_forwards>0`、
+这属于正常成功。真实decode请求应为 `status="passed"`，计数按实际提交的forward核对：
+`written_kv=forwards`、`layer_checks=layers×forwards`。本次32-token请求的实测为
+`forwards=replay_forwards=written_kv=32`、`layers=78`、`layer_checks=2496`；
+不能固定用输出token数减一代替设备工作计数。检查器还要求 `replay_forwards>0`、
 `prompt_kv/decode_kv/prompt_boundary_kv/decode_first_kv>0`、
 `min_topk=max_topk=2048`。`prompt_slot/decode_slot` 用于核对下一请求真实存储复用；
 `row` 是独立的请求表位置，不能用其变化判断 mempool slot 是否复用。
@@ -197,6 +209,6 @@ CPU 校验结果。后续 replay 复用 scratch 不会覆盖尚未消费的快�
 改变分配器制造不同 slot。三请求 gate 要求物理 P/D slot 复用；若 `row_reused=false`，
 这轮不能作为真实服务 request row 复用的硬件证据。
 
-请回传两侧代码版本、完整 P/D 日志、requests JSON 和 result JSON。
-本地 CPU 检查无法替代远端 BM/真实模型/NPU Graph 的证据；ticket 02 在本轮用户 NPU
-验收确认后关闭，再进入 03 的数据路径切换与 hostSHM/main-KV transfer 移除。
+后续复测保留两侧代码版本、完整P/D日志、requests JSON和result JSON。
+本地CPU检查无法替代远端BM/真实模型/NPU Graph证据。02已于2026-10-03经用户确认
+关闭；03负责数据路径切换与hostSHM/main-KV transfer移除，其验收单独记录。

@@ -19,10 +19,6 @@ from typing import Optional
 import numpy as np
 import numpy.typing as npt
 
-from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config import (
-    resolve_sparse_kv_offload_mode,
-)
-
 logger = logging.getLogger(__name__)
 
 
@@ -50,8 +46,7 @@ def is_sparse_pd_decode_enabled(sparse_kv_manager=None) -> bool:
     if sparse_kv_manager is None:
         sparse_kv_manager = get_sparse_pd_manager()
     return (
-        sparse_kv_manager is not None
-        and resolve_sparse_kv_offload_mode().uses_pd_decode_staging
+        sparse_kv_manager is not None and sparse_kv_manager.mode.uses_pd_decode_staging
     )
 
 

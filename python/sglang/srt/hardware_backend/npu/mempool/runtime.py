@@ -602,17 +602,14 @@ def initialize_for_model_runner(model_runner: Any) -> None:
         raise ValueError("mempool requires device='npu'")
     backend = model_runner.attn_backend
     from sglang.srt.environ import envs
-    from sglang.srt.hardware_backend.npu.attention.mla_preprocess import (
-        is_mla_preprocess_enabled,
-    )
 
-    config = MempoolConfig.from_server_args(
-        args,
-        sparse_enabled=envs.SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD.get(),
-        mla=model_runner.use_mla_backend,
-        dtype=str(model_runner.kv_cache_dtype).removeprefix("torch."),
-        mlapo=is_mla_preprocess_enabled(),
-    )
+    config = getattr(model_runner, "mempool_config", None)
+    if config is None:
+        raise ValueError("mempool configuration must be validated before KV allocation")
+    mode = getattr(backend, "sparse_kv_offload_mode", None)
+    if mode is None or not mode.uses_mempool_bm:
+        raise ValueError("mempool runtime requires a mempool startup mode")
+    mode.validate_runtime_support()
     if not hasattr(backend, "attach_mempool_runtime"):
         raise ValueError("mempool requires the Ascend MLA attention backend")
     layout = config.make_mla_layout(

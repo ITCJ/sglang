@@ -313,7 +313,10 @@ class DefaultPoolConfigurator(MemoryPoolConfigurator):
         dcp_size = get_parallel().attn_dcp_size
 
         if kvc.use_mla_backend:
-            if envs.SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD.get():
+            if (
+                kvc.sparse_kv_offload_mode is not None
+                or envs.SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD.get()
+            ):
                 # NPU sparse KV offload uses an index-only device pool.
                 from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config import (
                     get_sparsity_driven_kv_offload_cell_size,
@@ -324,6 +327,7 @@ class DefaultPoolConfigurator(MemoryPoolConfigurator):
                     use_mla_backend=kvc.use_mla_backend,
                     num_layers=num_layers,
                     element_size=kv_size,
+                    mode=kvc.sparse_kv_offload_mode,
                 )
                 if offload_cell_size is not None:
                     return offload_cell_size
