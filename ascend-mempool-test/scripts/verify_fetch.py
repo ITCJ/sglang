@@ -8,11 +8,13 @@ import sys
 import traceback
 from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from verify_graph import make_layout, parse_args, run
+from verify_graph import make_layout
+from verify_graph import parse_args as parse_graph_args
+from verify_graph import run
 
 from ascend_mempool.control import TestChannel
 from ascend_mempool.verification import kv_pattern
@@ -26,6 +28,17 @@ if TYPE_CHECKING:
     )
 else:
     from ascend_mempool.runtime import KVWriteExpectation, MempoolRuntime
+
+
+def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+    """Match the fixed-width lookup before opening either side's BM pool."""
+    args = parse_graph_args(argv, default_topk=2048)
+    if args.topk != 2048:
+        raise ValueError(
+            f"slot_map_lookup requires topk=2048, got {args.topk}; "
+            "run the fetch gate with --topk 2048 and pad unused positions with -1"
+        )
+    return args
 
 
 def fetch_checks(

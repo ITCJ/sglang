@@ -3,10 +3,11 @@
 日期：2026-10-04。基线：`3d2f3c6168`（S1）。本轮只实现
 [Ticket03 S2](issues/03-prefill-direct-offload.md)。代码先按用户要求保持未暂存，
 供用户核对；用户完成核对后已授权提交本次 S2 代码、测试和说明。
-对应版本以本文件所属的 S2 Git commit 为准。
+S2 初版提交为 `9036be2b0f`；本文件同时记录首次 NPU gate 的参数修正和重测结果。
 
-S2 代码及独立验证脚本已实现；Mac CPU 检查通过，等待用户执行 NPU 验证。
-Ticket03 仍为 open，验收项未勾选。用户授权继续实施 S2 不等于 S1 或 S2 的硬件验收通过。
+**S2 独立 NPU gate 已通过，用户于 2026-10-04 确认没有问题。** 首次 K=8 的参数
+错误修正为 K=2048 后，D 的 30 个 case 全部通过，P/D 均输出 `ALL_CHECKS_PASSED`。
+Ticket03 仍为 open，整票验收项保留到正式服务验证；S1 完整环境回归及 S3–S6 仍待完成。
 
 ## 1. 交付范围
 
@@ -49,6 +50,18 @@ cache 与 BM 是不同资源，本轮没有改变其物理存储类型。
 
 文档同步更新：本总结、Ticket03 的进度/Comments、生产 mempool README 和独立测试
 README。没有修改 custom kernel、PD 协议、sender、staging allocator 或启动脚本。
+
+首次 NPU gate 反馈后的修正仅涉及测试入口和说明：
+
+| 类型 | 路径 | 修正作用 |
+| --- | --- | --- |
+| 修改 | `ascend-mempool-test/scripts/verify_fetch.py` | fetch gate 默认 top-k 宽度改为 2048；不符合真实 lookup 算子约束时，在双机连接及 BM 分配前报错。 |
+| 修改 | `ascend-mempool-test/scripts/verify_graph.py` | 共享 parser 支持调用方指定默认 top-k；原 copy-only gate 仍默认 64，仍支持宽度 8。 |
+| 新增 | `ascend-mempool-test/tests/unit/test_fetch_gate.py` | 验证 fetch 默认宽度、P/D 两侧非法参数提前拒绝及原 copy-only CLI 兼容性。 |
+| 修改 | `ascend-mempool-test/tests/unit/test_materialize.py` | 增加 K=2048、小 context、有效 P/D 位置及其余列/行 padding 的真实 materialization CPU 回归。 |
+
+同步更新本总结、Ticket03 进度/Comments 和独立测试 README。生产 fetch/runtime 与
+kernel 不涉及本次参数修正；用户显式指定 K=2048 的重测已通过，详情见第 6 节。
 
 ## 3. 两次 kernel 如何工作
 
@@ -111,7 +124,7 @@ cache 的职责仍留在 `SparseKVCacheManager`；BM 地址、binding、writer/f
 - Graph 读取固定地址的 binding 表和输入张量；slot/长度/indices/mask 按次更新。
   `KVFetch` 缓存 copy 对象时同时检查 selected tensor 身份，防止同 shape 的新 eager
   或新 capture 目标沿用旧地址；更换目标时复用原输入 metadata，持续持有旧 Graph
-  仍可能引用的地址。Graph 的实际固定地址及设备算子支持仍需本次 NPU gate 确认。
+  仍可能引用的地址。独立 NPU gate 已验证本次配置下的地址持有与 Graph replay。
 - 正式 fetch 与 shadow READBACK 同时启用会明确报错；避免把 BM selected KV 与自身比较。
   该保护不改变现有 shadow 服务的 READBACK 行为。
 
@@ -120,23 +133,62 @@ cache 的职责仍留在 `SparseKVCacheManager`；BM 地址、binding、writer/f
 
 ## 5. Mac 已执行的检查
 
+### S2 初版提交前
+
 环境：Mac，Python 3.9、CPU PyTorch，虚拟环境 `/private/tmp/ascend-mempool-s1`。
 
 ```bash
 PYTHONPATH=ascend-mempool-test/src /private/tmp/ascend-mempool-s1/bin/python -B -m unittest discover -s ascend-mempool-test/tests/unit -q
 /private/tmp/ascend-mempool-s1/bin/mypy --config-file ascend-mempool-test/pyproject.toml python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/config.py python/sglang/srt/hardware_backend/npu/mempool ascend-mempool-test/src ascend-mempool-test/scripts
-/private/tmp/ascend-mempool-s1/bin/python -B ascend-mempool-test/scripts/verify_fetch.py --describe --s-p 8 --s-d 16 --layers 2 --kv-dim 576 --topk 8
 ```
 
 结果：审查修复后的独立 CPU suite **165 项通过**；mypy **26 个源文件通过**；本次
 12 个 Python 文件的 Ruff、isort、格式和 AST 检查通过。两项审查发现均先用测试复现
 失败，再修复；相关 fetch/materialization/runtime/readback 共 38 项定向测试通过，
-随后因 writer/fetch 行为发生修复再次运行完整独立套件。`--describe` 确认下面的小配置
-两侧各贡献 1 GiB DRAM。Markdown 本地链接、命令参数与 `git diff --check` 在交付前检查。
+随后因 writer/fetch 行为发生修复再次运行完整独立套件。初版 `--describe` 使用 K=8，
+只确认两侧各贡献 1 GiB DRAM，没有运行 lookup 算子，未发现固定 K=2048 的约束。
+Markdown 本地链接、命令参数与 `git diff --check` 在交付前检查。
 
 CPU suite 中故障注入用例会输出预期的 FAIL/fault 日志，最终 unittest 为 OK。
 本机缺少 NumPy 的 PyTorch 初始化 warning 未影响这些张量测试。未运行真实 NPU kernel、
 跨机 BM、NPU Graph、完整 SGLang 启动或模型精度测试；S1 完整环境回归仍待补跑。
+
+### 2026-10-04 首次 NPU 失败与参数修正
+
+用户在 P/D 各 device 0 运行本文初版命令：P/D 容量 8/16、2 层、Graph width 16、
+3 个真实 rows、top-k 宽度 8、block_dim 24/48、2 次 replay。两端完成 MAPPED/STAGED 后，
+D 在第一次 warmup 的 `materialize_selected_kv()` → `slot_map_lookup()` 抛出：
+
+```text
+RuntimeError: slot_map_lookup requires topk=2048, got 8
+```
+
+P 收到 `success=False, checks=0` 后报告 D 校验失败；本轮没有通过 fetch case。
+初版交付版本为 `9036be2b0f`，用户日志未附机器实际 Git SHA，重跑时仍须一并记录。
+原始日志/报告使用 `/tmp/ticket03-s2-{p,d}.{log,json}`。
+
+根因是交付命令和 fetch gate 默认值没有遵守真实 NPU lookup 的固定宽度合同。
+`sgl-kernel-npu/csrc/sparsity_driven_kv_offload/slot_map_lookup/op_host/slot_map_lookup.cpp`
+定义 `kFixedTopk=2048`，同时要求 slot-map context 宽度为 8 的倍数。
+初版 CPU lookup 替身接受任意 K，未覆盖该约束。
+
+修正后 fetch gate 使用 K=2048，非空 case 每行只填 2 或 4 个有效位置，其余列用 -1。
+P/D BM 容量仍为 8/16，fixture 的 slot-map 宽度为 32；不要求 2048 个有效 KV。
+原 copy-only gate 不调用该 lookup，保留其可变 K 行为。
+
+新增 CLI 回归先在初版代码上失败，修正后与 materialization 定向回归共 **10 项通过**。
+新 materialization 用例在 CPU 边界明确检查固定 K 和 context 对齐，并验证小容量下
+P/D 有效内容与 padding。mypy **26 个源文件通过**，4 个改动 Python 文件的 Ruff、
+isort 和格式检查通过。执行命令：
+
+```bash
+PYTHONPATH=ascend-mempool-test/src:ascend-mempool-test/tests/unit /private/tmp/ascend-mempool-s1/bin/python -B -m unittest test_fetch_gate test_materialize -v
+/private/tmp/ascend-mempool-s1/bin/mypy --config-file ascend-mempool-test/pyproject.toml python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/config.py python/sglang/srt/hardware_backend/npu/mempool ascend-mempool-test/src ascend-mempool-test/scripts
+/private/tmp/ascend-mempool-s1/bin/python -B ascend-mempool-test/scripts/verify_fetch.py --describe --s-p 8 --s-d 16 --layers 2 --kv-dim 576 --topk 2048
+```
+
+修正后的 `--describe` 确认两侧仍各贡献 1 GiB DRAM；selected/cache 张量随 K 增大。
+上述本地检查没有执行 NPU kernel；用户后续重测结果单独记录在第 6 节。
 
 ## 6. 交付用户的双机 NPU gate
 
@@ -161,8 +213,9 @@ python3 ascend-mempool-test/scripts/verify_fetch.py --check-env --device-id 0
 或修改生产服务启动保护。
 
 输入为 2 层、16 个 P/D slots、P 容量 8、D 容量 16、BF16 `[1,576]` KV、Graph width 16、
-3 个真实 request rows，其余 row 0 padding；prompt length 为 4。独立 `kv_pattern()`
-生成可逐元素复核的 P/D 数据；D payload 第一个 feature 改为每个 block/cycle 唯一的
+3 个真实 request rows，其余 row 0 padding；prompt length 为 4。lookup 的 top-k 张量
+宽度固定为 **2048**，下表之外的列均填 -1；有效位置数量与这个宽度不同。
+独立 `kv_pattern()` 生成可逐元素复核的 P/D 数据；D payload 第一个 feature 改为每个 block/cycle 唯一的
 负 epoch，独立 expected 同样核对。该标记区别于 setup 和旧请求数据，防止漏写/漏等时
 碰巧读到预填的正确值。每次 forward 都真实写入新的 D KV，并依序测试：
 
@@ -188,9 +241,9 @@ python3 -u ascend-mempool-test/scripts/verify_fetch.py \
   --nic-url tcp://<P_NIC_IP>:24770 \
   --store-port 18873 --control-port 18874 --pool-id 0 \
   --s-p 8 --s-d 16 --layers 2 --heads 1 --kv-dim 576 \
-  --graph-rows 16 --active-rows 3 --topk 8 \
+  --graph-rows 16 --active-rows 3 --topk 2048 \
   --block-dims 24 48 --replay-cycles 2 --warmup 3 --timeout 600 \
-  --report /tmp/ticket03-s2-p.json 2>&1 | tee /tmp/ticket03-s2-p.log
+  --report /tmp/ticket03-s2-k2048-p.json 2>&1 | tee /tmp/ticket03-s2-k2048-p.log
 ```
 
 ### D 端随后启动
@@ -202,9 +255,9 @@ python3 -u ascend-mempool-test/scripts/verify_fetch.py \
   --nic-url tcp://<D_NIC_IP>:24770 \
   --store-port 18873 --control-port 18874 --pool-id 0 \
   --s-p 8 --s-d 16 --layers 2 --heads 1 --kv-dim 576 \
-  --graph-rows 16 --active-rows 3 --topk 8 \
+  --graph-rows 16 --active-rows 3 --topk 2048 \
   --block-dims 24 48 --replay-cycles 2 --warmup 3 --timeout 600 \
-  --report /tmp/ticket03-s2-d.json 2>&1 | tee /tmp/ticket03-s2-d.log
+  --report /tmp/ticket03-s2-k2048-d.json 2>&1 | tee /tmp/ticket03-s2-k2048-d.log
 ```
 
 ### 通过与失败判据
@@ -214,12 +267,48 @@ python3 -u ascend-mempool-test/scripts/verify_fetch.py \
   `checks` 长度为 30，所有 `copied_per_layer` 与上表一致，输出包括 padding 逐元素一致。
 - P 保留源 pool 直到收到 D `DRAINED`，双方正常完成 `P_RELEASED` / `D_CLOSED`；
   P report 的 `decode_result.success` 为 true，`checks` 为 30。
-- 任何数值/计数不符、runtime fault、NPU/SDK 异常、超时、缺少 case 或
+- 任何数值/计数不符、runtime fault、未恢复的 NPU/SDK 异常、超时、缺少 case 或
   `DRAIN_UNCONFIRMED` 都不算通过。无法确认 drain 时按独立测试 README 的既有流程处理，
   不把超时当成可复用 BM 的证据。
 
-请回传两侧环境检查输出、完整 `.log`、两个 `.json`，以及执行代码版本/本次工作区 diff。
-本说明交付时尚未取得这些硬件结果。
+后续回归保留两侧环境检查输出、完整 `.log`、两个 `.json`，以及执行代码版本/工作区 diff。
+
+### 2026-10-04 用户 NPU 重测与确认
+
+用户回传了 22:03:02–22:03:07 附近的 P/D 控制台输出，并确认“我认为没有问题了”。
+P 为 `npu1-31`，D 为 `npu1-32`，每侧使用 device 0；仓库路径为 `/home/cryang/sglang`。
+使用上文双机命令的 K=2048 配置：P/D 容量 8/16、16 slots、2 层、BF16 `[1,576]`、
+Graph width 16、3 个真实 rows、block_dim 24/48、3 次 warmup、2 次 replay。
+P/D 的 store/control 端口仍为 18873/18874，各自 NIC 端口为 24770，pool ID 为 0。
+
+| 已核对的项目 | 用户日志中的结果 |
+| --- | --- |
+| P/D 最终结果 | 两端均输出 `ALL_CHECKS_PASSED`，随后返回 shell，无 traceback 或 `DRAIN_UNCONFIRMED`。 |
+| case 覆盖 | D 共 30 条 `FETCH_PASS`：2 个 block_dim × eager/replay1/replay2 × 5 个 case。 |
+| `p_miss` / `d_miss` | 两层每层的 P/D copy 行数分别为 `[6,0]` / `[0,6]`。 |
+| `mixed` | 两层每层均为 `[6,6]`，来自独立 P/D slot 的 KV 内容一致。 |
+| `all_hit` / `zero_valid` | 两层每层均为 `[0,0]`；命中不读 BM，padding 不引入有效 copy。 |
+| 逐元素结果 | 每个 case 比较 37,748,736 个元素，包含全部 padding 行/列；与独立 host reference 完全一致。 |
+| Graph 与复用 | 每个 block_dim 的同一 Graph 连续 replay 两轮，覆盖 capture(A)→eager(B)→replay(A)、detach/rebind 和 P/D slot 更换。 |
+| 本轮 D 写入 | `decode_epoch` 从 -1 到 -6，每轮当前 writer 的标记通过比较，未被 setup/旧请求数据掩盖。 |
+
+`verify_graph.run()` 在 D 同步排空、发送 `DRAINED`、P 释放并回复 `P_RELEASED`、
+D 释放并回复 `D_CLOSED`，以及报告写入完成后才打印最终通过标记。两端最终标记
+证明本次独立 gate 的关闭流程走完；完整 TP 服务的生命周期仍由 S5/S6 验证。
+
+P 日志在 `MAPPED` 前出现一次对端 GVA 转换失败。现有 manager 的
+`_wait_for_mappings()` 会重试尚未就绪的映射，只有两侧地址及层范围检查通过后才返回。
+本轮随后到达 `MAPPED`，并通过 peer probe 和全部真实读取；该启动日志属于已恢复的
+映射等待，不能据此推断所有 SDK ERROR 都可忽略。
+
+本次用户实际仍使用 `/tmp/ticket03-s2-p.log`、`/tmp/ticket03-s2-d.log`，报告参数为
+`/tmp/ticket03-s2-p.json`、`/tmp/ticket03-s2-d.json`。这些路径与首次失败相同；首次
+失败证据保留在会话及第 5 节，不假设远端旧文件仍存在。
+交付基线为 `9036be2b0f`；机器实际 Git SHA、环境版本报告及 JSON 内容未随本次消息
+提供，未将其记为已独立核查。本次通过结论依据用户完整控制台结果、脚本通过条件及确认。
+
+S2 的实现核对和独立 NPU gate 均完成。当前服务仍使用 shadow；本次结果不覆盖
+正式资源构造、PD 传输切换、NPU attention 算子或模型精度。Ticket03 保持 open。
 
 ## Standards
 
@@ -237,13 +326,13 @@ python3 -u ascend-mempool-test/scripts/verify_fetch.py \
    已写前缀，selection 取实际可读上界；陈旧 `seq_lens` 与后续排队跳写测试验证拒绝读空洞。
 
 gate 同时增加 D epoch 标记，避免初始 staging 数据掩盖当前 writer 漏写或漏等。
-复核未发现新的阻塞项；NPU 结果待用户反馈。
+复核未发现新的阻塞项；随后用户已确认上述独立 NPU gate 通过。
 
 审查统计：Standards 为 0 项硬性违反、1 项非阻塞建议；Spec 为 2 项 P1 已修复、0 项遗留阻塞。
 
 ## 7. 后续步骤
 
-本次 S2 代码已由用户核对。下一步运行上述 gate，再根据结果修正；同时补齐 S1 待验证回归。
-后续 S3 按 mode 停用旧 host KV 和 main-KV staging 分配/写入，保留 HBM cache 与
+S2 的实现及独立 NPU gate 已获用户确认。下一开发步骤为 S3；S1 待验证回归仍须补齐。
+S3 按 mode 停用旧 host KV 和 main-KV staging 分配/写入，保留 HBM cache 与
 Index K；S4 再切换实际 PD buffer 清单及传输契约；S5/S6 完成服务生命周期、可观察
 证据、普通路径回归和用户 NPU 验收。只有整票验收通过后才关闭 Ticket03。

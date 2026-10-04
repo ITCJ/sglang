@@ -9,7 +9,8 @@ P/D各512、TP16、D Graph width16。下一开发入口是
 [03正式attention切换](../.scratch/ascend-mempool/issues/03-prefill-direct-offload.md)。
 03 S1的配置与资源职责拆分已实现，继续使用02 shadow数据路径；完整环境/NPU回归
 待执行，见[S1交付与复测](../.scratch/ascend-mempool/ticket-03-s1-summary.md)。
-03 S2正式BM fetch代码和独立gate已实现，Mac检查通过，用户已核对代码，等待NPU验证。
+03 S2正式BM fetch代码已核对，Mac检查通过；K=2048双机独立NPU gate的30个case
+通过，用户于2026-10-04确认。03整票仍为open，S3–S6待完成。
 现有服务仍启动shadow，正式cutover待S3–S5；见
 [S2修改清单与双机命令](../.scratch/ascend-mempool/ticket-03-s2-summary.md)。
 NUMA/大容量分配排查已延期到ticket09。
@@ -101,12 +102,14 @@ handle lifetime。它们不执行 BM 或 NPU kernel，不证明远端读和 Grap
 `test_fetch.py`和`test_materialize.py`覆盖READBACK关闭的BM读取、实际writer前缀、
 HBM hit/refill/reset、原host miss分支、实际attention输入、短top-k/多row/padding，
 以及目标更换后Graph metadata的持有。测试fixture不执行正式服务资源构造器。
+`test_fetch_gate.py`验证fetch CLI的固定K=2048约束、双机setup前拒绝非法宽度，
+以及原copy-only gate的可变K兼容性；materialization另覆盖固定宽度下的小context和padding。
 `test_pair_startup.py` 检查 `P_i/D_i` 的 store 端口及 BM rank 映射、启动参数和失败清理，
 并用模拟时钟覆盖 P 晚90秒监听、P始终不可达、TCP连接超时、P不等待自身store及SDK错误直报。
 生产 BM 启动入口位于 `MempoolKVManager.initialize_rank_pair()`；01 gate 保留原测试
 初始化与控制流程，其通过记录不能替代新入口在真实 16 对 worker 中的验收。
 
-## 03 S2：BM fetch / HBM cache / Graph gate（待NPU验证）
+## 03 S2：BM fetch / HBM cache / Graph gate（独立NPU验证已通过）
 
 新增`scripts/verify_fetch.py`复用现有双机BM setup、已知内容和drain协议，直接调用
 生产runtime、双源copy与cache materialization；READBACK关闭。测试覆盖P-only miss、
@@ -115,8 +118,14 @@ D-only miss、混合miss、refill后全命中、zero-valid、Graph row 0 padding
 避免用setup预填数据掩盖writer未完成。
 
 小配置P/D各1GiB DRAM，Graph width16，3个真实rows，24/48 core各跑eager和两轮replay。
-预期D有30条`FETCH_PASS`，两侧报告均为`passed`且有`ALL_CHECKS_PASSED`；所有数据
-与独立host reference逐元素一致，全命中时P/D BM copy行数都为0。
+此gate调用真实`slot_map_lookup`，top-k张量宽度必须为**2048**；非空case每行只填2或4个
+有效位置，其余列用-1补齐，P/D容量仍可为8/16。脚本默认2048，其他宽度在双机连接/
+BM分配前拒绝。原`verify_graph.py`只验证copy，其可变top-k行为保留。
+2026-10-04首次NPU运行使用初版命令K=8，在warmup失败且`checks=0`；随后K=2048
+重测通过，用户确认无问题。D日志完整包含30条`FETCH_PASS`，P/D均有
+`ALL_CHECKS_PASSED`；所有数据与独立host reference逐元素一致，全命中时
+P/D BM copy行数都为0。两层的P-only/D-only/mixed计数分别为`[6,0]`/`[0,6]`/`[6,6]`。
+此次回传的是控制台日志，JSON内容与机器实际Git SHA未独立核查；证据边界见S2总结。
 此gate不加载模型、执行attention算子或验证正式服务分配/PD传输；生产attention接线
 由CPU输入测试覆盖，实际NPU attention与正式服务smoke留待整票交付。
 完整环境准备、逐机命令、计数矩阵、失败判据及日志清单见

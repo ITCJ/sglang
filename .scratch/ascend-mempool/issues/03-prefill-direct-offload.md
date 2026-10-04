@@ -18,7 +18,8 @@
 02已获用户确认验收并关闭，已有链路、代码入口及证据见[02总结](../ticket-02-summary.md)。
 用户已确认按S1–S6组织本票，并先后授权实施S1和S2。S1代码已提交为`3d2f3c6168`，轻量CPU检查通过，
 完整SGLang环境的资源/启动单测及NPU回归待执行；见[S1交付总结](../ticket-03-s1-summary.md)。
-S2代码和独立NPU gate已实现，用户完成代码核对并授权提交，等待NPU验证；见
+S2代码和独立NPU gate已提交为`9036be2b0f`；首次K=8参数错误修正为2048后，
+双机30个case及正常退出均通过，用户于2026-10-04确认S2独立NPU gate无问题；见
 [S2交付总结](../ticket-03-s2-summary.md)。S3–S6仍待实施，不表示正式服务数据路径或本票验收已完成。旧KV传输、D staging/host
 写入及sparse attention的host SHM读取均关闭而不删除。S1用显式shadow模式保留02
 链路，正式模式暂拒绝启动；03完整交付后是否另保留shadow诊断模式仍是独立待定事项。
@@ -76,7 +77,7 @@ HBM Index K -> indexer top-k -> HBM sparse cache 查询
 | 步骤 | 交付结果 | 当前进度 |
 | --- | --- | --- |
 | S1 拆分配置与资源职责 | 明确运行模式、派生能力、资源归属及初始化合同 | 代码已实现；轻量CPU通过，完整环境及NPU回归待执行 |
-| S2 接入正式BM fetch | attention消费BM miss结果，保留HBM hit/refill | 代码/独立gate已实现；Mac通过，用户已核对并授权提交，等待NPU验证 |
+| S2 接入正式BM fetch | attention消费BM miss结果，保留HBM hit/refill | 实现已核对；K=2048独立NPU gate的30个case通过，用户已确认 |
 | S3 按模式停用重复存储 | 旧实现保留；正式模式host KV和main-KV staging分配为零 | 待实施 |
 | S4 精简PD传输 | 仅保留Index K和必要辅助数据，保留联合readiness | 待实施 |
 | S5 核对Graph与生命周期 | 固定地址、正确stream依赖、安全drain与释放 | 待实施 |
@@ -386,6 +387,9 @@ BM先ready/transfer先完成两种顺序、metadata延迟、P native row复用�
 
 ## Acceptance criteria
 
+S2独立gate已通过并获用户确认；以下为整票正式服务验收，仍须结合S3–S6的资源、
+PD控制和真实attention执行结果核对，不以独立materialization gate替代。
+
 - [ ] 复用02 backend runtime、P/D writer、统一 tick、准入和 drain，不重复开发真实 P
   offload；P native HBM cache 继续服务 chunked prefill。
 - [ ] 将已验证的 P/D sparse fetch 接入 attention 输入；依据 prompt length/实际写入
@@ -417,6 +421,44 @@ HTTP 200或出现Graph日志本身不算通过。
 不能以04负责正式对照为由交付已知错误。
 
 ## Comments
+
+### 2026-10-04：S2独立NPU gate重测通过，用户确认
+
+用户在P `npu1-31` / D `npu1-32`的device0重跑`verify_fetch.py`，将K改为2048，
+其余仍为P/D容量8/16、2层、Graph width16、3个真实rows、block_dim24/48、
+warmup3和replay2。两端均输出`ALL_CHECKS_PASSED`并返回shell。
+D共30条`FETCH_PASS`，覆盖2个block_dim × 3轮 × 5个case；每层P/D copy计数为
+p_miss `[6,0]`、d_miss `[0,6]`、mixed `[6,6]`、all_hit及zero_valid `[0,0]`。
+逐元素比较含全部padding，当前D epoch从-1到-6均通过；同一Graph复放、目标A/B
+切换及P/D slot更换均在此矩阵中覆盖。独立gate正常完成drain和双侧释放。
+
+P启动时的对端GVA转换失败随后完成映射重试、peer probe及实际读取，未阻断gate。
+用户明确表示“我认为没有问题了”，据此记录S2实现核对及独立NPU gate完成。
+详细环境、输入、计数和证据边界见[S2总结](../ticket-03-s2-summary.md)。
+交付基线为`9036be2b0f`；机器实际SHA、环境报告和JSON内容未随消息提供。
+用户实际日志/报告路径仍为`/tmp/ticket03-s2-{p,d}.{log,json}`，以本次控制台日志
+及用户确认作为已核对证据，不声称独立读取过远端报告。
+
+本轮只同步文档，未运行新的代码测试、未add/commit/push，也未实施S3。
+下一开发步骤为S3；S1完整环境回归仍待补齐，S3–S6和正式服务验收尚未完成，
+03保持open，整票验收项及依赖票状态保持不变。
+
+### 2026-10-04：首次S2 NPU gate失败，修正lookup宽度并等待重测
+
+用户回传双机gate日志，参数为P/D容量8/16、2层、Graph width16、3个真实rows、
+K=8、block_dim24/48和2次replay。D在warmup调用真实`slot_map_lookup`时抛出
+`requires topk=2048, got 8`，P收到D失败结果，`checks=0`。本轮未完成fetch校验。
+初版交付commit为`9036be2b0f`；日志未附机器实际SHA，重测时一并记录。
+
+算子源码固定K=2048，而初版gate命令为8、共享parser默认为64；CPU lookup替身
+没有暴露这一约束。fetch入口现默认2048，并在BM连接/分配前拒绝其他宽度；
+原copy-only gate保留可变K。P/D容量8/16仍适用，少量有效位置之外用-1补齐。
+新增CLI回归先复现失败；修正后CLI/materialization定向10项通过，mypy26个源文件
+及格式/lint检查通过。生产fetch/runtime/kernel未改动。
+
+更新后的双机命令和故障记录见[S2总结](../ticket-03-s2-summary.md)，重测使用
+`ticket03-s2-k2048-{p,d}.{log,json}`保留首次失败文件。S2硬件尚未通过，03仍为open，
+不勾选验收项或解锁依赖；S3–S6仍未实施。
 
 ### 2026-10-04：用户确认S2代码并授权提交
 

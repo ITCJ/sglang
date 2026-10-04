@@ -11,8 +11,8 @@ ticket02已关闭。代码路径、请求时序及实测边界见
 03 S1已拆分启动模式和资源能力；现有开关继续选择明确的P/D shadow模式，预留的
 正式模式在完整cutover前拒绝启动。交付边界与回归命令见
 [S1总结](../../../../../../.scratch/ascend-mempool/ticket-03-s1-summary.md)。
-03 S2已接入正式BM fetch到selected KV，保留HBM hit/refill，Mac检查通过；独立NPU
-验证待用户执行。S3–S5未完成前仍保留正式启动保护，见
+03 S2已接入正式BM fetch到selected KV，保留HBM hit/refill，Mac检查通过；2026-10-04
+用户确认K=2048独立NPU gate的30个case及双侧正常退出通过。S3–S5未完成前仍保留正式启动保护，见
 [S2总结与双机命令](../../../../../../.scratch/ascend-mempool/ticket-03-s2-summary.md)。
 
 ## 文件与接口
@@ -219,7 +219,9 @@ fetch上界受本层实际write counts约束，防止陈旧Graph输入把漏写�
 
 正式fetch与shadow READBACK不能同时启用；正式数据不与自身比较。
 服务启动仍由S3–S5保护，`verify_fetch.py`通过独立fixture验证真实materialization、
-BM与Graph，不能替代正式服务分配/PD控制验收。详见上方S2总结。
+BM与Graph。2026-10-04用户确认该gate在Graph width16、3个真实rows、top-k宽度2048、
+block_dim24/48下通过eager及两轮replay，覆盖P/D miss、mixed、all-hit和zero-valid。
+本结果不能替代正式服务分配/PD控制及NPU attention验收。详见上方S2总结。
 
 ## Shadow检查与当前服务边界
 

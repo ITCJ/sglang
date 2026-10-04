@@ -184,6 +184,48 @@ class TestMaterialize(unittest.TestCase):
         )
         self.assertEqual(lengths.tolist(), [2, 2, 1])
 
+    def test_fixed_npu_lookup_width_with_small_context_and_padding(self):
+        self.cache = allocate_cache(
+            rows=9,
+            context=24,
+            topk=2048,
+            layers=1,
+            heads=1,
+            dim=4,
+            device="cpu",
+            start_layer=5,
+        )
+
+        def fixed_lookup(table, rows, positions):
+            self.assertEqual(positions.shape[1], 2048)
+            self.assertEqual(table.shape[1] % 8, 0)
+            return cpu_lookup(table, rows, positions)
+
+        h = self.helper
+        h.runtime.bind(1, slot=3, prompt_tokens=4, prompt_slot=2)
+        h.p[2, 0] = 101
+        batch = h.start()
+        positions = torch.full((2, 2048), -1, dtype=torch.int64)
+        positions[:, :2] = torch.tensor([0, 4])
+        output = torch.zeros((2, 2048, 1, 4), dtype=torch.bfloat16)
+        with patch.object(self.module, "slot_map_lookup", side_effect=fixed_lookup):
+            valid = self.cache.materialize_selected_kv(
+                SimpleNamespace(layer_id=5),
+                batch,
+                positions,
+                output,
+                CPUStream(),
+                mempool_runtime=h.runtime,
+            )
+        self.assertEqual(output[0, :2, 0, 0].tolist(), [101, 201])
+        self.assertTrue((output[0, 2:] == 0).all())
+        self.assertTrue((output[1] == 0).all())
+        self.assertEqual(valid.sum(dim=1).tolist(), [2, 0])
+        self.assertEqual(h.copy_counts, [1, 1])
+        h.runtime.end_forward()
+        h.events[-1].done = True
+        h.runtime.poll_completed()
+
     def test_unwritten_cache_hit_cannot_be_copied_or_refilled(self):
         h = self.helper
         binding = h.runtime.bind(1, slot=3, prompt_tokens=4, prompt_slot=2)

@@ -42,7 +42,9 @@ PROTOCOL_VERSION = 1
 TARGET_MEMFABRIC_VERSION = "1.1.4"
 
 
-def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+def parse_args(
+    argv: Optional[Sequence[str]] = None, *, default_topk: int = 64
+) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rank", type=int, choices=(0, 1))
     parser.add_argument("--head-ip")
@@ -59,7 +61,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--kv-dim", type=int, default=576)
     parser.add_argument("--graph-rows", type=int, default=16)
     parser.add_argument("--active-rows", type=int, default=3)
-    parser.add_argument("--topk", type=int, default=64)
+    parser.add_argument("--topk", type=int, default=default_topk)
     parser.add_argument("--block-dims", type=int, nargs="+", default=[24, 48])
     parser.add_argument("--replay-cycles", type=int, default=2)
     parser.add_argument("--warmup", type=int, default=3)
