@@ -12,23 +12,16 @@ from sgl_kernel_npu.sparsity_driven_kv_offload import (
     unidex_copy_inplace,
 )
 
-from sglang.srt.constants import GPU_MEMORY_TYPE_KV_CACHE
-from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config import (
-    SparseKVOffloadMode,
-)
-from sglang.srt.mem_cache.allocator import BaseTokenToKVPoolAllocator
-from sglang.srt.mem_cache.memory_pool import (
-    MLATokenToKVPool,
-    ReqToTokenPool,
-)
-from sglang.srt.model_executor.forward_batch_info import ForwardBatch
-from sglang.srt.utils.torch_memory_saver_adapter import TorchMemorySaverAdapter
+from .config import SparseKVOffloadMode
 
 if TYPE_CHECKING:
     import torch.npu
-
+    from sglang.srt.hardware_backend.npu.mempool.runtime import MempoolRuntime
     from sglang.srt.layers.radix_attention import RadixAttention
     from sglang.srt.managers.schedule_batch import Req
+    from sglang.srt.mem_cache.allocator import BaseTokenToKVPoolAllocator
+    from sglang.srt.mem_cache.memory_pool import ReqToTokenPool
+    from sglang.srt.model_executor.forward_batch_info import ForwardBatch
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +74,10 @@ class SparseKVCacheManager:
         *,
         mode: SparseKVOffloadMode,
     ) -> None:
+        from sglang.srt.constants import GPU_MEMORY_TYPE_KV_CACHE
+        from sglang.srt.mem_cache.memory_pool import MLATokenToKVPool
+        from sglang.srt.utils.torch_memory_saver_adapter import TorchMemorySaverAdapter
+
         mode.validate_runtime_support()
         if not mode.uses_sparse_kv_cache:
             raise ValueError("SparseKVCacheManager requires a sparse HBM cache mode")
@@ -266,6 +263,9 @@ class SparseKVCacheManager:
         shape: tuple[int, int, int, int],
         fill_value: float,
     ) -> list[torch.Tensor]:
+        from sglang.srt.constants import GPU_MEMORY_TYPE_KV_CACHE
+        from sglang.srt.utils.torch_memory_saver_adapter import TorchMemorySaverAdapter
+
         enable_memory_saver = False
         memory_saver_adapter = TorchMemorySaverAdapter.create(
             enable=enable_memory_saver
@@ -997,18 +997,34 @@ class SparseKVCacheManager:
         topk_indices: torch.Tensor,
         selected_kv_buffer: torch.Tensor,
         stream: torch.npu.Stream,
-    ) -> None:
+        *,
+        mempool_runtime: Optional[MempoolRuntime] = None,
+    ) -> torch.Tensor:
         """Materialize top-k KV entries and refresh the device cache metadata."""
+        if (mempool_runtime is not None) != (
+            self.mode is SparseKVOffloadMode.PD_DECODE_MEMPOOL
+        ):
+            raise RuntimeError("BM fetch runtime must match the formal decode mode")
         layer_idx = layer.layer_id - self.start_layer
         stream = stream if stream is not None else torch.npu.current_stream()
 
         with torch.npu.stream(stream):
+            topk_indices = normalize_batch_topk_indices(topk_indices)
+            batch_size, topk_len = topk_indices.shape
+            if tuple(selected_kv_buffer.shape[:2]) != (batch_size, topk_len):
+                raise ValueError(
+                    "selected KV and top-k must have the same padded row width"
+                )
             # Route invalid requests to sentinel rows without changing graph shape.
             # slot_map_row_indices: invalid -> self.size (reserved slot-map row)
             # device_cache_row_indices: invalid -> 0 (masked by valid_topk_mask)
-            req_pool_indices = forward_batch.req_pool_indices
+            req_pool_indices = forward_batch.req_pool_indices[:batch_size]
             req_pool_indices = req_pool_indices.to(torch.long).contiguous()
-            valid_req_mask = (req_pool_indices >= 0) & (req_pool_indices < self.size)
+            valid_req_mask = (req_pool_indices > 0) & (req_pool_indices < self.size)
+            if forward_batch.seq_lens is not None:
+                valid_req_mask = valid_req_mask & (
+                    forward_batch.seq_lens[:batch_size] > 0
+                )
             slot_map_row_indices = torch.where(
                 valid_req_mask,
                 req_pool_indices,
@@ -1021,8 +1037,6 @@ class SparseKVCacheManager:
             )
 
             # Normalize top-k indices and mask invalid requests and token IDs.
-            topk_indices = normalize_batch_topk_indices(topk_indices)
-            batch_size, topk_len = topk_indices.shape
             if topk_len > self.sparse_context_len:
                 raise RuntimeError(
                     "DSA top-k length exceeds sparse KV device cache capacity: "
@@ -1033,12 +1047,22 @@ class SparseKVCacheManager:
                 & (topk_indices < self.max_context_len)
                 & valid_req_mask.unsqueeze(1)
             )
+            if mempool_runtime is not None:
+                # Apply the same binding/written-prefix rule to hits, misses,
+                # refill, slot-map updates and the attention lengths.
+                valid_topk_mask = mempool_runtime.selected_kv_valid(
+                    layer.layer_id, device_cache_row_indices, topk_indices
+                )
 
             # Query the slot map for device-cache hits and their slot positions.
             slot_lookup_req_indices = slot_map_row_indices.to(
                 dtype=torch.int32
             ).contiguous()
-            slot_lookup_topk_indices = topk_indices.to(dtype=torch.int32).contiguous()
+            slot_lookup_topk_indices = (
+                torch.where(valid_topk_mask, topk_indices, -1)
+                .to(dtype=torch.int32)
+                .contiguous()
+            )
             token_on_device, device_token_pos = slot_map_lookup(
                 self.device_slot_map[layer_idx],
                 slot_lookup_req_indices,
@@ -1055,13 +1079,16 @@ class SparseKVCacheManager:
                 self.sparse_context_len,
             )
 
-            host_miss_mask = (~token_on_device) & valid_topk_mask
-            miss_src_index, miss_dst_index, miss_valid_mask = _build_miss_src_dst_index(
-                host_miss_mask,
-                topk_indices,
-                device_cache_row_indices,
-                self.max_context_len,
-            )
+            miss_mask = (~token_on_device) & valid_topk_mask
+            if mempool_runtime is None:
+                miss_src_index, miss_dst_index, miss_valid_mask = (
+                    _build_miss_src_dst_index(
+                        miss_mask,
+                        topk_indices,
+                        device_cache_row_indices,
+                        self.max_context_len,
+                    )
+                )
 
             cache_slot_ids = self._device_cache_slot_ids[:topk_len]
             request_cache_offsets = (
@@ -1095,20 +1122,30 @@ class SparseKVCacheManager:
             )
             _record_stream_event(self._materialize_d2d_hit_stream, self.hit_done)
 
-        # Copy host shared-memory misses into the selected KV buffer.
+        # Both BM sources run serially on the existing miss stream. Recording
+        # one miss_done after both preserves the hit/refill/attention contract.
         with torch.npu.stream(self._materialize_h2d_miss_stream):
             _wait_stream_event(self._materialize_h2d_miss_stream, copy_ready)
-            unidex_copy_inplace(
-                self.host_kv_buffer[layer_idx],
-                selected_kv_buffer,
-                miss_src_index,
-                miss_dst_index,
-                miss_valid_mask,
-                2,
-                2,
-                block_dim=24,
-                src_ptr=self.dev_ptr_list[layer_idx],
-            )
+            if mempool_runtime is not None:
+                mempool_runtime.fetch_selected_kv(
+                    layer.layer_id,
+                    device_cache_row_indices,
+                    topk_indices,
+                    miss_mask,
+                    selected_kv_buffer,
+                )
+            else:
+                unidex_copy_inplace(
+                    self.host_kv_buffer[layer_idx],
+                    selected_kv_buffer,
+                    miss_src_index,
+                    miss_dst_index,
+                    miss_valid_mask,
+                    2,
+                    2,
+                    block_dim=24,
+                    src_ptr=self.dev_ptr_list[layer_idx],
+                )
             _record_stream_event(self._materialize_h2d_miss_stream, self.miss_done)
 
         # Refill the device cache with the current top-k after hit and miss
@@ -1163,6 +1200,7 @@ class SparseKVCacheManager:
                 block_dim=48,
             )
             _record_stream_event(self._materialize_slot_map_stream, self.slot_map_done)
+        return valid_topk_mask
 
 
 _global_sparse_kv_manager: Optional[SparseKVCacheManager] = None

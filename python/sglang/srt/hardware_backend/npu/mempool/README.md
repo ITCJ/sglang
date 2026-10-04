@@ -9,8 +9,11 @@ ticket02已关闭。代码路径、请求时序及实测边界见
 [02总结](../../../../../../.scratch/ascend-mempool/ticket-02-summary.md)；
 正式attention数据来源切换与旧hostSHM/main-KV路径停用由03继续完成，旧实现保留。
 03 S1已拆分启动模式和资源能力；现有开关继续选择明确的P/D shadow模式，预留的
-正式模式在S2–S5接通前拒绝启动。交付边界与回归命令见
+正式模式在完整cutover前拒绝启动。交付边界与回归命令见
 [S1总结](../../../../../../.scratch/ascend-mempool/ticket-03-s1-summary.md)。
+03 S2已接入正式BM fetch到selected KV，保留HBM hit/refill，Mac检查通过；独立NPU
+验证待用户执行。S3–S5未完成前仍保留正式启动保护，见
+[S2总结与双机命令](../../../../../../.scratch/ascend-mempool/ticket-03-s2-summary.md)。
 
 ## 文件与接口
 
@@ -24,9 +27,11 @@ ticket02已关闭。代码路径、请求时序及实测边界见
 | `diagnostics.py` | `startup_stage()` | 记录启动步骤和耗时；诊断开关打开后采样执行线程、主机/容器内存，后台线程不调用 BM/NPU。 |
 | `offload.py` | `MempoolKVOffload.write(values, *, slots, positions, valid)` | 通过显式 metadata 将 temporary KV 写入本侧 BM；不持有另一套输入缓存。 |
 | `copy.py` | `SparseCopyInputs` / `SparseKVCopy` | 从独立 gate 提升的共享 P/D UniDexCopy 路由；支持逐层复用读回 scratch。 |
+| `copy.py` | `KVFetch` | 正式D的BM miss直接写入调用方selected KV；同形状目标更换时保留固定输入metadata，两次copy分别读取P/D。 |
 | `readback.py` | `KVReadback` | D selected KV 的设备数值比较、小型快照和完成后的验证汇总；不持有 PD 身份。 |
 | `rows.py` | `derive_kv_rows()` | 从普通 forward 张量推导 request row、全序列 token position 和 valid；目前有意保留 sparse manager 行推导的副本。 |
 | `runtime.py` | `MempoolRuntime` | 持有固定设备 binding 表、per-layer writer、forward/Graph 边界及本地写入计数/完成事件。 |
+| `runtime.py` | `selected_kv_valid()` / `fetch_selected_kv()` | 正式模式统一hit/miss可读范围并填充BM misses，完成后检查每层覆盖/非法读取；不依赖READBACK。 |
 | `runtime.py` | `KVRowBinding` / `KVWriteReceipt` | 标识一次本地 row attachment，保留 detach 后的完成事实；不表示 PD slot ownership。 |
 | `runtime.py` | `initialize_for_model_runner()` / `model_forward_scope()` | Graph前建立BM/runtime；逐次eager、warmup/capture和replay的host边界。 |
 
@@ -181,6 +186,7 @@ Docker可能禁止读内核栈，日志会明确写`unavailable(PermissionError,
    `binding = bind(row, slot=..., prompt_tokens=...)` 原地更新表；安装 event 由下次
    forward 等待。接入层按 approved request attempt 保存这个不可变 attachment 对象，
    对真实 `req.kv.req_pool_idx` 调用 `assert_bound(row, binding)`，拒绝旧 attachment。
+   D还必须传入已批准的`prompt_slot`，READBACK关闭时同样校验；D实际写入长度独立维护。
 5. `MempoolKVOffload.write(values, *, slots, positions, valid)` 接受连续 BF16
    `[rows, N, D]` temporary KV，以及同设备的 int64 slots/positions、bool valid 向量。
    runtime 在设备上构造这些参数；P eager 每个 chunk 可使用不同的 rows。
@@ -199,7 +205,23 @@ Docker可能禁止读内核栈，日志会明确写`unavailable(PermissionError,
    需排空所有相关 reads/writes，并确保 Graph 不会再次提交；失败时不销毁 pool。
    关闭后的 Python view 拒绝返回地址，但已捕获的 raw pointer 无法靠 Python 检查拦截。
 
-## 检查与当前边界
+## 正式BM fetch（Ticket03 S2）
+
+`PD_DECODE_MEMPOOL`的materialization从runtime取得公共valid mask，先查HBM cache。
+hit仍读HBM，miss通过`KVFetch`以prompt length分流到P/D BM，直接写attention持有的
+selected tensor。两路copy在同一miss stream依次执行，统一记录`miss_done`，保留
+hit/refill/slot-map的既有事件依赖。普通/shadow模式仍走原host SHM miss分支。
+
+公共mask排除row 0、未绑定row、负索引和未写范围；已绑定真实row的非法非负索引
+在completion后报错并阻止释放。正式writer核对host预期位置及本层连续写入前缀，
+fetch上界受本层实际write counts约束，防止陈旧Graph输入把漏写位置误判为可读。
+同形状copy更换目标只更新destination，保留Graph仍可能引用的固定输入metadata。
+
+正式fetch与shadow READBACK不能同时启用；正式数据不与自身比较。
+服务启动仍由S3–S5保护，`verify_fetch.py`通过独立fixture验证真实materialization、
+BM与Graph，不能替代正式服务分配/PD控制验收。详见上方S2总结。
+
+## Shadow检查与当前服务边界
 
 开启 `SGLANG_NPU_MEMPOOL_READBACK=1` 后，D 在旧 selected KV 的 hit/miss 事件已等待
 的位置额外读 BM 并比较 BF16 值。service 将批准的 P slot 传给 `bind(..., prompt_slot=...)`，

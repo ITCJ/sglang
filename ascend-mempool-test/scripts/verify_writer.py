@@ -189,7 +189,10 @@ def paired_writer_checks(
                             bound.clear()
                         for row, slot, prompt in case.bindings:
                             bound[row] = runtime.bind(
-                                row, slot=slot, prompt_tokens=prompt
+                                row,
+                                slot=slot,
+                                prompt_tokens=prompt,
+                                prompt_slot=0 if owner == 1 else None,
                             )
                         if graph is not None and case.decode:
                             load_decode_case(case, batch, sources)

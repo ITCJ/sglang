@@ -1,14 +1,17 @@
 # Ascend mempool 功能与服务测试
 
-Ticket 01 与02③的独立硬件验证入口，以及02④的真实服务 shadow gate。
+Ticket 01、02③及03 S2的独立硬件验证入口，以及02④的真实服务 shadow gate。
 
-**当前状态（2026-10-03）：** 01、02已获用户确认验收并关闭。
+**当前状态（2026-10-04）：** 01、02已获用户确认验收并关闭。
 [02总结](../.scratch/ascend-mempool/ticket-02-summary.md)记录代码路径、链路和实际证据；
 [小容量真实KV读回](READBACK_SERVICE.md)保留为回归入口，配置为context1024、
 P/D各512、TP16、D Graph width16。下一开发入口是
 [03正式attention切换](../.scratch/ascend-mempool/issues/03-prefill-direct-offload.md)。
 03 S1的配置与资源职责拆分已实现，继续使用02 shadow数据路径；完整环境/NPU回归
 待执行，见[S1交付与复测](../.scratch/ascend-mempool/ticket-03-s1-summary.md)。
+03 S2正式BM fetch代码和独立gate已实现，Mac检查通过，用户已核对代码，等待NPU验证。
+现有服务仍启动shadow，正式cutover待S3–S5；见
+[S2修改清单与双机命令](../.scratch/ascend-mempool/ticket-03-s2-summary.md)。
 NUMA/大容量分配排查已延期到ticket09。
 以下独立测试的目标环境为同一 superpod 的两台 Ascend 机器，
 原 graph/writer gate 每侧使用一张 NPU，BM启动诊断可选1到16张；使用MemFabric Hybrid
@@ -20,7 +23,7 @@ BM API 参考本地 `release/1.1` 的 `9fa9afbb`；两端运行时版本写入�
 ```text
 ascend-mempool-test/
   src/ascend_mempool/  production 模块加载入口、验证数据
-  src/ascend_sparse/   sparse mode/容量配置的轻量加载入口
+  src/ascend_sparse/   sparse生产模块加载入口及materialization测试资源fixture
   scripts/            双机测试入口与两轮 gate runner
   tests/unit/         CPU 行为测试
   reports/            默认运行日志与 JSON 报告，已 gitignore
@@ -95,10 +98,29 @@ handle lifetime。它们不执行 BM 或 NPU kernel，不证明远端读和 Grap
 非法启动组合。真实native pool构造和runner启动配置测试位于SGLang registered suite，
 需要完整SGLang依赖和受支持的Python版本；执行命令见S1交付说明，不能以轻量suite
 通过代替该集成检查。
+`test_fetch.py`和`test_materialize.py`覆盖READBACK关闭的BM读取、实际writer前缀、
+HBM hit/refill/reset、原host miss分支、实际attention输入、短top-k/多row/padding，
+以及目标更换后Graph metadata的持有。测试fixture不执行正式服务资源构造器。
 `test_pair_startup.py` 检查 `P_i/D_i` 的 store 端口及 BM rank 映射、启动参数和失败清理，
 并用模拟时钟覆盖 P 晚90秒监听、P始终不可达、TCP连接超时、P不等待自身store及SDK错误直报。
 生产 BM 启动入口位于 `MempoolKVManager.initialize_rank_pair()`；01 gate 保留原测试
 初始化与控制流程，其通过记录不能替代新入口在真实 16 对 worker 中的验收。
+
+## 03 S2：BM fetch / HBM cache / Graph gate（待NPU验证）
+
+新增`scripts/verify_fetch.py`复用现有双机BM setup、已知内容和drain协议，直接调用
+生产runtime、双源copy与cache materialization；READBACK关闭。测试覆盖P-only miss、
+D-only miss、混合miss、refill后全命中、zero-valid、Graph row 0 padding、slot复用，
+并验证capture后更换同形状eager目标，再重放原Graph。每轮D payload带独立标记，
+避免用setup预填数据掩盖writer未完成。
+
+小配置P/D各1GiB DRAM，Graph width16，3个真实rows，24/48 core各跑eager和两轮replay。
+预期D有30条`FETCH_PASS`，两侧报告均为`passed`且有`ALL_CHECKS_PASSED`；所有数据
+与独立host reference逐元素一致，全命中时P/D BM copy行数都为0。
+此gate不加载模型、执行attention算子或验证正式服务分配/PD传输；生产attention接线
+由CPU输入测试覆盖，实际NPU attention与正式服务smoke留待整票交付。
+完整环境准备、逐机命令、计数矩阵、失败判据及日志清单见
+[S2交付总结](../.scratch/ascend-mempool/ticket-03-s2-summary.md)。
 
 ## BM多卡启动诊断
 

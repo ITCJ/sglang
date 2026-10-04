@@ -62,7 +62,7 @@ class SparseKVOffloadMode(str, Enum):
                 else cls.PD_PREFILL_NATIVE
             )
         if mempool_enabled:
-            # Ticket03 S1 must not activate the unfinished formal data path.
+            # Keep service startup on shadow until the full ticket03 cutover.
             return cls.PD_DECODE_MEMPOOL_SHADOW
         return cls.PD_DECODE_OFFLOAD
 
@@ -101,14 +101,14 @@ class SparseKVOffloadMode(str, Enum):
         )
 
     def validate_runtime_support(self) -> None:
-        """Do not launch a mode whose resource and fetch paths are not connected."""
+        """Do not launch before resource/transfer cutover and lifecycle checks."""
         if self in (
             SparseKVOffloadMode.PD_PREFILL_MEMPOOL,
             SparseKVOffloadMode.PD_DECODE_MEMPOOL,
         ):
             raise ValueError(
-                "Formal mempool mode requires ticket03 S2-S5; "
-                "S1 only supports the existing shadow data path."
+                "Formal mempool mode still requires ticket03 S3-S5; "
+                "only the existing shadow service path can be started."
             )
 
 

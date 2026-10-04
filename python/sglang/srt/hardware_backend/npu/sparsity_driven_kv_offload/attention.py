@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, Optional
 import torch
 import torch_npu
 
-from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.manager import (
+from .config import SparseKVOffloadMode
+from .manager import (
     _wait_stream_event,
     normalize_batch_topk_indices,
 )
-from sglang.srt.layers.attention.dsa.utils import is_dsa_enable_prefill_cp
 
 if TYPE_CHECKING:
     from sglang.srt.hardware_backend.npu.attention.ascend_backend import (
@@ -48,7 +48,7 @@ def forward_sparsity_driven_kv_offload(
     k_rope: Optional[torch.Tensor] = None,
     topk_indices: Optional[torch.Tensor] = None,
 ):
-    """Run sparse attention using host-offloaded compact MLA KV."""
+    """Run sparse attention using compact MLA KV from the selected startup mode."""
     del v
     if q_rope is None or k_rope is None or topk_indices is None:
         raise ValueError(
@@ -61,6 +61,11 @@ def forward_sparsity_driven_kv_offload(
     k_nope = k.view(-1, layer.tp_k_head_num, backend.kv_lora_rank).contiguous()
     k_pe = k_rope.view(-1, layer.tp_k_head_num, backend.qk_rope_head_dim).contiguous()
     sparse_kv_manager = _get_sparse_kv_manager(backend)
+    bm_fetch = sparse_kv_manager.mode is SparseKVOffloadMode.PD_DECODE_MEMPOOL
+    if bm_fetch and backend.mempool_runtime is None:
+        raise RuntimeError("formal mempool attention requires its backend runtime")
+    if bm_fetch and not forward_batch.forward_mode.is_decode():
+        raise RuntimeError("formal mempool sparse attention only supports decode")
     stream = torch.npu.current_stream(backend.device)
 
     if save_kv_cache:
@@ -100,11 +105,12 @@ def forward_sparsity_driven_kv_offload(
     else:
         actual_seq_lengths_kv = backend.forward_metadata.seq_lens
 
-    if (
-        is_prefill
-        and is_dsa_enable_prefill_cp()
-        and forward_batch.attn_cp_metadata is not None
-    ):
+    prefill_cp = False
+    if is_prefill:
+        from sglang.srt.layers.attention.dsa.utils import is_dsa_enable_prefill_cp
+
+        prefill_cp = is_dsa_enable_prefill_cp()
+    if is_prefill and prefill_cp and forward_batch.attn_cp_metadata is not None:
         attn_out = backend.do_cp_balance_attn(
             q_nope,
             k_nope,
@@ -158,7 +164,7 @@ def forward_sparsity_driven_kv_offload(
         )
 
         # Materialize the compact top-k KV for the current attention step:
-        # device-cache hits and host misses are copied into this buffer, the
+        # device-cache hits and BM/host misses are copied into this buffer, the
         # device cache is refilled from it, and sparse attention consumes it
         # directly.
         selected_kv_buffer = torch.zeros(
@@ -171,14 +177,19 @@ def forward_sparsity_driven_kv_offload(
             dtype=k.dtype,
             device=backend.device,
         )
-        sparse_kv_manager.materialize_selected_kv(
-            layer, forward_batch, topk_indices, selected_kv_buffer, stream
+        topk_valid = sparse_kv_manager.materialize_selected_kv(
+            layer,
+            forward_batch,
+            topk_2d,
+            selected_kv_buffer,
+            stream,
+            mempool_runtime=backend.mempool_runtime if bm_fetch else None,
         )
 
         _wait_stream_event(stream, sparse_kv_manager.hit_done)
         _wait_stream_event(stream, sparse_kv_manager.miss_done)
 
-        if backend.mempool_runtime is not None:
+        if backend.mempool_runtime is not None and not bm_fetch:
             backend.mempool_runtime.compare_selected_kv(
                 layer.layer_id,
                 forward_batch.req_pool_indices[:batch_size],
@@ -189,11 +200,6 @@ def forward_sparsity_driven_kv_offload(
         selected_k_nope, selected_k_rope = selected_kv_buffer.split(
             [nope_head_dim, rope_head_dim], dim=-1
         )
-
-        topk_valid = topk_2d >= 0
-        if forward_batch.seq_lens is not None:
-            valid_rows = (forward_batch.seq_lens[:batch_size] > 0).view(batch_size, 1)
-            topk_valid = topk_valid & valid_rows
 
         actual_seq_lengths_kv = (
             topk_valid.sum(dim=1)

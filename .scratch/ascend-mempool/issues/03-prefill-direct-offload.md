@@ -13,12 +13,13 @@
 
 **State:** open
 
-## 规划状态（2026-10-03）
+## 规划状态（2026-10-04）
 
 02已获用户确认验收并关闭，已有链路、代码入口及证据见[02总结](../ticket-02-summary.md)。
-用户已确认按S1–S6组织本票，并授权实施S1。S1代码已实现，轻量CPU检查通过，
+用户已确认按S1–S6组织本票，并先后授权实施S1和S2。S1代码已提交为`3d2f3c6168`，轻量CPU检查通过，
 完整SGLang环境的资源/启动单测及NPU回归待执行；见[S1交付总结](../ticket-03-s1-summary.md)。
-S2–S6仍为待实施方案，不表示正式数据路径或本票验收已完成。旧KV传输、D staging/host
+S2代码和独立NPU gate已实现，用户完成代码核对并授权提交，等待NPU验证；见
+[S2交付总结](../ticket-03-s2-summary.md)。S3–S6仍待实施，不表示正式服务数据路径或本票验收已完成。旧KV传输、D staging/host
 写入及sparse attention的host SHM读取均关闭而不删除。S1用显式shadow模式保留02
 链路，正式模式暂拒绝启动；03完整交付后是否另保留shadow诊断模式仍是独立待定事项。
 继续使用context1024、P/D各512、TP16、D Graph width16、NUMA `0,2,4,6`的小容量配置。
@@ -75,7 +76,7 @@ HBM Index K -> indexer top-k -> HBM sparse cache 查询
 | 步骤 | 交付结果 | 当前进度 |
 | --- | --- | --- |
 | S1 拆分配置与资源职责 | 明确运行模式、派生能力、资源归属及初始化合同 | 代码已实现；轻量CPU通过，完整环境及NPU回归待执行 |
-| S2 接入正式BM fetch | attention消费BM miss结果，保留HBM hit/refill | 待实施 |
+| S2 接入正式BM fetch | attention消费BM miss结果，保留HBM hit/refill | 代码/独立gate已实现；Mac通过，用户已核对并授权提交，等待NPU验证 |
 | S3 按模式停用重复存储 | 旧实现保留；正式模式host KV和main-KV staging分配为零 | 待实施 |
 | S4 精简PD传输 | 仅保留Index K和必要辅助数据，保留联合readiness | 待实施 |
 | S5 核对Graph与生命周期 | 固定地址、正确stream依赖、安全drain与释放 | 待实施 |
@@ -416,6 +417,37 @@ HTTP 200或出现Graph日志本身不算通过。
 不能以04负责正式对照为由交付已知错误。
 
 ## Comments
+
+### 2026-10-04：用户确认S2代码并授权提交
+
+用户核对了materialization、KVFetch、runtime及Graph固定输入设计后，明确授权提交
+本次S2代码、测试和说明。随后先讨论S3/S4/S5，尚未授权实施这些步骤。
+本次提交前同步交付状态并检查diff；沿用此前已通过的165项CPU测试及静态检查结果。
+尚无新的NPU结果，正式服务启动保护及Ticket03的open状态保持不变。
+
+### 2026-10-04：S2实现交付，等待用户代码核对和NPU验证
+
+用户明确授权实施S2，并要求结束后不要add。S1当前基线为`3d2f3c6168`；本轮修改
+保留工作区，未add/commit/push。S1完整环境/NPU待验收记录仍保留，继续实施授权
+不作为硬件验收证据。
+
+正式decode新增`KVFetch`，复用两次UniDexCopy，以独立P/D binding和可读前缀只填充
+selected KV的miss位置；沿用HBM lookup/hit/refill/map及现有stream/event。
+attention传入padded top-k并使用公共valid mask。READBACK关闭时仍强制D的P slot
+校验，维护实际forward进度，完成事件之后核对coverage和非法正索引，错误进入fault。
+正式fetch和shadow readback不可同时启用，普通/shadow host分支保留。
+
+审查后补充Graph同形状目标更换时固定metadata的持有，以及设备实际位置与host
+expected prefix一致性检查；读取上界同时受本层实际write counts约束。新gate覆盖
+capture(A)→eager(B)→replay(A)，D数据带每轮独立标记避免预填旧值掩盖漏写。
+Mac最终完整独立CPU suite 165项通过；两项审查发现均先用测试复现，再修复，相关4个
+测试文件共38项定向复测通过。mypy 26个源文件通过；规范审查0项硬性违反、1项非
+阻塞接口建议，规格审查2项P1已修复并复核，无遗留阻塞项。检查命令、最终复核结果及
+完整双机NPU命令见[S2总结](../ticket-03-s2-summary.md)。
+
+正式模式启动保护保留，错误提示改为S3–S5待完成；MEMPOOL环境开关仍启动02 shadow。
+S2 gate用测试fixture仅分配materialization资源，不代表生产分配/PD切换已通过。
+尚未运行NPU、完整SGLang服务或模型精度验证，03保持open，验收项不勾选，依赖票未解锁。
 
 ### 2026-10-03：S1实现交付，等待完整环境与NPU回归
 

@@ -15,6 +15,7 @@ import torch
 from torch import Tensor
 
 from .config import MempoolConfig
+from .copy import KVFetch
 from .diagnostics import diagnostics_enabled, startup_stage
 from .layout import check_index, positive_int
 from .manager import MempoolKVManager
@@ -89,6 +90,8 @@ class _Forward:
     capture: bool
     layers: set[int] = field(default_factory=set)
     readback_layers: set[int] = field(default_factory=set)
+    selection_layers: set[int] = field(default_factory=set)
+    fetch_layers: set[int] = field(default_factory=set)
 
 
 @dataclass
@@ -102,6 +105,7 @@ class _Completion:
     slot_totals: tuple[int, ...]
     readback: Optional[Tensor]
     replay: bool
+    fetch: Optional[Tensor]
 
 
 class MempoolRuntime:
@@ -132,6 +136,8 @@ class MempoolRuntime:
         wait_event: Optional[Callable[[WriteEvent], None]] = None,
         readback_enabled: bool = False,
         readback_kernel: Any = None,
+        fetch_enabled: bool = False,
+        fetch_kernel: Any = None,
     ) -> None:
         """Allocate stable bindings/counters after BM mappings are ready."""
         if mlapo_enabled:
@@ -154,6 +160,22 @@ class MempoolRuntime:
         self.row_prompt_len = torch.full_like(self.row_slot, -1)
         self.row_prompt_slot = torch.full_like(self.row_slot, -1)
         self.row_decode_len = torch.zeros_like(self.row_slot)
+        if fetch_enabled and (manager.rank != 1 or readback_enabled):
+            raise ValueError(
+                "production fetch requires D with shadow readback disabled"
+            )
+        self._fetch = (
+            KVFetch(manager, block_dim, fetch_kernel) if fetch_enabled else None
+        )
+        # Per-layer/row selection coverage, invalid count and first bad position.
+        # Read only a completed snapshot, never synchronize inside captured work.
+        self._fetch_checks = (
+            torch.zeros(
+                (self.layout.layers, req_pool_rows, 3), dtype=torch.int64, device=device
+            )
+            if fetch_enabled
+            else None
+        )
         self._readback = (
             KVReadback(
                 manager, req_pool_rows, start_layer, device, block_dim, readback_kernel
@@ -230,9 +252,9 @@ class MempoolRuntime:
         positive_int("prompt_tokens", prompt_tokens)
         if prompt_tokens > self.manager.layout.prompt.tokens:
             raise ValueError("prompt length exceeds P mempool capacity")
-        if self._readback is not None:
+        if self.manager.rank == 1:
             if prompt_slot is None:
-                raise ValueError("readback requires the approved prompt slot")
+                raise ValueError("decode requires the approved prompt slot")
             check_index("prompt slot", prompt_slot, self.manager.layout.prompt.slots)
         if req_pool_idx in self._bindings or self._row_in_flight(req_pool_idx):
             raise RuntimeError("request row is already bound or in-flight")
@@ -389,10 +411,15 @@ class MempoolRuntime:
             self._wait_event(self._binding_update)
         if self._readback is not None:
             self._readback.reset()
+        if self._fetch_checks is not None:
+            self._fetch_checks.zero_()
+        if self.manager.rank == 1:
             for write in writes:
-                if write.rows != 1:
+                if (
+                    self._readback is not None or self._fetch is not None
+                ) and write.rows != 1:
                     raise ValueError(
-                        "shadow readback requires one decode KV row per request"
+                        "sparse KV fetch/readback requires one decode KV row per request"
                     )
                 # Each layer's local write precedes readback on this stream,
                 # including D offset zero. Never infer this bound from output tokens.
@@ -440,6 +467,15 @@ class MempoolRuntime:
         local_pos = positions - prompt if self.manager.rank == 1 else positions
         valid = native_valid & row_valid & (slots >= 0) & (local_pos >= 0)
         valid = valid & (local_pos < self.layout.tokens)
+        if self._fetch is not None:
+            # A repeated or skipped device position must not count as a new
+            # readable token when graph inputs disagree with host expectations.
+            safe_write_slots = torch.where(valid, slots, 0)
+            valid = (
+                valid
+                & (local_pos == self.row_decode_len[safe_req] - 1)
+                & (local_pos == self._write_counts[layer, safe_write_slots])
+            )
         if self.manager.rank == 0:
             valid = valid & (positions < prompt)
         self._writers[layer].write(
@@ -449,6 +485,99 @@ class MempoolRuntime:
         # Device counters catch silent invalid masks, including on graph replay.
         self._write_counts[layer].scatter_add_(0, safe_slot, valid.to(torch.int32))
         active.layers.add(layer)
+
+    def selected_kv_valid(
+        self, layer_id: int, req_rows: Tensor, positions: Tensor
+    ) -> Tensor:
+        """Validate one selection before cache lookup; use this mask for all copies."""
+        layer = self._fetch_layer(layer_id)
+        active = self._active
+        assert active is not None and self._fetch_checks is not None
+        if layer in active.selection_layers:
+            raise RuntimeError("duplicate KV selection for one forward layer")
+        if (
+            positions.ndim != 2
+            or req_rows.ndim != 1
+            or req_rows.numel() != positions.shape[0]
+        ):
+            raise ValueError("fetch requires one request row per top-k selection")
+        if positions.shape[1] == 0:
+            raise ValueError("fetch requires a positive top-k width")
+        row_valid = (req_rows > 0) & (req_rows < self.row_slot.numel())
+        safe_rows = torch.where(row_valid, req_rows, 0).long()
+        bound = (
+            row_valid
+            & (self.row_slot[safe_rows] >= 0)
+            & (self.row_prompt_slot[safe_rows] >= 0)
+        )
+        safe_slots = torch.where(bound, self.row_slot[safe_rows], 0).long()
+        readable_decode = torch.minimum(
+            self.row_decode_len[safe_rows], self._write_counts[layer, safe_slots]
+        )
+        valid = (
+            bound[:, None]
+            & (positions >= 0)
+            & (positions < self.max_context_len)
+            & (positions < (self.row_prompt_len[safe_rows] + readable_decode)[:, None])
+        )
+        invalid = bound[:, None] & (positions >= 0) & ~valid
+        first = invalid.to(torch.int32).argmax(dim=1, keepdim=True)
+        metrics = torch.stack(
+            (
+                bound.long(),
+                invalid.sum(1),
+                torch.where(invalid.any(1), positions.gather(1, first).squeeze(1), -1),
+            ),
+            dim=1,
+        )
+        self._fetch_checks[layer].index_add_(
+            0, safe_rows, torch.where(bound[:, None], metrics, 0)
+        )
+        active.selection_layers.add(layer)
+        return valid
+
+    def _fetch_layer(self, layer_id: int) -> int:
+        active = self._active
+        layer = layer_id - self.start_layer
+        check_index("local layer", layer, self.layout.layers)
+        if self._fetch is None:
+            raise RuntimeError("production mempool fetch is not enabled")
+        if active is None or active.replay or layer not in active.layers:
+            raise RuntimeError("fetch requires this layer's eager/captured KV write")
+        return layer
+
+    def fetch_selected_kv(
+        self,
+        layer_id: int,
+        req_rows: Tensor,
+        positions: Tensor,
+        misses: Tensor,
+        output: Tensor,
+    ) -> None:
+        """Fill only BM misses after selected_kv_valid and this layer's write.
+
+        Submit on the miss stream after copy_ready; publish miss_done only after
+        this call. Attention/refill must wait for that event and the hit stream.
+        """
+        layer = self._fetch_layer(layer_id)
+        active = self._active
+        assert self._fetch is not None and active is not None
+        if layer not in active.selection_layers or layer in active.fetch_layers:
+            raise RuntimeError(
+                "fetch requires exactly one validated selection per layer"
+            )
+        self._fetch.gather(
+            layer,
+            req_rows,
+            positions,
+            misses,
+            output,
+            self.row_prompt_slot,
+            self.row_slot,
+            self.row_prompt_len,
+            self.row_decode_len,
+        )
+        active.fetch_layers.add(layer)
 
     def compare_selected_kv(
         self, layer_id: int, req_rows: Tensor, positions: Tensor, reference: Tensor
@@ -508,6 +637,12 @@ class MempoolRuntime:
             and len(active.readback_layers) != self.layout.layers
         ):
             raise RuntimeError("mempool forward is missing local layer readbacks")
+        if (
+            self._fetch is not None
+            and not active.replay
+            and len(active.fetch_layers) != self.layout.layers
+        ):
+            raise RuntimeError("mempool forward is missing local layer fetches")
         if active.capture:
             self._capture_validated = True
             self._active = None
@@ -520,6 +655,7 @@ class MempoolRuntime:
         totals = tuple(self._bindings[row].submitted for row in rows)
         snapshot = self._write_counts.clone()
         readback = self._readback.stats.clone() if self._readback is not None else None
+        fetch = self._fetch_checks.clone() if self._fetch_checks is not None else None
         event = self._event_factory()
         event.record()
         self._pending.append(
@@ -531,6 +667,7 @@ class MempoolRuntime:
                 tuple(self._slot_totals),
                 readback,
                 active.replay,
+                fetch,
             )
         )
         self._active = None
@@ -544,6 +681,16 @@ class MempoolRuntime:
             if any(tuple(layer) != item.slot_totals for layer in counts):
                 self.fault = "mempool valid write counts differ from expected rows"
                 raise RuntimeError(self.fault)
+            if item.fetch is not None:
+                for layer, samples in enumerate(item.fetch.cpu().tolist()):
+                    for row, (checks, invalid, position) in enumerate(samples):
+                        if checks != int(row in item.rows) or invalid:
+                            self.fault = (
+                                f"mempool KV fetch invalid selection layer={layer + self.start_layer} "
+                                f"row={row} position={position} invalid_kv={invalid} "
+                                f"checks={checks} expected={int(row in item.rows)}"
+                            )
+                            raise RuntimeError(self.fault)
             if self._readback is not None and item.readback is not None:
                 try:
                     self._readback.complete(
@@ -602,6 +749,9 @@ def initialize_for_model_runner(model_runner: Any) -> None:
         raise ValueError("mempool requires device='npu'")
     backend = model_runner.attn_backend
     from sglang.srt.environ import envs
+    from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config import (
+        SparseKVOffloadMode,
+    )
 
     config = getattr(model_runner, "mempool_config", None)
     if config is None:
@@ -693,6 +843,7 @@ def initialize_for_model_runner(model_runner: Any) -> None:
             start_layer=model_runner.layer_info.start_layer,
             device=str(model_runner.req_to_token_pool.req_to_token.device),
             readback_enabled=envs.SGLANG_NPU_MEMPOOL_READBACK.get(),
+            fetch_enabled=mode is SparseKVOffloadMode.PD_DECODE_MEMPOOL,
         )
     runtime.config = config
     seen = set()

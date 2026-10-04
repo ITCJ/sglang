@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
 from .layout import UINT32_MAX, positive_int
-from .manager import MempoolKVView
+from .manager import MempoolKVManager, MempoolKVView
 
 if TYPE_CHECKING:
     from torch import Tensor
@@ -159,3 +159,69 @@ class SparseKVCopy:
                 None,
             )
         return self.output
+
+
+class KVFetch:
+    """Fetch cache misses directly into the caller's selected KV, without readback."""
+
+    def __init__(
+        self, manager: MempoolKVManager, block_dim: int, kernel: Any = None
+    ) -> None:
+        self.manager = manager
+        self.block_dim = block_dim
+        self.kernel = kernel
+        self._copies: dict[tuple[int, int, int], SparseKVCopy] = {}
+
+    def gather(
+        self,
+        layer: int,
+        req_rows: Tensor,
+        positions: Tensor,
+        misses: Tensor,
+        output: Tensor,
+        row_prompt_slot: Tensor,
+        row_decode_slot: Tensor,
+        row_prompt_len: Tensor,
+        row_decode_len: Tensor,
+    ) -> None:
+        """Enqueue both copies on the miss stream, including zero-valid sources.
+
+        The caller orders binding/current-layer writes before this stream, and
+        joins it before attention/refill or the next use of these fixed inputs.
+        """
+        import torch
+
+        batch, topk = positions.shape
+        if misses.shape != positions.shape or misses.dtype != torch.bool:
+            raise ValueError("fetch miss mask must match the top-k selection")
+        key = (layer, batch, topk)
+        copier = self._copies.get(key)
+        if copier is None or copier.output is not output:
+            # Eager calls and distinct captures may allocate a new destination
+            # with the same shape. Update the destination but retain the fixed
+            # metadata that an existing graph may have captured during warmup.
+            inputs = (
+                copier.inputs
+                if copier is not None
+                else SparseCopyInputs(batch, topk, str(output.device))
+            )
+            copier = SparseKVCopy(
+                self.manager.view(0, layer),
+                self.manager.view(1, layer),
+                inputs,
+                block_dim=self.block_dim,
+                kernel=self.kernel,
+                output=output,
+            )
+            self._copies[key] = copier
+        inputs = copier.inputs
+        row_valid = (req_rows > 0) & (req_rows < row_decode_slot.numel())
+        safe_rows = torch.where(row_valid, req_rows, 0).long()
+        inputs.p_slots.copy_(row_prompt_slot[safe_rows])
+        inputs.d_slots.copy_(row_decode_slot[safe_rows])
+        inputs.prompt_lengths.copy_(row_prompt_len[safe_rows])
+        inputs.decode_lengths.copy_(row_decode_len[safe_rows])
+        inputs.positions.copy_(positions)
+        inputs.valid.copy_(misses)
+        inputs.active.copy_(row_valid & (row_decode_slot[safe_rows] >= 0))
+        copier.gather()

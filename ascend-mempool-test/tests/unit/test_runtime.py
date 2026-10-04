@@ -281,7 +281,7 @@ class TestMempoolRuntime(unittest.TestCase):
     def test_decode_first_row_and_last_capacity_row_use_relative_positions(self):
         """Eight decode rows fill exactly one slot without touching its neighbor."""
         runtime, targets, events = self.make_runtime(rank=1, layers=1)
-        runtime.bind(1, slot=15, prompt_tokens=4)
+        runtime.bind(1, slot=15, prompt_tokens=4, prompt_slot=0)
         for offset in range(8):
             batch = prefill_batch((1,), (0,), (1,))
             batch.forward_mode = SimpleNamespace(is_decode=lambda: True)
@@ -466,7 +466,12 @@ class TestMempoolRuntime(unittest.TestCase):
                             runtime.detach_row(binding)
                         bound.clear()
                     for row, slot, prompt in case.bindings:
-                        bound[row] = runtime.bind(row, slot=slot, prompt_tokens=prompt)
+                        bound[row] = runtime.bind(
+                            row,
+                            slot=slot,
+                            prompt_tokens=prompt,
+                            prompt_slot=0 if rank == 1 else None,
+                        )
                     runtime.begin_forward(case.writes)
                     for layer in range(2):
                         values = case.values(layer, 4)
