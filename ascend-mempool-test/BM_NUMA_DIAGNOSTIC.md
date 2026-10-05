@@ -1,9 +1,74 @@
 # BM 本地 NUMA 分配交叉诊断
 
-2026-10-02用户决定：NUMA/大容量分配排查延期，全部证据与后续事项集中在
+2026-10-06用户决定：本轮NUMA/Fabric窗口排查再次封存，全部证据与后续事项集中在
 [ticket09](../.scratch/ascend-mempool/issues/09-numa-allocation-followup.md)。
-本文保留复现命令供后续使用；当前demo主线先完成真实KV读回、attention切换和旧hostSHM
-移除，不要求继续节点扫描或重复已通过的BM gate。
+本文新增只读地址交集工具，其余分配复现命令保留供恢复排查时使用，不要求继续
+分配压力实验或重复已通过的BM gate。
+
+## 只读检查：每个NUMA与Fabric窗口的交集
+
+`scripts/probe_numa_fabric_overlap.py`可单文件复制，只需Python 3.9+标准库。
+在待检查机器的宿主机上运行；若容器能完整读取宿主机sysfs和安装版驱动头文件，也可
+在该容器内运行。它不需要P/D配对、IP或NPU设备，不导入torch/MF，不创建BM池或修改系统。
+
+```bash
+cd /home/cryang/sglang
+python3 ascend-mempool-test/scripts/probe_numa_fabric_overlap.py \
+  --details \
+  --report /tmp/numa-fabric-overlap.json
+```
+
+P、D各自运行同一命令，分别保存结果。省略`--details`只显示窗口及节点容量汇总；
+`--report`可省略，指定时仅写入这个JSON报告，单位为bytes，区间均为`[start, end)`。
+默认读取以下文件：
+
+- `/sys/devices/system/memory/block_size_bytes`：十六进制内存块大小。
+- `/sys/devices/system/node/node*/memory*/phys_index`和`state`：块编号及在线状态。
+  起点=`int(phys_index, 16) × block_size`，只合并相邻块，保留不连续地址和空洞。
+- `/usr/local/Ascend/driver/kernel/svmdrv/pmaster/common/inc/devmm_common.h`：
+  解析非`EMU_ST`的`DEVMM_S2S_HOST_NODE_MEM_SIZE`、窗口数量与`mem_node_start`数组。
+  Fabric窗口ID与Linux NUMA ID分开处理，不默认所有机器都有相同窗口。
+
+头文件在其他位置时明确指定：
+
+```bash
+python3 ascend-mempool-test/scripts/probe_numa_fabric_overlap.py \
+  --driver-header /usr/src/davinci_ascend-1.0/svmdrv/pmaster/common/inc/devmm_common.h \
+  --details
+```
+
+`--sysfs-root`默认`/sys/devices/system`，可指向相同目录结构的离线快照。
+Linux对`phys_index`的定义可核对[内核实现](https://github.com/torvalds/linux/blob/master/drivers/base/memory.c)。
+基于用户提供的31机器快照，预期结果为：
+
+```text
+Node  Coverage GiB  Overlap GiB  Outside GiB  Windows
+   0        256.00       170.00        86.00  W0
+   1        255.00         0.00       255.00  -
+   2        256.00       170.00        86.00  W1
+   3        256.00         0.00       256.00  -
+   4        256.00       170.00        86.00  W2
+   5        256.00         0.00       256.00  -
+   6        256.00       170.00        86.00  W3
+   7        256.00         0.00       256.00  -
+Total coverage: 2047.00 GiB; overlap: 680.00 GiB
+```
+
+`Coverage`是在线内存块的地址覆盖，`Overlap`是它与窗口并集的交集，`Outside`是差值。
+它们都不是当前MemFree；块内可能有保留区或更细的空洞。交集为正也不保证BM可分配，
+还受页粒度、占用、碎片化等条件影响。本工具读取头文件定义，不查询硬件窗口寄存器，
+也不证明磁盘源码与已加载驱动一致。该表只作为31参考，32或其他机器以实际输出为准。
+
+成功读取并计算时退出0，某个节点交集为0是正常诊断结果；头文件缺失、布局无法识别、
+sysfs读取失败、热插拔过渡状态或单个内存块同时归属多个NUMA（无法按块确定归属）时
+退出2并输出原因。不会悄悄使用硬编码地址或把读取失败报告为0容量。
+
+本机CPU验证：
+
+```bash
+python3 -m unittest discover -s ascend-mempool-test/tests/unit \
+  -p test_numa_fabric_overlap.py -v
+```
 
 ## 双机16池：临时只使用偶数NUMA节点
 
