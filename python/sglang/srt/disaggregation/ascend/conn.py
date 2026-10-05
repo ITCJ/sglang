@@ -11,6 +11,7 @@ from sglang.srt.disaggregation.ascend.mempool_control import (
     MempoolPDControl,
 )
 from sglang.srt.disaggregation.ascend.mempool_protocol import (
+    IndexKTransferLayout,
     MempoolMessage,
     encode_message,
 )
@@ -57,6 +58,7 @@ class AscendKVManager(MooncakeKVManager):
     ):
         self.sparse_pd_decode_staging = None
         self.mempool_control: Optional[MempoolPDControl] = None
+        self._mempool_transfer_layout: Optional[IndexKTransferLayout] = None
         self._mempool_discovery = None
         self._mempool_discovery_executor = None
         self._mempool_frame_router = MempoolFrameRouter()
@@ -130,10 +132,86 @@ class AscendKVManager(MooncakeKVManager):
             # deferred-release timeout that frees unconfirmed buffers.
             self.enable_deferred_decode_kv_release = True
 
+    def configure_mempool_transfer(self, pool: Any) -> Optional[IndexKTransferLayout]:
+        """Finalize existing KVArgs before receivers publish them to a peer.
+
+        The NPU pool already filtered addresses before engine registration.
+        Service construction supplies the actual pool here, before admission;
+        only logical metadata changes, never a registered address or length.
+        """
+        if self.mempool_control is not None or self.request_status:
+            raise RuntimeError("Configure mempool transfer before admitting requests")
+        if not pool.sparse_kv_offload_mode.uses_index_k_only_transfer:
+            return None
+        args = self.kv_args
+        if (
+            not self.is_mla_backend
+            or self.pp_size != 1
+            or self.dcp_size != 1
+            or self.enable_staging
+            or args.num_draft_entries
+        ):
+            raise ValueError(
+                "Index K-only transfer requires MLA, PP=1, DCP=1 without staging/draft"
+            )
+        if pool.get_contiguous_buf_infos() != (
+            args.kv_data_ptrs,
+            args.kv_data_lens,
+            args.kv_item_lens,
+        ):
+            raise ValueError(
+                "Registered buffers differ from the NPU Index K publication"
+            )
+        if args.page_size != pool.page_size:
+            raise ValueError("Native page size differs from the NPU Index K pool")
+        layout = IndexKTransferLayout(
+            page_size=args.page_size,
+            layer_ids=tuple(pool.get_kv_layer_ids()),
+            item_lens=tuple(args.kv_item_lens),
+            dtypes=tuple(
+                str(buf.dtype).removeprefix("torch.") for buf in pool.index_k_buffer
+            ),
+            aux_item_lens=tuple(args.aux_item_lens),
+            state_types=tuple(kind.value for kind in args.state_types),
+            state_item_lens=tuple(tuple(row) for row in args.state_item_lens),
+            state_layer_ids=tuple(tuple(row) for row in args.state_layer_ids),
+            state_dim_per_tensor=tuple(tuple(row) for row in args.state_dim_per_tensor),
+        )
+        for ptrs, sizes, strides in [
+            (args.aux_data_ptrs, args.aux_data_lens, args.aux_item_lens),
+            *zip(args.state_data_ptrs, args.state_data_lens, args.state_item_lens),
+        ]:
+            if not (len(ptrs) == len(sizes) == len(strides)) or any(
+                ptr <= 0 or stride <= 0 or size < stride or size % stride
+                for ptr, size, stride in zip(ptrs, sizes, strides)
+            ):
+                raise ValueError("Invalid mempool native handoff buffer metadata")
+        if len(args.state_data_ptrs) != len(layout.state_types) or len(
+            args.state_data_lens
+        ) != len(layout.state_types):
+            raise ValueError("Invalid mempool native state components")
+        args.kv_layer_ids = list(layout.layer_ids)
+        # Formal BF16 publishes exactly one Index K component group. Its layer
+        # count can be smaller than the model's total number of layers.
+        args.kv_buf_groups = 1
+        self._mempool_transfer_layout = layout
+        logger.info(
+            "mempool native_transfer kind=index_k_only entries=%s main_kv_entries=0",
+            len(layout.layer_ids),
+        )
+        return layout
+
     def attach_mempool_control(self, control: MempoolPDControl) -> None:
         """Attach the mapped pool's request control after PD manager startup."""
         if self.mempool_control is not None:
             raise RuntimeError("Ascend mempool control is already attached")
+        if (
+            control.local.transfer_layout != self._mempool_transfer_layout
+            or control.local.transport_session != self.get_session_id()
+        ):
+            raise ValueError(
+                "Mempool control differs from the configured native transport"
+            )
         parallel = get_parallel()
         if (
             control.local.role != self.disaggregation_mode.value
@@ -333,6 +411,125 @@ class AscendKVManager(MooncakeKVManager):
         layers_current_pp_stage = len(src_kv_ptrs)
         return src_kv_ptrs, sliced_dst_kv_ptrs, layers_current_pp_stage
 
+    def _validate_mempool_target(self, session: str) -> None:
+        """Bind the native registration to the peer checked by the handshake."""
+        layout = self._mempool_transfer_layout
+        control = self.mempool_control
+        if (
+            layout is None
+            or control is None
+            or control.peer is None
+            or control.local.transfer_layout != layout
+            or control.peer.transfer_layout != layout
+            or control.peer.transfer_kind != "index_k_only"
+            or control.peer.transport_session != session
+        ):
+            raise ValueError("Index K transfer has no matching mempool peer/session")
+        target = self.decode_kv_args_table.get(session)
+        if target is None:
+            raise ValueError("Index K transfer has no native destination registration")
+        if (
+            tuple(target.dst_kv_layer_ids) != layout.layer_ids
+            or tuple(target.dst_kv_item_lens) != layout.item_lens
+            or target.dst_kv_item_len != layout.item_lens[0]
+            or len(target.dst_kv_ptrs) != len(layout.layer_ids)
+            or len(target.dst_aux_ptrs) != len(layout.aux_item_lens)
+            or target.dst_attn_tp_size != self.attn_tp_size
+            or target.dst_dcp_size != 1
+            or target.requires_dcp_relayout
+            or tuple(tuple(row) for row in target.dst_state_item_lens)
+            != layout.state_item_lens
+            or tuple(tuple(row) for row in target.dst_state_layer_ids)
+            != layout.state_layer_ids
+            or tuple(tuple(row) for row in target.dst_state_dim_per_tensor)
+            != layout.state_dim_per_tensor
+            or len(target.dst_state_data_ptrs) != len(layout.state_item_lens)
+            or any(
+                len(ptrs) != len(sizes)
+                for ptrs, sizes in zip(
+                    target.dst_state_data_ptrs, layout.state_item_lens
+                )
+            )
+            or any(
+                ptr <= 0
+                for ptr in [
+                    *target.dst_kv_ptrs,
+                    *target.dst_aux_ptrs,
+                    *(ptr for row in target.dst_state_data_ptrs for ptr in row),
+                ]
+            )
+        ):
+            raise ValueError(
+                "Native destination registration differs from the Index K transfer layout"
+            )
+
+    def _send_mempool_index_k(
+        self,
+        session,
+        src_indices,
+        dst_ptrs,
+        dst_indices,
+        executor,
+        dst_layer_ids,
+        dst_device_indices,
+    ):
+        try:
+            self._validate_mempool_target(session)
+            target = self.decode_kv_args_table[session]
+            if (
+                dst_ptrs != target.dst_kv_ptrs
+                or dst_layer_ids != target.dst_kv_layer_ids
+                or dst_device_indices is not None
+            ):
+                raise ValueError(
+                    "Index K transfer requires the registered native page space"
+                )
+        except ValueError as exc:
+            logger.error(
+                "mempool native transfer rejected session=%s: %s", session, exc
+            )
+            return -1
+        return self._send_kvcache_generic(
+            mooncake_session_id=session,
+            src_data_ptrs=self.kv_args.kv_data_ptrs,
+            dst_data_ptrs=dst_ptrs,
+            item_lens=self.kv_args.kv_item_lens,
+            prefill_data_indices=src_indices,
+            dst_data_indices=dst_indices,
+            executor=executor,
+            src_layer_ids=self.kv_args.kv_layer_ids,
+            dst_layer_ids=dst_layer_ids,
+        )
+
+    def maybe_send_extra(
+        self, req, prefill_state_indices, executor, target_rank_registration_info=None
+    ):
+        if self._mempool_transfer_layout is not None:
+            try:
+                self._validate_mempool_target(req.mooncake_session_id)
+            except ValueError as exc:
+                logger.error("mempool state transfer rejected: %s", exc)
+                return -1
+        return super().maybe_send_extra(
+            req, prefill_state_indices, executor, target_rank_registration_info
+        )
+
+    def send_aux(self, req, prefill_aux_index, dst_aux_ptrs):
+        # The existing worker skips send_kvcache for an empty final chunk.
+        # Check that path here too, without changing shared worker semantics.
+        if self._mempool_transfer_layout is not None:
+            try:
+                self._validate_mempool_target(req.mooncake_session_id)
+                if (
+                    dst_aux_ptrs
+                    != self.decode_kv_args_table[req.mooncake_session_id].dst_aux_ptrs
+                ):
+                    raise ValueError("Aux buffers differ from the native registration")
+            except ValueError as exc:
+                logger.error("mempool aux transfer rejected: %s", exc)
+                return -1
+        return super().send_aux(req, prefill_aux_index, dst_aux_ptrs)
+
     def send_kvcache(
         self,
         mooncake_session_id: str,
@@ -345,6 +542,16 @@ class AscendKVManager(MooncakeKVManager):
         dst_kv_item_len: Optional[int] = None,
         dst_attn_tp_size: Optional[int] = None,
     ):
+        if self._mempool_transfer_layout is not None:
+            return self._send_mempool_index_k(
+                mooncake_session_id,
+                prefill_kv_indices,
+                dst_kv_ptrs,
+                dst_kv_indices,
+                executor,
+                dst_layer_ids,
+                dst_device_kv_indices,
+            )
         use_sparse_pd_split_indices = (
             dst_device_kv_indices is not None and self.is_mla_backend
         )

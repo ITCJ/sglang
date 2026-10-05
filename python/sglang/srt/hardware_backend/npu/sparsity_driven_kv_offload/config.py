@@ -100,14 +100,19 @@ class SparseKVOffloadMode(str, Enum):
             SparseKVOffloadMode.PD_DECODE_MEMPOOL,
         )
 
-    def validate_runtime_support(self) -> None:
-        """Do not launch before transfer cutover and lifecycle checks."""
-        if self in (
+    @property
+    def uses_index_k_only_transfer(self) -> bool:
+        """Publish native Index K while compact KV stays in P/D BM."""
+        return self in (
             SparseKVOffloadMode.PD_PREFILL_MEMPOOL,
             SparseKVOffloadMode.PD_DECODE_MEMPOOL,
-        ):
+        )
+
+    def validate_runtime_support(self) -> None:
+        """Do not launch before the remaining lifecycle/startup checks."""
+        if self.uses_index_k_only_transfer:
             raise ValueError(
-                "Formal mempool mode still requires ticket03 S4-S5; "
+                "Formal mempool mode still requires ticket03 S5; "
                 "only the existing shadow service path can be started."
             )
 

@@ -13,7 +13,7 @@
 
 **State:** open
 
-## 规划状态（2026-10-04）
+## 规划状态（2026-10-05）
 
 02已获用户确认验收并关闭，已有链路、代码入口及证据见[02总结](../ticket-02-summary.md)。
 用户已确认按S1–S6组织本票，并先后授权实施S1和S2。S1代码已提交为`3d2f3c6168`，轻量CPU检查通过，
@@ -21,8 +21,10 @@
 S2代码和独立NPU gate已提交为`9036be2b0f`；首次K=8参数错误修正为2048后，
 双机30个case及正常退出均通过，用户于2026-10-04确认S2独立NPU gate无问题；见
 [S2交付总结](../ticket-03-s2-summary.md)。用户随后授权先提交当前修改，再实施S3；S2修正与
-验收记录已提交为`dd1f92f618`。S3代码与Mac检查完成，NPU资源gate待用户执行，见
-[S3交付总结](../ticket-03-s3-summary.md)。S4–S6仍待实施，不表示正式服务数据路径或本票验收已完成。旧KV传输、D staging/host
+验收记录已提交为`dd1f92f618`。S3代码已提交为`5b18a8046c`，Mac检查通过；用户于
+2026-10-05确认S3 NPU资源gate通过，见[S3交付总结](../ticket-03-s3-summary.md)。
+S4组件代码已实现，等待用户双机NPU验收；见[S4总结](../ticket-03-s4-summary.md)。
+S5–S6仍待实施，不表示正式服务数据路径或本票验收已完成。旧KV传输、D staging/host
 写入及sparse attention的host SHM读取均关闭而不删除。S1用显式shadow模式保留02
 链路，正式模式暂拒绝启动；03完整交付后是否另保留shadow诊断模式仍是独立待定事项。
 继续使用context1024、P/D各512、TP16、D Graph width16、NUMA `0,2,4,6`的小容量配置。
@@ -80,8 +82,8 @@ HBM Index K -> indexer top-k -> HBM sparse cache 查询
 | --- | --- | --- |
 | S1 拆分配置与资源职责 | 明确运行模式、派生能力、资源归属及初始化合同 | 代码已实现；轻量CPU通过，完整环境及NPU回归待执行 |
 | S2 接入正式BM fetch | attention消费BM miss结果，保留HBM hit/refill | 实现已核对；K=2048独立NPU gate的30个case通过，用户已确认 |
-| S3 按模式停用重复存储 | 旧实现保留；正式模式host KV和main-KV staging分配为零 | 代码已实现；Mac检查通过，等待用户执行NPU资源gate |
-| S4 精简PD传输 | 仅保留Index K和必要辅助数据，保留联合readiness | 待实施 |
+| S3 按模式停用重复存储 | 旧实现保留；正式模式host KV和main-KV staging分配为零 | 已提交；Mac检查通过，用户于2026-10-05确认NPU资源gate通过 |
+| S4 精简PD传输 | 仅保留Index K和必要辅助数据，保留联合readiness | 代码与双机gate已交付，等待用户NPU验收；见[S4总结](../ticket-03-s4-summary.md) |
 | S5 核对Graph与生命周期 | 固定地址、正确stream依赖、安全drain与释放 | 待实施 |
 | S6 测试与交付 | CPU验证、正式服务checker、用户NPU验收 | 待实施 |
 
@@ -282,6 +284,15 @@ refill的等待合同。capture时即使有效miss为零也记录两路copy。�
 
 ### S4. 将PD传输改为仅保留必要的Index K/state/aux/metadata
 
+2026-10-05核对现有代码后的逐文件改动、peer契约与测试方案见
+[S4实现方案](../ticket-03-s4-plan.md)。该文档已按最终5个Ascend/NPU文件方案更新；代码交付不等于硬件验收通过。
+用户要求优先修改Ascend/NPU目录，随后明确选择原KVArgs，并取消AscendKVArgs及
+`ascend/args.py`。当前方案在既有Ascend发送入口按模式分流，模式由已有service/control
+从真实pool取得，不通过新KVArgs字段传递；工厂、公共KVArgs和共享worker均不改。
+为使main-KV注册量为零，NPU pool在注册前仅发布正式模式所需Index K条目。
+共享utils保持原样：service构造时在receiver发布之前补齐原KVArgs的实际层号/组数。
+布局检查放在Ascend本地、握手与既有发送入口，原页索引、空末chunk及失败/drain复用。
+
 - 核对 `npu/memory_pool_npu.py::get_contiguous_buf_infos()` 及
   `disaggregation/ascend/conn.py` 的buffer列表：当前NPU MLA把K组、V组和Index K
   尾部一起放入 `kv_data_ptrs`；`setup_state_kv_args()` 不另建NPU MLA的DSA state条目。
@@ -423,6 +434,81 @@ HTTP 200或出现Graph日志本身不算通过。
 不能以04负责正式对照为由交付已知错误。
 
 ## Comments
+
+### 2026-10-05：S4 组件实现与验证脚本交付
+
+按用户最终方案，仅修改5个现有Ascend/NPU生产文件。正式P/D只发布BF16 Index K，
+P native HBM K/V仍保留用于计算；原KVArgs、utils、factory、scheduler和共享worker不改。
+service在物理注册后、receiver发布前补齐真实层号与组数，加入peer模式/layout/native
+session匹配，payload升级到v2并保留原路由tag。正式发送检查失败返回码交给原worker；
+空末chunk的aux/state入口同样受检查保护。普通/shadow继续原路径，服务启动保护推进到S5。
+
+交付[S4总结](../ticket-03-s4-summary.md)与[双机gate说明](../../../ascend-mempool-test/PD_TRANSFER.md)。
+新增gate使用真实NPU Index K、完整MetadataBuffers、TransferEngine和原sender/worker，
+覆盖两种readiness顺序、metadata延迟、非连续页、多chunk、零页末chunk、aux失败与取消。
+控制测试提供BM写完事实，不执行BM数据、TP collective或完整scheduler；这些仍需后续门禁。
+
+agent在Mac实际执行：独立CPU suite **190 tests通过**；严格mypy覆盖独立src/scripts、
+BM runtime、协议/service/config，共**31个文件通过**；按独立测试配置进行Ruff检查、
+52文件格式检查、isort与git diff --check通过。规范评审无硬性违反；需求评审发现的
+gate八层容量错误已修复并复核通过，新增CPU回归覆盖。完整评审记录见S4总结。
+
+**NPU尚未执行，等待用户执行NPU验收。** Ticket03保持open，S4硬件通过与实现核对后
+才推进依赖的S5；本次不宣称正式模型服务或主线KV流量已获硬件验证。
+
+### 2026-10-05：按用户决定保留原 KVArgs，在 Ascend 发送入口按模式分流
+
+用户明确认为 AscendKVArgs 没有必要，要求直接使用现有 KVArgs，不创建
+`disaggregation/ascend/args.py`，并把模式与发送内容的判断放到发送端。
+据此重写[S4方案](../ticket-03-s4-plan.md)：取消子类、工厂分派、动态扩展 KVArgs
+以及单独的 mempool_transfer 模块；预计只修改 5 个现有 Ascend/NPU 生产文件和 utils。
+
+实际复制入口为 `AscendKVManager.send_kvcache()`；`AscendKVSender.send()` 继续
+承担原有页数累计、末 chunk 判断与入队。模式从实际 pool 经现有 service/PoolPeer/control
+提供。注册先于发送，因此保留 NPU buffer 发布时过滤 main K/V 的必要步骤，避免仅关闭
+流量却保留重复注册；utils 仅在已有 NPU 分支填写原字段中的实际层号与组件组数。
+本轮仅修订方案；S4 生产代码、NPU gate 和正式服务验收尚未实施。
+Mac 文档检查通过：`git diff --check`、两份文档 26 个本地链接与代码围栏检查、
+6 个拟修改生产路径存在性检查；更新后的 HTML 渲染通过且 STE 0 条警告。
+
+### 2026-10-05：复核 D 项，撤回共享 worker 校验 hook
+
+用户指出 Index K 原有传输链路继续复用，询问为什么需要在 worker 增加校验。
+核对后区分两件事：S4 过滤 main K/V 会改变发布/注册条目，需检查新布局及 peer
+兼容性；原始页索引裁剪和零页 chunk 则是已有 worker 行为，尚无证据表明本次过滤
+会新增相关缺陷。上一版将这类通用防御检查作为主线修改理由，范围偏大。
+
+修订[S4方案](../ticket-03-s4-plan.md)：保留 Ascend 本地注册、握手及现有
+`send_kvcache()` 正式分支中的布局检查；完整 registration 可从继承的 manager
+注册表取得。删除拟议的 `_validate_transfer_target()` 主线 hook，不新增通用
+页索引等长检查，不改原 worker 和 aux/drain 流程。生产主线范围从两文件缩为 utils。
+这是 agent 在方案讨论中的修正，不记为用户已确认实现；S4 仍待实施与 NPU 验收。
+
+### 2026-10-05：按用户要求收敛 S4 的生产代码范围
+
+用户要求“尽量只动 ascend 或 npu 目录下代码；如果一定动主线，说明必要性”。
+重新核对工厂、NPU 参数组装、manager 注册时机及 worker 截短/空 chunk 分支，
+重写[S4方案](../ticket-03-s4-plan.md)：以 AscendKVArgs 子类承载描述，局部 helper
+消费实际 pool 的 mode/层号；主线 utils 仅分派和接入，Mooncake worker 仅增加可覆盖
+校验方法并沿用失败/drain 收尾。取消上一版对公共 KVArgs 与 P/D 初始化文件的拟议修改。
+该方案以两处主线文件的窄接口复用既有控制流，不新增全局 pool 注册表或复制 worker。
+本轮为方案修订，未实施 S4 生产代码或执行 NPU；Ticket03 继续 open。
+
+### 2026-10-05：用户确认 S3 gate 通过，讨论 S4 实现方案
+
+用户明确反馈“S3 gate通过”，据此记录 S3 NPU 资源 gate 已验收。
+S3 交付版本为 `5b18a8046c085fda24e115bd2251ecf19b0898b7`，先前交付的命令在
+仓库根目录按五种 mode 分别运行 `ascend-mempool-test/scripts/verify_resources.py`。
+命令要求完整 SGLang / Python 3.11 / torch_npu / sgl_kernel_npu / CANN 环境及空闲 NPU；
+预期证据位置为 `/tmp/ticket03-s3-version.txt`、`/tmp/ticket03-s3-<mode>.json` 和对应 log。
+本次仅收到用户通过确认，未附实际机器 HEAD、主机/device、环境版本或报告内容；
+不将这些待补信息写成已核对事实。资源 gate 不覆盖真实跨机 Index K/aux 或正式模型服务。
+
+本轮核对实际 buffer 发布、KVArgs、worker、mempool peer 及 handoff 入口，形成
+[S4 代码修改方案](../ticket-03-s4-plan.md)：正式模式只发布/发送 Index K 及必要辅助数据，
+增加完整传输描述与发送前校验，保留联合准入和 native/BM 分开释放。
+S4 尚未实施；本轮仅同步验收和规划文档。S1 完整环境回归分别跟踪，S4–S6 待完成，
+Ticket03 保持 open，整票验收项不提前勾选。
 
 ### 2026-10-04：S3代码交付，等待用户执行NPU资源验收
 

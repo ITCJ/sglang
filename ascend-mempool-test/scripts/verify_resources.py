@@ -54,8 +54,8 @@ def check_pd_adapter(cache: Any, pool: Any, req: Any, pages: Any) -> None:
     import torch
     from sglang.srt.disaggregation.ascend import conn
 
-    # Formal transfer publication remains gated until S4. These buffers are
-    # used only to exercise the adapter; the parent never registers/sends them.
+    # These buffers exercise only the adapter; the parent transport boundary
+    # never registers or sends them in this resource gate.
     infos = (
         pool.get_contiguous_buf_infos()
         if cache.mode.uses_pd_decode_staging
@@ -209,7 +209,8 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
     assert result["index_k_bytes"] > 0
     assert (result["native_kv_bytes"] == 0) == mode.uses_sparse_kv_cache
     if formal:
-        require_rejected(pool.get_contiguous_buf_infos, "S4-S5")
+        assert pool.get_contiguous_buf_infos() == pool.get_state_buf_infos()
+        require_rejected(mode.validate_runtime_support, "S5")
     if not mode.uses_sparse_kv_cache:
         allocator.free(loc)
         assert allocator.available_size() == pool.size

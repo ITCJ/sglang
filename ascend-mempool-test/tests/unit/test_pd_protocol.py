@@ -1,5 +1,6 @@
 """Exercise mempool messages at the existing PD ZMQ multipart boundary."""
 
+import json
 import unittest
 from dataclasses import replace
 
@@ -59,6 +60,48 @@ class TestMempoolProtocol(unittest.TestCase):
                 self.assertTrue(is_mempool_message(frames))
                 self.assertEqual(decode_message(frames), message)
         self.assertFalse(is_mempool_message([b"27", b"existing PD message"]))
+
+    def test_formal_handshake_checks_native_transfer_contract(self):
+        from ascend_mempool_pd.mempool_protocol import IndexKTransferLayout
+
+        layout = IndexKTransferLayout(
+            page_size=4,
+            layer_ids=(1, 4, 7),
+            item_lens=(16, 16, 16),
+            dtypes=("bfloat16",) * 3,
+            aux_item_lens=(8, 4),
+        )
+        p = replace(
+            self.p,
+            transfer_kind="index_k_only",
+            transport_session="p:1",
+            transfer_layout=layout,
+        )
+        d = replace(
+            self.d,
+            transfer_kind="index_k_only",
+            transport_session="d:2",
+            transfer_layout=layout,
+        )
+        hello = MempoolMessage(MessageType.POOL_HELLO, peer=d, reply_to="tcp://d:4351")
+        self.assertEqual(decode_message(encode_message(hello)), hello)
+        validate_peer(p, d)
+        for bad in (
+            self.d,
+            replace(d, transfer_layout=replace(layout, layer_ids=(1, 5, 7))),
+            replace(d, transfer_layout=replace(layout, item_lens=(16, 32, 16))),
+            replace(d, transfer_layout=replace(layout, page_size=8)),
+            replace(d, transfer_layout=replace(layout, aux_item_lens=(4, 4))),
+        ):
+            with self.subTest(peer=bad), self.assertRaisesRegex(ValueError, "transfer"):
+                validate_peer(p, bad)
+        with self.assertRaisesRegex(ValueError, "transport session"):
+            replace(d, transport_session=None)
+        frames = encode_message(hello)
+        payload = json.loads(frames[1])
+        payload["version"] = 1
+        with self.assertRaisesRegex(ValueError, "version"):
+            decode_message([frames[0], json.dumps(payload).encode()])
 
     def test_pool_ids_match_service_startup_namespace(self):
         """Accept the hardware gate IDs and exclude TransferEngine entities."""

@@ -8,7 +8,8 @@ from enum import Enum
 from typing import Any, TypeVar
 
 WIRE_TAG = b"ASCEND_MEMPOOL_V1"
-PROTOCOL_VERSION = 1
+# Retain the routing tag so old readers reject the payload version explicitly.
+PROTOCOL_VERSION = 2
 MAX_WIRE_BYTES = 64 * 1024
 
 
@@ -94,6 +95,64 @@ class PoolDescriptor:
 
 
 @dataclass(frozen=True)
+class IndexKTransferLayout:
+    """Native handoff layout; addresses and pool capacities are peer-local."""
+
+    page_size: int
+    layer_ids: tuple[int, ...]
+    item_lens: tuple[int, ...]
+    dtypes: tuple[str, ...]
+    aux_item_lens: tuple[int, ...]
+    state_types: tuple[str, ...] = ()
+    state_item_lens: tuple[tuple[int, ...], ...] = ()
+    state_layer_ids: tuple[tuple[int, ...], ...] = ()
+    state_dim_per_tensor: tuple[tuple[int, ...], ...] = ()
+
+    def __post_init__(self) -> None:
+        _positive_int("transfer page size", self.page_size)
+        if not self.layer_ids or not (
+            len(self.layer_ids) == len(self.item_lens) == len(self.dtypes)
+        ):
+            raise ValueError("Index K transfer entries are inconsistent")
+        for layer in self.layer_ids:
+            _nonnegative_int("Index K layer", layer)
+        if len(set(self.layer_ids)) != len(self.layer_ids):
+            raise ValueError("Index K transfer contains duplicate layers")
+        if any(dtype != "bfloat16" for dtype in self.dtypes):
+            raise ValueError("Index K transfer requires bfloat16")
+        if not self.aux_item_lens:
+            raise ValueError("Index K transfer requires handoff aux buffers")
+        for size in self.item_lens + self.aux_item_lens:
+            _positive_int("transfer item bytes", size)
+        if not (
+            len(self.state_types)
+            == len(self.state_item_lens)
+            == len(self.state_layer_ids)
+            == len(self.state_dim_per_tensor)
+        ):
+            raise ValueError("transfer state components are inconsistent")
+        for kind, sizes, ids, dims in zip(
+            self.state_types,
+            self.state_item_lens,
+            self.state_layer_ids,
+            self.state_dim_per_tensor,
+        ):
+            _nonempty_string("transfer state type", kind)
+            if (
+                not sizes
+                or (ids and len(ids) != len(sizes))
+                or (dims and len(dims) != len(sizes))
+            ):
+                raise ValueError("transfer state entries are inconsistent")
+            for size in sizes:
+                _positive_int("state item bytes", size)
+            for layer in ids:
+                _nonnegative_int("state layer", layer)
+            for dim in dims:
+                _nonnegative_int("state slice dimension", dim)
+
+
+@dataclass(frozen=True)
 class PoolPeer:
     """Identify one worker and its pool across a PD control handshake."""
 
@@ -104,6 +163,9 @@ class PoolPeer:
     pp_size: int
     pool_id: int
     layout: PoolDescriptor
+    transfer_kind: str = "full"
+    transport_session: str | None = None
+    transfer_layout: IndexKTransferLayout | None = None
 
     def __post_init__(self) -> None:
         """Constrain the first demo to its supported fixed-rank topology."""
@@ -121,6 +183,16 @@ class PoolPeer:
             raise ValueError("BM pool ID must be in [0, 256)")
         if not isinstance(self.layout, PoolDescriptor):
             raise ValueError("peer layout is missing")
+        if self.transfer_kind not in ("full", "index_k_only"):
+            raise ValueError("unknown mempool transfer kind")
+        if self.transport_session is not None:
+            _nonempty_string("transport session", self.transport_session)
+        if self.transfer_kind == "index_k_only":
+            _nonempty_string("transport session", self.transport_session)
+            if not isinstance(self.transfer_layout, IndexKTransferLayout):
+                raise ValueError("Index K transfer layout is missing")
+        elif self.transfer_layout is not None:
+            raise ValueError("full transfer cannot advertise an Index K-only layout")
 
 
 def validate_peer(local: PoolPeer, remote: PoolPeer) -> None:
@@ -135,6 +207,15 @@ def validate_peer(local: PoolPeer, remote: PoolPeer) -> None:
         raise ValueError("mempool peer KV layout or DRAM capacity differs")
     if local.session == remote.session:
         raise ValueError("mempool peers must have distinct startup sessions")
+    if local.transfer_kind != remote.transfer_kind:
+        raise ValueError("mempool peer transfer kind differs")
+    if local.transfer_layout != remote.transfer_layout:
+        raise ValueError("mempool peer native transfer layout differs")
+    if (
+        local.transport_session is not None
+        and local.transport_session == remote.transport_session
+    ):
+        raise ValueError("mempool peers must have distinct transport sessions")
 
 
 @dataclass(frozen=True)
@@ -261,7 +342,14 @@ def encode_message(message: MempoolMessage) -> list[bytes]:
     return [WIRE_TAG, encoded]
 
 
-_Record = TypeVar("_Record", PoolDescriptor, PoolPeer, RequestIdentity, SlotLease)
+_Record = TypeVar(
+    "_Record",
+    PoolDescriptor,
+    PoolPeer,
+    IndexKTransferLayout,
+    RequestIdentity,
+    SlotLease,
+)
 
 
 def _record(record_type: type[_Record], value: Any) -> _Record:
@@ -274,6 +362,22 @@ def _record(record_type: type[_Record], value: Any) -> _Record:
     if record_type is PoolPeer:
         value = dict(value)
         value["layout"] = _record(PoolDescriptor, value["layout"])
+        if value["transfer_layout"] is not None:
+            value["transfer_layout"] = _record(
+                IndexKTransferLayout, value["transfer_layout"]
+            )
+    elif record_type is IndexKTransferLayout:
+        value = dict(value)
+        for name in expected - {"page_size"}:
+            items = value[name]
+            if not isinstance(items, list):
+                raise ValueError(f"transfer {name} must be a JSON array")
+            if name in ("state_item_lens", "state_layer_ids", "state_dim_per_tensor"):
+                if any(not isinstance(row, list) for row in items):
+                    raise ValueError(f"transfer {name} must contain JSON arrays")
+                value[name] = tuple(tuple(row) for row in items)
+            else:
+                value[name] = tuple(items)
     return record_type(**value)
 
 

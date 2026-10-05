@@ -15,9 +15,13 @@ ticket02已关闭。代码路径、请求时序及实测边界见
 用户确认K=2048独立NPU gate的30个case及双侧正常退出通过，见
 [S2总结与双机命令](../../../../../../.scratch/ascend-mempool/ticket-03-s2-summary.md)。
 03 S3已按模式跳过旧host SHM/mapping和main-KV staging，保留HBM cache、Index K及
-普通/shadow路径；Mac检查通过，实际NPU资源gate待用户执行。组件可独立构造，正式
-服务及PD buffer发布仍受S4–S5保护，见
+普通/shadow路径；Mac检查通过，用户于2026-10-05确认NPU资源gate通过。组件可独立构造，正式
+服务仍受S5保护；正式PD buffer发布已由S4接通，见
 [S3总结与单机命令](../../../../../../.scratch/ascend-mempool/ticket-03-s3-summary.md)。
+S4已实现正式模式仅注册/发送Index K与必要state/aux，复用原KVArgs和worker；
+生产改动限于5个现有Ascend/NPU文件，共享utils保持原样。见
+[S4总结](../../../../../../.scratch/ascend-mempool/ticket-03-s4-summary.md)与
+[双机gate](../../../../../../ascend-mempool-test/PD_TRANSFER.md)。等待用户NPU验收后再推进S5。
 
 ## 文件与接口
 
@@ -58,7 +62,7 @@ service投影真实Req并延迟native清理，tick统一TP observations/prefligh
 `uses_pd_decode_staging`、`uses_mempool_bm`表达职责；READBACK不参与资源策略。
 S3中正式D不分配host SHM、指针映射、host length tensor和staging copy stream；
 host metadata容器保持为空。普通/shadow模式仍分配并使用原资源。
-ModelRunner/backend/runtime工厂与正式PD buffer发布保持S4–S5保护；只有组件构造
+ModelRunner/backend/runtime工厂保持S5启动保护；正式PD buffer已只发布Index K；只有组件构造
 可单独选择正式mode，供资源gate核对。P native K/V和D Index K仍分配。
 
 随后`ModelRunner.init_attention_backends()`构造attention backend，再调用
@@ -225,7 +229,7 @@ fetch上界受本层实际write counts约束，防止陈旧Graph输入把漏写�
 同形状copy更换目标只更新destination，保留Graph仍可能引用的固定输入metadata。
 
 正式fetch与shadow READBACK不能同时启用；正式数据不与自身比较。
-服务启动仍由S4–S5保护，`verify_fetch.py`通过独立fixture验证真实materialization、
+服务启动仍由S5保护，`verify_fetch.py`通过独立fixture验证真实materialization、
 BM与Graph。2026-10-04用户确认该gate在Graph width16、3个真实rows、top-k宽度2048、
 block_dim24/48下通过eager及两轮replay，覆盖P/D miss、mixed、all-hit和zero-valid。
 本结果不能替代正式服务分配/PD控制及NPU attention验收。详见上方S2总结。

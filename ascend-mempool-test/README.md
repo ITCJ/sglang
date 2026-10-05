@@ -1,8 +1,8 @@
 # Ascend mempool 功能与服务测试
 
-Ticket 01、02③及03 S2的独立硬件验证入口，以及02④的真实服务 shadow gate。
+Ticket 01、02③及03 S2/S3的独立硬件验证入口，以及02④的真实服务 shadow gate。
 
-**当前状态（2026-10-04）：** 01、02已获用户确认验收并关闭。
+**当前状态（2026-10-05）：** 01、02已获用户确认验收并关闭。
 [02总结](../.scratch/ascend-mempool/ticket-02-summary.md)记录代码路径、链路和实际证据；
 [小容量真实KV读回](READBACK_SERVICE.md)保留为回归入口，配置为context1024、
 P/D各512、TP16、D Graph width16。下一开发入口是
@@ -10,11 +10,12 @@ P/D各512、TP16、D Graph width16。下一开发入口是
 03 S1的配置与资源职责拆分已实现，继续使用02 shadow数据路径；完整环境/NPU回归
 待执行，见[S1交付与复测](../.scratch/ascend-mempool/ticket-03-s1-summary.md)。
 03 S2正式BM fetch代码已核对，Mac检查通过；K=2048双机独立NPU gate的30个case
-通过，用户于2026-10-04确认。03整票仍为open，S3–S6待完成。
-现有服务仍启动shadow，正式cutover待S3–S5；见
+通过，用户于2026-10-04确认。用户于2026-10-05确认S3资源gate通过；
+03 S4传输精简代码与独立双机脚本已交付，等待用户NPU验收，见[S4 gate](PD_TRANSFER.md)。
+03整票仍为open；现有服务仍启动shadow，正式cutover待S5；见
 [S2修改清单与双机命令](../.scratch/ascend-mempool/ticket-03-s2-summary.md)。
 NUMA/大容量分配排查已延期到ticket09。
-以下独立测试的目标环境为同一 superpod 的两台 Ascend 机器，
+BM 双机测试的目标环境为同一 superpod 的两台 Ascend 机器，S3资源gate只需单机。
 原 graph/writer gate 每侧使用一张 NPU，BM启动诊断可选1到16张；使用MemFabric Hybrid
 **1.1.4**。不启动 SGLang server、router 或模型。
 BM API 参考本地 `release/1.1` 的 `9fa9afbb`；两端运行时版本写入报告并相互核对。
@@ -112,12 +113,15 @@ HBM hit/refill/reset、原host miss分支、实际attention输入、短top-k/多
 生产 BM 启动入口位于 `MempoolKVManager.initialize_rank_pair()`；01 gate 保留原测试
 初始化与控制流程，其通过记录不能替代新入口在真实 16 对 worker 中的验收。
 
-## 03 S3：旧 host/staging 资源停用 gate（待用户执行）
+## 03 S3：旧 host/staging 资源停用 gate（用户已确认通过）
+
+2026-10-05用户反馈“S3 gate通过”。交付提交为`5b18a8046c`；本次未附远端实际SHA、
+环境明细或报告内容。以下命令和判据保留为复跑入口，证据范围见[S3确认记录](../.scratch/ascend-mempool/ticket-03-s3-summary.md)。
 
 新增`scripts/verify_resources.py`，使用实际NPU native/sparse pool、request/page allocator。
 它检查正式P保留native K/V，正式D保留Index K和HBM cache，旧host SHM/mapping及
 main-KV staging为零；普通/shadow执行staging→host、旧host写入/读取和miss→hit回归。
-请求row复用和clear也必须通过。正式服务仍受S4–S5保护，环境开关仍选择shadow；
+请求row复用和clear也必须通过。正式服务仍受S5保护，环境开关仍选择shadow；
 此gate显式传入组件mode，既不启动模型也不连接BM peer。
 
 前置条件：当前checkout的完整SGLang环境、受支持的Python（用户现有3.11）、

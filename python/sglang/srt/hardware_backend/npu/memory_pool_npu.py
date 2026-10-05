@@ -597,8 +597,8 @@ class NPUMLATokenToKVPool(MLATokenToKVPool):
     ):
         if sparse_kv_offload_mode is None:
             sparse_kv_offload_mode = resolve_sparse_kv_offload_mode()
-        # Resource construction can be verified independently. Model startup
-        # and transfer publication still reject an incomplete service cutover.
+        # Resources and transport can be verified independently. Model startup
+        # still rejects an incomplete service cutover.
         self.sparse_kv_offload_mode = sparse_kv_offload_mode
         # MLAPO historically owned NZ writes. Keep the allocation unchanged and
         # write into the NZ-addressed view below so ordinary MLA (including
@@ -817,7 +817,24 @@ class NPUMLATokenToKVPool(MLATokenToKVPool):
 
     # for disagg
     def get_contiguous_buf_infos(self):
-        self.sparse_kv_offload_mode.validate_runtime_support()
+        if self.sparse_kv_offload_mode.uses_index_k_only_transfer:
+            # Return before touching the main K/V buffers: formal D has none,
+            # and formal P retains them exclusively for prefill computation.
+            if (
+                self.dtype != torch.bfloat16
+                or self.store_dtype != torch.bfloat16
+                or self.index_k_scale_buffer is not None
+            ):
+                raise ValueError("Mempool PD transfer requires BF16 Index K")
+            ptrs, lengths, strides = self.get_state_buf_infos()
+            if not ptrs or len(ptrs) != len(self.get_state_layer_ids()):
+                raise ValueError("Mempool PD transfer requires actual Index K layers")
+            if not (len(ptrs) == len(lengths) == len(strides)) or any(
+                ptr <= 0 or stride <= 0 or size < stride or size % stride
+                for ptr, size, stride in zip(ptrs, lengths, strides)
+            ):
+                raise ValueError("Mempool Index K buffer metadata is inconsistent")
+            return ptrs, lengths, strides
         if self.sparse_kv_offload_mode.uses_pd_decode_staging:
             if getattr(self, "index_k_buffer", None) is None:
                 raise RuntimeError(
@@ -868,6 +885,8 @@ class NPUMLATokenToKVPool(MLATokenToKVPool):
         return kv_data_ptrs, kv_data_lens, kv_item_lens
 
     def get_kv_layer_ids(self):
+        if self.sparse_kv_offload_mode.uses_index_k_only_transfer:
+            return self.get_state_layer_ids()
         return (
             list(range(self.start_layer, self.start_layer + self.layer_num)) * 2
             + self.get_state_layer_ids()

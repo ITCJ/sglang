@@ -2,7 +2,8 @@
 
 2026-10-04。用户授权“commit 当前修改，然后实现 ticket03 s3”。先将 S2 gate 参数修正、
 回归及用户 NPU 验收记录提交为 `dd1f92f618`；本次 S3 以该提交为基线。
-S3 代码和 Mac 检查已完成，等待用户执行 NPU 资源验收。
+S3 代码已提交为 `5b18a8046c`，Mac 检查已完成。用户于 2026-10-05 确认“S3 gate通过”；
+据此记录 S3 NPU 资源 gate 已通过，证据范围见下方用户确认记录。
 [Ticket03](issues/03-prefill-direct-offload.md) 保持 `State: open`，S4–S6 尚未完成。
 
 ## 本次行为
@@ -33,7 +34,8 @@ cache 数据本身不需要清零：没有有效映射就不能作为 hit 使用
 
 本次允许显式构造正式模式的 native pool 和 sparse manager，用真实分配验证 S3。
 ModelRunner 的早期校验、attention backend 和 BM runtime 工厂仍拒绝正式服务启动。
-native pool 的 `get_contiguous_buf_infos()` 也保留正式模式保护，报错提示 S4–S5。
+S3 交付时 `get_contiguous_buf_infos()` 保留正式模式保护。S4 后续已接通 Index K-only
+发布；当前正式服务启动保护为 S5，见 [S4 总结](ticket-03-s4-summary.md)。
 这样 P 虽然保留 native K/V，也不会提前发布错误的正式传输清单。
 
 当前 `SGLANG_NPU_ENABLE_MEMPOOL=1` 仍选择 shadow，运行它仍会看到旧 host/staging。
@@ -86,7 +88,8 @@ PD adapter 沿用已有 `test_native_release.load_methods`，执行原方法体�
 因此不等于执行完整 SGLang import/构造链。NPU gate 使用实际完整模块及构造器补足这一项。
 
 本机尝试执行 registered 配置测试，但在 SGLang 导入时因 Python 3.9 不支持
-`str | None` 报错，测试未运行，不能记为通过。完整 SGLang suite 和 NPU gate 尚未执行。
+`str | None` 报错，测试未运行，不能记为通过。完整 SGLang suite 尚未执行；
+NPU 资源 gate 后续由用户确认通过，不替代这项 registered 测试的独立执行记录。
 在用户现有 Python 3.11 SGLang 环境运行该回归：
 
 ```bash
@@ -104,9 +107,22 @@ PYTHONPATH=python python3 -m unittest test/registered/unit/npu/test_sparsity_dri
 写入完成，再注入 `KVPoll.Success`，让 adapter 的独立 copy stream 安全读取。
 已在 seed 后加入 `torch.npu.synchronize()`；复查确认无剩余规格问题。
 修正后定向 CPU 回归 14 项通过，脚本 Ruff lint/format 与 mypy 检查通过。
-该同步的实际 NPU 执行仍包含在下述用户验收中。
+该同步的实际 NPU 执行包含在下述资源 gate 中。
 
 ## 用户 NPU 验证
+
+### 2026-10-05 用户确认记录
+
+用户明确反馈“S3 gate通过”，据此接受本阶段资源验收，下一步可规划和实施 S4。
+交付代码为 `5b18a8046c085fda24e115bd2251ecf19b0898b7`。先前交付命令要求先验证
+该提交为远端 HEAD 的祖先，再按下面五种 mode 分进程运行 `verify_resources.py`。
+本次反馈未附实际机器 HEAD、主机/device、软件版本、控制台日志或 JSON；此处记录
+用户验收结论，不声称 agent 已读取远端报告或逐项核对数值。预期证据位置为
+`/tmp/ticket03-s3-version.txt`、`/tmp/ticket03-s3-<mode>.json` 及对应 `.log`。
+运行环境要求和可复跑命令保留如下。S3 gate 不涉及真实跨机 payload 或完整模型服务；
+Ticket03 仍为 open，S4–S6 及 S1 尚未补齐的完整环境回归分别跟踪。
+
+### 环境与复跑命令
 
 任选一台已安装当前 checkout、torch_npu 和 sgl_kernel_npu 的机器，使用空闲 NPU。
 沿用 S2 的 CANN/torch_npu 环境。无需模型权重、P/D 启动顺序、BM peer、NIC 或端口。
@@ -152,5 +168,6 @@ gate 使用真实 NPU 分配/拷贝和完整 Ascend PD adapter 构造方法。�
 因此它不证明 Index K 跨机传输或正式服务 readiness/Graph 正确，这些仍在 S4–S6 验收。
 S2 已验收的 BM fetch/Graph gate 不被本脚本替代。
 
-遇到非零退出、`RESOURCE_FAIL`、断言失败或模式缺失即不通过。请回传
-`/tmp/ticket03-s3-version.txt`、5 份 JSON 和对应 `.log`，再记录硬件验收结论。
+复跑遇到非零退出、`RESOURCE_FAIL`、断言失败或模式缺失即不通过。
+复跑证据保留 `/tmp/ticket03-s3-version.txt`、5 份 JSON 和对应 `.log`；
+本阶段已有的用户通过确认见上文记录。

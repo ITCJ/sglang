@@ -122,6 +122,10 @@ class MempoolPDService:
             else scheduler.disagg_decode_prealloc_queue
         )
         manager = queue.kv_manager
+        # Finalize logical Index K metadata after physical buffer registration,
+        # but before any receiver can publish KVArgs or admit a real request.
+        pool = scheduler.token_to_kv_pool_allocator.get_kvcache()
+        transfer_layout = manager.configure_mempool_transfer(pool)
         layout = runtime.manager.layout
         peer = PoolPeer(
             secrets.token_hex(32),
@@ -142,6 +146,9 @@ class MempoolPDService:
                 layout.contribution_bytes(1),
                 layout.rank_stride_bytes,
             ),
+            transfer_kind="index_k_only" if transfer_layout is not None else "full",
+            transport_session=manager.get_session_id(),
+            transfer_layout=transfer_layout,
         )
         control = MempoolPDControl(peer)
         device = str(runtime.row_slot.device)
