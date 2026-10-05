@@ -5,7 +5,6 @@ from typing import Any, Callable, List, Optional, Tuple
 
 import numpy as np
 import numpy.typing as npt
-
 from sglang.srt.disaggregation.ascend.mempool_control import (
     MempoolFrameRouter,
     MempoolPDControl,
@@ -489,7 +488,7 @@ class AscendKVManager(MooncakeKVManager):
                 "mempool native transfer rejected session=%s: %s", session, exc
             )
             return -1
-        return self._send_kvcache_generic(
+        result = self._send_kvcache_generic(
             mooncake_session_id=session,
             src_data_ptrs=self.kv_args.kv_data_ptrs,
             dst_data_ptrs=dst_ptrs,
@@ -500,6 +499,13 @@ class AscendKVManager(MooncakeKVManager):
             src_layer_ids=self.kv_args.kv_layer_ids,
             dst_layer_ids=dst_layer_ids,
         )
+        if result == 0:
+            logger.info(
+                "mempool native_copy role=prefill rank=%s kind=index_k bytes=%s main_kv_bytes=0",
+                self.mempool_control.local.tp_rank,
+                len(src_indices) * sum(self.kv_args.kv_item_lens),
+            )
+        return result
 
     def maybe_send_extra(
         self, req, prefill_state_indices, executor, target_rank_registration_info=None
@@ -528,7 +534,14 @@ class AscendKVManager(MooncakeKVManager):
             except ValueError as exc:
                 logger.error("mempool aux transfer rejected: %s", exc)
                 return -1
-        return super().send_aux(req, prefill_aux_index, dst_aux_ptrs)
+        result = super().send_aux(req, prefill_aux_index, dst_aux_ptrs)
+        if self._mempool_transfer_layout is not None and result == 0:
+            logger.info(
+                "mempool native_copy role=prefill rank=%s kind=aux bytes=%s main_kv_bytes=0",
+                self.mempool_control.local.tp_rank,
+                sum(self.kv_args.aux_item_lens),
+            )
+        return result
 
     def send_kvcache(
         self,

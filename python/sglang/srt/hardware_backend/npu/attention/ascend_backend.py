@@ -9,7 +9,6 @@ from sgl_kernel_npu.attention.sinks_attention import (
     attention_sinks_prefill_triton,
     attention_sinks_triton,
 )
-
 from sglang.srt.configs.model_config import AttentionArch
 from sglang.srt.dllm.config import DllmConfig
 from sglang.srt.hardware_backend.npu.attention.ascend_torch_native_backend import (
@@ -452,7 +451,7 @@ class AscendAttnBackend(AttentionBackend):
         self.attn_cp_size = model_runner.ps.attn_cp_size
 
     def attach_mempool_runtime(self, runtime: MempoolRuntime) -> None:
-        """Attach mapped shadow storage before capture; PD startup owns creation."""
+        """Attach mapped storage before capture; PD startup owns creation."""
         if not self.sparse_kv_offload_mode.uses_mempool_bm:
             raise ValueError("mempool runtime requires a mempool startup mode")
         if self.mempool_runtime is not None:
@@ -460,7 +459,11 @@ class AscendAttnBackend(AttentionBackend):
         if is_mla_preprocess_enabled():
             raise ValueError("mempool does not support MLAPO")
         if not self.use_mla or runtime.layout.heads != 1:
-            raise ValueError("mempool shadow writes require compact MLA KV")
+            raise ValueError("mempool writes require compact MLA KV")
+        if runtime.fetch_enabled != (
+            self.sparse_kv_offload_mode is SparseKVOffloadMode.PD_DECODE_MEMPOOL
+        ):
+            raise ValueError("mempool fetch runtime differs from the attention mode")
         if runtime.layout.dim != self.kv_lora_rank + self.qk_rope_head_dim:
             raise ValueError("mempool compact KV dimensions differ from the model")
         if runtime.row_slot.numel() != self.req_to_token.shape[0]:

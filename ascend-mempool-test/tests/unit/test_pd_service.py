@@ -260,7 +260,7 @@ class TestMempoolPDService(unittest.TestCase):
         """A first-token finish owns D native pages even without a model forward."""
         helper = test_runtime.TestMempoolRuntime()
         self.addCleanup(helper.doCleanups)
-        runtime, _, _ = helper.make_runtime(rank=1, layers=1, readback_enabled=True)
+        runtime, _, _ = helper.make_runtime(rank=1, layers=1, fetch_enabled=True)
         effects = []
         sent = []
         service = MempoolPDService(
@@ -294,11 +294,13 @@ class TestMempoolPDService(unittest.TestCase):
         self.assertNotIn(0, self.d.available_slots())
         with self.assertLogs("ascend_mempool_pd.mempool_service", level="INFO") as logs:
             service.advance()
-        report_line = next(line for line in logs.output if "readback_result" in line)
+        report_line = next(line for line in logs.output if "fetch_result" in line)
         self.assertIn("rank=0 room=7", report_line)
         report = json.loads(report_line.split(" data=", 1)[1])
         self.assertEqual(report["status"], "zero_decode")
         self.assertEqual(report["written_kv"], 0)
+        self.assertTrue(report["drained"])
+        self.assertFalse(any("readback_result" in line for line in logs.output))
         self.assertEqual(effects, ["host-drain", "device-drain", "free"])
         self.assertIn(0, self.d.available_slots())
         service.advance()

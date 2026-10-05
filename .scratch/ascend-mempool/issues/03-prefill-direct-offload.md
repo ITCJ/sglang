@@ -2,8 +2,9 @@
 
 **What to build:** 在02已验收的真实 shadow 双写/控制/readback 基础上，让 D attention
 实际消费 mempool sparse fetch 的 KV；按模式停用原 main compact-KV transfer、staging
-和长期 host KV allocation。旧实现全部保留，关闭mempool后同一版本可恢复原sparse PD
-路径。保留 P native HBM cache、HBM Index K 及必要辅助传输。
+和长期 host KV allocation。原非mempool实现保留，关闭mempool后同一版本可恢复原
+sparse PD路径。保留 P native HBM cache、HBM Index K 及必要辅助传输；S5验收真实
+server Graph、curl小题目输出与性能，S6完成全量review、shadow删除及清理后复验。
 
 **Parent:** [Ascend mempool spec](../spec.md)
 
@@ -23,30 +24,36 @@ S2代码和独立NPU gate已提交为`9036be2b0f`；首次K=8参数错误修正�
 [S2交付总结](../ticket-03-s2-summary.md)。用户随后授权先提交当前修改，再实施S3；S2修正与
 验收记录已提交为`dd1f92f618`。S3代码已提交为`5b18a8046c`，Mac检查通过；用户于
 2026-10-05确认S3 NPU资源gate通过，见[S3交付总结](../ticket-03-s3-summary.md)。
-S4组件代码已实现，等待用户双机NPU验收；见[S4总结](../ticket-03-s4-summary.md)。
-S5–S6仍待实施，不表示正式服务数据路径或本票验收已完成。旧KV传输、D staging/host
-写入及sparse attention的host SHM读取均关闭而不删除。S1用显式shadow模式保留02
-链路，正式模式暂拒绝启动；03完整交付后是否另保留shadow诊断模式仍是独立待定事项。
+S4代码已提交为`8e00b36cf9`，用户于2026-10-05回传双机六个case全部通过的日志，
+并确认“S4完成”；见[S4总结](../ticket-03-s4-summary.md)。
+下一阶段的范围和验收安排见[S5计划](../ticket-03-s5-plan.md)及
+[S6计划](../ticket-03-s6-plan.md)。2026-10-05用户确认本次S5/S6调整并授权实施S5。
+S5正式入口、完成证据、连续异步gate和服务运行说明已实现，等待用户NPU验收；
+不表示正式服务数据路径或本票验收已完成。原KV传输、D staging/host写入及sparse
+attention的host SHM读取在正式模式关闭、在普通模式保留。
+当前MEMPOOL=1已选择正式P/D模式；READBACK=1在资源分配前拒绝。shadow代码暂存，
+S6必须删除全部shadow专用模式和相关代码，不再保留同版本shadow诊断入口。
 继续使用context1024、P/D各512、TP16、D Graph width16、NUMA `0,2,4,6`的小容量配置。
 大容量/NUMA调查仍归延期的[09](09-numa-allocation-followup.md)，不阻塞本票。
 
-本票交付完整的正式数据路径及小容量smoke；[04](04-single-request-graph-decode.md)
-负责正式Graph/模型集成与固定greedy baseline对照，05–08继续承担并发、容量/取消、
-故障和AIME26验收。共享路径保留原非mempool模式。
+本票交付完整的正式数据路径、小容量真实服务Graph验收和约定性能验收；输出正确性
+由用户用curl发送一个小题目并核对回答，不加入AIME26等正式数据集的完整精度验收。
+[04](04-single-request-graph-decode.md)的现有范围保持不变；05–08继续承担并发、
+容量/取消、故障和AIME26验收。共享路径保留原非mempool模式。
 
-### 启动模式建议
+### 已确认的启动模式与清理边界
 
-建议现有 `SGLANG_NPU_ENABLE_MEMPOOL=1` 在03交付后选择正式路径，02的shadow运行
-保留在已验收版本。用户也可选择同一版本继续支持shadow/正式两种模式；该偏好已单独
-询问，尚未作为新增配置或协议字段实施。下面各项在两种选择下都需要完成。
+现有 `SGLANG_NPU_ENABLE_MEMPOOL=1` 在S5选择正式路径。S6删除shadow专用enum、
+分支、旧host参考readback、配置及配套脚本/测试代码，历史验收记录和git提交保留。
+正式路径共用的BM writer、binding、Graph和drain功能继续保留。
 
 关闭 `SGLANG_NPU_ENABLE_MEMPOOL` 后，同一版本必须恢复原非mempool路径；启用
 sparse offload时，P/D分别选择原 `PD_PREFILL_NATIVE` / `PD_DECODE_OFFLOAD`。
 恢复普通路径不需要切回02提交，也不依赖保留shadow双写模式。
 
-正式路径的正确性不依赖 `SGLANG_NPU_MEMPOOL_READBACK`。原readback以旧host路径作为
-独立参考；停用该参考路径后，不能继续宣称同样的逐元素校验通过，更不能将BM结果与自身
-比较。实现时同步确定此开关在正式模式的适用范围与不支持组合的明确报错，并更新脚本。
+正式路径的正确性不依赖 `SGLANG_NPU_MEMPOOL_READBACK`。S5在正式模式提前拒绝旧
+READBACK组合；S6删除该shadow专用配置及实现，并清理启动脚本中的旧设置。独立已知
+pattern的copy验证、正式fetch范围检查和完成证据继续保留，不将BM与自身比较。
 
 ## 目标数据路径与资源清单
 
@@ -83,9 +90,9 @@ HBM Index K -> indexer top-k -> HBM sparse cache 查询
 | S1 拆分配置与资源职责 | 明确运行模式、派生能力、资源归属及初始化合同 | 代码已实现；轻量CPU通过，完整环境及NPU回归待执行 |
 | S2 接入正式BM fetch | attention消费BM miss结果，保留HBM hit/refill | 实现已核对；K=2048独立NPU gate的30个case通过，用户已确认 |
 | S3 按模式停用重复存储 | 旧实现保留；正式模式host KV和main-KV staging分配为零 | 已提交；Mac检查通过，用户于2026-10-05确认NPU资源gate通过 |
-| S4 精简PD传输 | 仅保留Index K和必要辅助数据，保留联合readiness | 代码与双机gate已交付，等待用户NPU验收；见[S4总结](../ticket-03-s4-summary.md) |
-| S5 核对Graph与生命周期 | 固定地址、正确stream依赖、安全drain与释放 | 待实施 |
-| S6 测试与交付 | CPU验证、正式服务checker、用户NPU验收 | 待实施 |
+| S4 精简PD传输 | 仅保留Index K和必要辅助数据，保留联合readiness | 双机六个case全部通过，用户于2026-10-05确认完成；见[S4总结](../ticket-03-s4-summary.md) |
+| S5 正式服务Graph与性能验收 | 完整mempool链路、curl小题目检查、约定性能达标 | 代码与运行说明已实现；[总结](../ticket-03-s5-summary.md)，等待用户NPU/curl/性能验收 |
+| S6 全量review、shadow删除与清理 | 精简代码、普通模式兼容、最终版本重跑S5并交付 | [计划](../ticket-03-s6-plan.md)已整理；由S5用户验收阻塞 |
 
 ### S1. 拆分配置与资源职责
 
@@ -140,8 +147,8 @@ sender/handoff。该控制合同及代码入口见S4的P端补充。
 
 `MempoolConfig` 继续负责BM容量/layout、通信地址及demo组合约束；模式选择集中在
 sparse配置入口。两处复用现有校验，不各自维护一套P/D分支或新增通用资源管理层。
-同版本是否还支持shadow仍是上文待定偏好；若选择保留，须明确表示shadow模式及
-peer契约，不得让 `READBACK` 暗中决定attention的数据来源或是否分配旧host KV。
+S1实施时保留的shadow模式仅用于过渡；按2026-10-05确认的范围，S6统一删除。
+`READBACK`不得决定attention的数据来源或是否分配旧host KV。
 
 #### 资源职责与初始化顺序
 
@@ -357,46 +364,76 @@ D正确接收首token并进入decode；覆盖多chunk计数、末chunk无新增�
 BM先ready/transfer先完成两种顺序、metadata延迟、P native row复用而旧BM slot仍占用。
 这些属于03待实现的集成验证，02已有控制测试通过不能替代本项。
 
-### S5. 核对Graph、stream依赖和生命周期
+### S5. 正式服务Graph、输出检查与性能验收
 
-- Graph保留P/D两个copy调用，包括某一来源zero-valid和padded rows；固定metadata
-  地址，按请求更新slot、prompt length、decode written length、indices和mask。
-- stream顺序为本层BM write/metadata更新→miss copy；attention等待hit和两路miss；
-  refill等待selected KV就绪；下次使用cache前完成refill及slot-map更新。
-  将这些事件纳入runtime completion和现有whole-D drain覆盖范围。
-- 复用02的row detach/native free、D release/DONE、P release/ACK次序。P原handoff
-  仍有Index K等访问，不能因main KV不再传输而把KV_READY当作native回收许可。
-- 保留对尚未写入位置、stale binding和未完成工作的检查；逐forward证据在完成事件后
-  汇总，Graph replay不依赖capture时的Python请求常量或host同步。
-- 按实际forward语义核对容量：P已采样首token，overlap可能有额外forward，已验收
-  32-token用例实际写入32个D KV。测试P/D容量、总context/Index K范围和真实提交上界，
-  不固定假设总是N-1或N+1；完整容量压力矩阵留给06。
+**Blocked by:** S4实现及用户NPU验收（已完成）。
 
-完成条件：同一Graph可处理不同P/D slot及后续请求，padding不访问真实slot；D drain
-覆盖新增fetch/cache工作；正常结束和零decode均能完整释放。压力/故障矩阵仍归后续票。
+**交付行为：** 在真实SGLang P/D server和NPU Graph replay下运行完整正式mempool
+链路；用户用curl发送一个小题目检查回答；在预先约定的负载和指标下性能达标。
+详细接线、测试与证据要求见[S5计划](../ticket-03-s5-plan.md)。
 
-### S6. 测试、可观察证据与交付
+- 开放正式启动入口，复用02的forward/drain hooks和S2双源copy，修复真实服务接线
+  缺口。正式模式关闭旧host/main-KV路径，保留Index K/必要辅助传输和联合readiness。
+- Graph保留P/D两个copy，包括zero-valid和padding；固定metadata地址，每次replay
+  使用当前slot、长度和indices。连续异步提交验证不能依赖逐token host同步。
+- 核对BM write、hit/miss、attention、refill及slot-map更新的stream依赖，完成事件
+  和whole-D drain覆盖全部KV访问；native row回收与BM slot释放遵守各自持有期限。
+- 覆盖真实decode、zero-decode、连续请求、row/物理slot复用及全rank资源归还。
+  按实际提交/完成的forward核对容量，不固定假设输出N个token等于N-1或N+1次KV写入。
+- 交付可执行的P/D启动、curl请求、日志收集与性能测量步骤；本阶段就提供足够的
+  正式模式证据，不能把S5所需观测全部推迟到S6。组件gate补充证据，不能代替server验收。
+- 输出检查由用户核对一个小题目的预期答案和实际回答。记录请求参数、输入/输出及
+  判断结论；本阶段不要求正式数据集、完整精度评分或逐token baseline一致。
+- 性能使用相同模型、硬件、输入/输出长度、采样、并发和Graph配置，明确基线与
+  预热口径，记录TTFT、TPOT/ITL和吞吐；同时记录必要的资源与drain开销。
+  **用户验收时自行查看实测TTFT、TPOT和输出吞吐并判断，当前不要求预先提供阈值**。
+  获用户确认后才能记录性能通过，也不能仅用包含长时间idle的server吞吐日志下结论。
 
-- CPU测试从实际module入口验证配置/分配选择、P/D路由、cache hit/miss/refill/reset、
-  关闭readback后的正式读取范围、Index K列表/页索引、联合readiness及原模式回归。
-  覆盖短top-k与batch>1、row 0/padding以及copy对象的目标buffer更换。
-  对被关闭的旧路径使用会报错的测试替身，捕捉隐藏调用或回退。
-- 同一版本覆盖两个完整模式：正式模式旧SHM/staging分配和host读写调用为零，
-  main compact-KV发送字节为零，BM miss及cache hit/refill有效；`MEMPOOL=0`时恢复
-  旧资源分配、main-KV传输、staging→host、decode host写入及host miss读取。
-  普通模式的测试不得以mock新BM路径代替原路径成功执行，且不要求MemFabric依赖。
-  用户NPU交付至少各跑一轮普通sparse PD与正式mempool短请求smoke，使用各自容量配置；
-  同时记录实际allocation、发送类别、取数来源和请求完成，不能只测试enum布尔值。
-- 复用01/02独立BM writer/copy gate，以已知KV内容验证正式fetch及其目标buffer。
-  有独立旧路径参考时才做shadow数值对照；最终正式服务不把来源计数当作数值比对。
-- 增加正式服务验收入口或扩展现有checker，明确区分02 shadow结果与03 cutover结果。
-  记录全rank启动模式、host/staging分配、传输buffer类别/字节数、hit/P-miss/D-miss、
-  Graph实际forward和release结果；不能沿用 `SHADOW_READBACK_PASSED` 冒充正式验收。
-- 更新 `ascend-sglang-script/pd-disaggregation/glm51mempool.sh` 和测试说明，交付
-  P/D启动、请求、日志汇集与检查命令。同步处理原readback默认值和peer契约版本。
+完成条件：
 
-完成条件：Mac适用检查通过；交付可执行的小容量NPU gate及通过/失败判据，按
-[阶段交付流程](../verification.md)取得用户硬件确认后才关闭03。
+- [ ] 真实server完成capture及实际decode replay，完整mempool数据/控制链路和安全释放
+  有证据；正式模式无旧host回退，最终各rank的BM free=16。
+- [ ] 连续replay及请求复用通过，padding无真实slot访问，完成事件覆盖fetch/cache工作。
+- [ ] 用户通过curl小题目检查并确认输出；已知输出异常须修复，不能转交后续精度票。
+- [ ] 记录性能测量条件与实测指标，用户查看后确认满足预期。
+- [ ] 记录版本、环境、命令和日志，按阶段流程取得用户S5验收确认后解锁S6。
+
+完整精度数据集不属于S5；ticket04保持现有内容。完整压力/故障矩阵仍归后续票。
+
+### S6. 全量code review、shadow删除与代码清理
+
+**Blocked by:** S5真实server Graph、curl输出检查及性能的用户验收。
+
+**交付行为：** 对01–03引入的全部mempool代码及共享接入点完成review和整改，删除
+shadow专用代码，形成清晰的正式/普通模式实现，并在最终清理版本重新取得硬件验收。
+具体顺序和review清单见[S6计划](../ticket-03-s6-plan.md)。
+
+- 固定review起点和目标版本，覆盖完整开发增量；按仓库规范、spec与批准的阶段要求
+  两条线审查，并检查职责、命名、可读性、重复逻辑及同步/释放边界。记录问题与整改，
+  整改后再review，不能只审最后一笔cleanup diff。
+- 全面删除shadow模式、双路径参考对照、专用readback配置/实现、诊断分支以及只服务
+  shadow的脚本和测试。正式与普通路径仍需要的测试先迁移到相应入口，独立已知pattern
+  的BM正确性gate继续保留；历史验收文档保留并标明历史用途。
+- 删除无意义或重复检查，把静态配置/layout检查集中到适当的初始化边界；保留有
+  正确性作用的peer契约、attempt/generation、binding、可读范围、容量和drain约束。
+  不能为减少代码行数取消跨请求/跨进程边界的必要检查。
+- 合并重复分支、状态与转换，改进变量/函数命名和注释；明确request row、P/D slot、
+  token position及submitted/completed的不同含义，避免引入新的通用框架。
+- 保留原非mempool传输、staging、host写入和host miss读取；同版本`MEMPOOL=0`
+  实际恢复普通sparse PD，不依赖BM初始化或MemFabric运行环境。删除shadow不等于
+  删除正式路径共用的BM writer、binding、Graph hooks或drain。
+- 整理正式服务checker、启动脚本、测试及文档，证据覆盖全rank模式、实际分配、
+  传输类别/字节数、取数来源、Graph执行与释放；去掉过期shadow操作说明。
+- 在最终清理版本执行Mac适用检查、受影响组件gate、普通模式NPU回归，并重跑S5的
+  真实server Graph、curl小题目和性能验收。S5旧版本结果不能替代整改后的实测。
+
+完成条件：
+
+- [ ] 全量review与整改后复查有记录，影响本票验收的问题均已解决。
+- [ ] 全部shadow专用代码和入口删除，正式/普通模式的有效功能与回归覆盖保留。
+- [ ] 冗余检查/代码、命名和可读性问题完成有依据的清理，必要正确性约束仍有验证。
+- [ ] 同一最终版本通过普通模式回归和S5全部复验，包括用户curl检查及约定性能目标。
+- [ ] 文档/脚本/证据与最终版本一致，用户确认实现与NPU验收后才关闭03。
 
 ## Acceptance criteria
 
@@ -419,21 +456,88 @@ PD控制和真实attention执行结果核对，不以独立materialization gate�
 - [ ] 旧main-KV传输、staging、host写入和sparse host读取代码均保留，按启动模式选择；
   同一版本关闭mempool后通过普通sparse PD回归，正式模式不发生隐式host回退。
 - [ ] 保留 opt-in；普通与正式模式的短请求smoke、cutover数据内容及Graph由用户在NPU
-  验证，正式模型对照矩阵由04完成。
+  验证；用户用curl小题目核对输出，性能满足预先约定的目标。本票不加入正式数据集
+  完整精度验收，04现有范围不变。
+- [ ] 01–03全部mempool开发增量及共享接入点完成review和整改；shadow专用代码全部
+  删除，检查、重复逻辑、命名及可读性完成清理，原非mempool实现保留。
+- [ ] S6最终清理版本重跑S5全部验收及普通模式回归，不沿用清理前版本的通过结论。
 - [ ] 按[阶段交付流程](../verification.md)核对实现、交付脚本并记录用户硬件验收。
 
 ## Verification
 
-Mac覆盖S1–S5的行为合同及原模式回归；具体命令以实现后的测试入口为准。
+Mac覆盖S1–S6的行为合同及原模式回归；具体命令以实现后的测试入口为准。
 用户运行小容量NPU gate，至少包含零decode、真实decode、连续请求和实际slot复用，
 覆盖不同P/D slot、prompt边界、首个decode KV、HBM hit及两路miss，并验证Graph16。
 有效KV内容由独立copy gate核对；正式服务日志证明attention取数、Index K/必要辅助
 传输、旧存储/流量停用及全rank最终free=16。另验证同版本普通模式恢复旧链路。
-HTTP 200或出现Graph日志本身不算通过。
-固定greedy token对照和正式模型集成矩阵归04；新数据来源导致输出异常时须在03定位，
-不能以04负责正式对照为由交付已知错误。
+HTTP 200或出现Graph日志本身不算通过。用户用curl发送一个小题目，记录预期答案、
+实际输出和人工检查结论；该检查不外推为AIME26等正式数据集精度通过。
+性能验收记录负载、预热/测量口径、TTFT、TPOT/ITL、吞吐及相关开销，交由用户
+查看并判断。不要求预先提供阈值；未取得用户的性能确认时不能宣称S5完成。
+S6记录全量review、整改和复查结果；最终版本再次运行S5及普通模式NPU回归。
+ticket04内容不变；新数据来源导致输出异常时须在03定位，不能交付已知错误。
 
 ## Comments
+
+### 2026-10-05：S5实现交付，等待用户执行NPU验收
+
+按用户授权接通正式P/D启动模式，提前拒绝正式READBACK组合；增加backend/runtime
+模式一致性核对、完成事件后fetch统计、实际资源及Index K/aux发送证据。
+生产修改为5个Ascend/NPU文件；复用既有copy、attention、Graph和whole-D drain入口。
+新增正式P/D启动脚本、日志检查器和可直接执行的服务/性能验收说明；组件gate改为
+输入预先上设备、连续5个forward提交及设备快照、最后统一同步收集。
+
+Mac独立CPU完整suite 195项通过，mypy 34个源文件通过。
+规范评审2处文档状态已修正，无阻塞项；规格评审1项P2为P侧日志漏检，已用5个失败
+subtest复现并修复，checker定向6项通过，评审复核无遗留规格问题。
+代码路径、检查和阶段评审见[S5总结](../ticket-03-s5-summary.md)，用户运行命令见
+[正式服务验收说明](../../../ascend-mempool-test/FORMAL_SERVICE.md)。
+尚未运行NPU组件/真实server Graph、用户curl小题目及性能测试。
+用户最新决定：验收时自行查看实测TTFT、TPOT和输出吞吐并判断，不要求预先提供阈值；
+普通sparse PD保留作诊断对照，实际性能结论待用户确认。
+03保持open，硬件验收项未勾选；S6未实施，ticket04未修改。
+
+### 2026-10-05：按用户确认更新S5/S6验收与清理范围
+
+用户要求S5在真实SGLang server和NPU Graph replay下验收完整mempool链路与预期
+性能；输出检查简化为用户用curl发送一个小题目并核对回答，不增加AIME26等正式
+数据集的完整精度验收。性能数值目标仍待验收前明确，ticket04不修改。
+S6增加覆盖01–03全增量的code review、全部shadow专用代码删除、冗余检查/代码清理
+和命名/可读性整改；保留普通模式及正式路径共用功能。清理后的最终版本须重跑S5。
+
+本轮更新票面、S5计划，新增S6计划并同步README入口；只修改计划文档，S5/S6仍待
+实施及用户NPU验收，03保持open。本轮未运行行为测试或NPU测试。
+文档检查通过：6份Markdown的57个本地链接、代码围栏及行尾空白核对；
+`git diff --check`通过。ticket04文件SHA-256前后一致；未add、commit或push。
+
+### 2026-10-05：用户确认 S4 NPU gate 通过，进入 S5 规划
+
+交付并推送的S4提交为`8e00b36cf980159f9228bdd1c3440adc0c51f4a4`。
+用户在P `npu1-31` / `10.120.72.31`及D `npu1-32` / `10.120.72.32`执行
+`verify_pd_transfer.py`，两端均使用device0、store port18875、control port18876、
+timeout600；运行命令带仓库`python`目录的PYTHONPATH。完整命令见
+[S4 gate说明](../../../ascend-mempool-test/PD_TRANSFER.md)，head/local IP按上述机器填写。
+报告与日志路径为`/tmp/ticket03-s4-{p,d}.{json,log}`。
+
+已核对用户粘贴的双端控制台：`bm_first`、`transfer_first`、`empty_last`、
+`bad_layout`、`aux_failure`、`cancel_inflight`均输出PASS；字节数依次为
+198176、198176、1568、0、196608、198176，两端一致，均以`ALL_CHECKS_PASSED`
+结束并返回shell。`bad_layout`故意把目标层号从[1,4,7]改为[0,1,2]；P端拒绝日志和
+后续Session failed是预期负向验证，发送0字节并完成失败收尾。
+用户随后明确确认“S4完成”，据此将S4阶段记为已验收，解锁S5规划与后续实施入口。
+
+本轮未独立读取远端JSON/log文件，也未获得机器实际HEAD、环境版本或显式退出码。
+以上版本是已交付提交，以上结果是用户回传并确认的证据。该gate使用真实NPU
+Index K/aux传输及原worker，BM readiness仍由fixture提供；不外推为正式服务、
+真实BM fetch、完整TP16 collective或模型精度验收。Ticket03保持open。
+
+核对当前config/runtime/copy、NPU Graph、attention和service释放入口后，新增
+[S5计划](../ticket-03-s5-plan.md)。当前MEMPOOL开关仍选shadow，正式服务保护仍在；
+S5拟补连续异步replay、完成事件、row/slot复用和实际forward容量验证，再开放正式入口。
+本轮为验收记录与计划同步，未实施S5生产代码。
+文档检查通过：5份Markdown的49个本地链接、8个完整拟改代码路径及代码围栏核对；
+`git diff --check`通过。S5解释页渲染为7个面板，STE检查0条警告。
+未运行新的行为测试或NPU测试；未add、commit或push。
 
 ### 2026-10-05：S4 组件实现与验证脚本交付
 

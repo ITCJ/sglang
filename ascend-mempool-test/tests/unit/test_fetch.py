@@ -111,6 +111,49 @@ class TestKVFetch(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "fault"):
             self.runtime.detach_row(binding)
 
+    def test_completion_report_waits_for_all_forwards_and_resets_on_reuse(self):
+        binding = self.runtime.bind(1, slot=3, prompt_tokens=4, prompt_slot=2)
+        self.p[2, 0] = 101
+        for step in range(2):
+            batch = self.start(offset=step)
+            positions = torch.tensor([[0, 4, -1], [-1, -1, -1]])
+            valid = self.runtime.selected_kv_valid(5, batch.req_pool_indices, positions)
+            misses = valid if step == 0 else torch.zeros_like(valid)
+            self.runtime.fetch_selected_kv(
+                5,
+                batch.req_pool_indices,
+                positions,
+                misses,
+                torch.zeros((2, 3, 1, 4), dtype=torch.bfloat16),
+            )
+            self.runtime.end_forward()
+        with self.assertRaisesRegex(RuntimeError, "in-flight"):
+            self.runtime.fetch_report(binding)
+        self.events[-2].done = True
+        self.runtime.poll_completed()
+        with self.assertRaisesRegex(RuntimeError, "in-flight"):
+            self.runtime.fetch_report(binding)
+        self.events[-1].done = True
+        self.runtime.poll_completed()
+        report = self.runtime.fetch_report(binding)
+        self.assertEqual(report["status"], "completed")
+        self.assertEqual(report["forwards"], 2)
+        self.assertEqual(report["written_kv"], 2)
+        self.assertEqual(report["layer_checks"], 2)
+        self.assertEqual(report["selected_kv"], 4)
+        self.assertEqual(report["cache_hits"], 2)
+        self.assertEqual((report["prompt_misses"], report["decode_misses"]), (1, 1))
+        self.runtime.detach_row(binding)
+        new_binding = self.runtime.bind(1, slot=5, prompt_tokens=2, prompt_slot=7)
+        empty = self.runtime.fetch_report(new_binding)
+        self.assertEqual(
+            (empty["status"], empty["forwards"], empty["selected_kv"]),
+            ("zero_decode", 0, 0),
+        )
+        self.assertEqual((empty["prompt_slot"], empty["decode_slot"]), (7, 5))
+        with self.assertRaisesRegex(RuntimeError, "binding"):
+            self.runtime.fetch_report(binding)
+
     def test_new_destination_and_rebound_row_do_not_reuse_old_copy_target(self):
         old = self.runtime.bind(1, slot=3, prompt_tokens=4, prompt_slot=2)
         outputs = []

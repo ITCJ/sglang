@@ -1,8 +1,11 @@
 # Ticket03 S4：Index K-only PD 传输交付
 
 日期：2026-10-05。基线：`5b18a8046c085fda24e115bd2251ecf19b0898b7`。
-S3 NPU gate 已获用户确认；S4 组件代码与双机 gate 已实现，等待用户执行 NPU 验收。
-Ticket03 保持 `State: open`，正式服务选择仍为 shadow，S5 启动保护继续生效。
+S3 NPU gate 已获用户确认。S4提交为`8e00b36cf980159f9228bdd1c3440adc0c51f4a4`；
+用户于2026-10-05回传双机六个case全部通过的日志，并确认“S4完成”。
+S4交付时Ticket03保持`State: open`，服务选择仍为shadow，S5启动保护继续生效。
+当前正式入口和待验收状态见[S5总结](ticket-03-s5-summary.md)。
+后续工作见[S5计划](ticket-03-s5-plan.md)。
 
 ## 修改代码路径与功能
 
@@ -74,9 +77,27 @@ Mac 实际结果：独立测试包全量 CPU suite **190 tests 通过**；严格
 按独立测试配置进行的 Ruff 检查、**52 文件格式检查**、isort 和 `git diff --check` 通过。
 测试没有启动 NPU 或跨机网络传输。协议升级要求 P/D 同版重启，v1/v2 混用会明确失败。
 
-NPU：尚未执行。按 [双机 gate](../../ascend-mempool-test/PD_TRANSFER.md) 先启动 P、再启动 D。
-独立 gate 的 BM 就绪事实由 fixture 提供，不证明真实 BM 数据、完整 TP16 collective 或
-模型输出精度。用户验收通过后再进入 S5 的正式模式启动、Graph/stream 和生命周期接线。
+NPU：用户于2026-10-05确认通过。P为`10.120.72.31`，D为`10.120.72.32`，
+两端均用device0、store port18875、control port18876和timeout600运行
+[双机 gate](../../ascend-mempool-test/PD_TRANSFER.md)。head IP为P，local IP分别为各端地址。
+报告/日志路径为`/tmp/ticket03-s4-{p,d}.{json,log}`。
+
+| case | P/D报告的字节数 | 双端结果 |
+| --- | ---: | --- |
+| `bm_first` | 198176 | PASS |
+| `transfer_first` | 198176 | PASS |
+| `empty_last` | 1568 | PASS |
+| `bad_layout` | 0 | PASS；错误层号在发送前被拒绝 |
+| `aux_failure` | 196608 | PASS；aux失败未被当作Success |
+| `cancel_inflight` | 198176 | PASS；取消仍等待复制收尾 |
+
+两端均输出`ALL_CHECKS_PASSED`并返回shell。P端`native transfer rejected`与
+`Session ... failed`来自`bad_layout`的主动错误注入，符合预期。
+本次核对证据是用户粘贴的控制台和完成确认，未独立读取远端报告；机器实际HEAD、
+环境版本和显式退出码未附上，不记为已核对。已交付版本见文首。
+
+独立gate的BM就绪事实由fixture提供，不证明真实BM数据、完整TP16 collective或
+模型输出精度。S4阶段完成，S5可以进入正式模式启动、Graph/stream和生命周期接线。
 
 ## 阶段评审
 
@@ -94,4 +115,4 @@ NPU：尚未执行。按 [双机 gate](../../ascend-mempool-test/PD_TRANSFER.md)
 验证这组 gate 参数。评审者复核通过，P1 已解决，无剩余阻塞项。
 
 当前双侧正式配置强制 DCP=1，原 receiver 发布的参数使原 worker 不进入 DCP relayout
-分支；无需新增共享 worker hook。硬件结果仍须按上述 gate 由用户确认。
+分支；无需新增共享 worker hook。上述双机gate结果现已获用户确认。

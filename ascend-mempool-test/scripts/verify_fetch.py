@@ -1,4 +1,4 @@
-"""Ticket03 S2: real BM misses, HBM hits/refill and a reused decode graph."""
+"""Real BM misses, HBM hits/refill and consecutive asynchronous graph replays."""
 
 from __future__ import annotations
 
@@ -186,33 +186,48 @@ def fetch_checks(
                     )
                     batch.req_pool_indices[index] = row
                 cache.reset_requests(list(range(1, 17)))
-                for offset, (case, selected) in enumerate(
-                    (
-                        ("p_miss", [0, 3]),
-                        ("d_miss", [4, 5]),
-                        ("mixed", [0, 3, 4, 6]),
-                        ("all_hit", [0, 3, 4, 6]),
-                        ("zero_valid", []),
-                    )
-                ):
-                    if case != "all_hit":
-                        cache.reset_requests(list(range(1, 17)))
-                    positions.fill_(-1)
-                    positions[: args.active_rows, : len(selected)] = torch.tensor(
-                        selected, dtype=torch.int64, device="npu"
-                    )
-                    batch.seq_lens[: args.active_rows] = 5 + offset
-                    for layer, values in enumerate(sources):
-                        values.zero_()
+                cases: tuple[tuple[str, list[int]], ...] = (
+                    ("p_miss", [0, 3]),
+                    ("d_miss", [4, 5]),
+                    ("mixed", [0, 3, 4, 6]),
+                    ("all_hit", [0, 3, 4, 6]),
+                    ("zero_valid", []),
+                )
+                # Stage ALL inputs before submitting the consecutive forwards.
+                # A blocking host-to-device copy inside the loop would hide a
+                # missing dependency between replays.
+                selections = [
+                    torch.tensor(selected, dtype=torch.int64, device="npu")
+                    for _, selected in cases
+                ]
+                staged_sources = []
+                for offset in range(len(cases)):
+                    step_sources = []
+                    for layer in range(layers):
+                        values = torch.zeros(sources[layer].shape, dtype=torch.bfloat16)
                         for index, slot in enumerate(d_slots):
                             values[index].copy_(
                                 kv_pattern(
                                     1, layer, slot, offset, 1, args.heads, args.kv_dim
                                 )[0]
                             )
-                            # Different from setup and every preceding cycle:
-                            # a missing writer dependency cannot pass on old KV.
                             values[index, :, 0] = epoch
+                        step_sources.append(values.to("npu"))
+                    staged_sources.append(step_sources)
+                snapshots = []
+                for offset, (case, selected) in enumerate(cases):
+                    if case != "all_hit":
+                        # Test input preparation only. Avoid reset_requests'
+                        # host index tensor allocation between submissions.
+                        for slot_map in cache.device_slot_map:
+                            slot_map.fill_(-1)
+                    positions.fill_(-1)
+                    positions[: args.active_rows, : len(selected)].copy_(
+                        selections[offset]
+                    )
+                    batch.seq_lens[: args.active_rows].fill_(5 + offset)
+                    for layer, values in enumerate(sources):
+                        values.copy_(staged_sources[offset][layer])
                     runtime.begin_forward(
                         [
                             KVWriteExpectation(row + 1, 4 + offset, 1)
@@ -225,8 +240,21 @@ def fetch_checks(
                     else:
                         launch()
                     runtime.end_forward()
-                    torch.npu.synchronize()
-                    runtime.poll_completed()
+                    # Preserve each result on the submission stream. No event
+                    # polling, host readback or device synchronization between
+                    # these five forwards: the next replay reuses all inputs.
+                    snapshots.append(
+                        (case, selected, copied.clone(), [o.clone() for o in outputs])
+                    )
+                try:
+                    runtime.detach_row(bindings[0])
+                except RuntimeError:
+                    pass
+                else:
+                    raise AssertionError("detach accepted uncollected forwards")
+                torch.npu.synchronize()
+                runtime.poll_completed()
+                for case, selected, copy_counts, saved_outputs in snapshots:
                     expected_counts = {
                         "p_miss": [2, 0],
                         "d_miss": [0, 2],
@@ -234,7 +262,7 @@ def fetch_checks(
                         "all_hit": [0, 0],
                         "zero_valid": [0, 0],
                     }[case]
-                    counts = copied.cpu().tolist()
+                    counts = copy_counts.cpu().tolist()
                     if (
                         counts
                         != [[count * args.active_rows for count in expected_counts]]
@@ -244,7 +272,7 @@ def fetch_checks(
                             f"unexpected BM miss counts case={case}: {counts}"
                         )
                     verified = 0
-                    for layer, output in enumerate(outputs):
+                    for layer, output in enumerate(saved_outputs):
                         actual = output.cpu()
                         expected = torch.zeros_like(actual)
                         for row, (p_slot, d_slot) in enumerate(zip(p_slots, d_slots)):
@@ -270,13 +298,32 @@ def fetch_checks(
                         case=case,
                         block_dim=blocks,
                         decode_epoch=epoch,
+                        queued_forwards=len(snapshots),
                         verified_elements=verified,
                         copied_per_layer=counts,
                     )
                     results.append(result)
                     print(f"[D] FETCH_PASS {json.dumps(result)}", flush=True)
                 for binding in bindings:
+                    report = runtime.fetch_report(binding)
+                    expected_report = dict(
+                        status="completed",
+                        forwards=5,
+                        replay_forwards=5 if cycle else 0,
+                        submitted_kv=5,
+                        written_kv=5,
+                        layer_checks=5 * layers,
+                        selected_kv=12 * layers,
+                        cache_hits=4 * layers,
+                        prompt_misses=4 * layers,
+                        decode_misses=4 * layers,
+                    )
+                    if report is None or any(
+                        report[key] != value for key, value in expected_report.items()
+                    ):
+                        raise AssertionError(f"incomplete async fetch report: {report}")
                     runtime.detach_row(binding)
+                del snapshots
                 cache.reset_requests(list(range(1, 17)))
             torch.npu.synchronize()
             del graph

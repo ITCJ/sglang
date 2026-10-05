@@ -56,14 +56,9 @@ class SparseKVOffloadMode(str, Enum):
                 f"{transfer_backend!r}."
             )
         if disaggregation_mode == "prefill":
-            return (
-                cls.PD_PREFILL_MEMPOOL_SHADOW
-                if mempool_enabled
-                else cls.PD_PREFILL_NATIVE
-            )
+            return cls.PD_PREFILL_MEMPOOL if mempool_enabled else cls.PD_PREFILL_NATIVE
         if mempool_enabled:
-            # Keep service startup on shadow until the full ticket03 cutover.
-            return cls.PD_DECODE_MEMPOOL_SHADOW
+            return cls.PD_DECODE_MEMPOOL
         return cls.PD_DECODE_OFFLOAD
 
     @property
@@ -108,12 +103,12 @@ class SparseKVOffloadMode(str, Enum):
             SparseKVOffloadMode.PD_DECODE_MEMPOOL,
         )
 
-    def validate_runtime_support(self) -> None:
-        """Do not launch before the remaining lifecycle/startup checks."""
-        if self.uses_index_k_only_transfer:
+    def validate_runtime_support(self, *, readback_enabled: bool = False) -> None:
+        """Reject the old host-reference diagnostic before allocating formal KV."""
+        if self.uses_index_k_only_transfer and readback_enabled:
             raise ValueError(
-                "Formal mempool mode still requires ticket03 S5; "
-                "only the existing shadow service path can be started."
+                "Formal mempool mode requires SGLANG_NPU_MEMPOOL_READBACK=0; "
+                "the shadow host reference is not allocated."
             )
 
 
@@ -173,11 +168,15 @@ def resolve_sparse_kv_offload_mode(
 
 def configure_for_model_runner(model_runner: Any) -> None:
     """Validate startup choices before KV sizing/allocation, without opening BM."""
+    from sglang.srt.environ import envs
+
     mode = resolve_sparse_kv_offload_mode(
         model_config=model_runner.model_config,
         use_mla_backend=model_runner.use_mla_backend,
     )
-    mode.validate_runtime_support()
+    mode.validate_runtime_support(
+        readback_enabled=envs.SGLANG_NPU_MEMPOOL_READBACK.get()
+    )
     config = None
     if mode.uses_mempool_bm:
         from sglang.srt.hardware_backend.npu.attention.mla_preprocess import (

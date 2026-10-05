@@ -105,7 +105,6 @@ class MempoolPDService:
         import threading
 
         import torch
-
         from sglang.srt.environ import envs
         from sglang.srt.utils.network import NetworkAddress
 
@@ -199,6 +198,44 @@ class MempoolPDService:
             layout.contribution_bytes(1),
             layout.rank_stride_bytes,
         )
+        if transfer_layout is not None:
+            cache = scheduler.tp_worker.model_runner.attn_backend.sparse_kv_manager
+            host = cache.host_kv_buffer if cache is not None else []
+            staging = (
+                (cache.pd_decode_k_staging or []) + (cache.pd_decode_v_staging or [])
+                if cache is not None
+                else []
+            )
+            index_ptrs = {buf.data_ptr() for buf in pool.index_k_buffer}
+            logger.info(
+                "mempool resources role=%s rank=%s data=%s",
+                role,
+                peer.tp_rank,
+                json.dumps(
+                    dict(
+                        mode=pool.sparse_kv_offload_mode.value,
+                        host_kv_bytes=sum(buf.nbytes for buf in host),
+                        staging_bytes=sum(buf.nbytes for buf in staging),
+                        transport_staging=manager.enable_staging,
+                        native_kv_bytes=sum(
+                            buf.nbytes
+                            for buf in (pool.k_buffer, pool.v_buffer)
+                            if buf is not None
+                        ),
+                        sparse_cache_bytes=(
+                            sum(buf.nbytes for buf in cache.device_kv_buffer)
+                            if cache is not None
+                            else 0
+                        ),
+                        index_k_bytes=pool.index_k_buffer.nbytes,
+                        registered_index_k_entries=len(manager.kv_args.kv_data_ptrs),
+                        registered_main_kv_entries=len(
+                            set(manager.kv_args.kv_data_ptrs) - index_ptrs
+                        ),
+                    ),
+                    sort_keys=True,
+                ),
+            )
         return service
 
     def _watch_tick(self) -> None:
@@ -577,6 +614,17 @@ class MempoolPDService:
             if record.cancelled_at is None:
                 record.cancelled_at = self.clock()
         elif kind == "native_release" and not record.native_freed:
+            fetch = self.runtime.fetch_report(record.binding)
+            if fetch is not None:
+                fetch["cancelled"] = record.cancel
+                fetch["drained"] = record.drained
+                logger.info(
+                    "mempool fetch_result role=decode rank=%s room=%s attempt=%s data=%s",
+                    self.control.local.tp_rank,
+                    room,
+                    record.identity.attempt if record.identity else "NONE",
+                    json.dumps(fetch, sort_keys=True),
+                )
             readback = self.runtime.readback_report(record.binding)
             if readback is not None:
                 readback["cancelled"] = record.cancel

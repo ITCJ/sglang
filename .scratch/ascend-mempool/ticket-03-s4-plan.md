@@ -1,7 +1,7 @@
 # Ticket03 S4：复用 KVArgs，在 Ascend 发送入口选择传输路径
 
 2026-10-05，基于 `5b18a8046c` 核对现有代码，按用户最新决定修订。
-S3 NPU 资源 gate 已获用户确认；S4 已按本方案实现，等待用户执行双机 NPU gate。
+S3 NPU 资源 gate 已获用户确认；S4 已按本方案实现，用户于2026-10-05确认双机 NPU gate通过。
 整票要求见 [Ticket03](issues/03-prefill-direct-offload.md)，交付流程见 [verification](verification.md)。
 
 ## 本版决定

@@ -19,7 +19,7 @@ def allocate_cache(
     """Exercise the real manager without allocating SGLang native/host pools.
 
     This fixture deliberately starts at the materialization seam. It does not
-    verify production allocation, PD admission, or the disabled service mode.
+    verify production allocation, PD admission, or full service startup.
     """
     import torch
 

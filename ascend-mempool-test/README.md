@@ -1,23 +1,25 @@
 # Ascend mempool 功能与服务测试
 
-Ticket 01、02③及03 S2/S3的独立硬件验证入口，以及02④的真实服务 shadow gate。
+Ticket01–03独立硬件验证及真实SGLang服务gate。当前正式服务入口见
+[S5服务验收](FORMAL_SERVICE.md)。
 
 **当前状态（2026-10-05）：** 01、02已获用户确认验收并关闭。
 [02总结](../.scratch/ascend-mempool/ticket-02-summary.md)记录代码路径、链路和实际证据；
-[小容量真实KV读回](READBACK_SERVICE.md)保留为回归入口，配置为context1024、
+[小容量真实KV读回](READBACK_SERVICE.md)保留为02历史记录，配置为context1024、
 P/D各512、TP16、D Graph width16。下一开发入口是
 [03正式attention切换](../.scratch/ascend-mempool/issues/03-prefill-direct-offload.md)。
-03 S1的配置与资源职责拆分已实现，继续使用02 shadow数据路径；完整环境/NPU回归
+03 S1的配置与资源职责拆分已实现；其当时的完整环境/NPU回归
 待执行，见[S1交付与复测](../.scratch/ascend-mempool/ticket-03-s1-summary.md)。
 03 S2正式BM fetch代码已核对，Mac检查通过；K=2048双机独立NPU gate的30个case
 通过，用户于2026-10-04确认。用户于2026-10-05确认S3资源gate通过；
-03 S4传输精简代码与独立双机脚本已交付，等待用户NPU验收，见[S4 gate](PD_TRANSFER.md)。
-03整票仍为open；现有服务仍启动shadow，正式cutover待S5；见
+03 S4双机六个case于2026-10-05全部通过并获用户确认，见[S4 gate](PD_TRANSFER.md)。
+S5已开放MEMPOOL=1正式路径，增加完成报告、异步replay与服务检查；等待用户NPU验收。
+03整票仍为open，S6由S5验收阻塞；S2历史证据见
 [S2修改清单与双机命令](../.scratch/ascend-mempool/ticket-03-s2-summary.md)。
 NUMA/大容量分配排查已延期到ticket09。
 BM 双机测试的目标环境为同一 superpod 的两台 Ascend 机器，S3资源gate只需单机。
 原 graph/writer gate 每侧使用一张 NPU，BM启动诊断可选1到16张；使用MemFabric Hybrid
-**1.1.4**。不启动 SGLang server、router 或模型。
+**1.1.4**。这些组件gate不启动SGLang server、router或模型；S5服务gate需要完整模型环境。
 BM API 参考本地 `release/1.1` 的 `9fa9afbb`；两端运行时版本写入报告并相互核对。
 
 ## 目录与职责
@@ -96,7 +98,7 @@ CPU 测试使用真实 CPU tensor 运算和 BM SDK boundary fake，验证布局�
 handle lifetime。它们不执行 BM 或 NPU kernel，不证明远端读和 Graph capture/replay 已通过。
 `test_config.py` 覆盖实际 MLA 维度与 P/D 独立容量；`test_offload.py` 检查 raw destination
 写入的内容、bounds/padding mask、zero-valid warmup 与固定 metadata buffer 的重复使用。
-`test_sparse_config.py`覆盖普通/shadow/预留正式模式的资源能力、Index K容量计算及
+`test_sparse_config.py`覆盖正式启动及普通模式的资源能力、Index K容量计算及
 非法启动组合。真实native pool构造和runner启动配置测试位于SGLang registered suite，
 需要完整SGLang依赖和受支持的Python版本；执行命令见S1交付说明，不能以轻量suite
 通过代替该集成检查。
@@ -121,7 +123,7 @@ HBM hit/refill/reset、原host miss分支、实际attention输入、短top-k/多
 新增`scripts/verify_resources.py`，使用实际NPU native/sparse pool、request/page allocator。
 它检查正式P保留native K/V，正式D保留Index K和HBM cache，旧host SHM/mapping及
 main-KV staging为零；普通/shadow执行staging→host、旧host写入/读取和miss→hit回归。
-请求row复用和clear也必须通过。正式服务仍受S5保护，环境开关仍选择shadow；
+请求row复用和clear也必须通过。S3验收时服务入口仍处于shadow；S5现已开放正式入口，
 此gate显式传入组件mode，既不启动模型也不连接BM peer。
 
 前置条件：当前checkout的完整SGLang环境、受支持的Python（用户现有3.11）、
@@ -569,7 +571,10 @@ snapshot 不可变，以及同一套gate案例的完整CPU参考值。真实 ser
 ALL_CHECKS_PASSED；交付版本为 `cfcafb4810`，远端hash与JSON文件未独立核验，
 完整记录见 ticket02。本 gate 不替代④的真实 native handoff/TP 生命周期验收。
 
-## 02④ 真实 GLM-5.1 shadow 服务 gate（已验收，保留回归入口）
+## 02④ 真实 GLM-5.1 shadow 服务 gate（历史版本已验收）
+
+以下旧命令用于02版本。S5起MEMPOOL=1选择正式模式且拒绝READBACK=1；当前版本请使用
+[FORMAL_SERVICE.md](FORMAL_SERVICE.md)。S6会删除shadow专用代码与脚本，保留历史证据。
 
 ④已接入 server 初始化、TP tick、真实请求准入、forward scope 和 native 回收。
 本gate已由用户在NPU验收通过。后续复测先核对代码，再把同一版本部署到两侧；

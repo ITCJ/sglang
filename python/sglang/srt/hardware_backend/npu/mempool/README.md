@@ -1,27 +1,35 @@
 # Ascend mempool storage
 
-提供 ticket02 的存储布局、BM handle/view、临时 KV writer 和 backend runtime。
+提供Ascend PD的存储布局、BM handle/view、KV writer/fetch和backend runtime。
 ①–③、A1–A4接口优化及④的scheduler/配置/Graph接线已实现。
 开启 `SGLANG_NPU_ENABLE_MEMPOOL=1` 时，BM/runtime在Graph前创建，service/control在
-既有AscendKVManager建立后附加。shadow双写保留原sparse PD路径。
+既有AscendKVManager建立后附加。S5起该开关选择正式P/D模式，READBACK必须为0。
 2026-10-03用户确认小容量真实服务的KV读回、Graph、正常释放和物理slot复用通过，
 ticket02已关闭。代码路径、请求时序及实测边界见
 [02总结](../../../../../../.scratch/ascend-mempool/ticket-02-summary.md)；
 正式attention数据来源切换与旧hostSHM/main-KV路径停用由03继续完成，旧实现保留。
-03 S1已拆分启动模式和资源能力；现有开关继续选择明确的P/D shadow模式，预留的
-正式模式在完整cutover前拒绝启动。交付边界与回归命令见
+03 S1已拆分启动模式和资源能力；S1–S4期间使用shadow过渡并保护正式入口。
+历史交付边界与回归命令见
 [S1总结](../../../../../../.scratch/ascend-mempool/ticket-03-s1-summary.md)。
 03 S2已接入正式BM fetch到selected KV，保留HBM hit/refill，Mac检查通过；2026-10-04
 用户确认K=2048独立NPU gate的30个case及双侧正常退出通过，见
 [S2总结与双机命令](../../../../../../.scratch/ascend-mempool/ticket-03-s2-summary.md)。
 03 S3已按模式跳过旧host SHM/mapping和main-KV staging，保留HBM cache、Index K及
-普通/shadow路径；Mac检查通过，用户于2026-10-05确认NPU资源gate通过。组件可独立构造，正式
-服务仍受S5保护；正式PD buffer发布已由S4接通，见
+普通/shadow路径；Mac检查通过，用户于2026-10-05确认NPU资源gate通过。
+正式PD buffer发布已由S4接通，见
 [S3总结与单机命令](../../../../../../.scratch/ascend-mempool/ticket-03-s3-summary.md)。
 S4已实现正式模式仅注册/发送Index K与必要state/aux，复用原KVArgs和worker；
 生产改动限于5个现有Ascend/NPU文件，共享utils保持原样。见
 [S4总结](../../../../../../.scratch/ascend-mempool/ticket-03-s4-summary.md)与
-[双机gate](../../../../../../ascend-mempool-test/PD_TRANSFER.md)。等待用户NPU验收后再推进S5。
+[双机gate](../../../../../../ascend-mempool-test/PD_TRANSFER.md)。2026-10-05用户确认双机六个case
+全部通过，S4完成。S5已实现正式入口、完成报告、连续异步fetch gate及服务检查器，
+等待用户运行NPU验收，见[S5说明](../../../../../../ascend-mempool-test/FORMAL_SERVICE.md)。
+2026-10-05确认S5验收真实server Graph、完整mempool链路、用户curl小题目输出和约定
+性能，不加入正式数据集完整精度验收。随后按
+[S6计划](../../../../../../.scratch/ascend-mempool/ticket-03-s6-plan.md)对全部mempool增量
+进行review、删除shadow专用代码并整理检查/命名/重复逻辑，再在最终版本重跑S5及
+普通模式回归。S6尚未实施；下文shadow接口仅描述历史/过渡代码，没有同版本启动入口。
+原非mempool的host/staging/传输实现继续保留；ticket04范围不变。
 
 ## 文件与接口
 
@@ -62,19 +70,19 @@ service投影真实Req并延迟native清理，tick统一TP observations/prefligh
 `uses_pd_decode_staging`、`uses_mempool_bm`表达职责；READBACK不参与资源策略。
 S3中正式D不分配host SHM、指针映射、host length tensor和staging copy stream；
 host metadata容器保持为空。普通/shadow模式仍分配并使用原资源。
-ModelRunner/backend/runtime工厂保持S5启动保护；正式PD buffer已只发布Index K；只有组件构造
-可单独选择正式mode，供资源gate核对。P native K/V和D Index K仍分配。
+S5已开放正式mode，在native分配和BM初始化前拒绝READBACK=1。
+正式PD buffer只发布Index K；P native K/V和D Index K仍分配。
 
 随后`ModelRunner.init_attention_backends()`构造attention backend，再调用
 `runtime.initialize_for_model_runner()`消费已校验配置。因此进入BM前，模型和原生NPU KV已存在；
-D的`SparseKVCacheManager`还已逐层分配并注册原hostSHM，P仍使用原生NPU KV。
-这是当前shadow双写路径的安排，独立BM gate没有这些前置分配。
+D的`SparseKVCacheManager`仅分配HBM sparse cache/slot map，P仍使用原生NPU KV。
+正式D不分配旧hostSHM/staging；独立BM gate没有模型和服务分配。
 
 ```mermaid
 flowchart TD
     A[模型已加载，尚未分配KV] --> B[解析mode并校验MempoolConfig及layout]
     B --> C[按同一mode估算容量并分配native KV / Index K]
-    C --> C1[构建attention backend\nshadow D创建原sparse cache与hostSHM]
+    C --> C1[构建attention backend\n正式D仅创建HBM sparse cache与slot map]
     C1 --> D[mf.initialize]
     D --> E[initialize_rank_pair\nD等P store可达，然后bm.initialize]
     E --> F[bm.create2\n分配本地DRAM并建立BM handle]
@@ -92,7 +100,7 @@ D的TCP探测只证明listener可连接，正式peer注册仍由BM完成。
 使用SDMA，P/D共同的`max_dram_size`是较大的单rank贡献。贡献大小为
 `align_up(layers*16*capacity*1*(kv_lora_rank+qk_rope_head_dim)*2 + 64, 1GiB)`。
 例如每rank贡献11GiB时，双rank预留GVA跨度为22GiB，每个进程实际贡献11GiB本地DRAM；
-16个TP worker每侧合计176GiB，另加模型、原hostSHM等资源。
+16个TP worker每侧合计176GiB，另加模型、native KV或sparse cache等资源。
 
 `join()`返回并不保证对端已经可供NPU访问。因此代码随后检查本地实际贡献、P/D GVA
 间距，以及每层首尾和贡献末尾的device VA连续性；全部成功才发布`view()`可用的地址。
@@ -229,12 +237,27 @@ fetch上界受本层实际write counts约束，防止陈旧Graph输入把漏写�
 同形状copy更换目标只更新destination，保留Graph仍可能引用的固定输入metadata。
 
 正式fetch与shadow READBACK不能同时启用；正式数据不与自身比较。
-服务启动仍由S5保护，`verify_fetch.py`通过独立fixture验证真实materialization、
+S5已开放正式服务。`verify_fetch.py`通过独立fixture验证真实materialization、
 BM与Graph。2026-10-04用户确认该gate在Graph width16、3个真实rows、top-k宽度2048、
 block_dim24/48下通过eager及两轮replay，覆盖P/D miss、mixed、all-hit和zero-valid。
 本结果不能替代正式服务分配/PD控制及NPU attention验收。详见上方S2总结。
 
-## Shadow检查与当前服务边界
+## 正式完成证据（Ticket03 S5）
+
+`fetch_report()`只读取已完成事件对应的计数。每个forward的快照包括逐层覆盖、非法
+selection、有效selection数量和P/D miss数；其余有效selection计为HBM hit。
+`mempool fetch_result`在D drain完成、row detach之前输出，含实际submitted/written KV、
+forward/replay次数、层覆盖及来源计数。zero-decode保持全零，不伪造数值验证通过。
+这里没有旧host参考，独立pattern gate和用户curl分别检查数据copy与小题目输出。
+
+`mempool resources`统计真实buffer字节及注册条目；`mempool native_copy`记录成功的
+Index K/aux逻辑发送字节数，main KV为零。BM映射与最终free=16仍使用原生命周期日志。
+`verify_fetch.py`现在连续提交五步再统一同步；原S2单步硬件通过不能替代这次异步重测。
+新服务启动、curl、checker、性能对照和回传项见[正式服务验收](../../../../../../ascend-mempool-test/FORMAL_SERVICE.md)。
+
+## Shadow历史检查（S6待删除）
+
+以下为ticket02的已验收历史机制。当前正式模式拒绝READBACK=1；不能直接复用旧启动命令。
 
 开启 `SGLANG_NPU_MEMPOOL_READBACK=1` 后，D 在旧 selected KV 的 hit/miss 事件已等待
 的位置额外读 BM 并比较 BF16 值。service 将批准的 P slot 传给 `bind(..., prompt_slot=...)`，
@@ -247,7 +270,7 @@ BM 写先于同 stream 的读回，因此当前 D position 0 也可参与比较�
 service 为错误补充 TP rank、room/rid/attempt 和两侧 slot；正常 D drain 后、detach 前
 输出逐请求 `readback_result`。capture 只构图，不报告真实 KV 通过。
 
-attention 使用原 selected KV，原 hostSHM/main-KV transfer 在本阶段保留。
+02阶段attention使用原selected KV，原hostSHM/main-KV transfer当时保留。
 本次新增 copy/readback 两个存储模块是 02 第二个 gate 的实现；此前“保留八个模块”
 约束针对已交付的第一阶段 runtime/service 接线，未新增协议或 queue 适配层。
 小容量运行与报告判据见 [真实服务读回说明](../../../../../../ascend-mempool-test/READBACK_SERVICE.md)。

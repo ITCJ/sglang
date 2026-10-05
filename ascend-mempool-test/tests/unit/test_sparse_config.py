@@ -10,8 +10,8 @@ from ascend_sparse.config import (
 
 
 class TestSparseKVConfiguration(unittest.TestCase):
-    def test_mempool_keeps_shadow_storage_until_cutover_is_implemented(self):
-        """S1 must keep the accepted P/D transfer and host reference runnable."""
+    def test_mempool_selects_formal_decode_without_duplicate_storage(self):
+        """The public switch must select the BM path before KV allocation."""
         mode = SparseKVOffloadMode.from_flags(
             sparse_enabled=True,
             mempool_enabled=True,
@@ -19,10 +19,10 @@ class TestSparseKVConfiguration(unittest.TestCase):
             transfer_backend="ascend",
             max_running_requests=4,
         )
-        self.assertEqual(mode, SparseKVOffloadMode.PD_DECODE_MEMPOOL_SHADOW)
+        self.assertEqual(mode, SparseKVOffloadMode.PD_DECODE_MEMPOOL)
         self.assertTrue(mode.uses_sparse_kv_cache)
-        self.assertTrue(mode.uses_host_kv_offload)
-        self.assertTrue(mode.uses_pd_decode_staging)
+        self.assertFalse(mode.uses_host_kv_offload)
+        self.assertFalse(mode.uses_pd_decode_staging)
         self.assertTrue(mode.uses_mempool_bm)
 
     def test_formal_decode_keeps_sparse_device_layout_without_host_storage(self):
@@ -46,11 +46,12 @@ class TestSparseKVConfiguration(unittest.TestCase):
                     ),
                     expected_cell_size,
                 )
-                with self.assertRaisesRegex(ValueError, "S5"):
-                    mode.validate_runtime_support()
+                mode.validate_runtime_support()
+                with self.assertRaisesRegex(ValueError, "READBACK"):
+                    mode.validate_runtime_support(readback_enabled=True)
 
-    def test_startup_matrix_preserves_local_native_and_shadow_resources(self):
-        """Turning BM off restores ordinary PD; P shadow keeps native storage."""
+    def test_startup_matrix_preserves_local_and_native_resources(self):
+        """Turning BM off restores ordinary PD; formal P keeps native storage."""
         cases = (
             (False, False, "null", "disabled", (False, False, False, False), None),
             (True, False, "null", "local_offload", (True, True, False, False), 19968),
@@ -74,7 +75,7 @@ class TestSparseKVConfiguration(unittest.TestCase):
                 True,
                 True,
                 "prefill",
-                "pd_prefill_mempool_shadow",
+                "pd_prefill_mempool",
                 (False, False, False, True),
                 None,
             ),
@@ -82,8 +83,8 @@ class TestSparseKVConfiguration(unittest.TestCase):
                 True,
                 True,
                 "decode",
-                "pd_decode_mempool_shadow",
-                (True, True, True, True),
+                "pd_decode_mempool",
+                (True, False, False, True),
                 19968,
             ),
         )

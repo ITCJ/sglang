@@ -241,6 +241,7 @@ def verify(args: argparse.Namespace, channel: TestChannel) -> dict[str, Any]:
         if args.rank == 1:
             acquire = control.acquire_decode(room, case, 3, 256, 32, "tcp://d:1")
             request = acquire.request
+            assert request is not None
             channel.send("ACQUIRE", **{"frames": pack(acquire)})
             bound = control.apply(unpack(channel.expect("ACQUIRED")["frames"]))
             channel.send("BOUND", **{"frames": pack(bound)})
@@ -323,6 +324,7 @@ def verify(args: argparse.Namespace, channel: TestChannel) -> dict[str, Any]:
         else:
             acquire = unpack(channel.expect("ACQUIRE")["frames"])
             request = acquire.request
+            assert request is not None
             control.apply(acquire)
             channel.send(
                 "ACQUIRED", **{"frames": pack(control.acquire_prefill(request, 7))}
@@ -331,9 +333,11 @@ def verify(args: argparse.Namespace, channel: TestChannel) -> dict[str, Any]:
             control.start_prefill(request)
             # Control fixture: S4 tests native transport independently of BM.
             control.finish_prefill_writes(request)
-            ready = pack(control.publish_kv_ready(request, 256))
+            ready_frames = pack(control.publish_kv_ready(request, 256))
             bm_first = case != "transfer_first"
-            channel.send("BEFORE_TRANSFER", **{"ready": ready if bm_first else None})
+            channel.send(
+                "BEFORE_TRANSFER", **{"ready": ready_frames if bm_first else None}
+            )
             channel.expect("COPY")
             statuses: list[dict[str, Any]] = []
             acks: list[int] = []
@@ -378,7 +382,7 @@ def verify(args: argparse.Namespace, channel: TestChannel) -> dict[str, Any]:
                     "bytes": engine.bytes,
                     "outstanding": 0,
                     "abort_acks": acks,
-                    "ready": None if bm_first else ready,
+                    "ready": None if bm_first else ready_frames,
                 },
             )
             if failed:
