@@ -2,7 +2,10 @@
 
 日期：2026-10-05。代码基线：`8e00b36cf980159f9228bdd1c3440adc0c51f4a4`。
 S4双机NPU gate已获用户确认。2026-10-05按用户决定更新验收范围，随后获授权实施S5。
-本方案的正式入口、完成证据、连续异步gate及服务交付已实现，等待用户NPU验收。
+本方案的正式入口、完成证据、连续异步gate及服务交付已实现。用户已回传首个真实
+server请求的512次Graph replay及完整释放证据；2026-10-06双机连续异步组件gate
+30个case通过；随后三请求正式服务checker通过，覆盖全rank资源、Graph、复用和释放。
+关闭thinking后小题目输出检查通过，用户确认当前性能无问题；S5按已验证容量范围验收通过。
 Ticket03仍为open；实现清单见[S5总结](ticket-03-s5-summary.md)。
 需求来源：[ticket03](issues/03-prefill-direct-offload.md)、[spec](spec.md)和
 [阶段验收流程](verification.md)。
@@ -186,12 +189,14 @@ S5实现需提供本阶段可直接使用的formal启动配置、完成日志和
 
 ## 完成条件与交付证据
 
-- [ ] 正式P/D server启动，真实NPU Graph capture/replay下attention消费正式fetch结果。
-- [ ] 实际分配和发送证据满足旧host KV/staging/main-KV流量为零，必要Index K/aux正常。
-- [ ] 连续异步replay、请求/slot复用、padding和zero-decode验证通过；全rank最终free=16。
-- [ ] 用户用curl完成小题目检查并确认回答正确，输入/参数/输出记录完整。
-- [ ] 记录性能测量条件与实测指标，用户查看后确认满足预期。
-- [ ] 记录实现评审、版本、环境、命令、日志及用户NPU验收；S6才可开始实施。
+- [x] 双机连续五步异步组件gate逐元素核对通过；2026-10-06两侧ALL_CHECKS_PASSED，
+  D共30个case且每项queued_forwards=5，详情见[S5总结](ticket-03-s5-summary.md)。
+- [x] 正式P/D server启动，真实NPU Graph capture/replay下attention消费正式fetch结果。
+- [x] 实际分配和发送证据满足旧host KV/staging/main-KV流量为零，必要Index K/aux正常。
+- [x] 连续异步replay、请求/slot复用、padding和zero-decode验证通过；全rank最终free=16。
+- [x] 用户curl小题目返回正确完整答案；关闭thinking后15 tokens、finish_reason=stop，输入/参数/输出见S5总结。
+- [x] 用户确认当前性能无问题；未回传完整指标表，不外推长上下文性能。
+- [x] 已记录实现评审、现有环境/命令/日志及用户NPU验收，S6解锁；实际部署SHA和完整性能资料保留归档缺口。
 
 ## 本轮结果
 
@@ -199,6 +204,10 @@ S5实现需提供本阶段可直接使用的formal启动配置、完成日志和
 完成后fetch报告、实际资源/传输日志，以及连续五步异步组件gate。
 交付[启动/验收说明](../../ascend-mempool-test/FORMAL_SERVICE.md)、P/D启动脚本和正式
 日志检查器。Mac检查与评审记录见[S5总结](ticket-03-s5-summary.md)。
-等待用户执行NPU组件与真实服务gate、curl小题目和性能验收，未勾选硬件完成条件。
+首个真实服务请求的用户日志及计数核对见[S5总结](ticket-03-s5-summary.md)。
+2026-10-06用户回传双机连续异步组件gate通过，已记录该项硬件证据。
+同日用户回传三请求FORMAL_SERVICE_PASSED及完整JSON，服务资源/Graph/复用/释放项通过。
+同日关闭thinking后curl小题目输出检查通过，用户确认当前性能无问题；S5按已验证容量范围验收通过。
+长上下文容量问题由用户独立跟进，不阻塞S5；部署SHA、完整环境和性能指标表尚未补齐。
 性能按用户最新要求在验收时查看TTFT/TPOT/输出吞吐并人工判断，不要求预先提供阈值。
 S4已验收状态不变，S6未开始，ticket04未修改。

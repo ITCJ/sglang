@@ -6,7 +6,10 @@ P=`10.120.72.31`，D=`10.120.72.32`；两机均在`/home/cryang/sglang`运行。
 需要两侧各16个NPU、同一代码版本、S2–S4已验证的torch_npu/sgl_kernel_npu/MemFabric。
 
 `MEMPOOL=1`现在选择正式模式；必须设置`SGLANG_NPU_MEMPOOL_READBACK=0`。
-旧`glm51mempool.sh`设置READBACK=1，不能直接用于本阶段，改用本目录的启动脚本。
+本目录提供统一启动脚本。外部`ascend-sglang-script`仓库的`glm51mempool.sh`已在
+`24a6857`切换为正式S5配置；更早版本设置READBACK=1，需要先更新。
+外部脚本保存为`p.log`/`d.log`，本目录脚本保存为`prefill.log`/`decode.log`，
+运行下面的日志checker时按所用脚本调整路径。
 BM目前使用DRAM；D保留的HBM sparse cache是另一个存储层。
 本页不要求AIME26或逐token精度对照。curl回答检查与性能达标由用户分别确认。
 
@@ -184,6 +187,9 @@ python3 -m json.tool /tmp/ticket03-s5-formal/answer.json
 在D日志找这次新增的非零`fetch_result`，确认`replay_forwards=forwards>0`且最终释放。
 如果模型使用长thinking而256输出不足，先保留这次结果，再改短题或在容量内调整上限；
 不能把被截断的回答当通过。这里使用`/generate`原生文本接口，无chat模板的额外token。
+当前D BM每slot容量为512；若512-token回答仍被截断，先缩短回答或核对模型template
+支持的thinking开关，不能只把输出上限提高到1024/2048。增加容量需同步P/D配置并
+满足context限制。reasoning parser只拆分响应字段，不会减少生成的token数。
 本检查不等于正式数据集精度验收。
 
 ## 5. 性能测量与对照

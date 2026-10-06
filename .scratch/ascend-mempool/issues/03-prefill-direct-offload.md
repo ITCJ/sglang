@@ -14,7 +14,7 @@ server Graph、curl小题目输出与性能，S6完成全量review、shadow删�
 
 **State:** open
 
-## 规划状态（2026-10-05）
+## 规划状态（2026-10-06）
 
 02已获用户确认验收并关闭，已有链路、代码入口及证据见[02总结](../ticket-02-summary.md)。
 用户已确认按S1–S6组织本票，并先后授权实施S1和S2。S1代码已提交为`3d2f3c6168`，轻量CPU检查通过，
@@ -28,8 +28,11 @@ S4代码已提交为`8e00b36cf9`，用户于2026-10-05回传双机六个case全�
 并确认“S4完成”；见[S4总结](../ticket-03-s4-summary.md)。
 下一阶段的范围和验收安排见[S5计划](../ticket-03-s5-plan.md)及
 [S6计划](../ticket-03-s6-plan.md)。2026-10-05用户确认本次S5/S6调整并授权实施S5。
-S5正式入口、完成证据、连续异步gate和服务运行说明已实现，等待用户NPU验收；
-不表示正式服务数据路径或本票验收已完成。原KV传输、D staging/host写入及sparse
+S5正式入口、完成证据、连续异步gate和服务运行说明已实现。用户已回传一次真实
+server请求：全16 ranks完成512次Graph replay及slot释放；2026-10-06双机连续五步
+异步组件gate的30个case全部通过。同日三个真实服务请求及全rank日志checker通过，
+覆盖zero-decode、连续decode、slot新generation复用与安全释放。关闭thinking后小题目输出检查通过；用户确认当前性能无问题。
+S5按已验证的小容量范围验收通过，长上下文容量由用户独立跟进；本票仍待S6完成。原KV传输、D staging/host写入及sparse
 attention的host SHM读取在正式模式关闭、在普通模式保留。
 当前MEMPOOL=1已选择正式P/D模式；READBACK=1在资源分配前拒绝。shadow代码暂存，
 S6必须删除全部shadow专用模式和相关代码，不再保留同版本shadow诊断入口。
@@ -91,8 +94,8 @@ HBM Index K -> indexer top-k -> HBM sparse cache 查询
 | S2 接入正式BM fetch | attention消费BM miss结果，保留HBM hit/refill | 实现已核对；K=2048独立NPU gate的30个case通过，用户已确认 |
 | S3 按模式停用重复存储 | 旧实现保留；正式模式host KV和main-KV staging分配为零 | 已提交；Mac检查通过，用户于2026-10-05确认NPU资源gate通过 |
 | S4 精简PD传输 | 仅保留Index K和必要辅助数据，保留联合readiness | 双机六个case全部通过，用户于2026-10-05确认完成；见[S4总结](../ticket-03-s4-summary.md) |
-| S5 正式服务Graph与性能验收 | 完整mempool链路、curl小题目检查、约定性能达标 | 代码与运行说明已实现；[总结](../ticket-03-s5-summary.md)，等待用户NPU/curl/性能验收 |
-| S6 全量review、shadow删除与清理 | 精简代码、普通模式兼容、最终版本重跑S5并交付 | [计划](../ticket-03-s6-plan.md)已整理；由S5用户验收阻塞 |
+| S5 正式服务Graph与性能验收 | 完整mempool链路、curl小题目检查、约定性能达标 | 组件gate、服务checker及小题目通过，当前性能获用户确认；S5已验收，见[总结](../ticket-03-s5-summary.md) |
+| S6 全量review、shadow删除与清理 | 精简代码、普通模式兼容、最终版本重跑S5并交付 | [计划](../ticket-03-s6-plan.md)已整理；S5已验收，待实施 |
 
 ### S1. 拆分配置与资源职责
 
@@ -391,18 +394,18 @@ BM先ready/transfer先完成两种顺序、metadata延迟、P native row复用�
 
 完成条件：
 
-- [ ] 真实server完成capture及实际decode replay，完整mempool数据/控制链路和安全释放
+- [x] 真实server完成capture及实际decode replay，完整mempool数据/控制链路和安全释放
   有证据；正式模式无旧host回退，最终各rank的BM free=16。
-- [ ] 连续replay及请求复用通过，padding无真实slot访问，完成事件覆盖fetch/cache工作。
-- [ ] 用户通过curl小题目检查并确认输出；已知输出异常须修复，不能转交后续精度票。
-- [ ] 记录性能测量条件与实测指标，用户查看后确认满足预期。
-- [ ] 记录版本、环境、命令和日志，按阶段流程取得用户S5验收确认后解锁S6。
+- [x] 连续replay及请求复用通过，padding无真实slot访问，完成事件覆盖fetch/cache工作。
+- [x] 用户curl小题目输出检查通过：关闭thinking后返回完整正确答案33，15 tokens、finish_reason=stop；详见下方2026-10-06记录。
+- [x] 用户于2026-10-06确认当前性能无问题；长上下文容量独立跟进，完整指标表未回传。
+- [x] 已记录用户S5验收及现有命令/日志/环境证据，解锁S6；部署SHA及完整测量资料仍待归档，不宣称已收齐。
 
 完整精度数据集不属于S5；ticket04保持现有内容。完整压力/故障矩阵仍归后续票。
 
 ### S6. 全量code review、shadow删除与代码清理
 
-**Blocked by:** S5真实server Graph、curl输出检查及性能的用户验收。
+**Blocked by:** 无阶段阻塞；S5已于2026-10-06按当前已验证容量范围通过用户验收。
 
 **交付行为：** 对01–03引入的全部mempool代码及共享接入点完成review和整改，删除
 shadow专用代码，形成清晰的正式/普通模式实现，并在最终清理版本重新取得硬件验收。
@@ -478,6 +481,109 @@ S6记录全量review、整改和复查结果；最终版本再次运行S5及普�
 ticket04内容不变；新数据来源导致输出异常时须在03定位，不能交付已知错误。
 
 ## Comments
+
+### 2026-10-06：用户确认当前性能，S5按已验证容量范围验收
+
+用户确认“性能目前没有问题”；长上下文承载能力因NUMA相关问题仍待确认，
+由用户另行解决设备驱动/硬件相关问题，不作为S5剩余阻塞项。结合已通过的
+连续异步fetch gate、三请求全rank正式服务checker和关闭thinking后的正确完整回答，
+记录S5在当前已验证的小容量配置下验收通过，解锁S6；本轮不启动S6实现。
+性能结论来源为用户人工确认，未回传完整TTFT/TPOT/吞吐测量表，不补造数值，
+不宣称16K或更长上下文容量、性能及完整数据集精度已获验证。
+实际部署SHA、完整环境快照与性能原始数据仍是归档缺口，保留待补说明；
+不将这些缺口写成已采集，也不重复要求已获用户确认的性能验收。
+Ticket09继续封存，由用户独立跟进；Ticket03仍为open，待S6全量review、
+shadow删除、清理及最终版本复验。本轮仅更新阶段文档，未运行NPU或修改生产代码。
+
+
+### 2026-10-06：关闭thinking后curl小题目输出检查通过
+
+用户沿用苹果题chat请求，仅增加`chat_template_kwargs={"enable_thinking": false}`，
+模型GLM-5.1-w4a8，temperature=0、max_tokens=256、stream=false。
+返回“17+25-9=33，现在有33个苹果。”，prompt_tokens=35、completion_tokens=15、
+finish_reason=stop、matched_stop=154827，响应id=f76f25e630124d00a3e08c06ed7ec14d。
+此前同题在thinking/起草内容中达到256-token上限；本次算术及一句话格式正确且无截断。
+记录S5小题目输出检查通过，不等同于正式数据集精度通过。完整输入及响应字段见
+[S5总结](../ticket-03-s5-summary.md)。证据来自用户粘贴响应，agent未执行NPU请求。
+性能确认、部署SHA及最终环境记录仍待补齐；03保持open，S6未开始。
+本轮仅更新三份验收文档，执行限定文件的`git diff --check`。
+
+### 2026-10-06：S5三请求正式服务checker通过，回答与性能仍待验收
+
+用户按已交付HTTP命令顺序运行zero/decode/reuse三个请求，实际输出token数分别为
+1/32/32，finish_reason均为length。输入是`/generate`原始文本，temperature0、
+ignore_eos=true；保存于`/tmp/ticket03-s5-requests/`的请求与响应文件。
+在P机`/home/cryang/sglang`执行：
+
+```bash
+python3 ascend-mempool-test/scripts/verify_service.py \
+  --prefill-log ../p.log --decode-log ../d.log \
+  --requests 3 --layers 78 \
+  --report /tmp/ticket03-s5-formal/service-result.json
+```
+
+用户回传`FORMAL_SERVICE_PASSED`及完整JSON：requests3、ranks_per_side16、
+zero_decode_requests1、decode_requests2。全32条资源记录均为正式模式，旧host KV、
+staging、main-KV注册为0，transport_staging=false；P保留native HBM KV，D保留sparse
+cache，两侧均注册78个Index K条目。每rank三请求累计Index K发送7,667,712字节、
+aux4,800字节。报告结合checker合同证明全rankmapping/capture/replay、联合readiness、
+fetch完成、P/D slot新generation复用、释放顺序及最终free16检查通过。
+
+32-token输出包含截断的天空解释，以及广告/多语言的冰浮水文本；本轮强制长度的
+原始文本续写不作为回答正确性验收。不能仅凭这些输出判定KV污染，也不能以checker
+通过排除数值/模型输出问题。下一步用chat接口的完整小题目回答核对，异常若复现，
+在S5定位，不交给S6或后续精度票。
+
+详细逐rank资源口径及证据边界见[S5总结](../ticket-03-s5-summary.md)。报告仍明确
+accuracy/performance为pending；部署SHA、依赖版本未另行提供，agent未直接读取
+远端原始日志。本轮更新已通过的S5执行/资源/复用检查项，保留输出和性能项未完成，
+03仍open、S6未开始，09仍封存。仅记录用户验收证据，未修改生产代码或重跑NPU。
+
+### 2026-10-06：S5连续异步fetch组件NPU gate通过
+
+用户回传P=`10.120.72.31`、D=`10.120.72.32`于11:55:26–30运行
+`verify_fetch.py`的完整终端输出；两侧均使用device0，S_P=8、S_D=16、2层、1head、
+dim576、graph_rows16、active_rows3、topk2048、block_dims24/48、replay_cycles2、warmup3。
+命令与[正式服务验收说明](../../../ascend-mempool-test/FORMAL_SERVICE.md)第1节一致。
+
+两侧均输出`ALL_CHECKS_PASSED`。D共30个`FETCH_PASS`，包含10个eager和20个replay，
+每项`queued_forwards=5`、`verified_elements=37748736`。每组连续提交五个case对应的
+forward后才统一同步检查，覆盖P miss、D miss、mixed、all-hit、zero-valid及padding；
+逐层copy计数分别为[6,0]、[0,6]、[6,6]、[0,0]、[0,0]。成功标记还要求脚本中的
+未完成detach拒绝、完成报告核对、重绑和pool/SDK清理均无异常。
+
+D初次GVA转VA查询失败后已出现完整MAPPED及后续所有数值检查通过；本轮未形成持续
+映射故障。日志中的可选扩展库、tag/key、store响应和base-format提示未阻断本次gate。
+两侧报告为`/tmp/ticket03-s5-fetch-p.json`和`/tmp/ticket03-s5-fetch-d.json`，
+日志分别为同目录`ticket03-s5-fetch-p.log`和`ticket03-s5-fetch-d.log`；原始文件未由
+agent读取，实际部署
+Git SHA及本轮依赖版本未另行提供，不以本地HEAD代替硬件部署版本。
+
+记录本项组件gate通过；不重复要求此前S2测试，也不据此关闭S5或03。下一步为真实
+服务zero-decode、连续decode与新generation slot复用及完整日志checker，再完成小题目
+完整回答和用户性能确认。S6未开始，09保持封存。本轮仅更新验收文档，未运行本地NPU。
+
+### 2026-10-05：用户回传首个S5真实服务请求，生命周期完成
+
+P=`10.120.72.31`、D=`10.120.72.32`，用户经6699 router向chat接口发送铅笔题，
+temperature0、max_tokens512；HTTP 200，prompt47、completion512。
+已交付SGLang `fadc8223cd`和启动脚本`24a6857`，实际部署SHA未随反馈提供。
+room=`6498740039664540360`，attempt=`506bc05162d7381522936c1da6c5d2b6`。
+用户粘贴日志中全16 ranks的联合readiness、512次真实Graph replay、完成drain及
+detach/free/DONE/ACK顺序正常，P/D最终free16。每rank仅发送Index K 2,555,904字节
+和aux 1,600字节，main_kv_bytes0。P native先释放，P BM持有到D完成。
+
+全部D ranks报告`status=completed`、`drained=true`、`cancelled=false`，
+`forwards=replay_forwards=submitted_kv=written_kv=512`，78层共39,936次layer_checks。
+P miss3,666、D miss39,936、cache hit12,076,974、selected12,120,576，计数等式成立。
+回答中的算术结果6正确，但finish_reason为length，最终答复截断，尚未记录输出验收。
+稳定server滚动吞吐6.92–6.97 token/s；没有准确客户端TTFT/TPOT及用户性能确认。
+此前18:15:53的400没有错误响应body，原因未确定；随后此请求正常完成。
+
+本轮仅记录用户证据并核对本地计数/输出处理代码，没有重跑NPU或修改生产代码。
+详细时间线、curl输入、计数、证据范围及后续补测见[S5总结](../ticket-03-s5-summary.md)。
+完整回答、zero-decode/连续请求/slot复用及启动日志checker、连续五步异步组件gate、
+性能确认仍待补齐；03保持open，S6未开始，ticket04不变。
 
 ### 2026-10-05：S5实现交付，等待用户执行NPU验收
 

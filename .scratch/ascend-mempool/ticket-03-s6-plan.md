@@ -3,8 +3,8 @@
 日期：2026-10-05。需求来源：[ticket03](issues/03-prefill-direct-offload.md)及用户确认的
 S5/S6调整。此文件为待实施方案；S6未开始，Ticket03保持open。
 
-**Blocked by:** [S5](ticket-03-s5-plan.md)真实server Graph、curl小题目检查和约定性能
-全部通过，并获得用户实现/NPU验收确认。
+**Blocked by:** 无阶段阻塞。[S5](ticket-03-s5-plan.md)已于2026-10-06在当前已验证容量范围
+通过用户验收；长上下文容量由用户独立处理。S6已解锁，尚未实施。
 
 ## 交付目标
 
