@@ -1,10 +1,5 @@
 """Load sparse KV configuration without importing the SGLang serving stack."""
 
-from pathlib import Path
+from ascend_npu import NPU_PATH
 
-__path__.append(
-    str(
-        Path(__file__).resolve().parents[3]
-        / "python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload"
-    )
-)
+__path__.append(str(NPU_PATH / "sparsity_driven_kv_offload"))

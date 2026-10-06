@@ -4,7 +4,7 @@ import unittest
 
 import torch
 
-from ascend_mempool.rows import derive_kv_rows
+from ascend_npu.kv_rows import derive_kv_rows
 
 
 class TestKVRows(unittest.TestCase):

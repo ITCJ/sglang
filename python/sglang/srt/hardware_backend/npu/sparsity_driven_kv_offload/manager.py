@@ -12,10 +12,13 @@ from sgl_kernel_npu.sparsity_driven_kv_offload import (
     unidex_copy_inplace,
 )
 
+from sglang.srt.hardware_backend.npu.kv_rows import derive_kv_rows
+
 from .config import SparseKVOffloadMode
 
 if TYPE_CHECKING:
     import torch.npu
+
     from sglang.srt.hardware_backend.npu.mempool.runtime import MempoolRuntime
     from sglang.srt.layers.radix_attention import RadixAttention
     from sglang.srt.managers.schedule_batch import Req
@@ -718,179 +721,26 @@ class SparseKVCacheManager:
         src_index = torch.arange(src_tensor.shape[0], device=device, dtype=torch.long)
         num_src_rows = int(src_tensor.shape[0])
 
-        if forward_batch.forward_mode.is_decode():
-            req_ids = forward_batch.req_pool_indices.to(torch.long)
-            token_pos = (forward_batch.seq_lens - 1).to(torch.long)
-            cache_loc = forward_batch.out_cache_loc.to(torch.long)
-
-            if int(req_ids.shape[0]) != num_src_rows:
-                raise RuntimeError(
-                    "Sparse v2 decode offload expects compact KV rows to match "
-                    f"batch size, got {num_src_rows} and {int(req_ids.shape[0])}."
-                )
-            if int(cache_loc.shape[0]) != num_src_rows:
-                raise RuntimeError(
-                    "Sparse v2 decode offload expects out_cache_loc rows to match "
-                    f"compact KV rows, got {int(cache_loc.shape[0])} and "
-                    f"{num_src_rows}."
-                )
-
-            dst_index = (req_ids * self.max_context_len + token_pos).contiguous()
-            valid_mask = (
-                (forward_batch.seq_lens != 1)
-                & (cache_loc >= 0)
-                & (req_ids >= 0)
-                & (token_pos >= 0)
-                & (token_pos < self.max_context_len)
-            ).contiguous()
-        else:
-            if (
-                forward_batch.extend_seq_lens is None
-                or forward_batch.extend_prefix_lens is None
-            ):
-                raise RuntimeError(
-                    "Sparse v2 prefill offload requires extend_seq_lens and "
-                    "extend_prefix_lens in ForwardBatch."
-                )
-
-            req_ids = forward_batch.req_pool_indices.to(torch.long)
-            extend_seq_lens = forward_batch.extend_seq_lens.to(torch.long)
-            extend_prefix_lens = forward_batch.extend_prefix_lens.to(torch.long)
-
-            batch_size = int(req_ids.shape[0])
-            if batch_size <= 0:
-                return
-
-            if int(extend_seq_lens.shape[0]) != batch_size:
-                raise RuntimeError(
-                    "Sparse v2 prefill offload expects extend_seq_lens to be "
-                    f"padded to batch size {batch_size}, got "
-                    f"{int(extend_seq_lens.shape[0])}."
-                )
-
-            prefix_len_size = int(extend_prefix_lens.shape[0])
-            if prefix_len_size < batch_size:
-                extend_prefix_lens = torch.cat(
-                    [
-                        extend_prefix_lens,
-                        torch.zeros(
-                            batch_size - prefix_len_size,
-                            device=device,
-                            dtype=torch.long,
-                        ),
-                    ],
-                    dim=0,
-                )
-            elif prefix_len_size > batch_size:
-                raise RuntimeError(
-                    "Sparse v2 prefill offload expects extend_prefix_lens length "
-                    f"<= batch size {batch_size}, got {prefix_len_size}."
-                )
-
-            if forward_batch.extend_seq_lens_cpu is not None:
-                extend_seq_lens_sum = int(
-                    sum(forward_batch.extend_seq_lens_cpu[:batch_size])
-                )
-            else:
-                extend_seq_lens_sum = int(extend_seq_lens.sum().item())
-            global_num_token_non_padded_cpu = (
-                forward_batch.global_num_token_non_padded_cpu
-            )
-            unpadded_prefill_rows = (
-                int(global_num_token_non_padded_cpu)
-                if global_num_token_non_padded_cpu is not None
-                else None
-            )
-            has_tail_padding = (
-                unpadded_prefill_rows == extend_seq_lens_sum
-                and extend_seq_lens_sum < num_src_rows
-            )
-
-            if extend_seq_lens_sum == num_src_rows or has_tail_padding:
-                # Chunk prefill emits compact rows as [req0 tokens][req1 tokens]...
-                # instead of graph-captured padded [B, tokens_per_req] rows. MLP sync
-                # can append tail padding tokens; keep static rows but mask them out.
-                seq_starts = torch.cumsum(extend_seq_lens, dim=0) - extend_seq_lens
-                flat_req_ids = torch.repeat_interleave(
-                    req_ids, extend_seq_lens, output_size=extend_seq_lens_sum
-                )
-                flat_seq_starts = torch.repeat_interleave(
-                    seq_starts, extend_seq_lens, output_size=extend_seq_lens_sum
-                )
-                flat_prefix_lens = torch.repeat_interleave(
-                    extend_prefix_lens, extend_seq_lens, output_size=extend_seq_lens_sum
-                )
-                token_pos = (
-                    flat_prefix_lens
-                    + torch.arange(extend_seq_lens_sum, device=device, dtype=torch.long)
-                    - flat_seq_starts
-                )
-                dst_index = (
-                    flat_req_ids * self.max_context_len + token_pos
-                ).contiguous()
-                valid_mask = (
-                    (flat_req_ids >= 0)
-                    & (token_pos >= 0)
-                    & (token_pos < self.max_context_len)
-                )
-                if has_tail_padding:
-                    pad_rows = num_src_rows - extend_seq_lens_sum
-                    dst_index = torch.cat(
-                        [
-                            dst_index,
-                            torch.zeros(pad_rows, device=device, dtype=torch.long),
-                        ],
-                        dim=0,
-                    )
-                    valid_mask = torch.cat(
-                        [
-                            valid_mask,
-                            torch.zeros(pad_rows, device=device, dtype=torch.bool),
-                        ],
-                        dim=0,
-                    )
-            else:
-                if num_src_rows % batch_size != 0:
-                    raise RuntimeError(
-                        "Sparse v2 prefill offload expects either compact ragged "
-                        "layout with rows=sum(extend_seq_lens) or graph-style "
-                        f"row-major layout [B, tokens_per_req], got rows={num_src_rows}, "
-                        f"batch={batch_size}, extend_seq_lens_sum={extend_seq_lens_sum}."
-                    )
-
-                # Graph-friendly static layout:
-                # compact rows are interpreted as [batch_size, tokens_per_req].
-                # Invalid padded columns are masked by local_offsets < extend_seq_lens.
-                tokens_per_req = num_src_rows // batch_size
-
-                local_offsets = (
-                    torch.arange(tokens_per_req, device=device, dtype=torch.long)
-                    .unsqueeze(0)
-                    .expand(batch_size, tokens_per_req)
-                )
-                req_ids_2d = req_ids.unsqueeze(1).expand(batch_size, tokens_per_req)
-                token_pos_2d = extend_prefix_lens.unsqueeze(1) + local_offsets
-
-                dst_index = (
-                    (req_ids_2d * self.max_context_len + token_pos_2d)
-                    .reshape(-1)
-                    .contiguous()
-                )
-                valid_mask = (
-                    (local_offsets < extend_seq_lens.unsqueeze(1))
-                    & (req_ids_2d >= 0)
-                    & (token_pos_2d >= 0)
-                    & (token_pos_2d < self.max_context_len)
-                ).reshape(-1)
-
-            if (
-                forward_batch.out_cache_loc is not None
-                and int(forward_batch.out_cache_loc.numel()) >= num_src_rows
-            ):
-                valid_mask = valid_mask & (
-                    forward_batch.out_cache_loc[:num_src_rows].to(torch.long) >= 0
-                )
-            valid_mask = valid_mask.contiguous()
+        if (
+            not forward_batch.forward_mode.is_decode()
+            and not forward_batch.req_pool_indices.numel()
+        ):
+            return
+        req_ids, token_pos, valid_mask = derive_kv_rows(
+            num_src_rows,
+            is_decode=forward_batch.forward_mode.is_decode(),
+            max_context_len=self.max_context_len,
+            req_pool_indices=forward_batch.req_pool_indices,
+            seq_lens=forward_batch.seq_lens,
+            out_cache_loc=forward_batch.out_cache_loc,
+            extend_seq_lens=forward_batch.extend_seq_lens,
+            extend_prefix_lens=forward_batch.extend_prefix_lens,
+            extend_seq_lens_cpu=forward_batch.extend_seq_lens_cpu,
+            global_num_token_non_padded_cpu=forward_batch.global_num_token_non_padded_cpu,
+        )
+        dst_index = torch.where(
+            valid_mask, req_ids * self.max_context_len + token_pos, 0
+        ).contiguous()
 
         assert src_tensor.shape[1:] == dst_tensor.shape[2:]
         assert src_index.shape == dst_index.shape == valid_mask.shape

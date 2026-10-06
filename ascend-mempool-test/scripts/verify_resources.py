@@ -106,6 +106,10 @@ def check_host_roundtrip(cache: Any, req: Any, loc: Any, torch: Any) -> None:
         seq_lens=torch.tensor([3], dtype=torch.int32, device=device),
         out_cache_loc=loc[:1],
         forward_mode=SimpleNamespace(is_decode=lambda: True),
+        extend_seq_lens=None,
+        extend_prefix_lens=None,
+        extend_seq_lens_cpu=None,
+        global_num_token_non_padded_cpu=None,
     )
     k = torch.full((1, 1, 512), 33, dtype=torch.bfloat16, device=device)
     rope = torch.full((1, 1, 64), 44, dtype=torch.bfloat16, device=device)

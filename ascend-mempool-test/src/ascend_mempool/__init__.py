@@ -1,11 +1,6 @@
 """Test adapters that load NPU mempool code without SGLang service imports."""
 
-from pathlib import Path
+from ascend_npu import NPU_PATH
 
 # Load the runtime modules as ascend_mempool.* to bypass sglang's public API.
-__path__.append(
-    str(
-        Path(__file__).resolve().parents[3]
-        / "python/sglang/srt/hardware_backend/npu/mempool"
-    )
-)
+__path__.append(str(NPU_PATH / "mempool"))

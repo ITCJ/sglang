@@ -218,6 +218,10 @@ class TestSparseResources(unittest.TestCase):
                     seq_lens=torch.tensor([3]),
                     out_cache_loc=torch.tensor([7]),
                     forward_mode=SimpleNamespace(is_decode=lambda: True),
+                    extend_seq_lens=None,
+                    extend_prefix_lens=None,
+                    extend_seq_lens_cpu=None,
+                    global_num_token_non_padded_cpu=None,
                 )
                 k = torch.full((1, 1, 2), 33, dtype=torch.bfloat16)
                 rope = torch.full_like(k, 44)
@@ -237,6 +241,31 @@ class TestSparseResources(unittest.TestCase):
                 self.assertEqual(actual_rope[-1, 0, 0].item(), 45)
                 self.rows.clear()
                 self.assertTrue((cache.host_kv_ctx_len == 0).all())
+
+    def test_host_offload_preserves_ragged_static_tail_and_empty_rows(self):
+        from test_runtime import prefill_batch
+
+        for lengths, prefixes, rows, count, unpadded, writes in (
+            ((2, 1), (4, 7), (1, 2), 3, None, [(1, 4, 11), (1, 5, 12), (2, 7, 13)]),
+            ((2, 0), (4,), (1, 2), 6, None, [(1, 4, 11), (1, 5, 12)]),
+            ((2, 1), (4, 7), (1, 2), 6, 3, [(1, 4, 11), (1, 5, 12), (2, 7, 13)]),
+            ((), (), (), 6, 0, []),
+        ):
+            with self.subTest(lengths=lengths, count=count, unpadded=unpadded):
+                cache = self.make_cache(Mode.LOCAL_OFFLOAD)
+                batch = prefill_batch(lengths, prefixes, rows)
+                batch.global_num_token_non_padded_cpu = unpadded
+                values = torch.arange(11, 11 + count, dtype=torch.bfloat16)
+                k = values[:, None, None].expand(count, 1, 2).contiguous()
+                cache.offload_v2(
+                    k, k + 20, SimpleNamespace(layer_id=5), batch, CPUStream()
+                )
+                expected = torch.zeros_like(cache.host_kv_buffer[0])
+                for row, position, value in writes:
+                    expected[row, position, 0] = torch.tensor(
+                        [value, value, value + 20, value + 20]
+                    )
+                self.assertTrue(torch.equal(cache.host_kv_buffer[0], expected))
 
     def test_formal_attention_rejects_extend_before_any_host_prefix_read(self):
         with patch.dict(sys.modules, {"torch_npu": ModuleType("torch_npu")}):

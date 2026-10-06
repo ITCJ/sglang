@@ -14,13 +14,14 @@ from typing import Any, Iterator, Optional, Protocol
 import torch
 from torch import Tensor
 
+from sglang.srt.hardware_backend.npu.kv_rows import derive_kv_rows
+
 from .config import MempoolConfig
 from .copy import KVFetch
 from .diagnostics import diagnostics_enabled, startup_stage
 from .layout import check_index, positive_int
 from .manager import MempoolKVManager
 from .offload import MempoolKVOffload
-from .rows import derive_kv_rows
 
 logger = logging.getLogger(__name__)
 

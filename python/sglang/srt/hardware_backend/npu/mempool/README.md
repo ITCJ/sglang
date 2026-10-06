@@ -25,7 +25,7 @@ READBACK，实现和验证入口对应正式/普通模式。S6.3整理与最终N
 | `offload.py` | `MempoolKVOffload.write(values, *, slots, positions, valid)` | 通过显式 metadata 将 temporary KV 写入本侧 BM；不持有另一套输入缓存。 |
 | `copy.py` | `SparseCopyInputs` / `SparseKVCopy` | 从独立 gate 提升的共享 P/D UniDexCopy 路由；支持复用固定copy metadata。 |
 | `copy.py` | `KVFetch` | 正式D的BM miss直接写入调用方selected KV；同形状目标更换时保留固定输入metadata，两次copy分别读取P/D。 |
-| `rows.py` | `derive_kv_rows()` | 从普通 forward 张量推导 request row、全序列 token position 和 valid；目前有意保留 sparse manager 行推导的副本。 |
+| `../kv_rows.py` | `derive_kv_rows()` | 从forward张量推导request row、全序列token position和valid；BM与普通host写入共用，不依赖BM SDK。 |
 | `runtime.py` | `MempoolRuntime` | 持有固定设备 binding 表、per-layer writer、forward/Graph 边界及本地写入计数/完成事件。 |
 | `runtime.py` | `selected_kv_valid()` / `fetch_selected_kv()` | 正式模式统一hit/miss可读范围并填充BM misses，完成后检查每层覆盖/非法读取。 |
 | `runtime.py` | `KVRowBinding` / `KVWriteReceipt` | 标识一次本地 row attachment，保留 detach 后的完成事实；不表示 PD slot ownership。 |

@@ -1,10 +1,4 @@
-"""Infer compact KV row coordinates without importing SGLang service types.
-
-The layout/validity logic is copied from SparseKVCacheManager.offload_v2 in
-../sparsity_driven_kv_offload/manager.py. Keep both copies aligned when fixing
-padding or validity rules; see ticket02's S6 in
-.scratch/ascend-mempool/issues/02-rank-pair-control-lifecycle.md.
-"""
+"""Derive compact KV coordinates shared by native host and mempool writers."""
 
 from __future__ import annotations
 

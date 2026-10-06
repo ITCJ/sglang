@@ -19,6 +19,20 @@ drain事实；服务checker同步改用新日志，不再要求hit/miss为正。
 （service_gate、fetch、fetch_layers、pd_service）。严格mypy 33文件、Ruff规则和format、
 diff空白检查通过。首次mypy命令漏传测试src目录导致导入失败，补齐标准调用后通过。
 
+## 2. STD-01：共用row推导
+
+将原`mempool/rows.py`移到纯NPU模块`npu/kv_rows.py`，删除普通host
+`SparseKVCacheManager.offload_v2()`中重复的decode/ragged/static/tail推导。
+两条路径共享request row、全序列position及native有效mask，BM仍追加绑定和P/D容量约束，
+host仍构造自己的SHM地址。普通host空batch继续直接返回；helper仅依赖torch和标准库。
+
+独立CPU adapter加载同一份helper，避免导入SGLang服务栈。已有逐值rows/writer测试复用，
+新增普通host落地内容测试覆盖ragged、static缺前缀padding、MoE tail和空batch。
+资源gate的最小ForwardBatch fixture补齐四个可选字段，值均为None。
+
+43项针对性CPU测试通过（rows、offload、runtime、sparse_resources、materialize），
+严格mypy 34源文件通过。普通host roundtrip最初暴露gate fixture缺可选字段，修正后通过。
+
 ## 后续验证
 
 最终版本使用[正式服务命令](../../ascend-mempool-test/FORMAL_SERVICE.md)执行fetch gate、

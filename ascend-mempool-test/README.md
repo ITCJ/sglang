@@ -452,12 +452,12 @@ python3 -u ascend-mempool-test/scripts/verify_graph.py \
 
 ## 02③ Runtime writer gate
 
-③增加 `mempool/rows.py`、`runtime.py` 和 backend attach/write hook。P/D runtime
+③增加 row推导、`runtime.py` 和 backend attach/write hook。P/D runtime
 均通过 attention backend 使用；③提供数据路径和接口，④才接入配置、BM startup、
 control tick、准入与 drain。因此此 gate 不启动 GLM5.1 server，也不宣称服务已通过。
 
-`rows.py` 有意复制原 `SparseKVCacheManager.offload_v2` 的行推导，当前不修改原函数。
-修正 padding 或 validity 时需核对两份逻辑；后续补特征测试后再考虑共享抽取。
+S6.3将行推导统一到纯NPU模块`npu/kv_rows.py`，BM runtime和普通
+`SparseKVCacheManager.offload_v2`共用；各自保留存储地址与容量mask。
 
 调用顺序如下，eager 和 replay 都必须具有 host forward 边界：
 
