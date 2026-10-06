@@ -12,7 +12,7 @@ from copy import copy
 from dataclasses import dataclass, replace
 from queue import Empty, SimpleQueue
 from threading import Lock
-from typing import Callable
+from typing import Callable, Iterable
 
 from .mempool_protocol import (
     MempoolMessage,
@@ -182,6 +182,8 @@ class MempoolPDControl:
         self.local = local
         self.peer: PoolPeer | None = None
         self._records: dict[RequestIdentity, _RequestRecord] = {}
+        self._active_requests: set[RequestIdentity] = set()
+        self._room_record_counts: dict[int, int] = {}
         self._max_records = max_records
         self._terminal_order: deque[RequestIdentity] = deque()
         self._seen_d_generation = [0] * local.layout.slots
@@ -237,35 +239,65 @@ class MempoolPDControl:
         return frozenset(set(range(self.local.layout.slots)) - self._slot_owner.keys())
 
     def snapshot(self) -> MempoolControlSnapshot:
-        """Copy current protocol facts for planning, without changing ownership."""
-        requests = tuple(
-            MempoolRequestSnapshot(
-                identity=record.identity,
-                phase=record.phase,
-                prompt_limit=record.prompt_limit,
-                decode_limit=record.decode_limit,
-                reply_to=record.reply_to,
-                d_slot=record.d_slot,
-                p_slot=record.p_slot,
-                owns_slot=record.identity in self._slot_owner.values(),
-                prompt_written=record.prompt_written,
-                transfer_ready=record.transfer_ready,
-                writes_pending=record.writes_pending,
-                binding_confirmed=record.binding_confirmed,
-                pending_done=record.pending_done
-                if record.release_ack is None
-                else None,
-                done=record.done,
-                release_ack=record.release_ack,
-            )
-            for record in self._records.values()
-        )
+        """Copy all retained records for diagnostics, including terminal history."""
+        return self._snapshot(self._records)
+
+    def get_request(self, request: RequestIdentity) -> MempoolRequestSnapshot | None:
+        """Read one exact attempt without scanning unrelated request history."""
+        record = self._records.get(request)
+        return self._request_snapshot(record) if record is not None else None
+
+    def get_room_request(self, room: int) -> MempoolRequestSnapshot | None:
+        """Resolve the current owner before a service request knows its identity."""
+        request = self._room_owner.get(room)
+        return self.get_request(request) if request is not None else None
+
+    def has_retained_room(self, room: int) -> bool:
+        """Keep the service's fresh-room admission rule independent of history size."""
+        return room in self._room_record_counts
+
+    def has_pending_requests(self) -> bool:
+        """Include requests waiting for ACK even after their local slot is free."""
+        return bool(self._active_requests)
+
+    def active_snapshot(
+        self, include: Iterable[RequestIdentity] = ()
+    ) -> MempoolControlSnapshot:
+        """Observe protocol work plus attempts still needed for local cleanup."""
+        return self._snapshot(self._active_requests.union(include))
+
+    def _snapshot(self, requests: Iterable[RequestIdentity]) -> MempoolControlSnapshot:
         return MempoolControlSnapshot(
             local=self.local,
             peer=self.peer,
-            requests=requests,
+            requests=tuple(
+                self._request_snapshot(self._records[request])
+                for request in requests
+                if request in self._records
+            ),
             available_slots=self.available_slots(),
             protocol_fault=self._protocol_fault,
+        )
+
+    def _request_snapshot(self, record: _RequestRecord) -> MempoolRequestSnapshot:
+        lease = record.p_slot if self.local.role == "prefill" else record.d_slot
+        return MempoolRequestSnapshot(
+            identity=record.identity,
+            phase=record.phase,
+            prompt_limit=record.prompt_limit,
+            decode_limit=record.decode_limit,
+            reply_to=record.reply_to,
+            d_slot=record.d_slot,
+            p_slot=record.p_slot,
+            owns_slot=lease is not None
+            and self._slot_owner.get(lease.slot) == record.identity,
+            prompt_written=record.prompt_written,
+            transfer_ready=record.transfer_ready,
+            writes_pending=record.writes_pending,
+            binding_confirmed=record.binding_confirmed,
+            pending_done=record.pending_done if record.release_ack is None else None,
+            done=record.done,
+            release_ack=record.release_ack,
         )
 
     def state(self, request: RequestIdentity) -> str:
@@ -282,6 +314,8 @@ class MempoolPDControl:
         """
         preview = copy(self)
         preview._records = {key: replace(value) for key, value in self._records.items()}
+        preview._active_requests = self._active_requests.copy()
+        preview._room_record_counts = self._room_record_counts.copy()
         preview._terminal_order = deque(self._terminal_order)
         preview._seen_d_generation = self._seen_d_generation.copy()
         preview._room_owner = self._room_owner.copy()
@@ -338,8 +372,7 @@ class MempoolPDControl:
         record = _RequestRecord(
             request, "ACQUIRED", prompt_tokens, decode_tokens, reply_to, lease
         )
-        self._records[request] = record
-        self._room_owner[room] = request
+        self._remember_request(record)
         return self._acquire_message(record)
 
     def acquire_prefill(self, request: RequestIdentity, slot: int) -> MempoolMessage:
@@ -592,8 +625,7 @@ class MempoolPDControl:
             reply_to,
             d_slot,
         )
-        self._records[request] = record
-        self._room_owner[request.room] = request
+        self._remember_request(record)
         self._seen_d_generation[d_slot.slot] = d_slot.generation
         return None
 
@@ -821,7 +853,7 @@ class MempoolPDControl:
     def _make_record_room(self) -> None:
         """Evict old terminal records before admitting another attempt."""
         while len(self._records) >= self._max_records and self._terminal_order:
-            self._records.pop(self._terminal_order.popleft(), None)
+            self._evict_terminal()
         if len(self._records) >= self._max_records:
             raise RuntimeError("mempool control record capacity reached")
 
@@ -830,9 +862,27 @@ class MempoolPDControl:
         if record.terminal_recorded:
             return
         record.terminal_recorded = True
+        self._active_requests.remove(record.identity)
         self._terminal_order.append(record.identity)
         while len(self._records) > self._max_records and self._terminal_order:
-            self._records.pop(self._terminal_order.popleft(), None)
+            self._evict_terminal()
+
+    def _remember_request(self, record: _RequestRecord) -> None:
+        """Index protocol work separately from bounded replay history."""
+        request = record.identity
+        self._records[request] = record
+        self._active_requests.add(request)
+        self._room_owner[request.room] = request
+        self._room_record_counts[request.room] = (
+            self._room_record_counts.get(request.room, 0) + 1
+        )
+
+    def _evict_terminal(self) -> None:
+        request = self._terminal_order.popleft()
+        del self._records[request]
+        self._room_record_counts[request.room] -= 1
+        if not self._room_record_counts[request.room]:
+            del self._room_record_counts[request.room]
 
     def _check_binding(self, record: _RequestRecord, message: MempoolMessage) -> None:
         """Reject stale leases even when a bootstrap room has been reused."""

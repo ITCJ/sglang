@@ -1,5 +1,6 @@
 """Exercise the complete TP tick with real control and a CPU collective boundary."""
 
+import pickle
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -18,10 +19,13 @@ class CPUCollective:
         self.barrier = threading.Barrier(size, timeout=10)
         self.values = [None] * size
         self.rounds = [0] * size
+        self.observation_bytes = [0] * size
 
     def gather(self, rank, value):
         """Gather one serializable value in the same order on every rank."""
         self.values[rank] = value
+        if self.rounds[rank] % 3 == 0:
+            self.observation_bytes[rank] = len(pickle.dumps(value))
         self.barrier.wait()
         result = tuple(self.values)
         self.barrier.wait()
@@ -91,6 +95,24 @@ class TestMempoolTPTick(unittest.TestCase):
         self.assertTrue(all(len(c.available_slots()) == 15 for c in self.d))
         self.assertTrue(all(len(c.available_slots()) == 16 for c in self.p))
 
+    def test_tick_payload_does_not_grow_with_unrelated_terminal_history(self):
+        """One active request sends the same observations after 256 completed ones."""
+        requests = [
+            d.acquire_decode(999, "active", 1, 32, 8, "tcp://d:1").request
+            for d in self.d
+        ]
+        self.advance(self.dt)
+        before = self.dc.observation_bytes.copy()
+        for d, request in zip(self.d, requests):
+            for room in range(256):
+                old = d.acquire_decode(room, str(room), 0, 32, 8, "tcp://d:1")
+                d.cancel_local(old.request, "finished")
+            self.assertEqual(len(d.snapshot().requests), 257)
+            self.assertEqual(d.get_request(request).phase, "ACQUIRED")
+        self.advance(self.dt)
+        self.assertEqual(self.dc.observation_bytes, before)
+        self.assertTrue(all(d.has_pending_requests() for d in self.d))
+
     def test_handoff_keeps_p_slot_until_uniform_drain_and_ack(self):
         """Sixteen pairs bind, wait for both readiness facts, then retire together."""
         from dataclasses import replace
@@ -142,6 +164,110 @@ class TestMempoolTPTick(unittest.TestCase):
         self.advance(self.pt, facts)
         self.advance(self.pt, facts)
         self.assertEqual({c.snapshot().requests[0].p_slot.slot for c in self.p}, {0})
+
+    def test_terminal_service_fact_can_retire_on_one_rank_before_the_others(self):
+        """Completed native queues need not drop their last Req on the same tick."""
+        for d in self.d:
+            request = d.acquire_decode(42, "old", 0, 32, 8, "tcp://d:1").request
+            d.cancel_local(request, "finished")
+        fact = RequestObservation(
+            42,
+            32,
+            8,
+            100,
+            attempt="old",
+            cancel=True,
+            release=True,
+            drained=True,
+            host_drained=True,
+            native_freed=True,
+        )
+        for remaining in (16, 15, 1):
+            with ThreadPoolExecutor(max_workers=16) as workers:
+                list(
+                    workers.map(
+                        lambda rank: self.dt[rank].advance(
+                            (fact,) if rank < remaining else ()
+                        ),
+                        range(16),
+                    )
+                )
+        self.assertTrue(all(len(d.available_slots()) == 16 for d in self.d))
+        self.assertFalse(any(d.has_pending_requests() for d in self.d))
+        self.assertEqual(self.effects, [[] for _ in range(16)])
+
+    def test_evicted_terminal_fact_cannot_admit_an_already_freed_request(self):
+        """Old native queue entries do not acquire storage after history eviction."""
+        for rank, p in enumerate(self.p):
+            d = MempoolPDControl(self.d[rank].local, max_records=1)
+            d.apply(p.apply(d.begin_handshake("tcp://d:1")))
+            old = d.acquire_decode(42, "old", 0, 32, 8, "tcp://d:1").request
+            d.cancel_local(old, "finished")
+            next_request = d.acquire_decode(43, "next", 0, 32, 8, "tcp://d:1").request
+            d.cancel_local(next_request, "finished")
+            self.assertIsNone(d.get_request(old))
+            self.d[rank] = d
+        self.dt = self.ticks(self.d, self.p, self.dc)
+        self.advance(
+            self.dt,
+            (
+                RequestObservation(
+                    42,
+                    32,
+                    8,
+                    100,
+                    attempt="old",
+                    release=True,
+                    native_freed=True,
+                ),
+            ),
+        )
+        self.assertTrue(all(len(d.available_slots()) == 16 for d in self.d))
+        self.assertFalse(any(d.has_pending_requests() for d in self.d))
+        self.assertEqual(self.effects, [[] for _ in range(16)])
+
+    def test_late_retirement_after_reuse_allows_different_evicted_history(self):
+        """Each rank verifies old proofs locally even if only some retain the record."""
+        old_done, old_ack, current = [], [], []
+        for rank in range(16):
+            p = MempoolPDControl(self.p[rank].local, max_records=1 if rank == 0 else 2)
+            d = MempoolPDControl(self.d[rank].local, max_records=1 if rank == 0 else 2)
+            d.apply(p.apply(d.begin_handshake("tcp://d:1")))
+            old = d.acquire_decode(42, "old", 0, 32, 8, "tcp://d:1").request
+            # Establish the same old binding via the normal protocol transitions.
+            p.apply(d.acquire_decode(42, "old", 0, 32, 8, "tcp://d:1"))
+            p.apply(d.apply(p.acquire_prefill(old, 0)))
+            d.cancel_local(old, "finished")
+            d.begin_drain(old)
+            done = d.finish_drain(old)
+            ack = p.apply(done)
+            d.apply(ack)
+            acquire = d.acquire_decode(42, "new", 0, 32, 8, "tcp://d:1")
+            p.apply(acquire)
+            p.apply(d.apply(p.acquire_prefill(acquire.request, 0)))
+            self.assertEqual(p.get_request(old) is None, rank == 0)
+            old_done.append(done)
+            old_ack.append(ack)
+            current.append(acquire.request)
+            self.p[rank], self.d[rank] = p, d
+        self.pt = self.ticks(self.p, self.d, self.pc)
+        self.dt = self.ticks(self.d, self.p, self.dc)
+        before = [c.get_request(r) for c, r in zip(self.p + self.d, current * 2)]
+        for _ in range(2):
+            for p, d, done, ack in zip(self.p, self.d, old_done, old_ack):
+                p.enqueue(done)
+                d.enqueue(ack)
+            self.advance(self.pt)
+            self.advance(self.dt)
+            after = [c.get_request(r) for c, r in zip(self.p + self.d, current * 2)]
+            self.assertEqual(after, before)
+            self.assertTrue(
+                all(
+                    c.available_slots() == frozenset(range(1, 16))
+                    for c in self.p + self.d
+                )
+            )
+        self.assertEqual(self.effects, [[] for _ in range(16)])
 
     def test_capacity_wait_uses_original_deadline_without_allocating(self):
         """A seventeenth request waits, then retires without taking a busy slot."""

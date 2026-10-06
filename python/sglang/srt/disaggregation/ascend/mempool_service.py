@@ -272,15 +272,21 @@ class MempoolPDService:
                     "bootstrap room already belongs to a different request"
                 )
             return
-        if self.control.local.role == "decode" and any(
-            r.identity.room == room for r in self.control.snapshot().requests
-        ):
+        if self.control.local.role == "decode" and self.control.has_retained_room(room):
             raise ValueError(
                 "mempool demo requires a fresh bootstrap room; rebootstrap is unsupported"
             )
         record = _Request(
             req, self.clock() + self.bootstrap_timeout, secrets.token_hex(16)
         )
+        # ACQUIRE and CANCEL may finish before P receives its HTTP request.
+        # Reject that late arrival without attaching it to a retired attempt.
+        if (
+            self.control.local.role == "prefill"
+            and self.control.has_retained_room(room)
+            and self.control.get_room_request(room) is None
+        ):
+            record.cancel = True
         if len(req.origin_input_ids) > self.runtime.manager.layout.prompt.tokens:
             record.cancel = True
         if (
@@ -305,18 +311,13 @@ class MempoolPDService:
 
     def _protocol(self, record: _Request) -> MempoolRequestSnapshot | None:
         """Read the one control owner and retain only the request's exact identity."""
-        candidates = [
-            r
-            for r in self.control.snapshot().requests
-            if r.identity.room == record.req.bootstrap_room
-            and (record.identity is None or r.identity == record.identity)
-        ]
-        if not candidates:
-            return None
-        if len(candidates) != 1:
-            raise RuntimeError("ambiguous mempool request attempt")
-        result = candidates[0]
-        record.identity = result.identity
+        result = (
+            self.control.get_request(record.identity)
+            if record.identity is not None
+            else self.control.get_room_request(record.req.bootstrap_room)
+        )
+        if result is not None:
+            record.identity = result.identity
         return result
 
     def can_prefill(self, req: Any) -> bool:
@@ -474,7 +475,7 @@ class MempoolPDService:
                     len(record.req.origin_input_ids),
                     int(record.req.sampling_params.max_new_tokens),
                     record.deadline,
-                    record.attempt,
+                    state.identity.attempt if state is not None else record.attempt,
                     transfer_ready=record.transfer_ready,
                     prompt_ready=prompt_ready,
                     writes_done=done and (not record.cancel or record.drained),
@@ -625,9 +626,8 @@ class MempoolPDService:
 
     def has_pending_work(self) -> bool:
         """Keep scheduler idle/sleep checks aware of persistent ownership and cleanup."""
-        return any(not r.native_freed for r in self._requests.values()) or any(
-            r.phase not in ("CANCELLED", "RELEASED", "CLOSED")
-            for r in self.control.snapshot().requests
+        return any(not r.native_freed for r in self._requests.values()) or (
+            self.control.has_pending_requests()
         )
 
     def bootstrap_failed(self, req: Any) -> None:

@@ -8,8 +8,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from .mempool_control import MempoolControlSnapshot, MempoolPDControl
-from .mempool_protocol import MempoolMessage, MessageType, PoolPeer
+from .mempool_control import MempoolPDControl, MempoolRequestSnapshot
+from .mempool_protocol import MempoolMessage, MessageType, PoolPeer, RequestIdentity
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +35,69 @@ class RequestObservation:
 
 
 @dataclass(frozen=True)
+class _RequestState:
+    """Compare logical protocol facts without transferring pair-local proofs."""
+
+    room: int
+    attempt: str
+    phase: str
+    d_slot: tuple[int, int]
+    p_slot: tuple[int, int] | None
+    owns_slot: bool
+    prompt_limit: int
+    decode_limit: int
+    prompt_written: int | None
+    transfer_ready: bool
+    writes_pending: bool
+    binding_confirmed: bool
+    pending_done: bool
+    release_ack: bool
+
+    @property
+    def retired(self) -> bool:
+        return self.phase in ("CANCELLED", "CLOSED", "RELEASED")
+
+    @classmethod
+    def from_request(cls, record: MempoolRequestSnapshot) -> _RequestState:
+        return cls(
+            record.identity.room,
+            record.identity.attempt,
+            record.phase,
+            (record.d_slot.slot, record.d_slot.generation),
+            (record.p_slot.slot, record.p_slot.generation) if record.p_slot else None,
+            record.owns_slot,
+            record.prompt_limit,
+            record.decode_limit,
+            record.prompt_written,
+            record.transfer_ready,
+            record.writes_pending,
+            record.binding_confirmed,
+            record.pending_done is not None,
+            record.release_ack is not None,
+        )
+
+
+@dataclass(frozen=True)
+class _MessageState:
+    """Agree on an event's metadata; validate its original message in preflight."""
+
+    key: tuple[Any, ...]
+    prompt_tokens: int | None
+    decode_tokens: int | None
+    p_slot: tuple[int, int] | None
+    d_slot: tuple[int, int] | None
+
+
+@dataclass(frozen=True)
 class _Observation:
     """Serialize one worker's durable observations for the same-side TP group."""
 
-    control: MempoolControlSnapshot
+    requests: tuple[_RequestState, ...]
+    cleanup: tuple[_RequestState, ...]
+    available_slots: frozenset[int]
+    peer_ready: bool
     facts: tuple[RequestObservation, ...]
-    messages: tuple[MempoolMessage, ...]
+    messages: tuple[_MessageState, ...]
     now: float
     fault: str | None
 
@@ -99,7 +156,7 @@ class MempoolTPTick:
         try:
             for message in self.control.drain_inbox():
                 if message.kind == MessageType.HEARTBEAT:
-                    if self.control.snapshot().peer is not None:
+                    if self.control.peer is not None:
                         self.control.apply(message)
                         self._last_peer_seen = start
                     continue
@@ -118,18 +175,51 @@ class MempoolTPTick:
                 )
         except Exception as exc:
             fault = str(exc)
+        # Include terminal attempts only while their service facts still need
+        # local cleanup. Historical network messages are checked by control;
+        # their retained records need not be identical across TP ranks.
+        peer = self.control.peer
+        include = []
+        if peer is not None:
+            p, d = (
+                (self.control.local, peer)
+                if self.control.local.role == "prefill"
+                else (peer, self.control.local)
+            )
+            include = [
+                RequestIdentity(f.room, f.attempt, p.session, d.session)
+                for f in facts
+                if f.attempt
+            ]
+        snapshot = self.control.active_snapshot(include)
+        records = {(r.identity.room, r.identity.attempt): r for r in snapshot.requests}
+        states = tuple(
+            _RequestState.from_request(records[key]) for key in sorted(records)
+        )
         observation = _Observation(
-            self.control.snapshot(),
+            tuple(state for state in states if not state.retired),
+            tuple(state for state in states if state.retired),
+            snapshot.available_slots,
+            peer is not None,
             tuple(facts),
-            tuple(self._messages.values()),
+            tuple(
+                _MessageState(
+                    key,
+                    m.prompt_tokens,
+                    m.decode_tokens,
+                    (m.p_slot.slot, m.p_slot.generation) if m.p_slot else None,
+                    (m.d_slot.slot, m.d_slot.generation) if m.d_slot else None,
+                )
+                for key, m in self._messages.items()
+            ),
             start,
-            fault,
+            fault or snapshot.protocol_fault,
         )
         observations = self.gather(observation)
         plan: list[_Action] = []
         error = None
         try:
-            if any(o.fault or o.control.protocol_fault for o in observations):
+            if any(o.fault for o in observations):
                 raise RuntimeError("mempool worker reported a fault")
             plan = self._plan(observations)
             for action in plan:
@@ -138,7 +228,9 @@ class MempoolTPTick:
                     if peer is not None:
                         self.verify_peer(peer)
             self.control.preflight(
-                lambda control: self._commit(plan, facts, control, preview=True)
+                lambda control: self._commit(
+                    plan, facts, records, control, preview=True
+                )
             )
         except Exception as exc:
             error = str(exc)
@@ -146,7 +238,7 @@ class MempoolTPTick:
         outbox: list[MempoolMessage] = []
         if not any(errors):
             try:
-                outbox = self._commit(plan, facts, self.control)
+                outbox = self._commit(plan, facts, records, self.control)
             except Exception as exc:
                 error = str(exc)
         else:
@@ -161,7 +253,7 @@ class MempoolTPTick:
                 raise RuntimeError("mempool peer endpoint is missing")
             self.send(self.endpoint, message)
         if self.endpoint is not None and start - self._last_sent >= 1.0:
-            peer = self.control.snapshot().peer
+            peer = self.control.peer
             if peer is not None:
                 self.send(
                     self.endpoint,
@@ -193,45 +285,29 @@ class MempoolTPTick:
             request.attempt if request else "",
         )
 
-    @staticmethod
-    def _state_key(snapshot: MempoolControlSnapshot) -> tuple[Any, ...]:
-        """Compare logical ownership and phases; each pair has distinct sessions."""
-        return tuple(
-            sorted(
-                (
-                    r.identity.room,
-                    r.identity.attempt,
-                    r.phase,
-                    r.d_slot.slot,
-                    r.d_slot.generation,
-                    (r.p_slot.slot, r.p_slot.generation) if r.p_slot else (-1, -1),
-                    r.owns_slot,
-                    r.prompt_limit,
-                    r.decode_limit,
-                    r.prompt_written,
-                    r.transfer_ready,
-                    r.writes_pending,
-                    r.binding_confirmed,
-                    r.pending_done is not None,
-                    r.release_ack is not None,
-                )
-                for r in snapshot.requests
-            )
-        )
-
     def _plan(self, observations: Sequence[_Observation]) -> list[_Action]:
         """Prioritize cancellation and retirement; only approve common facts."""
         first = observations[0]
         if len(observations) != self.control.local.tp_size:
             raise RuntimeError("mempool tick did not gather the full TP group")
         if any(
-            o.control.available_slots != first.control.available_slots
-            or self._state_key(o.control) != self._state_key(first.control)
+            o.available_slots != first.available_slots or o.requests != first.requests
             for o in observations
         ):
             raise RuntimeError("TP mempool ownership or phase diverged")
         facts = [{f.room: f for f in o.facts} for o in observations]
-        messages = [{self._message_key(m): m for m in o.messages} for o in observations]
+        records = {(r.room, r.attempt): r for r in first.requests}
+        # Native queues may retire their last Req on different ticks. Compare
+        # active protocol state uniformly, but merge optional cleanup records.
+        # A retained terminal record must never look like a new D admission.
+        for observation in observations:
+            for record in observation.cleanup:
+                request_key = (record.room, record.attempt)
+                previous = records.get(request_key)
+                if previous is not None and previous != record:
+                    raise RuntimeError("TP mempool cleanup state diverged")
+                records[request_key] = record
+        messages = [{m.key: m for m in o.messages} for o in observations]
         common = set.intersection(*(set(m) for m in messages))
         priority = {
             "CANCEL": 0,
@@ -248,39 +324,28 @@ class MempoolTPTick:
                 continue
             if key[0] == "DONE" and self.control.local.role == "prefill":
                 owned = any(
-                    r.identity.room == room
-                    and r.identity.attempt == attempt
-                    and r.owns_slot
-                    for r in first.control.requests
+                    r.room == room and r.attempt == attempt and r.owns_slot
+                    for r in first.requests
                 )
                 # Detach any local attachment before returning its physical slot.
                 if owned and any(room in f and not f[room].native_freed for f in facts):
                     continue
-            copies = [m[key] for m in messages]
-            signatures = {
-                (
-                    m.prompt_tokens,
-                    m.decode_tokens,
-                    (m.p_slot.slot, m.p_slot.generation) if m.p_slot else None,
-                    (m.d_slot.slot, m.d_slot.generation) if m.d_slot else None,
-                )
-                for m in copies
-            }
-            if len(signatures) != 1:
+            if len({m[key] for m in messages}) != 1:
                 raise RuntimeError("TP peers supplied inconsistent request metadata")
             plan.append(_Action("message", room, attempt, message_key=key))
             if key[0] == "CANCEL":
                 plan.append(_Action("drain", room, attempt))
             busy.add((room, attempt))
-        free = sorted(first.control.available_slots)
-        records = first.control.requests
-        for record in sorted(
-            records, key=lambda r: (r.identity.room, r.identity.attempt)
-        ):
-            room, attempt = record.identity.room, record.identity.attempt
+        free = sorted(first.available_slots)
+        for request_key in sorted(records):
+            record = records[request_key]
+            room, attempt = record.room, record.attempt
             if (room, attempt) in busy:
                 continue
-            local = [f.get(room) for f in facts]
+            local = [
+                f[room] if room in f and f[room].attempt == attempt else None
+                for f in facts
+            ]
             present = all(f is not None for f in local)
 
             def all_fact(name: str) -> bool:
@@ -376,7 +441,7 @@ class MempoolTPTick:
                         elif not all_fact("host_drained"):
                             plan.append(_Action("drain", room, attempt))
         if self.control.local.role == "prefill":
-            occupied = {r.identity.room for r in records}
+            occupied = {r.room for r in records.values()}
             for fact in first.facts:
                 local = [f.get(fact.room) for f in facts]
                 if fact.room in occupied or not all(f is not None for f in local):
@@ -393,11 +458,15 @@ class MempoolTPTick:
                     elif all(f.native_release for f in local if f is not None):
                         plan.append(_Action("native_release", fact.room))
         if self.control.local.role == "decode" and all(
-            o.control.peer for o in observations
+            o.peer_ready for o in observations
         ):
-            occupied = {r.identity.room for r in records}
+            occupied = {r.room for r in records.values()}
             for fact in sorted(first.facts, key=lambda f: f.room):
-                if fact.room in occupied or not all(fact.room in f for f in facts):
+                if (
+                    fact.native_freed
+                    or fact.room in occupied
+                    or not all(fact.room in f for f in facts)
+                ):
                     continue
                 if fact.cancel or first.now >= fact.deadline:
                     plan.append(_Action("reject", fact.room))
@@ -434,16 +503,13 @@ class MempoolTPTick:
         self,
         plan: Sequence[_Action],
         facts: Sequence[RequestObservation],
+        records: dict[tuple[int, str], MempoolRequestSnapshot],
         control: MempoolPDControl,
         *,
         preview: bool = False,
     ) -> list[MempoolMessage]:
         """Run identical transitions during preflight and commit; effects only commit."""
         by_room = {f.room: f for f in facts}
-        records = {
-            (r.identity.room, r.identity.attempt): r
-            for r in control.snapshot().requests
-        }
         outbox = []
         drained = False
         for action in plan:
@@ -453,6 +519,7 @@ class MempoolTPTick:
             reply = None
             if kind == "message":
                 message = self._messages[action.message_key]
+                request = message.request
                 reply = control.apply(message)
                 if not preview:
                     self._last_peer_seen = self.clock()
@@ -471,6 +538,7 @@ class MempoolTPTick:
                     fact.decode_tokens,
                     self.reply_to,
                 )
+                request = reply.request
             elif kind in ("reject", "native_release", "drain"):
                 if not preview and (kind != "drain" or not drained):
                     self.effect(kind, room)
@@ -511,14 +579,8 @@ class MempoolTPTick:
             if reply is not None:
                 outbox.append(reply)
             if not preview and kind != "drain":
-                current = next(
-                    (
-                        r
-                        for r in control.snapshot().requests
-                        if r.identity.room == room
-                        and r.identity.attempt == action.attempt
-                    ),
-                    record,
+                current = (
+                    control.get_request(request) if request is not None else record
                 )
                 p_slot = current.p_slot if current else None
                 d_slot = current.d_slot if current else None

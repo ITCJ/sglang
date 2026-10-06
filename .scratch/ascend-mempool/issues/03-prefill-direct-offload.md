@@ -35,7 +35,7 @@ server请求：全16 ranks完成512次Graph replay及slot释放；2026-10-06双�
 S5按已验证的小容量范围验收通过，长上下文容量由用户独立跟进；本票仍待S6完成。原KV传输、D staging/host写入及sparse
 attention的host SHM读取在正式模式关闭、在普通模式保留。
 当前MEMPOOL=1选择正式P/D模式；S6.2已删除shadow模式、旧READBACK配置及相关实现，
-有效测试迁移到正式/普通路径。S6.3代码整理和最终NPU复验待执行。
+有效测试迁移到正式/普通路径。S6.3三个STD代码整改完成，最终全范围复查和NPU复验待执行。
 继续使用context1024、P/D各512、TP16、D Graph width16、NUMA `0,2,4,6`的小容量配置。
 大容量/NUMA调查仍归延期的[09](09-numa-allocation-followup.md)，不阻塞本票。
 
@@ -95,7 +95,7 @@ HBM Index K -> indexer top-k -> HBM sparse cache 查询
 | S3 按模式停用重复存储 | 旧实现保留；正式模式host KV和main-KV staging分配为零 | 已提交；Mac检查通过，用户于2026-10-05确认NPU资源gate通过 |
 | S4 精简PD传输 | 仅保留Index K和必要辅助数据，保留联合readiness | 双机六个case全部通过，用户于2026-10-05确认完成；见[S4总结](../ticket-03-s4-summary.md) |
 | S5 正式服务Graph与性能验收 | 完整mempool链路、curl小题目检查、约定性能达标 | 组件gate、服务checker及小题目通过，当前性能获用户确认；S5已验收，见[总结](../ticket-03-s5-summary.md) |
-| S6 全量review、shadow删除与清理 | 精简代码、普通模式兼容、最终版本重跑S5并交付 | S6.1审查及S6.2清理完成，STD三项和最终复验待执行；见[报告](../ticket-03-s6-review.md)及[计划](../ticket-03-s6-plan.md) |
+| S6 全量review、shadow删除与清理 | 精简代码、普通模式兼容、最终版本重跑S5并交付 | S6.1–S6.3完成，最终全范围复查和NPU复验待执行；见[报告](../ticket-03-s6-review.md)及[计划](../ticket-03-s6-plan.md) |
 
 ### S1. 拆分配置与资源职责
 
@@ -412,8 +412,8 @@ shadow专用代码，形成清晰的正式/普通模式实现，并在最终清�
 具体顺序和review清单见[S6计划](../ticket-03-s6-plan.md)。
 
 2026-10-06已完成S6.1首次全量审查，报告见[review记录](../ticket-03-s6-review.md)。
-S6.2已删除shadow/旧READBACK并修正Spec两项P2验证代码缺陷；Standards三项设计
-整理和最终NPU复验待执行，以下总完成条件保持未勾选。
+S6.2已删除shadow/旧READBACK并修正Spec两项P2验证代码缺陷；S6.3已完成Standards三项
+整改及增量复查。最终全范围复查和NPU复验待执行，以下总完成条件保持未勾选。
 用户已确认STD-01共用row推导、STD-02分步查询/活跃视图优化，STD-03改为删除
 fetch调试统计；两个Spec问题已随shadow/READBACK清理迁移，详见S6计划中的处理决定。
 
@@ -489,6 +489,27 @@ S6记录全量review、整改和复查结果；最终版本再次运行S5及普�
 ticket04内容不变；新数据来源导致输出异常时须在03定位，不能交付已知错误。
 
 ## Comments
+
+### 2026-10-06：S6.3三个Standards整改
+
+用户授权按删除统计、共用row推导、control查询/TP同步顺序实施，各部分分别验证和提交。
+STD-03提交`25bfbddfa3`删除生产selected/hit/P-miss/D-miss及checker依赖，保留层覆盖、
+非法读取、Graph完成和安全释放事实，新日志为`decode_completion`；27项针对性CPU测试通过。
+STD-01提交`9ba89e46eb`共用纯`npu/kv_rows.py`，两条writer保留各自存储约束；
+43项针对性CPU测试通过。STD-02为本记录所在的`refactor(ascend): bound control query and TP observation work`提交。
+
+control改用完整identity直接查询和当前room owner接口；活跃协议与有界终态历史分开，
+WAITING_RELEASE_ACK仍参与推进。TP仅同步逻辑协议及本轮清理事实，proof/session保留
+本地原preflight验证。增量Spec复查发现的迟到P取消、各rank终态队列不同步两个回归已修复，
+新增生命周期/事务回归覆盖旧消息、历史淘汰和空闲slot保护。Standards/Spec分别复查，
+无未解决的增量发现。
+
+preflight全量复制策略未改，单独测量显示4094终态加一个活跃请求时约11.5 ms，
+查询约2.2 µs、TP观察458 bytes。完整方法、本地检查和复验说明见
+[S6.3交付](../ticket-03-s6.3-summary.md)。这些是开发Mac数据，不是NPU性能结论。
+最终独立CPU suite 200项、严格mypy 34源文件、standalone Ruff及生产hook规则、format、
+isort和diff空白检查通过。实际NPU gate尚未执行，registered测试需要完整环境。
+03保持open，等待最终全范围复查及用户执行NPU验收，不沿用旧版本S5结果。
 
 ### 2026-10-06：S6.2删除shadow/READBACK并修正SPEC-01/02
 

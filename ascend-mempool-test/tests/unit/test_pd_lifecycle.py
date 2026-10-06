@@ -78,6 +78,61 @@ class TestMempoolPDControl(unittest.TestCase):
         self.d.apply(release_ack)
         self.assertEqual(self.d.state(request), "CLOSED")
 
+    def test_direct_queries_isolate_reused_room_and_active_view_keeps_pending_ack(self):
+        acquire = self.d.acquire_decode(27, "first", 5, 32, 16, "tcp://d:4351")
+        request = acquire.request
+        self.p.apply(acquire)
+        self.p.apply(self.d.apply(self.p.acquire_prefill(request, 7)))
+        before = self.d.get_request(request)
+        self.assertEqual(self.d.get_room_request(27), before)
+        self.d.cancel_local(request, "finished")
+        self.d.begin_drain(request)
+        done = self.d.finish_drain(request)
+        self.assertEqual(before.phase, "WAITING_READY")
+        self.assertEqual(
+            self.d.active_snapshot().requests[0].phase, "WAITING_RELEASE_ACK"
+        )
+        self.assertFalse(self.d.active_snapshot().requests[0].owns_slot)
+        self.assertIsNone(self.d.get_room_request(27))
+        self.assertTrue(self.d.has_pending_requests())
+        second = self.d.acquire_decode(27, "second", 5, 32, 16, "tcp://d:4351")
+        self.assertEqual(self.d.get_room_request(27).identity, second.request)
+        ack = self.p.apply(done)
+        self.d.apply(ack)
+        self.assertEqual(self.d.get_request(request).phase, "CLOSED")
+        self.assertEqual(
+            [r.identity for r in self.d.active_snapshot().requests], [second.request]
+        )
+        self.assertTrue(self.d.has_retained_room(27))
+        self.assertIsNone(self.d.get_request(replace(request, attempt="unknown")))
+        self.assertIsNone(self.d.get_request(replace(request, d_session="old")))
+
+    def test_preview_and_eviction_preserve_query_indexes(self):
+        """Preview may cancel and evict records without changing the live view."""
+        d = MempoolPDControl(self.d.local, max_records=2)
+        d.apply(self.p.apply(d.begin_handshake("tcp://d:4351")))
+        old = d.acquire_decode(1, "old", 0, 32, 16, "tcp://d:4351").request
+        d.cancel_local(old, "finished")
+        current = d.acquire_decode(2, "current", 0, 32, 16, "tcp://d:4351").request
+
+        def preview(control):
+            control.cancel_local(current, "preview")
+            control.acquire_decode(3, "next", 0, 32, 16, "tcp://d:4351")
+
+        before = d.snapshot()
+        d.preflight(preview)
+        self.assertEqual(d.snapshot(), before)
+        self.assertEqual([r.identity for r in d.active_snapshot().requests], [current])
+        self.assertTrue(d.has_retained_room(1))
+        self.assertFalse(d.has_retained_room(3))
+        d.cancel_local(current, "finished")
+        self.assertFalse(d.has_pending_requests())
+        d.acquire_decode(3, "next", 0, 32, 16, "tcp://d:4351")
+        self.assertIsNone(d.get_request(old))
+        self.assertFalse(d.has_retained_room(1))
+        self.assertTrue(d.has_retained_room(2))
+        self.assertTrue(d.has_retained_room(3))
+
     def test_snapshot_is_immutable_and_does_not_follow_later_transitions(self):
         """Read ownership/readiness without exposing records or mutating control."""
         empty = self.p.snapshot()

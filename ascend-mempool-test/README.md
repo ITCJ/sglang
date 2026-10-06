@@ -506,12 +506,18 @@ writer 只有 `write(values, *, slots, positions, valid)`；`MempoolWriteInputs`
 runtime 管理固定 binding 表，writer 不持有另一套输入缓存。边界检查和全 invalid
 时仍 launch 的行为保留。
 
-`MempoolPDControl.snapshot()` 返回 frozen dataclass、tuple 和 frozenset，可序列化，
-包含当前 peer/fault、各 request 的 phase、P/D binding、readiness、待确认消息及
-available slots。`owns_slot` 表示本侧当前实际占用；旧 record 的 slot 字段可能只是
-保留的确认信息。`binding_confirmed/writes_pending` 为 P 事实，`transfer_ready` 为 D
-事实。读取不消费 inbox、不转换状态，不暴露内部可变 record；service/tick 每次从
-control 取新观察值，不能维护另一份可变协议状态机。
+`MempoolPDControl.get_request(identity)`直接查询完整attempt；identity尚未取得时，
+`get_room_request(room)`只查询当前room owner。返回不可变快照，不消费inbox或转换状态。
+`active_snapshot(include)`包含仍需推进的协议及指定的本地清理记录；slot已释放但等待
+ACK的请求仍在其中。完整`snapshot()`保留用于诊断，service/tick不再复制全量历史。
+`owns_slot`表示本侧实际占用，旧record的slot字段可以只是保留的确认信息。
+`binding_confirmed/writes_pending`为P事实，`transfer_ready`为D事实。
+
+TP同步逻辑状态、slot/generation和当前完成事实；完整session、binding proof和历史
+消息留在本rank，由原control preflight验证。每tick复用同一份不可变观察，仍执行
+观察、预检结果、提交结果三次collective；全部rank预检通过后才提交和发送。
+preflight暂时保留全量record复制，复制成本的单独评估见
+[S6.3交付](../.scratch/ascend-mempool/ticket-03-s6.3-summary.md)。
 
 两机 gate 沿用01的环境/SDK/BM/test-channel/安全 teardown。默认两层、16 slots、
 P每slot8 tokens、D每slot16 tokens、compact dim576；对齐后各机贡献1 GiB。

@@ -172,6 +172,29 @@ class TestMempoolPDService(unittest.TestCase):
         self.assertEqual(self.freed, [(req.rid, False)])
         self.assertFalse(self.service.has_pending_work())
 
+    def test_prefill_arriving_after_remote_cancellation_retires_without_timeout(self):
+        """ACQUIRE/CANCEL can finish before the corresponding HTTP Req is tracked."""
+        acquire = self.d.acquire_decode(91, "early-cancel", 0, 2, 4, "tcp://d:1")
+        self.p.enqueue(acquire)
+        self.service.advance()
+        self.p.enqueue(self.d.cancel_local(acquire.request, "client disconnected"))
+        self.service.advance()
+        self.assertEqual(self.p.get_request(acquire.request).phase, "CANCELLED")
+        self.assertIsNone(self.p.get_room_request(91))
+        req = self.request(91, None)
+        cancelled = []
+        self.service._cancel_request = cancelled.append
+        self.service.track(req)
+        self.service.advance()
+        self.assertEqual(cancelled, [req])
+        # Model the scheduler's confirmation that no native sender was started.
+        self.service.defer_release(req, is_insert=False, handoff=True)
+        self.service.advance()
+        self.assertEqual(self.freed, [(req.rid, False)])
+        self.assertFalse(self.service.tracks(req))
+        self.assertFalse(self.service.has_pending_work())
+        self.assertEqual(len(self.p.available_slots()), 16)
+
     def test_p_cleanup_stops_polling_cleared_sender_status(self):
         """A cancelled P slot can outlive its already-cleared native sender."""
         from unittest.mock import patch
