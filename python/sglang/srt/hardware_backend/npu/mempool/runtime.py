@@ -79,9 +79,6 @@ class _Binding:
     completed: int = 0
     forwards: int = 0
     replay_forwards: int = 0
-    selected_kv: int = 0
-    prompt_misses: int = 0
-    decode_misses: int = 0
 
 
 @dataclass
@@ -164,11 +161,11 @@ class MempoolRuntime:
         self._fetch = (
             KVFetch(manager, block_dim, fetch_kernel) if fetch_enabled else None
         )
-        # Per-layer/row coverage, invalid count/position, selections and P/D misses.
+        # Per-layer/row coverage and invalid count/position.
         # Read only a completed snapshot, never synchronize inside captured work.
         self._fetch_checks = (
             torch.zeros(
-                (self.layout.layers, req_pool_rows, 6), dtype=torch.int64, device=device
+                (self.layout.layers, req_pool_rows, 3), dtype=torch.int64, device=device
             )
             if fetch_enabled
             else None
@@ -510,19 +507,16 @@ class MempoolRuntime:
         )
         invalid = bound[:, None] & (positions >= 0) & ~valid
         first = invalid.to(torch.int32).argmax(dim=1, keepdim=True)
-        metrics = torch.stack(
+        checks = torch.stack(
             (
                 bound.long(),
                 invalid.sum(1),
                 torch.where(invalid.any(1), positions.gather(1, first).squeeze(1), -1),
-                valid.sum(1),
-                torch.zeros_like(safe_rows),
-                torch.zeros_like(safe_rows),
             ),
             dim=1,
         )
         self._fetch_checks[layer].index_add_(
-            0, safe_rows, torch.where(bound[:, None], metrics, 0)
+            0, safe_rows, torch.where(bound[:, None], checks, 0)
         )
         active.selection_layers.add(layer)
         return valid
@@ -568,22 +562,12 @@ class MempoolRuntime:
             self.row_prompt_len,
             self.row_decode_len,
         )
-        # This stream waits for selection metadata via copy_ready. The caller
-        # joins miss_done before end_forward snapshots these device counters.
-        assert self._fetch_checks is not None
-        safe_rows = torch.where(
-            (req_rows > 0) & (req_rows < self.row_slot.numel()), req_rows, 0
-        ).long()
-        prompt = positions < self.row_prompt_len[safe_rows, None]
-        self._fetch_checks[layer, :, 4:].index_add_(
-            0,
-            safe_rows,
-            torch.stack(((misses & prompt).sum(1), (misses & ~prompt).sum(1)), dim=1),
-        )
         active.fetch_layers.add(layer)
 
-    def fetch_report(self, binding: Optional[KVRowBinding]) -> Optional[dict[str, Any]]:
-        """Report completed formal work before detach, without host-reference claims."""
+    def completion_report(
+        self, binding: Optional[KVRowBinding]
+    ) -> Optional[dict[str, Any]]:
+        """Report validated decode completion before detaching its binding."""
         if not self.fetch_enabled:
             return None
         if self.fault is not None:
@@ -593,12 +577,9 @@ class MempoolRuntime:
             row = binding.req_pool_idx
             self.assert_bound(row, binding)
             if self._row_in_flight(row):
-                raise RuntimeError("cannot report an in-flight fetch")
+                raise RuntimeError("cannot report an in-flight decode")
             progress = self._bindings[row]
         forwards = progress.forwards if progress else 0
-        selected = progress.selected_kv if progress else 0
-        prompt = progress.prompt_misses if progress else 0
-        decode = progress.decode_misses if progress else 0
         return {
             "status": "completed" if forwards else "zero_decode",
             "row": binding.req_pool_idx if binding else None,
@@ -610,10 +591,6 @@ class MempoolRuntime:
             "replay_forwards": progress.replay_forwards if progress else 0,
             "layers": self.layout.layers,
             "layer_checks": forwards * self.layout.layers,
-            "selected_kv": selected,
-            "cache_hits": selected - prompt - decode,
-            "prompt_misses": prompt,
-            "decode_misses": decode,
         }
 
     def end_forward(self) -> None:
@@ -669,7 +646,7 @@ class MempoolRuntime:
             if fetch_counts is not None:
                 for layer, samples in enumerate(fetch_counts):
                     for row, sample in enumerate(samples):
-                        checks, invalid, position = sample[:3]
+                        checks, invalid, position = sample
                         if checks != int(row in item.rows) or invalid:
                             self.fault = (
                                 f"mempool KV fetch invalid selection layer={layer + self.start_layer} "
@@ -682,14 +659,6 @@ class MempoolRuntime:
                 progress.completed = total
                 progress.forwards += 1
                 progress.replay_forwards += int(item.replay)
-                if fetch_counts is not None:
-                    progress.selected_kv += sum(layer[row][3] for layer in fetch_counts)
-                    progress.prompt_misses += sum(
-                        layer[row][4] for layer in fetch_counts
-                    )
-                    progress.decode_misses += sum(
-                        layer[row][5] for layer in fetch_counts
-                    )
                 completed.append(row)
             self._pending.popleft()
         return completed

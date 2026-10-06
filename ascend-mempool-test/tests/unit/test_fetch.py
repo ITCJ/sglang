@@ -127,31 +127,28 @@ class TestKVFetch(unittest.TestCase):
             )
             self.runtime.end_forward()
         with self.assertRaisesRegex(RuntimeError, "in-flight"):
-            self.runtime.fetch_report(binding)
+            self.runtime.completion_report(binding)
         self.events[-2].done = True
         self.runtime.poll_completed()
         with self.assertRaisesRegex(RuntimeError, "in-flight"):
-            self.runtime.fetch_report(binding)
+            self.runtime.completion_report(binding)
         self.events[-1].done = True
         self.runtime.poll_completed()
-        report = self.runtime.fetch_report(binding)
+        report = self.runtime.completion_report(binding)
         self.assertEqual(report["status"], "completed")
         self.assertEqual(report["forwards"], 2)
         self.assertEqual(report["written_kv"], 2)
         self.assertEqual(report["layer_checks"], 2)
-        self.assertEqual(report["selected_kv"], 4)
-        self.assertEqual(report["cache_hits"], 2)
-        self.assertEqual((report["prompt_misses"], report["decode_misses"]), (1, 1))
         self.runtime.detach_row(binding)
         new_binding = self.runtime.bind(1, slot=5, prompt_tokens=2, prompt_slot=7)
-        empty = self.runtime.fetch_report(new_binding)
+        empty = self.runtime.completion_report(new_binding)
         self.assertEqual(
-            (empty["status"], empty["forwards"], empty["selected_kv"]),
+            (empty["status"], empty["forwards"], empty["written_kv"]),
             ("zero_decode", 0, 0),
         )
         self.assertEqual((empty["prompt_slot"], empty["decode_slot"]), (7, 5))
         with self.assertRaisesRegex(RuntimeError, "binding"):
-            self.runtime.fetch_report(binding)
+            self.runtime.completion_report(binding)
 
     def test_new_destination_and_rebound_row_do_not_reuse_old_copy_target(self):
         old = self.runtime.bind(1, slot=3, prompt_tokens=4, prompt_slot=2)

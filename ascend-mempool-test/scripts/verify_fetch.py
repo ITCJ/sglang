@@ -305,7 +305,7 @@ def fetch_checks(
                     results.append(result)
                     print(f"[D] FETCH_PASS {json.dumps(result)}", flush=True)
                 for binding in bindings:
-                    report = runtime.fetch_report(binding)
+                    report = runtime.completion_report(binding)
                     expected_report = dict(
                         status="completed",
                         forwards=5,
@@ -313,10 +313,6 @@ def fetch_checks(
                         submitted_kv=5,
                         written_kv=5,
                         layer_checks=5 * layers,
-                        selected_kv=12 * layers,
-                        cache_hits=4 * layers,
-                        prompt_misses=4 * layers,
-                        decode_misses=4 * layers,
                     )
                     if report is None or any(
                         report[key] != value for key, value in expected_report.items()

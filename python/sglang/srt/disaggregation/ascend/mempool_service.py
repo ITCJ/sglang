@@ -589,16 +589,16 @@ class MempoolPDService:
             if record.cancelled_at is None:
                 record.cancelled_at = self.clock()
         elif kind == "native_release" and not record.native_freed:
-            fetch = self.runtime.fetch_report(record.binding)
-            if fetch is not None:
-                fetch["cancelled"] = record.cancel
-                fetch["drained"] = record.drained
+            completion = self.runtime.completion_report(record.binding)
+            if completion is not None:
+                completion["cancelled"] = record.cancel
+                completion["drained"] = record.drained
                 logger.info(
-                    "mempool fetch_result role=decode rank=%s room=%s attempt=%s data=%s",
+                    "mempool decode_completion role=decode rank=%s room=%s attempt=%s data=%s",
                     self.control.local.tp_rank,
                     room,
                     record.identity.attempt if record.identity else "NONE",
-                    json.dumps(fetch, sort_keys=True),
+                    json.dumps(completion, sort_keys=True),
                 )
             if record.binding is not None:
                 record.receipt = self.runtime.detach_row(record.binding)

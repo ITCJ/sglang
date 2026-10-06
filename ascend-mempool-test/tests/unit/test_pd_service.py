@@ -294,7 +294,7 @@ class TestMempoolPDService(unittest.TestCase):
         self.assertNotIn(0, self.d.available_slots())
         with self.assertLogs("ascend_mempool_pd.mempool_service", level="INFO") as logs:
             service.advance()
-        report_line = next(line for line in logs.output if "fetch_result" in line)
+        report_line = next(line for line in logs.output if "decode_completion" in line)
         self.assertIn("rank=0 room=7", report_line)
         report = json.loads(report_line.split(" data=", 1)[1])
         self.assertEqual(report["status"], "zero_decode")
@@ -398,7 +398,9 @@ class TestMempoolPDService(unittest.TestCase):
                     ) as logs:
                         service.advance()
                         service.advance()
-                    line = next(line for line in logs.output if "fetch_result" in line)
+                    line = next(
+                        line for line in logs.output if "decode_completion" in line
+                    )
                     report = json.loads(line.split(" data=", 1)[1])
                     self.assertEqual(report["status"], "completed")
                     self.assertEqual(

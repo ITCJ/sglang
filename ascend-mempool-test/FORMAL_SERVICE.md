@@ -160,10 +160,10 @@ zero-decode、至少两个实际decode请求、P/D物理slot新generation复用�
 native transfer与BM ready允许任意先后，但必须都早于start_decode。
 P侧必须按BOUND_ACK、start_prefill、row_detach、native_free、native_release、DONE
 的顺序执行。P可凭完成的写入receipt在native_release之后发布ready，checker允许该顺序。
-不同rank的top-k/counter数值可不同；每个rank分别核对覆盖和计数等式。
+每个rank分别核对Graph、写入完成、层覆盖、绑定和释放事实。
 
-`fetch_result`含`forwards/replay_forwards/written_kv`、选中KV数、HBM hit数及P/D miss数。
-计数跨层累计；它证明执行和完成事实，不声称与参考KV做了数值对照。
+`decode_completion`含`forwards/replay_forwards/submitted_kv/written_kv`、层覆盖和绑定。
+不再采集或要求selected/hit/P-miss/D-miss统计；三条取数路径由独立fetch gate逐元素验证。
 `written_kv`按实际提交forward核对，不要求等于completion_tokens减一；overlap可能多提交一步。
 取消、运行错误、缺rank、过早释放或遗留资源会使checker失败。
 只缺slot复用时可再发两次32-token请求并重新收集日志；其他失败保留现场后定位。
@@ -184,7 +184,7 @@ python3 -m json.tool /tmp/ticket03-s5-formal/answer.json
 ```
 
 预期`17 + 25 - 9 = 33`。用户核对回答正确、没有乱码或异常截断，并回传结论。
-在D日志找这次新增的非零`fetch_result`，确认`replay_forwards=forwards>0`且最终释放。
+在D日志找这次新增的非零`decode_completion`，确认`replay_forwards=forwards>0`且最终释放。
 如果模型使用长thinking而256输出不足，先保留这次结果，再改短题或在容量内调整上限；
 不能把被截断的回答当通过。这里使用`/generate`原生文本接口，无chat模板的额外token。
 当前D BM每slot容量为512；若512-token回答仍被截断，先缩短回答或核对模型template

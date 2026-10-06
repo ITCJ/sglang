@@ -36,13 +36,9 @@ def check_resources(role: str, data: dict[str, Any]) -> None:
         raise RuntimeError(f"unexpected formal {role} resources: {data}")
 
 
-def check_fetch(data: dict[str, Any], layers: int, slots: tuple[int, ...]) -> str:
-    """Count completed work without claiming a comparison to reference KV."""
+def check_completion(data: dict[str, Any], layers: int, slots: tuple[int, ...]) -> str:
+    """Require graph, binding and validated completion facts before release."""
     steps = data["forwards"]
-    counts = [
-        data[name]
-        for name in ("selected_kv", "cache_hits", "prompt_misses", "decode_misses")
-    ]
     if (
         data["cancelled"]
         or not data["drained"]
@@ -51,24 +47,21 @@ def check_fetch(data: dict[str, Any], layers: int, slots: tuple[int, ...]) -> st
         or data["submitted_kv"] != steps
         or data["written_kv"] != steps
         or data["replay_forwards"] != steps
-        or any(count < 0 for count in counts)
-        or counts[0] != sum(counts[1:])
     ):
-        raise RuntimeError(f"incomplete formal fetch: {data}")
+        raise RuntimeError(f"incomplete formal decode: {data}")
     if data["status"] == "zero_decode":
-        if steps != 0 or any(counts):
+        if steps != 0:
             raise RuntimeError(f"nonempty zero-decode report: {data}")
     elif data["status"] == "completed":
         if (
             steps < 1
-            or counts[0] <= 0
             or not isinstance(data["row"], int)
             or data["row"] <= 0
             or (data["prompt_slot"], data["decode_slot"]) != (slots[0], slots[2])
         ):
-            raise RuntimeError(f"missing graph/hit/P-miss/D-miss evidence: {data}")
+            raise RuntimeError(f"missing graph or binding evidence: {data}")
     else:
-        raise RuntimeError(f"unexpected fetch status: {data}")
+        raise RuntimeError(f"unexpected decode status: {data}")
     return str(data["status"])
 
 
@@ -141,12 +134,14 @@ def check_logs(
                 identity = (role, rank, room, attempt)
                 history = events.setdefault(identity, [])
                 event = fields.get("event")
-                if "mempool fetch_result " in line:
+                if "mempool decode_completion " in line:
                     report_key = (rank, room, attempt)
                     if report_key in reports:
-                        raise RuntimeError("duplicate fetch result; use fresh logs")
+                        raise RuntimeError(
+                            "duplicate decode completion; use fresh logs"
+                        )
                     reports[report_key] = json.loads(line.split(" data=", 1)[1])
-                    event = "fetch_result"
+                    event = "decode_completion"
                 for effect in ("row_detach", "native_free"):
                     if f"mempool {effect} " in line:
                         event = effect
@@ -229,8 +224,13 @@ def check_logs(
                 < p_events.index("DONE")
             ):
                 raise RuntimeError(f"misordered P readiness: room={room} rank={rank}")
-            rank_statuses.add(check_fetch(data, layers, bound_slots))
-            ordered = ["acquire_decode", "ACQUIRED", "start_decode", "fetch_result"]
+            rank_statuses.add(check_completion(data, layers, bound_slots))
+            ordered = [
+                "acquire_decode",
+                "ACQUIRED",
+                "start_decode",
+                "decode_completion",
+            ]
             if data["forwards"]:
                 ordered.append("row_detach")
             ordered += ["native_free", "release", "RELEASE_ACK"]
@@ -253,13 +253,6 @@ def check_logs(
         raise RuntimeError("require zero-decode and at least two real graph requests")
     if any(ranks != RANKS for ranks in reused.values()):
         raise RuntimeError("missing P/D physical slot reuse with new generations")
-    for rank in RANKS:
-        for counter in ("cache_hits", "prompt_misses", "decode_misses"):
-            if (
-                sum(data[counter] for (r, _, _), data in reports.items() if r == rank)
-                <= 0
-            ):
-                raise RuntimeError(f"missing {counter}: rank={rank}")
     return dict(
         status="formal_service_passed",
         requests=len(attempts),

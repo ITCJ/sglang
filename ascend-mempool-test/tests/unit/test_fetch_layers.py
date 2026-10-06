@@ -99,7 +99,7 @@ class TestKVFetchLayers(unittest.TestCase):
                 )
                 if old is not None:
                     with self.assertRaisesRegex(RuntimeError, "binding"):
-                        self.runtime.fetch_report(old)
+                        self.runtime.completion_report(old)
                 for layer, source in enumerate(self.p):
                     source[prompt_slot, 0] = base + 1 + layer
                     source[prompt_slot, 3] = base + 3 + layer

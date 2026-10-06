@@ -220,12 +220,13 @@ BM与Graph。2026-10-04用户确认该gate在Graph width16、3个真实rows、to
 block_dim24/48下通过eager及两轮replay，覆盖P/D miss、mixed、all-hit和zero-valid。
 本结果不能替代正式服务分配/PD控制及NPU attention验收。详见上方S2总结。
 
-## 正式完成证据（Ticket03 S5）
+## 正式完成证据（Ticket03 S6.3）
 
-`fetch_report()`只读取已完成事件对应的计数。每个forward的快照包括逐层覆盖、非法
-selection、有效selection数量和P/D miss数；其余有效selection计为HBM hit。
-`mempool fetch_result`在D drain完成、row detach之前输出，含实际submitted/written KV、
-forward/replay次数、层覆盖及来源计数。zero-decode保持全零，不伪造数值验证通过。
+`completion_report()`只读取经过事件完成验证的进度。每个forward保留独立的写入及
+逐层selection覆盖/非法读取快照，不能被随后forward覆盖。
+`mempool decode_completion`在D drain完成、row detach之前输出，含实际submitted/written KV、
+forward/replay次数、层覆盖及绑定。zero-decode保持零进度。selected/hit/P-miss/D-miss
+统计的计算、设备列、快照载荷和host累计已删除。
 这里没有旧host参考，独立pattern gate和用户curl分别检查数据copy与小题目输出。
 
 `mempool resources`统计真实buffer字节及注册条目；`mempool native_copy`记录成功的

@@ -77,13 +77,9 @@ def service_logs():
                         written_kv=steps,
                         layers=2,
                         layer_checks=2 * steps,
-                        selected_kv=8 * steps,
-                        cache_hits=4 * steps,
-                        prompt_misses=2 * steps,
-                        decode_misses=2 * steps,
                     )
                     lines.append(
-                        f"mempool fetch_result role={role} rank={rank} {identity} "
+                        f"mempool decode_completion role={role} rank={rank} {identity} "
                         f"data={json.dumps(report)}"
                     )
                     if steps:
@@ -142,7 +138,6 @@ class TestServiceGate(unittest.TestCase):
             ("decode", "attempt=attempt2", "attempt=wrong2"),
             ("decode", "d_generation=3", "d_generation=2"),
             ("prefill", "kind=index_k bytes=100", "kind=index_k bytes=0"),
-            ("decode", '"selected_kv": 24', '"selected_kv": 23'),
             ("decode", '"prompt_slot": 0', '"prompt_slot": 5'),
             ("prefill", "mempool row_detach ", "mempool ignored "),
             ("prefill", "mempool native_free ", "mempool ignored "),
@@ -199,7 +194,7 @@ class TestServiceGate(unittest.TestCase):
             ),
             ("graph_replay device=npu:15", "ignored_replay device=npu:15"),
             (
-                "mempool fetch_result role=decode rank=15 room=3",
+                "mempool decode_completion role=decode rank=15 room=3",
                 "ignored_result role=decode rank=15 room=3",
             ),
             ('"layer_checks": 6', '"layer_checks": 5'),
