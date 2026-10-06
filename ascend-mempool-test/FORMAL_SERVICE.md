@@ -5,9 +5,9 @@ P=`10.120.72.31`，D=`10.120.72.32`；两机均在`/home/cryang/sglang`运行。
 模型默认`/data_lib/data/models/GLM-5.1-w4a8`。地址、权重、网卡不同时用脚本环境变量覆盖。
 需要两侧各16个NPU、同一代码版本、S2–S4已验证的torch_npu/sgl_kernel_npu/MemFabric。
 
-`MEMPOOL=1`现在选择正式模式；必须设置`SGLANG_NPU_MEMPOOL_READBACK=0`。
-本目录提供统一启动脚本。外部`ascend-sglang-script`仓库的`glm51mempool.sh`已在
-`24a6857`切换为正式S5配置；更早版本设置READBACK=1，需要先更新。
+`MEMPOOL=1`选择正式模式。S6.2已删除shadow及`SGLANG_NPU_MEMPOOL_READBACK`；
+旧启动脚本移除该变量的export。当前版本不提供旧host参考比较入口。
+本目录提供统一启动脚本，也可使用外部`ascend-sglang-script`仓库的`glm51mempool.sh`。
 外部脚本保存为`p.log`/`d.log`，本目录脚本保存为`prefill.log`/`decode.log`，
 运行下面的日志checker时按所用脚本调整路径。
 BM目前使用DRAM；D保留的HBM sparse cache是另一个存储层。
@@ -165,7 +165,7 @@ P侧必须按BOUND_ACK、start_prefill、row_detach、native_free、native_relea
 `fetch_result`含`forwards/replay_forwards/written_kv`、选中KV数、HBM hit数及P/D miss数。
 计数跨层累计；它证明执行和完成事实，不声称与参考KV做了数值对照。
 `written_kv`按实际提交forward核对，不要求等于completion_tokens减一；overlap可能多提交一步。
-取消、运行错误、缺rank、过早释放、旧readback输出或遗留资源会使checker失败。
+取消、运行错误、缺rank、过早释放或遗留资源会使checker失败。
 只缺slot复用时可再发两次32-token请求并重新收集日志；其他失败保留现场后定位。
 
 ## 4. 用户 curl 小题目检查

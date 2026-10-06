@@ -30,7 +30,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
             "pd_decode_mempool",
             "local_offload",
             "pd_decode_offload",
-            "pd_decode_mempool_shadow",
         ),
     )
     parser.add_argument("--device-id", type=int, default=0)
@@ -210,7 +209,6 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
     assert (result["native_kv_bytes"] == 0) == mode.uses_sparse_kv_cache
     if formal:
         assert pool.get_contiguous_buf_infos() == pool.get_state_buf_infos()
-        require_rejected(mode.validate_runtime_support, "S5")
     if not mode.uses_sparse_kv_cache:
         allocator.free(loc)
         assert allocator.available_size() == pool.size

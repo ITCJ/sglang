@@ -9,6 +9,7 @@ from sgl_kernel_npu.attention.sinks_attention import (
     attention_sinks_prefill_triton,
     attention_sinks_triton,
 )
+
 from sglang.srt.configs.model_config import AttentionArch
 from sglang.srt.dllm.config import DllmConfig
 from sglang.srt.hardware_backend.npu.attention.ascend_torch_native_backend import (
@@ -356,16 +357,12 @@ class AscendAttnBackend(AttentionBackend):
                 model_config=model_runner.model_config,
                 use_mla_backend=model_runner.use_mla_backend,
             )
-        self.sparse_kv_offload_mode.validate_runtime_support()
         self.enable_sparsity_driven_kv_offload = (
             self.sparse_kv_offload_mode.uses_sparse_kv_cache
         )
         self.sparse_kv_manager = None
         self.mempool_runtime: Optional[MempoolRuntime] = None
-        if self.sparse_kv_offload_mode in (
-            SparseKVOffloadMode.PD_PREFILL_NATIVE,
-            SparseKVOffloadMode.PD_PREFILL_MEMPOOL_SHADOW,
-        ):
+        if self.sparse_kv_offload_mode is SparseKVOffloadMode.PD_PREFILL_NATIVE:
             logger.info(
                 "Sparsity-driven KV offload is configured, but disabled on "
                 "PD prefill workers so native NPU KV cache remains the "

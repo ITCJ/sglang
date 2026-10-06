@@ -67,7 +67,7 @@ class TestKVFetch(unittest.TestCase):
         self.runtime.write_layer(5, k, k, batch)
         return batch
 
-    def test_fetch_without_readback_preserves_hits_and_uses_independent_slots(self):
+    def test_fetch_preserves_hits_and_uses_independent_slots(self):
         binding = self.runtime.bind(1, slot=3, prompt_tokens=4, prompt_slot=2)
         self.p[2, 0] = 101
         self.p[2, 3] = 103
@@ -89,7 +89,6 @@ class TestKVFetch(unittest.TestCase):
         self.events[-1].done = True
         self.runtime.poll_completed()
         self.assertEqual(self.runtime.written_tokens(1), 1)
-        self.assertIsNone(self.runtime.readback_report(binding))
         self.runtime.detach_row(binding)
 
     def test_unwritten_nonnegative_selection_faults_after_completion(self):
@@ -206,7 +205,7 @@ class TestKVFetch(unittest.TestCase):
         self.assertTrue((output == -7).all())
         self.assertEqual(self.runtime.poll_completed(), [])
 
-    def test_decode_binding_requires_prompt_slot_with_readback_off(self):
+    def test_decode_binding_requires_prompt_slot(self):
         with self.assertRaisesRegex(ValueError, "prompt slot"):
             self.runtime.bind(1, slot=3, prompt_tokens=4)
         with self.assertRaisesRegex(IndexError, "prompt slot"):

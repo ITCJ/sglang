@@ -191,9 +191,29 @@ class TestServiceGate(unittest.TestCase):
         logs["decode"] = "\n".join(lines)
         self.assertEqual(self.check(logs)["status"], "formal_service_passed")
 
-    def test_readback_or_partial_new_request_cannot_hide_behind_passes(self):
+    def test_each_rank_must_finish_and_supply_real_graph_and_layer_evidence(self):
+        for before, after in (
+            (
+                "rank=15 room=3 attempt=attempt3 p_slot=0 p_generation=3 d_slot=1 d_generation=3 event=RELEASE_ACK",
+                "ignored_ack",
+            ),
+            ("graph_replay device=npu:15", "ignored_replay device=npu:15"),
+            (
+                "mempool fetch_result role=decode rank=15 room=3",
+                "ignored_result role=decode rank=15 room=3",
+            ),
+            ('"layer_checks": 6', '"layer_checks": 5'),
+        ):
+            with self.subTest(before=before):
+                logs = service_logs()
+                logs["decode"] = logs["decode"].replace(before, after, 1)
+                with self.assertRaises(RuntimeError):
+                    self.check(logs)
+
+    def test_fault_or_partial_new_request_cannot_hide_behind_passes(self):
         for extra in (
-            "mempool readback_result role=decode rank=0",
+            "mempool KV fetch invalid selection layer=5 row=1 position=5 invalid_kv=1",
+            "mempool TP tick failed: unsafe release",
             "mempool role=decode rank=0 room=4 attempt=four event=acquire_decode free=15",
             "Traceback (most recent call last)",
         ):

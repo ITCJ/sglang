@@ -34,8 +34,8 @@ server请求：全16 ranks完成512次Graph replay及slot释放；2026-10-06双�
 覆盖zero-decode、连续decode、slot新generation复用与安全释放。关闭thinking后小题目输出检查通过；用户确认当前性能无问题。
 S5按已验证的小容量范围验收通过，长上下文容量由用户独立跟进；本票仍待S6完成。原KV传输、D staging/host写入及sparse
 attention的host SHM读取在正式模式关闭、在普通模式保留。
-当前MEMPOOL=1已选择正式P/D模式；READBACK=1在资源分配前拒绝。shadow代码暂存，
-S6必须删除全部shadow专用模式和相关代码，不再保留同版本shadow诊断入口。
+当前MEMPOOL=1选择正式P/D模式；S6.2已删除shadow模式、旧READBACK配置及相关实现，
+有效测试迁移到正式/普通路径。S6.3代码整理和最终NPU复验待执行。
 继续使用context1024、P/D各512、TP16、D Graph width16、NUMA `0,2,4,6`的小容量配置。
 大容量/NUMA调查仍归延期的[09](09-numa-allocation-followup.md)，不阻塞本票。
 
@@ -46,7 +46,7 @@ S6必须删除全部shadow专用模式和相关代码，不再保留同版本sha
 
 ### 已确认的启动模式与清理边界
 
-现有 `SGLANG_NPU_ENABLE_MEMPOOL=1` 在S5选择正式路径。S6删除shadow专用enum、
+现有 `SGLANG_NPU_ENABLE_MEMPOOL=1` 在S5选择正式路径。S6.2已删除shadow专用enum、
 分支、旧host参考readback、配置及配套脚本/测试代码，历史验收记录和git提交保留。
 正式路径共用的BM writer、binding、Graph和drain功能继续保留。
 
@@ -55,7 +55,7 @@ sparse offload时，P/D分别选择原 `PD_PREFILL_NATIVE` / `PD_DECODE_OFFLOAD`
 恢复普通路径不需要切回02提交，也不依赖保留shadow双写模式。
 
 正式路径的正确性不依赖 `SGLANG_NPU_MEMPOOL_READBACK`。S5在正式模式提前拒绝旧
-READBACK组合；S6删除该shadow专用配置及实现，并清理启动脚本中的旧设置。独立已知
+READBACK组合；S6.2已删除该shadow专用配置及实现，并清理启动脚本中的旧设置。独立已知
 pattern的copy验证、正式fetch范围检查和完成证据继续保留，不将BM与自身比较。
 
 ## 目标数据路径与资源清单
@@ -95,7 +95,7 @@ HBM Index K -> indexer top-k -> HBM sparse cache 查询
 | S3 按模式停用重复存储 | 旧实现保留；正式模式host KV和main-KV staging分配为零 | 已提交；Mac检查通过，用户于2026-10-05确认NPU资源gate通过 |
 | S4 精简PD传输 | 仅保留Index K和必要辅助数据，保留联合readiness | 双机六个case全部通过，用户于2026-10-05确认完成；见[S4总结](../ticket-03-s4-summary.md) |
 | S5 正式服务Graph与性能验收 | 完整mempool链路、curl小题目检查、约定性能达标 | 组件gate、服务checker及小题目通过，当前性能获用户确认；S5已验收，见[总结](../ticket-03-s5-summary.md) |
-| S6 全量review、shadow删除与清理 | 精简代码、普通模式兼容、最终版本重跑S5并交付 | S6.1首次全量review完成，5项发现待整改；见[报告](../ticket-03-s6-review.md)及[计划](../ticket-03-s6-plan.md) |
+| S6 全量review、shadow删除与清理 | 精简代码、普通模式兼容、最终版本重跑S5并交付 | S6.1审查及S6.2清理完成，STD三项和最终复验待执行；见[报告](../ticket-03-s6-review.md)及[计划](../ticket-03-s6-plan.md) |
 
 ### S1. 拆分配置与资源职责
 
@@ -412,8 +412,10 @@ shadow专用代码，形成清晰的正式/普通模式实现，并在最终清�
 具体顺序和review清单见[S6计划](../ticket-03-s6-plan.md)。
 
 2026-10-06已完成S6.1首次全量审查，报告见[review记录](../ticket-03-s6-review.md)。
-Standards三项设计整理建议、Spec两项P2验证代码缺陷均待整改；shadow删除和最终
-复验尚未实施，以下总完成条件保持未勾选。
+S6.2已删除shadow/旧READBACK并修正Spec两项P2验证代码缺陷；Standards三项设计
+整理和最终NPU复验待执行，以下总完成条件保持未勾选。
+用户已确认STD-01共用row推导、STD-02分步查询/活跃视图优化，STD-03改为删除
+fetch调试统计；两个Spec问题已随shadow/READBACK清理迁移，详见S6计划中的处理决定。
 
 - 固定review起点和目标版本，覆盖完整开发增量；按仓库规范、spec与批准的阶段要求
   两条线审查，并检查职责、命名、可读性、重复逻辑及同步/释放边界。记录问题与整改，
@@ -430,7 +432,9 @@ Standards三项设计整理建议、Spec两项P2验证代码缺陷均待整改�
   实际恢复普通sparse PD，不依赖BM初始化或MemFabric运行环境。删除shadow不等于
   删除正式路径共用的BM writer、binding、Graph hooks或drain。
 - 整理正式服务checker、启动脚本、测试及文档，证据覆盖全rank模式、实际分配、
-  传输类别/字节数、取数来源、Graph执行与释放；去掉过期shadow操作说明。
+  传输类别/字节数、Graph执行、完成与释放；删除生产路径selected/hit/P-miss/D-miss
+  调试统计及checker依赖。取数路径的数值验证继续由独立fetch gate覆盖；保留必要的
+  范围/覆盖/完成检查，去掉过期shadow操作说明。
 - 在最终清理版本执行Mac适用检查、受影响组件gate、普通模式NPU回归，并重跑S5的
   真实server Graph、curl小题目和性能验收。S5旧版本结果不能替代整改后的实测。
 
@@ -451,7 +455,7 @@ PD控制和真实attention执行结果核对，不以独立materialization gate�
   offload；P native HBM cache 继续服务 chunked prefill。
 - [ ] 将已验证的 P/D sparse fetch 接入 attention 输入；依据 prompt length/实际写入
   范围区分两个来源，保持 HBM sparse cache hit/miss/refill 和重置行为正确；
-  readback关闭时仍校验binding、维护可读范围，padding/未写入位置不污染cache。
+  始终校验binding、维护可读范围，padding/未写入位置不污染cache。
 - [ ] 两个来源的 copy 在 Graph 中均存在，含 zero-valid 路径；attention 等待 copy
   和相关写入完成，不产生冲突 destination。
 - [ ] 逐项确认 buffer 后关闭 main compact-KV transfer/staging；Index K/state/aux/meta
@@ -485,6 +489,47 @@ S6记录全量review、整改和复查结果；最终版本再次运行S5及普�
 ticket04内容不变；新数据来源导致输出异常时须在03定位，不能交付已知错误。
 
 ## Comments
+
+### 2026-10-06：S6.2删除shadow/READBACK并修正SPEC-01/02
+
+用户授权执行S6.2。先把两层BM取数、padding/复用、服务故障禁止释放及全rank日志证据
+迁移到正式fetch/service测试，再删除shadow枚举、旧READBACK比较模块、runtime完成快照
+及attention/service调用、全局配置和专用脚本/测试。SPEC-01资源gate不再期待S5拒绝，
+SPEC-02启动测试分别期待正式P/D，保留普通模式与非法拓扑/容量拒绝。
+
+日志checker迁移时，先用用例复现当前fetch非法选择报错会被漏检，再改为实际错误标记。
+独立pattern的copy/writer/fetch gate保留；正式fetch调试统计本轮未删除，留STD-03/S6.3。
+共享生产修改仅environ.py失效变量定义；外部glm51mempool.sh仅去掉一行export，格式不变。
+旧操作说明移至archive，历史验收记录保持可追溯。
+
+Mac完整独立CPU suite 192项通过，严格mypy 33个源文件通过；18个改动Python文件AST、
+仓库Ruff规则/format及各目录isort配置通过，独立目录Ruff全检查通过；两份启动脚本bash
+语法和formal/native四种dry-run通过。完整registered启动测试在Python3.9导入注解时失败，
+未执行测试体；真实NPU资源、远端数值、Graph和模型输出尚未重测。
+
+文件、审查、复验命令与证据边界见[S6.2交付](../ticket-03-s6.2-summary.md)。03保持open；
+后续S6.3处理三个STD问题，最终版本再执行S6.5硬件验收，不沿用清理前S5通过结果。
+
+
+### 2026-10-06：确认S6五项发现的处理方案
+
+STD-01按共用纯NPU row/token推导整改。STD-02采用用户提出的四步：完整identity及
+room owner的直接查询、活跃协议视图与历史留存分离、缩小TP决策同步并复用观察、
+单独评估preflight复制成本。保留WAITING_RELEASE_ACK推进、迟到/重复消息校验及
+预检后提交语义，不把结构性成本推断写成已经实测的性能退化。
+
+STD-03按用户最新决定删除调试统计，不再进行指标命名整理；包括selected/hit/P miss/
+D miss的计算、累计和报告接线，服务checker同步迁移。当前统计数组同时承载必要
+层覆盖和非法读取检查，整改须拆分用途，保留正确性与完成/释放证据。后续统计绘图
+需求另开测试类，不在此次清理中新建统计框架。独立fetch已知pattern数值gate保留。
+
+SPEC-01移除verify_resources中的旧S5拒绝预期，让正式模式继续完成资源gate；
+SPEC-02把registered启动测试迁移到最终正式/普通模式，随READBACK删除清理旧矩阵。
+顺序为S6.2删shadow并修两个Spec问题，S6.3删统计、共用row、优化查询/同步，随后
+S6.4复查与本地检查、S6.5同版本正式及普通模式NPU复验。
+
+本轮更新方案与ticket记录，未修改生产代码或测试，未执行新的CPU/NPU验收。
+五项均待实施；03保持open，NUMA/长上下文容量仍由用户另行处理，04范围不变。
 
 ### 2026-10-06：S6.1全量code review完成，待整改
 

@@ -136,11 +136,7 @@ class TestSparsityDrivenKVOffloadConfig(unittest.TestCase):
             with self.subTest(mode=mode):
                 self.assertEqual(
                     is_sparse_pd_decode_enabled(SimpleNamespace(mode=mode)),
-                    mode
-                    in (
-                        SparseKVOffloadMode.PD_DECODE_OFFLOAD,
-                        SparseKVOffloadMode.PD_DECODE_MEMPOOL_SHADOW,
-                    ),
+                    mode is SparseKVOffloadMode.PD_DECODE_OFFLOAD,
                 )
 
         with (
@@ -162,8 +158,6 @@ class TestSparsityDrivenKVOffloadConfig(unittest.TestCase):
             (SparseKVOffloadMode.LOCAL_OFFLOAD, False),
             (SparseKVOffloadMode.PD_PREFILL_NATIVE, True),
             (SparseKVOffloadMode.PD_DECODE_OFFLOAD, False),
-            (SparseKVOffloadMode.PD_PREFILL_MEMPOOL_SHADOW, True),
-            (SparseKVOffloadMode.PD_DECODE_MEMPOOL_SHADOW, False),
             (SparseKVOffloadMode.PD_PREFILL_MEMPOOL, True),
             (SparseKVOffloadMode.PD_DECODE_MEMPOOL, False),
         ):
@@ -218,18 +212,17 @@ class TestSparsityDrivenKVOffloadConfig(unittest.TestCase):
                 return_value=False,
             ),
         ):
-            for readback in ("0", "1"):
-                with (
-                    self.subTest(readback=readback),
-                    patch.dict(os.environ, {"SGLANG_NPU_MEMPOOL_READBACK": readback}),
-                ):
+            for role, expected_mode in (
+                ("prefill", SparseKVOffloadMode.PD_PREFILL_MEMPOOL),
+                ("decode", SparseKVOffloadMode.PD_DECODE_MEMPOOL),
+            ):
+                with self.subTest(role=role):
+                    self.disagg.disaggregation_mode = role
                     runner = self.make_runner()
                     configure_for_model_runner(runner)
-                    self.assertIs(
-                        runner.sparse_kv_offload_mode,
-                        SparseKVOffloadMode.PD_DECODE_MEMPOOL_SHADOW,
-                    )
+                    self.assertIs(runner.sparse_kv_offload_mode, expected_mode)
                     self.assertEqual(runner.mempool_config.prefill_capacity, 512)
+                    self.assertEqual(runner.mempool_config.decode_capacity, 512)
 
             runner = self.make_runner(tp_size=8)
             with self.assertRaisesRegex(ValueError, "tp_size"):

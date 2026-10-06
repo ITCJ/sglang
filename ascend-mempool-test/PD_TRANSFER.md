@@ -1,7 +1,7 @@
 # Ticket03 S4：Index K / aux 双机 NPU gate
 
-S4 组件实现已交付，**等待用户执行 NPU 验收**。正式服务仍由 S5 启动保护拦截；
-环境开关继续选择 shadow。本脚本显式构造正式模式的 pool，不启动模型或 SGLang server。
+S4 历史版本已通过用户 NPU 验收；S6 清理后的版本仍需复验。
+MEMPOOL环境开关选择正式模式。本脚本显式构造正式模式的 pool，不启动模型或 SGLang server。
 
 ## 测试范围
 
@@ -100,7 +100,6 @@ main K/V 指标由注册/复制边界的地址范围断言保证；不是把 `kv
 从干净的新进程同时重跑两端；不要单独复用一侧旧进程。`--timeout` 约束测试 TCP 等待，
 不保证能中断卡在 native SDK 内部的调用。
 
-请回传 `/tmp/ticket03-s4-{p,d}.json` 和对应 `.log`。在用户确认前，S4 NPU 验收保持待执行。
-普通/shadow 的 CPU 传输回归随本次单测执行；旧 host/staging 的 NPU 回归可继续使用
-[S3 资源 gate](README.md) 的 `local_offload`、`pd_decode_offload` 和
-`pd_decode_mempool_shadow` 三个进程入口。
+请回传 `/tmp/ticket03-s4-{p,d}.json` 和对应 `.log`。S4历史版本已获用户确认；S6清理后的版本需要重新验证。
+普通模式的 CPU 传输回归随本次单测执行；旧 host/staging 的 NPU 回归可继续使用
+[S3 资源 gate](README.md) 的 `local_offload`、`pd_decode_offload` 两个进程入口。

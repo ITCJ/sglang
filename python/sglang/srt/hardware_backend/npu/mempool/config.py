@@ -1,4 +1,4 @@
-"""Validate the fixed Ascend shadow demo before BM or graph initialization."""
+"""Validate the fixed Ascend mempool topology before BM or graph initialization."""
 
 from __future__ import annotations
 

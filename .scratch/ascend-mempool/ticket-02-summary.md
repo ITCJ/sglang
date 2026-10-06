@@ -87,7 +87,7 @@ handoff/清理事实；runtime 保存设备 attachment 和读写完成事实；t
 | [verify_shadow_service.py](../../ascend-mempool-test/scripts/verify_shadow_service.py) | 三种 HTTP 请求及离线全 rank mapping、Graph、生命周期、读回、slot 复用检查 |
 | [verify_bm_startup.py](../../ascend-mempool-test/scripts/verify_bm_startup.py) / [run_bm_startup_gate.sh](../../ascend-mempool-test/scripts/run_bm_startup_gate.sh) | 1–16 对 BM 启动及映射诊断 |
 | [probe_bm_numa.py](../../ascend-mempool-test/scripts/probe_bm_numa.py) / [check_bm_even_numa.py](../../ascend-mempool-test/scripts/check_bm_even_numa.py) | 节点/device 交叉分配诊断及偶数 NUMA gate 检查 |
-| `ascend-sglang-script/pd-disaggregation/glm51mempool.sh`（独立仓库） | 小容量 P/D 启动、TP16/Graph16、读回开关、NUMA 列表和完整日志；具体命令见[读回运行说明](../../ascend-mempool-test/READBACK_SERVICE.md) |
+| `ascend-sglang-script/pd-disaggregation/glm51mempool.sh`（独立仓库） | 小容量 P/D 启动、TP16/Graph16、读回开关、NUMA 列表和完整日志；具体命令见[读回运行说明](archive/ticket-02-readback-service.md) |
 
 ## 3. 新链路怎样运作
 
@@ -268,7 +268,7 @@ context1024、P/D capacities 各 512、D Graph width16、78 层，显式 NUMA �
 `5e35b2f` 包含小容量配置和更新后的验收说明。上述是已交付的仓库版本，远端实际
 HEAD 和最终 result JSON 未由 agent 单独读取；通过结论来自用户明确确认和回传日志。
 
-运行及重检命令保留在[读回说明](../../ascend-mempool-test/READBACK_SERVICE.md)。
+运行及重检命令保留在[读回说明](archive/ticket-02-readback-service.md)。
 HTTP 请求使用 `requests --decode-tokens 32 --timeout 900`；最后一轮建议重检参数为
 `check-logs --requests 9 --require-readback --readback-layers 78`，在 P 机汇集的输入为
 `/home/cryang/p.log`、`/home/cryang/d.log`。默认启动日志位于

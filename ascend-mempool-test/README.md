@@ -3,20 +3,13 @@
 Ticket01–03独立硬件验证及真实SGLang服务gate。当前正式服务入口见
 [S5服务验收](FORMAL_SERVICE.md)。
 
-**当前状态（2026-10-05）：** 01、02已获用户确认验收并关闭。
-[02总结](../.scratch/ascend-mempool/ticket-02-summary.md)记录代码路径、链路和实际证据；
-[小容量真实KV读回](READBACK_SERVICE.md)保留为02历史记录，配置为context1024、
-P/D各512、TP16、D Graph width16。下一开发入口是
-[03正式attention切换](../.scratch/ascend-mempool/issues/03-prefill-direct-offload.md)。
-03 S1的配置与资源职责拆分已实现；其当时的完整环境/NPU回归
-待执行，见[S1交付与复测](../.scratch/ascend-mempool/ticket-03-s1-summary.md)。
-03 S2正式BM fetch代码已核对，Mac检查通过；K=2048双机独立NPU gate的30个case
-通过，用户于2026-10-04确认。用户于2026-10-05确认S3资源gate通过；
-03 S4双机六个case于2026-10-05全部通过并获用户确认，见[S4 gate](PD_TRANSFER.md)。
-S5已开放MEMPOOL=1正式路径，增加完成报告、异步replay与服务检查；等待用户NPU验收。
-03整票仍为open，S6由S5验收阻塞；S2历史证据见
-[S2修改清单与双机命令](../.scratch/ascend-mempool/ticket-03-s2-summary.md)。
-NUMA/大容量分配排查已延期到ticket09。
+**当前状态（2026-10-06）：** 01、02已关闭；03的S1–S5已实现，S2/S3/S4组件gate及
+当前小容量S5服务、curl输出和性能已获用户确认。S6.1全量review已完成，S6.2删除
+shadow/旧host参考READBACK并迁移测试；S6.3清理和最终正式/普通模式NPU复验待执行。
+03保持open。阶段证据见[02总结](../.scratch/ascend-mempool/ticket-02-summary.md)及
+[03票面](../.scratch/ascend-mempool/issues/03-prefill-direct-offload.md)。
+当前运行入口见[正式服务验收](FORMAL_SERVICE.md)和[S6.2交付](../.scratch/ascend-mempool/ticket-03-s6.2-summary.md)。
+NUMA/长上下文容量归ticket09，由用户独立处理。
 BM 双机测试的目标环境为同一 superpod 的两台 Ascend 机器，S3资源gate只需单机。
 原 graph/writer gate 每侧使用一张 NPU，BM启动诊断可选1到16张；使用MemFabric Hybrid
 **1.1.4**。这些组件gate不启动SGLang server、router或模型；S5服务gate需要完整模型环境。
@@ -102,13 +95,13 @@ handle lifetime。它们不执行 BM 或 NPU kernel，不证明远端读和 Grap
 非法启动组合。真实native pool构造和runner启动配置测试位于SGLang registered suite，
 需要完整SGLang依赖和受支持的Python版本；执行命令见S1交付说明，不能以轻量suite
 通过代替该集成检查。
-`test_fetch.py`和`test_materialize.py`覆盖READBACK关闭的BM读取、实际writer前缀、
+`test_fetch.py`、`test_fetch_layers.py`和`test_materialize.py`覆盖正式BM读取、实际writer前缀、
 HBM hit/refill/reset、原host miss分支、实际attention输入、短top-k/多row/padding，
 以及目标更换后Graph metadata的持有。测试fixture不执行正式服务资源构造器。
 `test_fetch_gate.py`验证fetch CLI的固定K=2048约束、双机setup前拒绝非法宽度，
 以及原copy-only gate的可变K兼容性；materialization另覆盖固定宽度下的小context和padding。
 `test_sparse_resources.py`执行真实manager构造/host读写/请求hooks，验证正式模式旧资源为零、
-普通/shadow恢复旧路径，并覆盖实际PD adapter的方法体。CPU替换SDK和serving allocator边界；
+普通模式恢复旧路径，并覆盖实际PD adapter的方法体。CPU替换SDK和serving allocator边界；
 完整构造链及真实NPU copy用下面的S3 gate验证。
 `test_pair_startup.py` 检查 `P_i/D_i` 的 store 端口及 BM rank 映射、启动参数和失败清理，
 并用模拟时钟覆盖 P 晚90秒监听、P始终不可达、TCP连接超时、P不等待自身store及SDK错误直报。
@@ -122,9 +115,8 @@ HBM hit/refill/reset、原host miss分支、实际attention输入、短top-k/多
 
 新增`scripts/verify_resources.py`，使用实际NPU native/sparse pool、request/page allocator。
 它检查正式P保留native K/V，正式D保留Index K和HBM cache，旧host SHM/mapping及
-main-KV staging为零；普通/shadow执行staging→host、旧host写入/读取和miss→hit回归。
-请求row复用和clear也必须通过。S3验收时服务入口仍处于shadow；S5现已开放正式入口，
-此gate显式传入组件mode，既不启动模型也不连接BM peer。
+main-KV staging为零；普通模式执行staging→host、旧host写入/读取和miss→hit回归。
+请求row复用和clear也必须通过。正式模式可以继续执行完整资源检查；此gate显式传入组件mode，既不启动模型也不连接BM peer。
 
 前置条件：当前checkout的完整SGLang环境、受支持的Python（用户现有3.11）、
 torch_npu、sgl_kernel_npu及CANN配置；任选一台机器的空闲NPU，下面使用device0。
@@ -136,7 +128,7 @@ bash -o pipefail <<'SH'
 set -eu
 export PYTHONPATH="$PWD/python${PYTHONPATH:+:$PYTHONPATH}"
 git rev-parse HEAD > /tmp/ticket03-s3-version.txt
-for mode in pd_prefill_mempool pd_decode_mempool local_offload pd_decode_offload pd_decode_mempool_shadow; do
+for mode in pd_prefill_mempool pd_decode_mempool local_offload pd_decode_offload; do
   python3 -u ascend-mempool-test/scripts/verify_resources.py \
     --mode "$mode" --device-id 0 \
     --report "/tmp/ticket03-s3-${mode}.json" \
@@ -153,11 +145,11 @@ KV维度512+64、Index K128、BF16、top-k2048。top-k仅位置0/2有效，其�
 | `pd_prefill_mempool` | 0 | 0 | 0 | >0 | >0 |
 | `pd_decode_mempool` | 0 | 0 | >0 | 0 | >0 |
 | `local_offload` | >0 | 0 | >0 | 0 | >0 |
-| `pd_decode_offload` / `pd_decode_mempool_shadow` | >0 | >0 | >0 | 0 | >0 |
+| `pd_decode_offload` | >0 | >0 | >0 | 0 | >0 |
 
-需要5条`RESOURCE_PASS`、5份`success=true` JSON及全部进程退出0；任意断言、
+需要4条`RESOURCE_PASS`、4份`success=true` JSON及全部进程退出0；任意断言、
 `RESOURCE_FAIL`、非零退出或缺失mode都判失败。回传`/tmp/ticket03-s3-version.txt`、
-5份JSON及对应log。JSON记录实际保留buffer的字节数，正式D另将SHM分配入口设为失败陷阱。
+4份JSON及对应log。JSON记录实际保留buffer的字节数，正式D另将SHM分配入口设为失败陷阱。
 PD adapter使用完整模块与构造器，只替换父transport启动/发送/状态sink；不发送真实跨机数据。
 它不替代S4–S6的正式服务验证，S3代码完成也不代表ticket03关闭。
 完整文件清单、Mac检查与registered回归命令见
@@ -166,7 +158,7 @@ PD adapter使用完整模块与构造器，只替换父transport启动/发送/�
 ## 03 S2：BM fetch / HBM cache / Graph gate（独立NPU验证已通过）
 
 新增`scripts/verify_fetch.py`复用现有双机BM setup、已知内容和drain协议，直接调用
-生产runtime、双源copy与cache materialization；READBACK关闭。测试覆盖P-only miss、
+生产runtime、双源copy与cache materialization。测试覆盖P-only miss、
 D-only miss、混合miss、refill后全命中、zero-valid、Graph row 0 padding、slot复用，
 并验证capture后更换同形状eager目标，再重放原Graph。每轮D payload带独立标记，
 避免用setup预填数据掩盖writer未完成。
@@ -325,7 +317,7 @@ TP3/7/11/15→NUMA6。支持单节点、不连续ID及逗号两侧空白，P/D�
 回传两侧完整日志、实际在线节点和选择列表、启动参数和代码版本；
 CPU测试不证明NPU机器的物理落点或内存压力下的驱动行为。
 
-### 小容量服务对照（2026-10-02）
+### 小容量服务对照（2026-10-02历史数据）
 
 用户确认关闭D侧CPU亲和性后仍卡住，下一轮恢复`SGLANG_SET_CPU_AFFINITY=1`。
 两侧`glm51mempool.sh`使用以下参数，TP16、16 slots和D Graph BS16沿用原配置：
@@ -347,7 +339,7 @@ CPU测试不证明NPU机器的物理落点或内存压力下的驱动行为。
 BM包含64字节probe并按1GiB对齐；实际大小以两侧`[MEMPOOL_INIT] CONFIG`为准。
 小容量同时改变hostSHM、BM及部分context相关缓冲，单轮通过不能独立归因为hostSHM。
 先确认两侧全部16 ranks的BM/runtime就绪、D Graph capture完成及服务ready，再使用
-下文的短prompt/32输出token请求和日志检查验证shadow生命周期。
+[正式服务说明](FORMAL_SERVICE.md)中的三请求和日志检查验证当前生命周期。
 若后续恢复ticket09的NUMA排查，可保持context=1024，仅恢复两侧S_P/S_D=4096，
 使用新的`LOG_DIR`重复运行；当前demo不执行这项容量对照。
 该对照进一步区分context相关内存压力和BM容量影响；仍不能宣称只改变了hostSHM。
@@ -571,123 +563,15 @@ snapshot 不可变，以及同一套gate案例的完整CPU参考值。真实 ser
 ALL_CHECKS_PASSED；交付版本为 `cfcafb4810`，远端hash与JSON文件未独立核验，
 完整记录见 ticket02。本 gate 不替代④的真实 native handoff/TP 生命周期验收。
 
-## 02④ 真实 GLM-5.1 shadow 服务 gate（历史版本已验收）
+## 真实服务 gate 与历史证据
 
-以下旧命令用于02版本。S5起MEMPOOL=1选择正式模式且拒绝READBACK=1；当前版本请使用
-[FORMAL_SERVICE.md](FORMAL_SERVICE.md)。S6会删除shadow专用代码与脚本，保留历史证据。
+当前版本运行[正式服务验收](FORMAL_SERVICE.md)。S6.2已删除shadow运行模式、
+旧READBACK配置及专用脚本；已有启动脚本应移除旧READBACK导出。
+02已验收的shadow双写、数值对照与生命周期证据保留在[02总结](../.scratch/ascend-mempool/ticket-02-summary.md)，
+当时的操作说明归档为[历史读回gate](../.scratch/ascend-mempool/archive/ticket-02-readback-service.md)。
+独立`verify_graph.py`、`verify_writer.py`和`verify_fetch.py`继续使用已知pattern做数值核对。
 
-④已接入 server 初始化、TP tick、真实请求准入、forward scope 和 native 回收。
-本gate已由用户在NPU验收通过。后续复测先核对代码，再把同一版本部署到两侧；
-保存各侧 `git rev-parse HEAD` 和 `git diff --stat`，避免只更新其中一台。
-
-这一轮继续使用原 native KV/Index K/metadata 传输与 attention，P/D额外写入mempool。
-在已反馈成功的小容量服务基础上，开启独立 BM top-k 读回，与旧路径 selected KV 比较；
-逐层写入计数、控制生命周期同时检查。具体实现和证据边界见
-[真实 KV 读回说明](READBACK_SERVICE.md)，AIME 精度验收仍留在后续阶段。
-
-### 启动参数增量
-
-基于你在NPU上已经跑通的 `glm51dis.sh` 修改，保留本机权重、网卡、IP和DeepEP配置。
-两侧都增加环境变量：
-
-```bash
-export SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD=1
-export SGLANG_NPU_ENABLE_MEMPOOL=1
-export SGLANG_NPU_MEMPOOL_READBACK=1
-export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6
-export SGLANG_DISAGGREGATION_BOOTSTRAP_TIMEOUT=600
-```
-
-两侧 `sglang.launch_server` 命令都追加以下参数，将占位符替换为实际地址。
-`<P_BOOTSTRAP_PORT>` 必须与P已有的 `--disaggregation-bootstrap-port` 一致；样例是8995。
-
-```text
---mempool-prefill-host <P_IP>
---mempool-bootstrap-port <P_BOOTSTRAP_PORT>
---mempool-base-port 19000
---mempool-pool-id 104
---mempool-nic tcp://<LOCAL_IP>:25670
---mempool-prefill-capacity 512
---mempool-decode-capacity 512
---mempool-timeout 600
-```
-
-`<LOCAL_IP>` 在P填P的MF网卡地址，在D填D的地址。端口关系：
-
-| 用途 | 本轮示例 | 说明 |
-| --- | --- | --- |
-| BM store | P:19000–19015 | P_i启动，D_i连接 `19000+i` |
-| MF NIC | 每侧25670–25701 | pair i传入 `25670+2*i`；MF再加BM rank 0/1，不与原TransferEngine端口共用 |
-| 控制消息 | 既有Ascend ZMQ rank端口 | 通过P原bootstrap HTTP registry发现，不开第二套ZMQ reader |
-
-`--mempool-timeout` 用于BM启动、控制peer心跳、取消后的native drain以及tick watchdog。
-request acquire等待仍使用原PD bootstrap timeout，不因重试重新计时。
-D进入 `bm.initialize()` 前，先按此参数等待对应P store的TCP listener；每次连接最多1秒，
-失败后最多等待0.2秒，重试不重置deadline。MF 1.1的初始TCP连接默认仅重试60次，
-不受 `BmConfig.init_timeout` 控制，因此必须在进入SDK前完成这段等待。
-TCP等待、后续BM操作/映射等阶段分别使用该timeout，它不是整个模型加载/服务启动的总时限。
-TCP可达只允许继续执行正式BM初始化，pool身份及映射仍按原流程校验；SDK错误直接报错。
-P/D的device mapping查询在失败后等待1秒再重试，最后一次等待受剩余deadline限制。
-每个rank各自轮询；MF对单次失败可能输出HYBM和SMEM两行，因此16个rank仍会有多行日志。
-
-维持TP16、DP1、PP1、CP1、BF16、`--attention-backend ascend`、
-`--disaggregation-transfer-backend ascend`、`--disable-radix-cache`；P保留
-`--disable-cuda-graph`，D保留 `--cuda-graph-bs-decode 16`。不启用MLAPO、draft、
-prefix复用、two-batch overlap或自动rebootstrap。普通scheduler overlap仍受支持。
-一次新请求需使用新的bootstrap room，当前demo不接续同room的重试。
-
-本轮两侧 `--context-length` 使用1024、`--max-prefill-tokens` 使用512，
-保留16个running requests上限。mempool固定16个slots，原D hostSHM同时存在；
-实际token预算和DRAM占用按你的机器调整，不能只按mempool容量推断整体内存。
-本轮脚本只发送短prompt及最多32个输出token。
-
-### 顺序与命令
-
-1. 分别保存P/D完整新日志，例如 `/tmp/mempool-02-service-p.log` 和
-   `/tmp/mempool-02-service-d.log`；不要追加到包含旧测试的日志。
-2. 先启动P，随后启动D，不用等P服务ready。D模型加载更快时，会在
-   `Waiting for P BM store tcp://<P_IP>:19000+i` 等待，期间每30秒报告剩余时间；
-   P开始监听后出现 `P BM store ... is reachable`，再进入正式BM初始化。
-   P等待D完成BM join是正常行为。P超过 `--mempool-timeout` 仍未监听时，D报
-   `P BM store ... was not reachable within 600s` 并退出（数值随配置变化）。
-   BM映射完成后D才capture；AscendKVManager建立后才握手control。
-   两侧进入服务循环后，每个rank应出现 `mapping_ready` 和 `POOL_HELLO`/`POOL_READY`。
-3. 启动已经验证过的PD router，沿用原P/D地址及bootstrap设置。
-   不需要为mempool另起router或ZMQ服务。
-4. 向该router发送三个串行请求：首token结束（零次decode）、实际decode、再来一个新请求。
-
-```bash
-python3 ascend-mempool-test/scripts/verify_shadow_service.py requests \
-  --url http://<ROUTER_IP>:<ROUTER_PORT> \
-  --decode-tokens 32 --timeout 900 \
-  --output /tmp/mempool-02-service-requests.json
-```
-
-预期三条 `PASS case=...` 和 `REQUESTS_PASSED`。报告保存完整输入/输出、耗时和meta_info；
-请同时查看生成文本是否正常。首个P输出token本身不需要D forward，后两项必须有真实Graph replay。
-
-等待各rank的 `RELEASE_ACK` 后，把两侧完整日志放到同一台可运行Python的机器，执行：
-
-```bash
-python3 ascend-mempool-test/scripts/verify_shadow_service.py check-logs \
-  --prefill-logs /tmp/mempool-02-service-p.log \
-  --decode-logs /tmp/mempool-02-service-d.log \
-  --requests 3 --require-readback --readback-layers 78 \
-  --output /tmp/mempool-02-service-lifecycle.json
-```
-
-每个选项也可以传入该侧16个worker的独立日志。此gate假定设备ID为0–15，与现有样例一致。
-通过输出为 `SHADOW_READBACK_PASSED`，JSON status为 `shadow_readback_passed`。
-报告包含全rank的逐请求数值对照和不同attempt实际复用同一组P/D物理slot的证据。
-request row独立记录在`rows`与`row_reused`中；D按FIFO轮换row不导致物理slot复用检查失败。
-若尚未复用，等全部ACK后再次发送请求并保留同轮日志，详见[读回验收说明](READBACK_SERVICE.md)。
-省略 `--require-readback` 时，仍可执行旧的
-生命周期检查，结果为 `SHADOW_LIFECYCLE_PASSED (no KV readback)`，不能用于本轮数值验收。
-
-检查器要求每侧16个rank的mapping、每个D设备的capture和真实replay、每个真实room的完整
-`ACQUIRE/ACQUIRED/BOUND_ACK → READY + native transfer → decode → drain/DONE/ACK`
-事件，以及最后全部16个slots可用。任何缺rank、缺replay、缺ACK、slot未归还、Traceback、
-计数差异或协议fault都不通过。初始GVA映射重试后成功的既有MF日志不会被直接判错。
+### BM启动与故障定位
 
 启动探测只建立/关闭TCP连接，不发送MF header或rank身份。MF 1.1的P listener可能为每个
 pair记录一次 `Failed to read header from the socket connected from ...`；源码在登记peer前
@@ -711,8 +595,8 @@ create日志包含实际local DRAM字节数和共同stride，join返回后记录
 保存完整日志，再提取阶段行（分别在P/D机器执行对应行）：
 
 ```bash
-grep -E 'mempool BM|Mempool BM|P BM store|Traceback|RuntimeError|TimeoutError' /tmp/mempool-02-service/p.log
-grep -E 'mempool BM|Mempool BM|P BM store|Traceback|RuntimeError|TimeoutError' /tmp/mempool-02-service/d.log
+grep -E 'mempool BM|Mempool BM|P BM store|Traceback|RuntimeError|TimeoutError' /tmp/ticket03-s5-formal/prefill.log
+grep -E 'mempool BM|Mempool BM|P BM store|Traceback|RuntimeError|TimeoutError' /tmp/ticket03-s5-formal/decode.log
 ```
 
 P日志中 `ready` 只表明mempool prompt写完；`native_handoff` 后才允许

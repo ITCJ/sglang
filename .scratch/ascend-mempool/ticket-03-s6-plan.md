@@ -1,7 +1,7 @@
 # Ticket03 S6：全量 review、shadow 删除与代码清理
 
 日期：2026-10-05，进度更新：2026-10-06。需求来源：[ticket03](issues/03-prefill-direct-offload.md)及用户确认的
-S5/S6调整。S6.1首次全量review已完成，整改和后续步骤待实施；Ticket03保持open。
+S5/S6调整。S6.1首次全量review及S6.2代码清理已完成；S6.3整改和最终NPU复验待执行，Ticket03保持open。
 
 **Blocked by:** 无阶段阻塞。[S5](ticket-03-s5-plan.md)已于2026-10-06在当前已验证容量范围
 通过用户验收；长上下文容量由用户独立处理。S6已进入审查/整改阶段。
@@ -79,8 +79,9 @@ PD传输与控制、stream/drain、共享生命周期hooks，以及相应测试�
 1. 执行Mac适用的静态检查、CPU行为测试及受影响组件gate，覆盖普通模式不依赖BM、
    正式模式无旧host调用，以及Graph输入/完成、复用、容量和传输契约。
 2. 整理正式服务checker、启动脚本和说明：记录全rank模式、实际存储分配、发送类别/
-   字节数、hit/P-miss/D-miss、实际Graph forward、drain与release结果。删除过期shadow
-   命令及通过标记，不能将HTTP 200或来源计数当作数值正确性的证明。
+   字节数、实际Graph forward、完成、drain与release结果。按用户决定移除生产路径
+   hit/P-miss/D-miss统计及checker依赖；三条取数路径的数值覆盖继续由独立fetch gate
+   验证。删除过期shadow命令及通过标记，不能将HTTP 200当作数值正确性的证明。
 3. 在最终清理版本重跑S5：真实P/D server和NPU Graph、完整mempool生命周期、用户
    curl小题目检查、同一已约定负载和目标下的性能测试。代码若因失败再次调整，重测
    受影响的验收项并明确最终版本证据，不能套用S5清理前的通过结果。
@@ -110,6 +111,46 @@ S6沿用S5的curl小题目输出检查，不额外增加正式数据集完整精
 `CONTEXT.md`中的`295132c4a5`仍是项目上游历史基线，与此次review起点用途不同。
 实施时记录最终目标SHA，对区间中的其他改动按相关性分类，不机械重写整个区间。
 
+### 五项发现的处理决定（2026-10-06）
+
+用户确认STD-01，细化STD-02，并将STD-03从字段命名整理改为删除调试统计。
+以下方案中SPEC-01/02及shadow删除已在S6.2落实，其余三项待S6.3；首次review记录保留。
+
+| 发现 | 处理方案 | 执行阶段 |
+| --- | --- | --- |
+| STD-01：row推导重复 | 抽取正式BM和普通host共同使用的纯NPU坐标推导；各自保留地址、binding、容量mask及存储写入职责，覆盖decode/ragged/static/padding/空batch | S6.3 |
+| STD-02：查询/调度依赖全量历史 | 借鉴原PD的直接查询与活跃队列，依次实现单请求接口、活跃协议视图、精简TP同步；preflight复制优化单独评估 | S6.3 |
+| STD-03：fetch数字列统计 | 删除selected KV、hit、P miss、D miss统计的生产、快照传递、累计及报告依赖；不再做指标字段重命名或引入统计框架 | S6.3 |
+| SPEC-01：资源gate期待S5拒绝 | 删除过期阶段断言，验证正式P/D模式能够继续执行实际资源分配、注册、alloc/free/clear检查，保留普通模式回归 | S6.2 |
+| SPEC-02：启动测试期待shadow | 改为正式模式启动预期；随shadow/READBACK删除迁移测试，保留普通模式与非法拓扑/容量在分配前拒绝的覆盖 | S6.2 |
+
+STD-02按四步推进：
+
+1. control提供按完整`RequestIdentity`的直接查询；尚未获得identity时，通过封装
+   `_room_owner`的接口查询当前room归属。service不扫描全表、不直接访问control
+   私有字典；保留identity校验和旧attempt隔离。
+2. 分开仍需协议推进的请求视图与终态留存。迟到/重复历史消息由control按需查询和
+   校验；`WAITING_RELEASE_ACK`即使slot已释放，仍须参与推进。
+3. TP只同步当前决策需要的请求、slot、generation、绑定、完成与释放事实，同一tick
+   复用稳定观察结果。不能用一个`KVPoll`替代mempool的完整协议条件。
+4. 前三步完成后再测量、评估preflight复制成本。是否仅复制事务相关记录或采用写时
+   复制另行确定；保留各rank预检通过后再提交，以及generation、retirement、绑定和
+   所有权证明。本轮不预先承诺重写事务机制，也不声称已有实测性能退化。
+
+STD-02验证包含：大量终态记录加一个活跃请求时，单请求查询和tick传输规模不随
+无关历史增长；slot复用后的旧/重复DONE与迟到RELEASE_ACK不能影响新owner；历史
+淘汰、WAITING_RELEASE_ACK、取消、pending DONE及跨TP预检失败行为保持正确。
+preflight成本单独记录，不与前三步的查询/同步规模改进混为一项完成结论。
+
+STD-03删除范围须按用途拆开。当前`_fetch_checks`前三列承担层覆盖、非法读取数量
+和错误位置检查，后三列承担selected KV/P miss/D miss统计；不能整体删除六列后
+丢失必要正确性约束。移除统计计算、专用状态和只承载统计的快照/拷贝；共享完成事件、
+独立forward完成快照及必要故障检查按实际依赖保留。删除原`fetch_report`中的调试
+统计及`fetch_result`统计日志接线，将服务gate仍需的Graph、完成、drain和绑定事实
+保留为最小完成证据，并同步迁移`verify_service.py`及其测试、当前操作说明。
+该checker不再要求hit/P-miss/D-miss累计为正；独立已知pattern的fetch数值gate继续
+覆盖这些路径。后续需要命中率、miss统计或绘图时另开测试类，本轮不新建统计替代品。
+
 ### S6.1 全量review并形成整改清单
 
 2026-10-06已执行，固定目标为`63590e9114e6d434291a3390bb103fbd26e3d1b9`。
@@ -126,6 +167,9 @@ PD协议/传输/TP控制；scheduler/model runner及释放接入点。
 对应验证及复查状态。明确记录共享目录改动的必要性。
 
 ### S6.2 删除shadow和旧host参考readback
+
+2026-10-06已完成代码与测试迁移，Mac独立suite 192项通过；完整环境/NPU复验待执行。
+文件、覆盖、检查与复验命令见[S6.2交付](ticket-03-s6.2-summary.md)。下表保留实施范围。
 
 首先迁移仍有价值的行为测试，再删除专用代码，避免删除文件后同时丢失验证依据。
 主要落点：
@@ -145,6 +189,9 @@ PD协议/传输/TP控制；scheduler/model runner及释放接入点。
 该外部仓库再形成独立修改/提交，保持用户要求的原有格式。
 
 ### S6.3 按职责清理并逐块验证
+
+先删除STD-03调试统计并同步服务checker，再完成STD-01共用row推导，最后按上述
+四步推进STD-02。各部分形成可独立验证的改动；preflight复制策略单独评估。
 
 分三组有界改动：配置/资源；runtime/Graph/cache；PD传输/控制/释放。
 重点检查runtime每forward的clone/CPU计数读取、服务tick的状态重复、peer layout校验
@@ -186,15 +233,22 @@ NUMA/驱动窗口与长上下文容量继续归09，由用户独立处理；不�
 也不提前实现05–07的完整压力/取消/故障矩阵。若review发现当前已支持行为的真实bug，
 在本轮修复，不能以归属后续票为由遗漏。
 
-## 本轮结果
+## S6.1历史结果
 
 用户授权执行S6第1步。已对30个提交、121个文件的完整开发增量完成双轴首次审查，
 报告记录范围、五项发现、整改/验证方法及共享hooks的必要性。
 Spec确认`verify_resources.py`仍要求正式mode报S5拒绝、registered启动测试仍期待
-shadow；两者随S6.2覆盖迁移修正。Standards建议统一row推导、缩小control历史快照
-与逐请求查询耦合、命名fetch统计字段，归S6.3。
+shadow；两者随S6.2覆盖迁移修正。按用户后续决定，Standards处理为统一row推导、
+按四步缩小control历史快照与查询/调度的耦合，以及删除fetch调试统计，归S6.3。
 
 Mac独立CPU suite 202项、严格mypy35文件、81个改动Python文件的AST及仓库hook
 Ruff规则、67文件format检查通过；额外默认Ruff检查有43条未通过诊断，单独记录，未修复。
 生产路径未发现其他可证实正确性缺陷；未执行完整registered suite或NPU测试。
 本轮修改报告、计划及ticket Comments，保留生产代码待后续整改；S6与03尚未完成。
+
+## S6.2结果（2026-10-06）
+
+正式/普通模式覆盖迁移后删除shadow及旧READBACK实现、配置、脚本；SPEC-01/02旧断言
+已修正。当前操作说明切换正式入口，02旧说明归档并保留历史证据。外部启动脚本仅删除
+READBACK export，格式不变。实现、检查、审查与NPU复验命令见[S6.2交付](ticket-03-s6.2-summary.md)。
+STD-01/02/03继续按上述边界留在S6.3；整票关闭仍需最终版本硬件验收。

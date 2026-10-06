@@ -104,9 +104,7 @@ def check_logs(
                         "mempool native transfer rejected",
                         "mempool aux transfer rejected",
                         "mempool state transfer rejected",
-                        "mempool readback_result",
-                        "mempool KV readback failed",
-                        "mempool fetch coverage mismatch",
+                        "mempool KV fetch invalid selection",
                     )
                 ):
                     raise RuntimeError(f"failure in {path}: {line}")

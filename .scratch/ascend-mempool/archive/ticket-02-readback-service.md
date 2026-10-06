@@ -1,8 +1,10 @@
+> 历史归档：这是Ticket02验收时的shadow操作说明。S6.2已删除对应模式、READBACK和脚本，以下命令不适用于当前版本；当前入口见[正式服务验收](../../../ascend-mempool-test/FORMAL_SERVICE.md)。
+
 # Ticket 02：小容量真实 KV 读回
 
 **状态（2026-10-03）：已获用户确认验收，ticket 02 已关闭。** 本页保留复测入口，
-实现路径和实测结果见[02总结](../.scratch/ascend-mempool/ticket-02-summary.md)。
-下一开发阶段为[03正式attention切换](../.scratch/ascend-mempool/issues/03-prefill-direct-offload.md)。
+实现路径和实测结果见[02总结](../ticket-02-summary.md)。
+下一开发阶段为[03正式attention切换](../issues/03-prefill-direct-offload.md)。
 
 本轮在真实 GLM-5.1 D 服务的 selected top-k KV 处，额外从 BM 读回并逐元素比较
 BF16 值。attention 仍使用原 selected KV；hostSHM 和原 main-KV transfer 保留到 03。
@@ -97,7 +99,7 @@ python3 -m sglang_router.launch_router \
 
 这里的 8995 与脚本的 P bootstrap port 一致；若改了端口需一并更新。
 后面的请求命令在 router 所在机器运行，可使用 `http://127.0.0.1:6699`。
-已有 router 可直接沿用。详细旧服务启动约定见 [README 的服务 gate](README.md#启动参数增量)。
+已有 router 可直接沿用。详细旧服务启动约定见 [02历史验收记录](../ticket-02-summary.md)。
 
 ## 三个请求及日志检查
 

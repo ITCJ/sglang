@@ -300,7 +300,6 @@ class TestMempoolPDService(unittest.TestCase):
         self.assertEqual(report["status"], "zero_decode")
         self.assertEqual(report["written_kv"], 0)
         self.assertTrue(report["drained"])
-        self.assertFalse(any("readback_result" in line for line in logs.output))
         self.assertEqual(effects, ["host-drain", "device-drain", "free"])
         self.assertIn(0, self.d.available_slots())
         service.advance()
@@ -309,13 +308,13 @@ class TestMempoolPDService(unittest.TestCase):
 
         self.assertEqual(len([m for m in sent if m.kind == MessageType.DONE]), 1)
 
-    def test_service_readback_uses_peer_slot_and_reports_the_request(self):
+    def test_service_fetch_uses_peer_slot_and_faults_prevent_release(self):
         """Approved unequal slots reach the reader; failure keeps native resources owned."""
-        import test_readback
+        import test_fetch_layers
 
-        for corrupt in (False, True):
-            with self.subTest(corrupt=corrupt):
-                helper = test_readback.TestKVReadback()
+        for invalid in (False, True):
+            with self.subTest(invalid=invalid):
+                helper = test_fetch_layers.TestKVFetchLayers()
                 helper.setUp()
                 self.addCleanup(helper.doCleanups)
                 runtime = helper.runtime
@@ -365,33 +364,30 @@ class TestMempoolPDService(unittest.TestCase):
                         helper.p[layer - 5][2, 3] = 103
                         k = torch.full((1, 2), 201, dtype=torch.bfloat16)
                         runtime.write_layer(layer, k, k, batch)
-                        reference = (
-                            torch.tensor(
-                                [103, 999 if corrupt else 201], dtype=torch.bfloat16
-                            )
-                            .view(1, 2, 1, 1)
-                            .expand(1, 2, 1, 4)
+                        positions = torch.tensor([[3, 5 if invalid else 4]])
+                        valid = runtime.selected_kv_valid(
+                            layer, batch.req_pool_indices, positions
                         )
-                        runtime.compare_selected_kv(
-                            layer,
-                            batch.req_pool_indices,
-                            torch.tensor([[3, 4]]),
-                            reference,
+                        output = torch.full((1, 2, 1, 4), -7, dtype=torch.bfloat16)
+                        runtime.fetch_selected_kv(
+                            layer, batch.req_pool_indices, positions, valid, output
+                        )
+                        expected = torch.tensor(
+                            [103, -7 if invalid else 201], dtype=torch.bfloat16
+                        )
+                        torch.testing.assert_close(
+                            output[0, :, 0],
+                            expected[:, None].expand(2, 4),
+                            rtol=0,
+                            atol=0,
                         )
                 service.advance()
                 self.assertEqual(freed, [])
                 helper.events[-1].done = True
-                if corrupt:
-                    with self.assertLogs(
-                        "ascend_mempool_pd.mempool_service", level="ERROR"
-                    ) as logs:
-                        with self.assertRaises(RuntimeError):
-                            service.advance()
-                    text = "\n".join(logs.output)
-                    self.assertIn("rank=0", text)
-                    self.assertIn('"room": 70', text)
-                    self.assertIn('"rid": "req-70"', text)
-                    self.assertIn("layer=5 row=1 position=4", text)
+                if invalid:
+                    with self.assertRaisesRegex(RuntimeError, "mempool TP tick failed"):
+                        service.advance()
+                    self.assertIn("layer=5 row=1 position=5", runtime.fault)
                     self.assertEqual(freed, [])
                     self.assertNotIn(3, d.available_slots())
                 else:
@@ -402,11 +398,9 @@ class TestMempoolPDService(unittest.TestCase):
                     ) as logs:
                         service.advance()
                         service.advance()
-                    line = next(
-                        line for line in logs.output if "readback_result" in line
-                    )
+                    line = next(line for line in logs.output if "fetch_result" in line)
                     report = json.loads(line.split(" data=", 1)[1])
-                    self.assertEqual(report["status"], "passed")
+                    self.assertEqual(report["status"], "completed")
                     self.assertEqual(
                         (report["prompt_slot"], report["decode_slot"]), (2, 3)
                     )

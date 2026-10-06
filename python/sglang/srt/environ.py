@@ -962,8 +962,6 @@ class Envs:
     SGLANG_NPU_MOE_SITU_MXFP8_FUSED = EnvBool(True)
     SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD = EnvBool(False)
     SGLANG_NPU_ENABLE_MEMPOOL = EnvBool(False)
-    # Shadow D top-k comparison against the existing selected KV path.
-    SGLANG_NPU_MEMPOOL_READBACK = EnvBool(False)
     # Comma-separated local NUMA IDs, e.g. 0,2,4,6; cycle by TP rank.
     # Unset or invalid: warn for invalid values and use default BM allocation.
     SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE = EnvStr(None)

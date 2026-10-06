@@ -162,7 +162,7 @@ class SparseKVCopy:
 
 
 class KVFetch:
-    """Fetch cache misses directly into the caller's selected KV, without readback."""
+    """Fetch cache misses directly into the caller's selected KV."""
 
     def __init__(
         self, manager: MempoolKVManager, block_dim: int, kernel: Any = None

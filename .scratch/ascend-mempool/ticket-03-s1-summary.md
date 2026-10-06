@@ -126,7 +126,7 @@ NUMA `0,2,4,6`，网卡和权重沿用已验收配置。不要并行启动三轮
 
 ### 1. 原shadow读回
 
-按照[READBACK_SERVICE.md](../../ascend-mempool-test/READBACK_SERVICE.md)完整启动、
+按照[READBACK_SERVICE.md](archive/ticket-02-readback-service.md)完整启动、
 发三个请求并执行`check-logs --require-readback --readback-layers 78`。
 建议新日志目录`/tmp/mempool-03-s1-shadow`。新增启动日志应显示P为
 `pd_prefill_mempool_shadow`，D为`pd_decode_mempool_shadow`；D的sparse cache、host KV、

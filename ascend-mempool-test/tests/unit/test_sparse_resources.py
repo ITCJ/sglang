@@ -184,7 +184,6 @@ class TestSparseResources(unittest.TestCase):
         for mode in (
             Mode.LOCAL_OFFLOAD,
             Mode.PD_DECODE_OFFLOAD,
-            Mode.PD_DECODE_MEMPOOL_SHADOW,
         ):
             with self.subTest(mode=mode):
                 cache = self.make_cache(mode)
@@ -299,7 +298,6 @@ class TestSparseResources(unittest.TestCase):
         for mode in (
             Mode.PD_DECODE_MEMPOOL,
             Mode.PD_DECODE_OFFLOAD,
-            Mode.PD_DECODE_MEMPOOL_SHADOW,
         ):
             with self.subTest(mode=mode):
                 cache = self.make_cache(mode)

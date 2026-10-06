@@ -402,8 +402,8 @@ class TestPDWorker(TestPDTransfer):
         self.assertEqual(self.statuses[-1]["status"], API.KVPoll.Failed)
         self.assertNotIn(101, self.manager._staging_outstanding)
 
-    def test_ordinary_and_shadow_still_copy_native_kv_and_index_k(self):
-        for mode in (Mode.DISABLED, Mode.PD_PREFILL_MEMPOOL_SHADOW):
+    def test_ordinary_prefill_still_copies_native_kv_and_index_k(self):
+        for mode in (Mode.DISABLED, Mode.PD_PREFILL_NATIVE):
             with self.subTest(mode=mode):
                 p, d = make_pool(mode), make_pool(mode)
                 args, aux = make_args(p)

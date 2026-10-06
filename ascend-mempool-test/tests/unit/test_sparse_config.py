@@ -46,9 +46,6 @@ class TestSparseKVConfiguration(unittest.TestCase):
                     ),
                     expected_cell_size,
                 )
-                mode.validate_runtime_support()
-                with self.assertRaisesRegex(ValueError, "READBACK"):
-                    mode.validate_runtime_support(readback_enabled=True)
 
     def test_startup_matrix_preserves_local_and_native_resources(self):
         """Turning BM off restores ordinary PD; formal P keeps native storage."""
@@ -97,7 +94,6 @@ class TestSparseKVConfiguration(unittest.TestCase):
                     transfer_backend="ascend",
                     max_running_requests=4 if sparse else None,
                 )
-                mode.validate_runtime_support()
                 self.assertEqual(mode.value, name)
                 self.assertEqual(
                     (

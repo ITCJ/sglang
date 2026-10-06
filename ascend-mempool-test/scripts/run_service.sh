@@ -29,7 +29,6 @@ export SGLANG_DISAGGREGATION_BOOTSTRAP_TIMEOUT=600
 export SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD=1
 export SGLANG_NPU_ENABLE_MEMPOOL=0
 if [[ "$mode" == formal ]]; then export SGLANG_NPU_ENABLE_MEMPOOL=1; fi
-export SGLANG_NPU_MEMPOOL_READBACK=0
 export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=${SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE:-0,2,4,6}
 export SGLANG_NPU_MEMPOOL_DIAGNOSTICS=0
 export SGLANG_NPU_USE_MLAPO=0
@@ -80,8 +79,8 @@ if [[ "$mode" == formal ]]; then
         --mempool-decode-capacity 512 --mempool-timeout 600)
 fi
 if [[ "$dry_run" == --dry-run ]]; then
-    printf 'MEMPOOL=%s READBACK=%s role=%s mode=%s\n' \
-        "$SGLANG_NPU_ENABLE_MEMPOOL" "$SGLANG_NPU_MEMPOOL_READBACK" "$role" "$mode"
+    printf 'MEMPOOL=%s role=%s mode=%s\n' \
+        "$SGLANG_NPU_ENABLE_MEMPOOL" "$role" "$mode"
     printf '%q ' "${common[@]}"
     printf '\n'
     exit 0
@@ -96,7 +95,7 @@ mkdir -p "$LOG_DIR"
     # Record launch controls, without collecting unrelated environment secrets.
     for name in SGLANG_SET_CPU_AFFINITY SGLANG_DISAGGREGATION_BOOTSTRAP_TIMEOUT \
         SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD SGLANG_NPU_ENABLE_MEMPOOL \
-        SGLANG_NPU_MEMPOOL_READBACK SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE \
+        SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE \
         SGLANG_NPU_MEMPOOL_DIAGNOSTICS SGLANG_NPU_USE_MLAPO \
         SGLANG_ENABLE_OVERLAP_PLAN_STREAM SGLANG_ENABLE_SPEC_V2 SGLANG_NPU_USE_MULTI_STREAM \
         SGLANG_DEEPEP_NUM_MAX_DISPATCH_TOKENS_PER_RANK ASCEND_MF_STORE_URL \

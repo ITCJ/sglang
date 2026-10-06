@@ -462,7 +462,7 @@ width16保持一致；开启 `SGLANG_NPU_MEMPOOL_READBACK=1` 和偶数NUMA列表
 原TransferEngine的 `ASCEND_MF_STORE_URL` 改为从 `P_IP[0]` 派生，修改P地址时无需另改。
 脚本提交为 `ascend-sglang-script/main` 的 `8074c0c`。
 
-[读回说明](../../../ascend-mempool-test/READBACK_SERVICE.md)同步增加直接启动脚本、router
+[读回说明](../archive/ticket-02-readback-service.md)同步增加直接启动脚本、router
 命令、日志关键字及数值字段解释，区分HTTP成功、单rank数值成功和全rank验收通过。
 Mac已通过 `bash -n`、两仓库 `git diff --check`，并用CLI帮助核对交付参数。
 规范审查无finding；spec审查指出的独立store地址遗漏已修复并定向复核通过。
@@ -506,7 +506,7 @@ Mac实际执行：新增用例按runtime/device事件、SDK copy及日志边界�
 交付文档地址未使用占位符，以及日志gate未核对真实复用三项。两位审查者定向复核
 确认问题均已解决，无剩余finding；最后一次146项完整CPU suite和23文件strict mypy通过。
 
-交付命令：[READBACK_SERVICE.md](../../../ascend-mempool-test/READBACK_SERVICE.md)。
+交付命令：[READBACK_SERVICE.md](../archive/ticket-02-readback-service.md)。
 context1024、P/D各512、偶数NUMA、TP16/slots16、D Graph width16；零decode、decode、
 复用三个请求，回传P/D完整日志、requests/result JSON及代码版本。
 **等待用户执行NPU验收**；本地检查不代表BM真实数值、NPU Graph或模型精度通过。

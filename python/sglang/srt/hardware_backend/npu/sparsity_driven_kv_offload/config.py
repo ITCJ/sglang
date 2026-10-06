@@ -17,8 +17,6 @@ class SparseKVOffloadMode(str, Enum):
     LOCAL_OFFLOAD = "local_offload"
     PD_PREFILL_NATIVE = "pd_prefill_native"
     PD_DECODE_OFFLOAD = "pd_decode_offload"
-    PD_PREFILL_MEMPOOL_SHADOW = "pd_prefill_mempool_shadow"
-    PD_DECODE_MEMPOOL_SHADOW = "pd_decode_mempool_shadow"
     PD_PREFILL_MEMPOOL = "pd_prefill_mempool"
     PD_DECODE_MEMPOOL = "pd_decode_mempool"
 
@@ -67,7 +65,6 @@ class SparseKVOffloadMode(str, Enum):
         return self in (
             SparseKVOffloadMode.LOCAL_OFFLOAD,
             SparseKVOffloadMode.PD_DECODE_OFFLOAD,
-            SparseKVOffloadMode.PD_DECODE_MEMPOOL_SHADOW,
             SparseKVOffloadMode.PD_DECODE_MEMPOOL,
         )
 
@@ -76,21 +73,15 @@ class SparseKVOffloadMode(str, Enum):
         return self in (
             SparseKVOffloadMode.LOCAL_OFFLOAD,
             SparseKVOffloadMode.PD_DECODE_OFFLOAD,
-            SparseKVOffloadMode.PD_DECODE_MEMPOOL_SHADOW,
         )
 
     @property
     def uses_pd_decode_staging(self) -> bool:
-        return self in (
-            SparseKVOffloadMode.PD_DECODE_OFFLOAD,
-            SparseKVOffloadMode.PD_DECODE_MEMPOOL_SHADOW,
-        )
+        return self is SparseKVOffloadMode.PD_DECODE_OFFLOAD
 
     @property
     def uses_mempool_bm(self) -> bool:
         return self in (
-            SparseKVOffloadMode.PD_PREFILL_MEMPOOL_SHADOW,
-            SparseKVOffloadMode.PD_DECODE_MEMPOOL_SHADOW,
             SparseKVOffloadMode.PD_PREFILL_MEMPOOL,
             SparseKVOffloadMode.PD_DECODE_MEMPOOL,
         )
@@ -102,14 +93,6 @@ class SparseKVOffloadMode(str, Enum):
             SparseKVOffloadMode.PD_PREFILL_MEMPOOL,
             SparseKVOffloadMode.PD_DECODE_MEMPOOL,
         )
-
-    def validate_runtime_support(self, *, readback_enabled: bool = False) -> None:
-        """Reject the old host-reference diagnostic before allocating formal KV."""
-        if self.uses_index_k_only_transfer and readback_enabled:
-            raise ValueError(
-                "Formal mempool mode requires SGLANG_NPU_MEMPOOL_READBACK=0; "
-                "the shadow host reference is not allocated."
-            )
 
 
 def resolve_sparse_kv_offload_mode(
@@ -168,14 +151,9 @@ def resolve_sparse_kv_offload_mode(
 
 def configure_for_model_runner(model_runner: Any) -> None:
     """Validate startup choices before KV sizing/allocation, without opening BM."""
-    from sglang.srt.environ import envs
-
     mode = resolve_sparse_kv_offload_mode(
         model_config=model_runner.model_config,
         use_mla_backend=model_runner.use_mla_backend,
-    )
-    mode.validate_runtime_support(
-        readback_enabled=envs.SGLANG_NPU_MEMPOOL_READBACK.get()
     )
     config = None
     if mode.uses_mempool_bm:
