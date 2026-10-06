@@ -95,7 +95,7 @@ HBM Index K -> indexer top-k -> HBM sparse cache 查询
 | S3 按模式停用重复存储 | 旧实现保留；正式模式host KV和main-KV staging分配为零 | 已提交；Mac检查通过，用户于2026-10-05确认NPU资源gate通过 |
 | S4 精简PD传输 | 仅保留Index K和必要辅助数据，保留联合readiness | 双机六个case全部通过，用户于2026-10-05确认完成；见[S4总结](../ticket-03-s4-summary.md) |
 | S5 正式服务Graph与性能验收 | 完整mempool链路、curl小题目检查、约定性能达标 | 组件gate、服务checker及小题目通过，当前性能获用户确认；S5已验收，见[总结](../ticket-03-s5-summary.md) |
-| S6 全量review、shadow删除与清理 | 精简代码、普通模式兼容、最终版本重跑S5并交付 | [计划](../ticket-03-s6-plan.md)已整理；S5已验收，待实施 |
+| S6 全量review、shadow删除与清理 | 精简代码、普通模式兼容、最终版本重跑S5并交付 | S6.1首次全量review完成，5项发现待整改；见[报告](../ticket-03-s6-review.md)及[计划](../ticket-03-s6-plan.md) |
 
 ### S1. 拆分配置与资源职责
 
@@ -411,6 +411,10 @@ BM先ready/transfer先完成两种顺序、metadata延迟、P native row复用�
 shadow专用代码，形成清晰的正式/普通模式实现，并在最终清理版本重新取得硬件验收。
 具体顺序和review清单见[S6计划](../ticket-03-s6-plan.md)。
 
+2026-10-06已完成S6.1首次全量审查，报告见[review记录](../ticket-03-s6-review.md)。
+Standards三项设计整理建议、Spec两项P2验证代码缺陷均待整改；shadow删除和最终
+复验尚未实施，以下总完成条件保持未勾选。
+
 - 固定review起点和目标版本，覆盖完整开发增量；按仓库规范、spec与批准的阶段要求
   两条线审查，并检查职责、命名、可读性、重复逻辑及同步/释放边界。记录问题与整改，
   整改后再review，不能只审最后一笔cleanup diff。
@@ -481,6 +485,37 @@ S6记录全量review、整改和复查结果；最终版本再次运行S5及普�
 ticket04内容不变；新数据来源导致输出异常时须在03定位，不能交付已知错误。
 
 ## Comments
+
+### 2026-10-06：S6.1全量code review完成，待整改
+
+用户授权“开始1全量code review”。固定起点4878a495d8、目标63590e9114，覆盖首次
+独立实现至S5验收记录的30个提交、121个文件，以及上轮未提交的S6规划文档。
+两路独立审查分别检查Standards与Spec，主审补充BM/runtime/Graph和共享资源接入。
+完整范围、发现位置、影响、整改与验证方法见[报告](../ticket-03-s6-review.md)。
+
+Standards未确认硬性规范违规，记录三项设计建议：row推导双份维护、service/control
+查询与完整历史快照耦合、runtime fetch字段依赖数字列号。Spec确认两个P2：
+verify_resources正式分支仍要求“S5拒绝”，两个mode用原helper直接复现AssertionError；
+registered启动测试仍期待shadow，与当前正式mode及READBACK拒绝合同冲突。
+未发现其他可证实的生产路径正确性缺陷，不把未测风险或既定shadow删除当新故障。
+
+Mac实际执行独立CPU完整suite202项通过，严格mypy35文件通过，81个改动Python文件
+AST及仓库hook指定Ruff规则通过，67文件format通过。默认Ruff额外43条未通过诊断单独
+记录；完整SGLang registered suite和NPU未运行。已有S5用户验收仍按已验证容量有效，
+不外推为整改后硬件通过。NUMA09继续封存，由用户独立处理。
+
+本轮只交付审查与文档，五项发现均未修复。S6.2迁移覆盖/删shadow时处理两个验证
+缺陷，S6.3处理设计整理，随后复查并执行最终正式/普通模式NPU gate。03保持open。
+
+### 2026-10-06：S6执行规划细化
+
+用户要求规划S6。已盘点shadow枚举、readback/runtime/attention/service调用及专用脚本，
+明确共享environ.py删除旧环境变量的必要性。全量review起点固定为4878a495d8，
+包含首个独立实现5a87606304，规划目标基线为63590e9114。
+执行顺序为全量review→删除shadow并迁移覆盖→按职责清理→整改复查/本地检查→
+最终版本正式和普通模式NPU复验；具体文件及交付见[S6计划](../ticket-03-s6-plan.md)。
+保留现有KVArgs，NUMA容量归09用户独立处理，S6不新增正式数据集精度要求。
+本轮仅规划，尚未实施或完成正式review；03保持open。
 
 ### 2026-10-06：用户确认当前性能，S5按已验证容量范围验收
 
