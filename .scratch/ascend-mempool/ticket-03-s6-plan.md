@@ -1,7 +1,10 @@
 # Ticket03 S6：全量 review、shadow 删除与代码清理
 
-日期：2026-10-05，进度更新：2026-10-06。需求来源：[ticket03](issues/03-prefill-direct-offload.md)及用户确认的
-S5/S6调整。S6.1首次全量review、S6.2代码清理及S6.3三个STD整改已完成；最终全范围复查和NPU复验待执行，Ticket03保持open。
+日期：2026-10-05，进度更新：2026-10-07。需求来源：[ticket03](issues/03-prefill-direct-offload.md)及用户确认的
+S5/S6调整。S6.1–S6.3及后续两轮TP同步改动已完成。S6.4最终全量review已执行，
+两项P2及T-01/T-02已整改并复查，本地205项CPU及静态检查通过；
+正式服务checker、curl及三轮性能已有历史回传，最终修改版本NPU验收仍有待项。
+详见[最终review](ticket-03-s6-final-review.md)及[整改交付](ticket-03-s6-final-fixes.md)。Ticket03保持open。
 
 **Blocked by:** 无阶段阻塞。[S5](ticket-03-s5-plan.md)已于2026-10-06在当前已验证容量范围
 通过用户验收；长上下文容量由用户独立处理。S6已进入审查/整改阶段。
@@ -95,9 +98,9 @@ S6沿用S5的curl小题目输出检查，不额外增加正式数据集完整精
 
 ## 完成条件
 
-- [ ] review起点、目标版本、完整范围及两条审查结果可追溯，验收相关发现已整改并复查。
-- [ ] 全部shadow专用代码/配置/脚本/测试删除，有用覆盖迁移，历史证据与当前说明区分。
-- [ ] 冗余检查/代码及命名/可读性问题完成整改，必要动态边界与释放约束保留并验证。
+- [x] review起点、目标版本、完整范围及两条审查结果可追溯，验收相关发现已整改并复查。
+- [x] 全部shadow专用代码/配置/脚本/测试删除，有用覆盖迁移，历史证据与当前说明区分。
+- [x] 冗余检查/代码及命名/可读性问题完成整改，必要动态边界与释放约束保留并验证。
 - [ ] 最终版本通过S5全部验收，含用户curl输出确认及约定性能目标。
 - [ ] 同版本普通sparse PD的实际NPU路径回归通过，不依赖BM初始化或MemFabric运行依赖。
 - [ ] 文档、脚本、测试和交付证据对应最终代码，用户确认后才关闭Ticket03。
@@ -218,6 +221,14 @@ submitted/written/completed；接口保持现有KVArgs，不引入此前否决�
 
 ### S6.4 整改后复查与本地交付
 
+2026-10-07已对`4878a495d8 → e838860ed0`完成最终全量审查，覆盖36个提交、123个文件。
+Standards确认STD-F01：新增容器未遵循msgspec.Struct规范；Spec确认SPEC-F01：
+shadow staging互斥组合及测试仍有残留。原始发现见[最终review](ticket-03-s6-final-review.md)。
+随后按用户授权完成两项P2和T-01/T-02整改，两个独立reviewer复查均无新增发现。
+205项CPU、33文件mypy、完整增量79文件AST/format/Ruff/isort及diff空白检查通过。
+原规划函数的非阻塞维护提示保留；修改细节、检查日志和NPU复验见
+[整改交付](ticket-03-s6-final-fixes.md)。
+
 复查全部01–03最终实现以及S6整改diff，关闭验收相关发现；验证剩余shadow引用
 只属于历史证据。运行既有CPU suite、适用ruff/format/mypy及修改脚本的语法检查。
 正式verify_service.py保留可审计完成/资源证据；删除或调整日志时同步修改checker，
@@ -227,6 +238,13 @@ submitted/written/completed；接口保持现有KVArgs，不引入此前否决�
 Mac通过不标记为硬件通过。
 
 ### S6.5 用户执行最终NPU复验
+
+2026-10-07用户已回传zero/decode/reuse（1/32/32 tokens）、正式service checker通过，
+以及关闭thinking后完整回答铅笔小题目的结果。三轮并发1、128输入/64输出、每轮64请求
+全部成功；平均TTFT/TPOT/输出吞吐的三轮中位数为910.199ms、129.747ms、7.044tokens/s。
+这些为会话回传结果，P/D实际部署SHA尚待归档，没有旧版本同负载A/B对照。
+最终fetch、普通模式实际NPU回归、完整环境registered检查及最终用户验收仍待完成。
+后续整改后按影响范围复验，不将当前结果直接套用于未来提交。
 
 沿用已通过的小容量部署和P=10.120.72.31、D=10.120.72.32：
 

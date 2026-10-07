@@ -7,7 +7,10 @@ service/control在既有AscendKVManager建立后附加。关闭该开关恢复�
 供prefill使用，PD只注册/发送Index K及必要state/aux。
 
 01、02及03 S5当前小容量验收已获用户确认。S6.2已删除shadow模式与旧host参考
-READBACK，实现和验证入口对应正式/普通模式。S6.3整理与最终NPU复验待执行，03保持open。
+READBACK，实现和验证入口对应正式/普通模式。S6.3整理及S6.4最终review整改已完成，
+本地205项CPU及静态检查通过；最终修改版本NPU复验待执行，03保持open。
+本轮容器迁移、staging清理与复验入口见
+[整改交付](../../../../../../.scratch/ascend-mempool/ticket-03-s6-final-fixes.md)。
 历史证据见[02总结](../../../../../../.scratch/ascend-mempool/ticket-02-summary.md)及
 [03票面](../../../../../../.scratch/ascend-mempool/issues/03-prefill-direct-offload.md)；
 当前命令见[正式服务验收](../../../../../../ascend-mempool-test/FORMAL_SERVICE.md)。

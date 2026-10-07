@@ -3,10 +3,14 @@
 Ticket01–03独立硬件验证及真实SGLang服务gate。当前正式服务入口见
 [S5服务验收](FORMAL_SERVICE.md)。
 
-**当前状态（2026-10-06）：** 01、02已关闭；03的S1–S5已实现，S2/S3/S4组件gate及
+**当前状态（2026-10-07）：** 01、02已关闭；03的S1–S5已实现，S2/S3/S4组件gate及
 当前小容量S5服务、curl输出和性能已获用户确认。S6.1全量review已完成，S6.2删除
-shadow/旧host参考READBACK并迁移测试；S6.3清理和最终正式/普通模式NPU复验待执行。
-03保持open。阶段证据见[02总结](../.scratch/ascend-mempool/ticket-02-summary.md)及
+shadow/旧host参考READBACK并迁移测试，S6.3及后续两轮TP同步改动已完成。
+S6.4最终全量review的STD-F01/SPEC-F01和T-01/T-02已整改并复查；205项CPU与静态检查通过。
+正式服务checker、curl及三轮性能已有历史回传，最终修改版本的fetch/普通模式NPU等验收仍待执行。
+03保持open。详见[最终review](../.scratch/ascend-mempool/ticket-03-s6-final-review.md)及
+[整改交付与复验](../.scratch/ascend-mempool/ticket-03-s6-final-fixes.md)。
+阶段证据见[02总结](../.scratch/ascend-mempool/ticket-02-summary.md)及
 [03票面](../.scratch/ascend-mempool/issues/03-prefill-direct-offload.md)。
 当前运行入口见[正式服务验收](FORMAL_SERVICE.md)和[S6.2交付](../.scratch/ascend-mempool/ticket-03-s6.2-summary.md)。
 NUMA/长上下文容量归ticket09，由用户独立处理。

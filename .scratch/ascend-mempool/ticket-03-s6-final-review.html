@@ -1,0 +1,1348 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="blueprint" data-mode="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Answer me with HTML 0.4.3">
+<title>Ticket03 S6 最终全量 Code Review</title>
+<style>
+html[data-theme="blueprint"], html[data-theme="blueprint"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 0px;
+  --shadow: none;
+  --bw: 1.5px;
+  --head-font: var(--font-sans);
+  --bg: #f6f6f3;
+  --paper: #ffffff;
+  --ink: #16181d;
+  --ink-2: #4b5260;
+  --ink-3: #8b929e;
+  --line: #1d2026;
+  --line-2: #d6dae1;
+  --fill: #f3f5f8;
+  --accent: #1d5fbf;
+  --accent-bg: #e4ecf8;
+  --ok: #1d5fbf;
+  --ok-bg: #e4ecf8;
+  --err: #c62828;
+  --err-bg: #fbeaea;
+  --warn: #a8620a;
+  --warn-bg: #fdf3e2;
+  --head-bg: #16181d;
+  --head-fg: #ffffff;
+}
+html[data-theme="blueprint"][data-mode="dark"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="blueprint"][data-mode="auto"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+}
+
+html[data-theme="shadcn"], html[data-theme="shadcn"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 8px;
+  --shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --bw: 1px;
+  --head-font: var(--font-sans);
+  --bg: #fafafa;
+  --paper: #ffffff;
+  --ink: #09090b;
+  --ink-2: #71717a;
+  --ink-3: #a1a1aa;
+  --line: #e4e4e7;
+  --line-2: #f0f0f2;
+  --fill: #f4f4f5;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --ok: #16a34a;
+  --ok-bg: #f0fdf4;
+  --err: #dc2626;
+  --err-bg: #fef2f2;
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --head-bg: #18181b;
+  --head-fg: #fafafa;
+}
+html[data-theme="shadcn"][data-mode="dark"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="shadcn"][data-mode="auto"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+}
+
+/* Answer me with HTML base — 只引用主题变量，禁止写死颜色（主题 token 见 themes/index.js） */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd { font-family: var(--font-mono); }
+
+/* ── 工具栏 ─────────────────────────────── */
+.am-toolbar {
+  position: fixed; top: 12px; right: 12px; z-index: 10; display: flex; gap: 6px;
+}
+.am-btn {
+  font: 12px/1 var(--font-sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding: 7px 10px; cursor: pointer;
+}
+.am-btn:hover { border-color: var(--ink-3); }
+.am-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── 页头 ───────────────────────────────── */
+.am-head { margin: 0 0 20px; padding-right: 260px; }
+.am-head h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; }
+.am-sub { margin: 4px 0 0; color: var(--ink-2); }
+.am-head-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 12px; color: var(--ink-2); }
+.am-head-meta b { font-family: var(--font-mono); font-weight: 400; color: var(--ink-3); margin-right: 6px; }
+.am-intro { margin-top: 12px; max-width: 80ch; }
+
+/* ── sheet 图纸板 ────────────────────────── */
+.am-sheet { max-width: 1680px; margin: 0 auto; padding: 32px 28px 40px; }
+.am-frame { position: relative; }
+.am-grid {
+  display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 20px; align-items: start;
+}
+.am-ruler { display: none; }
+html[data-theme="blueprint"] .am-frame { border: 1px solid var(--line); padding: 30px; }
+html[data-theme="blueprint"] .am-frame::before {
+  content: ""; position: absolute; inset: 18px; border: 1px solid var(--line); pointer-events: none;
+}
+html[data-theme="blueprint"] .am-ruler {
+  display: flex; position: absolute; font: 10px/1 var(--font-mono); color: var(--ink-3);
+}
+.am-ruler span { flex: 1; display: flex; align-items: center; justify-content: center; }
+.am-ruler--top, .am-ruler--bottom { left: 18px; right: 18px; height: 18px; }
+.am-ruler--top { top: 0; }
+.am-ruler--bottom { bottom: 0; }
+.am-ruler--left, .am-ruler--right { top: 18px; bottom: 18px; width: 18px; flex-direction: column; }
+.am-ruler--left { left: 0; }
+.am-ruler--right { right: 0; }
+.am-ruler--top span + span, .am-ruler--bottom span + span { border-left: 1px solid var(--line); }
+.am-ruler--left span + span, .am-ruler--right span + span { border-top: 1px solid var(--line); }
+
+/* ── 面板 ───────────────────────────────── */
+.am-panel {
+  background: var(--paper); border: var(--bw) solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); min-width: 0; overflow: hidden;
+}
+.am-panel-head {
+  display: flex; align-items: stretch; gap: 0; border-bottom: var(--bw) solid var(--line); min-height: 34px;
+}
+.am-panel-id {
+  display: flex; align-items: center; justify-content: center; min-width: 34px; padding: 0 8px;
+  background: var(--head-bg); color: var(--head-fg); font-weight: 600; font-size: 14px;
+}
+html[data-theme="shadcn"] .am-panel-id { border-radius: 6px; min-width: 24px; height: 24px; margin: 9px 0 9px 14px; font-size: 12px; }
+html[data-theme="shadcn"] .am-panel-head { border-bottom-width: 1px; }
+.am-panel-head h2 { margin: 0; padding: 7px 12px; font-size: 15px; font-weight: 600; flex: 1; display: flex; align-items: center; }
+.am-panel-meta { align-self: center; padding: 0 12px; font: 11px/1.3 var(--font-mono); color: var(--ink-2); text-align: right; }
+.am-panel-body { padding: 14px 16px 16px; }
+.am-panel-body > * + * { margin-top: 12px; }
+
+/* ── Markdown 正文 ───────────────────────── */
+.am-md > :first-child { margin-top: 0; }
+.am-md > :last-child { margin-bottom: 0; }
+.am-md p { margin: 0 0 8px; }
+.am-md ul, .am-md ol { margin: 0 0 8px; padding-left: 20px; }
+.am-md li + li { margin-top: 3px; }
+.am-md h3, .am-md h4 { margin: 14px 0 6px; font-size: 13px; }
+.am-md a { color: var(--accent); }
+.am-md blockquote { margin: 0 0 8px; padding: 2px 12px; border-left: 3px solid var(--line-2); color: var(--ink-2); }
+.am-md :not(pre) > code { font-size: 0.9em; background: var(--fill); padding: 1px 5px; border-radius: 4px; }
+.am-md hr { border: 0; border-top: 1px solid var(--line-2); margin: 12px 0; }
+.am-md table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.am-md th {
+  text-align: left; font: 11px/1.3 var(--font-mono); color: var(--ink-2); font-weight: 400;
+  padding: 6px 10px; border-bottom: 1px solid var(--line-2);
+}
+.am-md td { padding: 7px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.am-md tbody tr:nth-child(even) td { background: var(--fill); }
+.am-table-wrap { overflow-x: auto; }
+.am-code {
+  margin: 0; padding: 12px 14px; background: var(--fill); border: 1px solid var(--line-2);
+  border-radius: var(--radius); overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+}
+
+/* ── 状态徽章 ok / no / warn ──────────────── */
+.am-status { white-space: nowrap; font-weight: 500; }
+.am-status--ok { color: var(--ok); }
+.am-status--no { color: var(--err); }
+.am-status--warn { color: var(--warn); }
+.am-status-icon { display: inline-block; width: 1.1em; font-weight: 700; }
+
+/* ── callout ─────────────────────────────── */
+.am-callout {
+  border: 1px solid var(--line-2); border-left: 3px solid var(--accent); background: var(--accent-bg);
+  padding: 10px 14px; border-radius: var(--radius);
+}
+.am-callout--ok { border-left-color: var(--ok); background: var(--ok-bg); }
+.am-callout--warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.am-callout--err { border-left-color: var(--err); background: var(--err-bg); }
+.am-callout-title { font-weight: 600; margin-bottom: 4px; }
+
+/* ── kv 标题栏格 ─────────────────────────── */
+.am-kv {
+  display: grid; grid-template-columns: repeat(var(--kv-cols, 2), minmax(0, 1fr)); margin: 0;
+  border-top: var(--bw) solid var(--line); border-left: var(--bw) solid var(--line);
+}
+.am-kv-cell { border-right: var(--bw) solid var(--line); border-bottom: var(--bw) solid var(--line); padding: 6px 10px 8px; min-width: 0; }
+.am-kv-cell--wide { grid-column: 1 / -1; }
+.am-kv dt { font: 11px/1.4 var(--font-mono); color: var(--ink-2); }
+.am-kv dd { margin: 2px 0 0; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.am-kv-cell--wide dd { font-size: 17px; font-weight: 600; }
+html[data-theme="shadcn"] .am-kv { border-color: var(--line); border-radius: var(--radius); overflow: hidden; }
+
+/* ── timeline ────────────────────────────── */
+.am-timeline { list-style: none; margin: 0; padding: 0; }
+.am-timeline--h { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); padding-top: 4px; }
+.am-timeline--h li { position: relative; text-align: center; padding: 0 6px; }
+.am-timeline--h li::before {
+  content: ""; position: absolute; top: 31px; left: 0; right: 0; border-top: var(--bw) solid var(--line);
+}
+.am-timeline--h li:first-child::before { left: 50%; }
+.am-timeline--h li:last-child::before { right: 50%; }
+.am-tl-when { display: block; font-size: 15px; font-weight: 500; height: 24px; }
+.am-tl-dot {
+  position: relative; display: block; width: 11px; height: 11px; margin: 2px auto 8px;
+  border: var(--bw) solid var(--line); border-radius: 50%; background: var(--paper);
+}
+.am-tl-item--hi .am-tl-dot { background: var(--accent); border-color: var(--accent); }
+.am-tl-title { display: block; font-size: 12.5px; font-weight: 500; }
+.am-tl-text { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.45; }
+.am-timeline--v li { position: relative; padding: 0 0 14px 22px; }
+.am-timeline--v li::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: -6px; border-left: var(--bw) solid var(--line-2); }
+.am-timeline--v li:last-child::before { display: none; }
+.am-timeline--v .am-tl-dot { position: absolute; left: 0; top: 4px; margin: 0; }
+.am-timeline--v .am-tl-when { display: inline; height: auto; font: 12px var(--font-mono); color: var(--ink-2); margin-right: 8px; }
+.am-timeline--v .am-tl-title { display: inline; font-size: 14px; }
+.am-timeline--v .am-tl-text { margin-top: 2px; }
+
+/* ── annot 句子标注 ──────────────────────── */
+.am-annot + .am-annot { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.am-annot-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.am-annot-meta { font: 11px var(--font-mono); font-weight: 400; color: var(--ink-2); }
+.am-annot-scroll { overflow-x: auto; }
+.am-annot-line {
+  position: relative; display: inline-block; white-space: pre; font: 14px/1.6 var(--font-mono);
+  padding-bottom: calc(var(--rows, 0) * 17px + 14px);
+}
+.am-annot-line--wrap { display: block; white-space: normal; padding-bottom: 10px; }
+.am-annot-line--wrap .am-seg { white-space: nowrap; }
+.am-seg { position: relative; }
+.am-seg::after {
+  content: ""; position: absolute; left: 1px; right: 1px; top: calc(100% + 1px); height: 5px;
+  border: 1px solid var(--accent); border-top: 0;
+}
+.am-seg-n {
+  position: absolute; left: 0; top: calc(100% + 8px + var(--row, 0) * 17px);
+  font: 11px/16px var(--font-sans); color: var(--accent); white-space: nowrap;
+}
+.am-seg--err { color: var(--err); }
+.am-seg--err::after { border-color: var(--err); }
+.am-seg--err .am-seg-n { color: var(--err); }
+.am-annot-caption { font-size: 12px; color: var(--ink-2); }
+
+/* ── limits 限值条 ───────────────────────── */
+.am-lim + .am-lim { margin-top: 14px; }
+.am-lim-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; margin-bottom: 4px; }
+.am-lim-val { font: 12px var(--font-mono); color: var(--accent); white-space: nowrap; }
+.am-lim-track { position: relative; height: 12px; border: 1px solid var(--line-2); background: var(--fill); border-radius: calc(var(--radius) / 2); }
+.am-lim-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-bg); border-right: 1px solid var(--accent); }
+.am-lim-mark { position: absolute; top: -4px; bottom: -4px; border-left: 2px solid var(--accent); }
+.am-lim.is-over .am-lim-fill { background: var(--err-bg); border-right-color: var(--err); }
+.am-lim.is-over .am-lim-val { color: var(--err); }
+.am-lim-ticks { position: relative; height: 16px; font: 10px/16px var(--font-mono); color: var(--ink-3); }
+.am-lim-ticks span { position: absolute; transform: translateX(-50%); }
+.am-lim-ticks span:first-child { transform: none; }
+.am-lim-note { font-size: 11px; color: var(--ink-2); margin-left: 6px; }
+
+/* ── tree 结构树 ─────────────────────────── */
+.am-tree { font-size: 13px; }
+.am-tree-root { display: flex; justify-content: center; position: relative; padding-bottom: 18px; }
+.am-tree-root::after { content: ""; position: absolute; bottom: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-root--solo { padding-bottom: 12px; }
+.am-tree-root--solo::after { display: none; }
+.am-tree-box {
+  border: var(--bw) solid var(--line); background: var(--paper); padding: 6px 14px; text-align: center;
+  border-radius: var(--radius); font-weight: 600;
+}
+.am-tree-box small { display: block; font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.am-tree-box--root { background: var(--accent-bg); font-size: 15px; padding: 8px 28px; }
+.am-tree-cols { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
+.am-tree-col { position: relative; padding: 18px 8px 0; min-width: 0; }
+.am-tree-col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; border-top: var(--bw) solid var(--line); }
+.am-tree-col:first-child::before { left: 50%; }
+.am-tree-col:last-child::before { right: 50%; }
+.am-tree-col::after { content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-list, .am-tree-list ul { list-style: none; margin: 0; padding: 0; }
+.am-tree-col > .am-tree-list { margin: 8px 0 0 14px; }
+.am-tree-list ul { margin-left: 16px; }
+.am-tree-list li { position: relative; padding: 3px 0 3px 18px; }
+.am-tree-list li::before { content: ""; position: absolute; left: 0; top: 0.95em; width: 12px; border-top: 1px solid var(--ink-3); }
+.am-tree-list li::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--ink-3); }
+.am-tree-list li:last-child::after { bottom: auto; height: 0.95em; }
+.am-tree-tag { font: 11px var(--font-mono); color: var(--ink-3); margin-right: 4px; }
+.am-tree code { font: 12px var(--font-mono); }
+.am-tree-sub { display: block; font-size: 11.5px; color: var(--ink-2); }
+.am-tree-hi > .am-tree-label { color: var(--accent); font-weight: 600; }
+
+/* ── 图（flow / sequence）───────────────── */
+.am-diagram { margin: 0; overflow-x: auto; text-align: center; }
+.am-diagram svg { max-width: 100%; height: auto; font-family: var(--font-sans); }
+.am-diagram text { fill: var(--ink); font-size: 13px; }
+.am-node-shape { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-node--hi .am-node-shape { fill: var(--accent-bg); stroke: var(--accent); }
+.am-node--hi text { fill: var(--accent); font-weight: 600; }
+.am-edge { fill: none; stroke: var(--ink-2); stroke-width: 1.3; }
+.am-edge--dashed { stroke-dasharray: 5 4; }
+.am-arrow { fill: var(--ink-2); }
+.am-edge-label rect { fill: var(--paper); }
+.am-diagram .am-edge-label text { fill: var(--accent); font-size: 11.5px; }
+.am-cluster { fill: var(--fill); stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 4 3; }
+.am-diagram .am-cluster-label { fill: var(--ink-2); font: 11px var(--font-mono); }
+.am-lifeline { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 4 4; }
+.am-actor { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-note { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 1; }
+.am-diagram .am-step { fill: var(--ink-3); font: 10px var(--font-mono); }
+
+/* ── doc 线性讲解 ────────────────────────── */
+.am-doc { max-width: 1120px; margin: 0 auto; padding: 40px 28px 64px; }
+.am-doc-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
+.am-doc-layout--notoc { grid-template-columns: minmax(0, 1fr); max-width: 860px; }
+.am-toc { position: sticky; top: 24px; font-size: 13px; }
+.am-toc a { display: block; color: var(--ink-2); text-decoration: none; padding: 4px 0 4px 10px; border-left: 2px solid var(--line-2); }
+.am-toc a:hover { color: var(--ink); border-left-color: var(--accent); }
+.am-doc-body > .am-panel + .am-panel { margin-top: 20px; }
+
+/* ── 响应式与打印 ─────────────────────────── */
+@media (max-width: 1100px) {
+  .am-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .am-grid > .am-panel { grid-column: auto !important; }
+  .am-grid > .am-panel.am-span-wide { grid-column: 1 / -1 !important; }
+}
+@media (max-width: 760px) {
+  .am-sheet, .am-doc { padding: 56px 12px 24px; }
+  .am-head { padding-right: 0; }
+  .am-grid { grid-template-columns: minmax(0, 1fr); }
+  .am-grid > .am-panel.am-span-wide { grid-column: auto !important; }
+  html[data-theme="blueprint"] .am-frame { padding: 0; border: 0; }
+  html[data-theme="blueprint"] .am-frame::before, html[data-theme="blueprint"] .am-ruler { display: none; }
+  .am-doc-layout { grid-template-columns: minmax(0, 1fr); }
+  .am-toc { position: static; }
+  .am-timeline--h { grid-template-columns: minmax(0, 1fr); }
+  .am-tree-cols { grid-template-columns: minmax(0, 1fr); }
+}
+.am-colophon { text-align: center; padding: 0 0 28px; font: 11px var(--font-mono); color: var(--ink-3); }
+
+@media print {
+  .am-toolbar { display: none; }
+  body { background: var(--paper); }
+  .am-panel { break-inside: avoid; box-shadow: none; }
+}
+.am-panel--bare { border: 0; background: transparent; box-shadow: none; }
+.am-panel--bare > .am-panel-body { padding: 0; }
+.am-panel--bare .am-kv { background: var(--paper); }
+
+</style>
+</head>
+<body>
+<div class="am-toolbar">
+<button class="am-btn" type="button" data-am="theme" data-labels="{&quot;blueprint&quot;:&quot;主题：图纸&quot;,&quot;shadcn&quot;:&quot;主题：卡片&quot;}">主题：图纸</button>
+<button class="am-btn" type="button" data-am="mode" data-labels="{&quot;auto&quot;:&quot;明暗：跟随系统&quot;,&quot;light&quot;:&quot;明暗：亮&quot;,&quot;dark&quot;:&quot;明暗：暗&quot;}">明暗：跟随系统</button>
+<button class="am-btn" type="button" data-am="copy" data-done="已复制 ✓">复制源稿</button>
+</div>
+<main class="am-doc">
+<header class="am-head"><h1>Ticket03 S6 最终全量 Code Review</h1><p class="am-sub">4878a495d8 → e838860ed0 · 2026-10-07 · Standards 与 Spec 分别审查</p><div class="am-head-meta"><span><b>scope</b>36 个提交 / 123 个文件</span></div></header>
+<div class="am-doc-layout">
+<nav class="am-toc" aria-label="目录"><a href="#panel-A">A · 审查结论</a><a href="#panel-B">B · Standards</a><a href="#panel-C">C · Spec</a><a href="#panel-D">D · 固定范围与已有整改</a><a href="#panel-E">E · 路径与安全合同复核</a><a href="#panel-F">F · 本地验证与工具问题</a><a href="#panel-G">G · 用户回传的 NPU 结果</a><a href="#panel-H">H · 后续处理与验收边界</a></nav><div class="am-doc-body">
+<section class="am-panel" id="panel-A">
+<header class="am-panel-head"><span class="am-panel-id">A</span><h2>审查结论</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>本轮完成最终目标版本的全量审查。发现两项 P2，尚未整改。未发现新的、可确认的正式主路径正确性缺陷。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>审查轴</th>
+<th>结果</th>
+<th>本轴最高严重度</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Standards</td>
+<td>1 项明确规范不符；另保留 1 项非阻塞维护提示</td>
+<td>P2：新增容器仍使用 dataclass</td>
+</tr>
+<tr>
+<td>Spec</td>
+<td>1 项清理要求未完成</td>
+<td>P2：shadow staging 分支和测试残留</td>
+</tr>
+</tbody></table></div>
+</div>
+<div class="am-callout am-callout--warn" role="note"><div class="am-callout-title">审查完成，Ticket03 继续 open</div><div class="am-callout-body am-md"><p>先处理两项 P2，再复查受影响代码。最终硬件验收仍有待项。
+本轮只更新报告和进度文档，没有修改生产代码或测试实现。</p>
+</div></div>
+<div class="am-md"><p>本地 205 项 CPU 测试通过。用户回传的正式服务 checker 和三轮性能测量也通过各自检查。
+这些结果不能消除清理缺口，也不能替代最终 fetch 和普通模式的 NPU 回归。</p>
+<p>新发现使用 <code>STD-F01</code>、<code>SPEC-F01</code> 编号，与首次审查的五项发现区分。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-B">
+<header class="am-panel-head"><span class="am-panel-id">B</span><h2>Standards</h2></header>
+<div class="am-panel-body"><div class="am-md"><h3>STD-F01 · P2 · 新增容器尚未遵循 msgspec.Struct 规范</h3>
+<p><strong>依据：</strong> <a href="../../docs/docs/developer_guide/contribution_guide.mdx">贡献指南</a>第 175 行要求：</p>
+<blockquote>
+<p>Use <code>msgspec.Struct</code> for new data containers instead of <code>dataclasses.dataclass</code> or <code>attrs</code>.</p>
+</blockquote>
+<p>该规则在基线 <code>4878a495d8</code> 中已存在。未找到适用豁免。
+完整增量仍新增 26 个生产 dataclass，分布在 9 个文件。standalone 另有 2 个。</p>
+<p>下表路径均相对 <code>python/sglang/srt/</code>。行号固定于本次目标版本。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th align="right">数量</th>
+<th>代表位置与用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>disaggregation/ascend/mempool_protocol.py</code></td>
+<td align="right">6</td>
+<td>L49、L221、L237：布局、请求身份、slot lease</td>
+</tr>
+<tr>
+<td><code>disaggregation/ascend/mempool_control.py</code></td>
+<td align="right">3</td>
+<td>L31、L58、L73：快照、可变请求记录</td>
+</tr>
+<tr>
+<td><code>disaggregation/ascend/mempool_tick.py</code></td>
+<td align="right">5</td>
+<td>L19、L39、L82、L93、L109：观察与动作</td>
+</tr>
+<tr>
+<td><code>disaggregation/ascend/mempool_service.py</code></td>
+<td align="right">1</td>
+<td>L27：服务请求记录</td>
+</tr>
+<tr>
+<td><code>hardware_backend/npu/mempool/runtime.py</code></td>
+<td align="right">6</td>
+<td>L41–97：绑定身份、写入与完成记录</td>
+</tr>
+<tr>
+<td><code>hardware_backend/npu/mempool/config.py</code></td>
+<td align="right">1</td>
+<td>L15：配置</td>
+</tr>
+<tr>
+<td><code>hardware_backend/npu/mempool/layout.py</code></td>
+<td align="right">2</td>
+<td>L24、L91：KV 与 pool 布局</td>
+</tr>
+<tr>
+<td><code>hardware_backend/npu/mempool/manager.py</code></td>
+<td align="right">1</td>
+<td>L529：KV view</td>
+</tr>
+<tr>
+<td><code>hardware_backend/npu/mempool/copy.py</code></td>
+<td align="right">1</td>
+<td>L16：copy 索引</td>
+</tr>
+</tbody></table></div>
+<p>standalone 位置为 <code>ascend-mempool-test/src/ascend_mempool/verification.py:49</code> 和 <code>writer_cases.py:35</code>。</p>
+<p><strong>影响：</strong> 最新提交只迁移了 <code>_Preparation</code>。完整开发增量仍不符合容器规范。
+没有证据表明这些 dataclass 导致已测负载退化，也未发现由此造成的数据错误。</p>
+<p><strong>处理：</strong> 统一迁移新增容器，逐类保留冻结、哈希、排序和可变记录语义。
+尤其保留 <code>KVRowBinding(eq=False)</code> 的对象身份语义。
+同时核对 <code>replace</code>、序列化、构造后校验和隔离复制的调用。</p>
+<p><strong>验证：</strong> 运行协议 roundtrip、proof、prepare 隔离、生命周期和现有 CPU suite。
+迁移后检查正式服务及受影响的 NPU gate。</p>
+<h3>非阻塞维护提示 · P3 · 共同规划函数仍偏长</h3>
+<p><code>mempool_tick.py:486</code> 的 <code>_plan</code> 约 216 行。
+它同时处理消息优先级、清理、P/D 生命周期和新准入。
+贡献指南第 173 行建议函数约 100 行以内，并让编排函数保持高层表达。</p>
+<p>可按规划职责抽取 helper。候选准备位于 <code>:302</code>，其条件与共同规划并不相同。
+本地候选需覆盖其他 rank 可能触发的动作；共同计划使用全组事实。
+因此不能直接合并两套判断。当前未发现行为错误，本提示不新增独立整改计数。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-C">
+<header class="am-panel-head"><span class="am-panel-id">C</span><h2>Spec</h2></header>
+<div class="am-panel-body"><div class="am-md"><h3>SPEC-F01 · P2 · shadow staging 专用分支和测试仍残留</h3>
+<p><strong>依据：</strong> <a href="ticket-03-s6-plan.md">S6 计划</a>的“删除全部 shadow 专用代码”要求：</p>
+<blockquote>
+<p>shadow 专用脚本、fixtures 和测试代码：删除；仍有价值的公共行为覆盖先迁移到正式/普通入口。</p>
+</blockquote>
+<p><strong>位置：</strong></p>
+<ul>
+<li><a href="../../python/sglang/srt/disaggregation/ascend/conn.py">conn.py</a>：L792–821 的 <code>update_status()</code>，L869–875 的 <code>abort()</code>。</li>
+<li><a href="../../python/sglang/srt/disaggregation/ascend/sparse_pd.py">sparse_pd.py</a>：L208 的可选 <code>release</code> 参数。</li>
+<li><a href="../../ascend-mempool-test/tests/unit/test_native_release.py">test_native_release.py</a>：L87、L103 构造组合；L114、L128、L140、L146 验证相关行为。</li>
+</ul>
+<p>这些代码仍处理以下组合：</p>
+</div>
+<pre class="am-code"><code data-lang="python">sparse_pd_decode_staging is not None
+mempool_control is not None</code></pre>
+<div class="am-md"><p>实际执行当前六种 mode 的能力矩阵后，确认该组合不可达。
+模式能力定义在 <code>sparsity_driven_kv_offload/config.py:79–86</code>。
+staging 构造器还在 <code>sparse_pd.py:56–60</code> 拒绝其他模式。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>模式</th>
+<th>staging</th>
+<th>mempool BM</th>
+<th>当前组合能否成立</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>普通 <code>PD_DECODE_OFFLOAD</code></td>
+<td>有</td>
+<td>无</td>
+<td><span class="am-status am-status--no"><span class="am-status-icon" aria-hidden="true">✗</span></span></td>
+</tr>
+<tr>
+<td>正式 <code>PD_DECODE_MEMPOOL</code></td>
+<td>无</td>
+<td>有</td>
+<td><span class="am-status am-status--no"><span class="am-status-icon" aria-hidden="true">✗</span></span></td>
+</tr>
+<tr>
+<td>正式 <code>PD_PREFILL_MEMPOOL</code></td>
+<td>无</td>
+<td>有</td>
+<td><span class="am-status am-status--no"><span class="am-status-icon" aria-hidden="true">✗</span></span></td>
+</tr>
+<tr>
+<td>其他模式</td>
+<td>无</td>
+<td>无</td>
+<td><span class="am-status am-status--no"><span class="am-status-icon" aria-hidden="true">✗</span></span></td>
+</tr>
+</tbody></table></div>
+<p><strong>例子：</strong> 单测手动设置 <code>mempool_control = object()</code>，再挂一个 staging pool。
+随后断言 abort 后 staging 保留到 drained clear。
+测试可以通过，但真实配置已经无法创建这一组合。</p>
+<p><strong>影响：</strong> S6 的 shadow 清理尚未完成。
+这部分测试仍证明旧组合，不能作为正式 Index K 目的缓冲区安全释放的覆盖。
+当前没有证据说明它导致已验收的正式请求出错。</p>
+<p><strong>处理：</strong> 删除互斥组合的分支和仅服务该组合的参数。
+把有效 abort、ACK、drain 覆盖迁移到正式路径。
+普通 staging 回归继续保留。</p>
+</div>
+<div class="am-callout am-callout--warn" role="note"><div class="am-callout-title">保留正式 native abort 协议</div><div class="am-callout-body am-md"><p>保留 <code>_send_abort_notification()</code>、<code>register_deferred_abort_room()</code> 和 ABORT_ACK 跟踪。
+正式路径仍有 Index K 等目的缓冲区，必须等待远端写入结束才能释放。</p>
+</div></div>
+<div class="am-md"><p><strong>验证：</strong> 分别使用“普通模式有 staging”和“正式模式无 staging”的 fixture。
+覆盖显式 abort、poll 失败、ACK 只登记一次、延后释放及普通模式即时清理。
+之后执行普通模式实际 NPU 回归。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-D">
+<header class="am-panel-head"><span class="am-panel-id">D</span><h2>固定范围与已有整改</h2></header>
+<div class="am-panel-body"><div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>项目</th>
+<th>固定值</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>分支</td>
+<td><code>cryang/dev/mempool</code></td>
+</tr>
+<tr>
+<td>基线</td>
+<td><code>4878a495d8bbacad52da8b75fd7b9685a32b8926</code></td>
+</tr>
+<tr>
+<td>目标</td>
+<td><code>e838860ed0e4bfef540087d5cdd5ebbd1bcee992</code></td>
+</tr>
+<tr>
+<td>Diff</td>
+<td><code>git diff 4878a495d8...e838860ed0</code></td>
+</tr>
+<tr>
+<td>增量</td>
+<td>36 个提交，123 个文件，30,061 行新增，456 行删除</td>
+</tr>
+<tr>
+<td>工作区</td>
+<td>审查开始时无 tracked 修改；3 份已有未跟踪 HTML 未纳入代码范围</td>
+</tr>
+</tbody></table></div>
+<p>该范围包含 01–03 的实现和共享接入点，也包含测试、脚本及文档。
+<code>CONTEXT.md</code> 的 <code>295132c4a5</code> 是项目历史基线，用途不同。
+本报告及进度更新产生于审查之后，不属于上述固定 diff。</p>
+<p>Standards 与 Spec 由两个独立 reviewer 并行审查。
+主审另核对 Graph、runtime、共享 hooks 和证据边界，并复核两项发现。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>首次发现</th>
+<th>当前代码结果</th>
+<th>对应提交</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>STD-01：row 推导重复</td>
+<td>ok 两条 writer 共用 <code>kv_rows.py</code>；各自保留存储约束</td>
+<td><code>9ba89e46eb</code></td>
+</tr>
+<tr>
+<td>STD-02：查询及 tick 依赖全量历史</td>
+<td><span class="am-status am-status--ok"><span class="am-status-icon" aria-hidden="true">✓</span>直接查询、活跃视图、精简观察；准备只隔离相关记录及有界 slot</span></td>
+<td><code>6eb6475f61</code>、<code>e838860ed0</code></td>
+</tr>
+<tr>
+<td>STD-03：fetch 调试统计</td>
+<td><span class="am-status am-status--ok"><span class="am-status-icon" aria-hidden="true">✓</span>删除统计及 checker 依赖；保留正确性与完成检查</span></td>
+<td><code>25bfbddfa3</code></td>
+</tr>
+<tr>
+<td>SPEC-01：资源 gate 期待正式模式拒绝</td>
+<td><span class="am-status am-status--ok"><span class="am-status-icon" aria-hidden="true">✓</span>改为正式资源行为及普通模式回归</span></td>
+<td><code>912012f3d0</code></td>
+</tr>
+<tr>
+<td>SPEC-02：启动测试期待 shadow</td>
+<td><span class="am-status am-status--ok"><span class="am-status-icon" aria-hidden="true">✓</span>改为正式模式预期，保留非法配置检查</span></td>
+<td><code>912012f3d0</code></td>
+</tr>
+</tbody></table></div>
+<p>这些是代码复查结论。它们不代表所有最终 NPU gate 已完成。
+<code>SPEC-F01</code> 是此次完整复查发现的清理遗漏，不能由旧五项整改完成推导为已解决。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-E">
+<header class="am-panel-head"><span class="am-panel-id">E</span><h2>路径与安全合同复核</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>下表记录已审查的关键合同。未发现确认缺陷不等于覆盖了所有硬件失效场景。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>模块范围</th>
+<th>本轮核对内容</th>
+<th>结论或边界</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>配置、资源、pool configurator</td>
+<td>opt-in；正式 P 保留 native HBM；正式 D 停用旧主 KV；普通路径保留</td>
+<td>静态与 CPU 检查通过；完整 registered / NPU 构造链仍待验收</td>
+</tr>
+<tr>
+<td>BM layout、manager、copy、writer</td>
+<td>P/D 容量、layer base、映射、row/slot 区分、来源路由、invalid/padding</td>
+<td>未发现新确认缺陷；最终远端内容由 fetch gate 验证</td>
+</tr>
+<tr>
+<td>runtime、Graph、cache、attention</td>
+<td>固定 metadata、两路 copy 入图、写入及 miss 完成、cache refill/reset</td>
+<td>代码保持事件依赖；未在 Mac 执行 NPU kernel</td>
+</tr>
+<tr>
+<td>protocol、control、tick</td>
+<td>attempt/session/generation、proof、retirement、准入预算、历史淘汰</td>
+<td>已核对旧消息和 slot 复用；两轮同步仍保留逐 rank 校验</td>
+</tr>
+<tr>
+<td>service、Index K 传输</td>
+<td>matching KV_READY 与 native Success 联合就绪；只发布必要 Index K/aux</td>
+<td>正式 checker 已由用户回传通过</td>
+</tr>
+<tr>
+<td>scheduler、prefill/decode、result hooks</td>
+<td>deferred free、取消、zero-decode、idle tick、native handoff、drain</td>
+<td>未发现新确认缺陷；shadow staging 残留单列 SPEC-F01</td>
+</tr>
+<tr>
+<td>测试与工具</td>
+<td>fetch/resources/service gate、模式矩阵、fixture、启动脚本</td>
+<td>发现旧 fixture 残留；工具问题见下一节</td>
+</tr>
+</tbody></table></div>
+<h3>e838860ed0 的两轮 TP 同步</h3>
+</div>
+<figure class="am-diagram am-flow"><svg viewBox="0 0 155 657" width="155" height="657" role="img" aria-label="流程图：本地稳定观察、候选完整准备、第一次 TP 同步、共同计划、本地提交、第二次 TP 同步、发送 outbox" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am1-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><g></g><g><g data-step="0"><path class="am-edge" d="M77.5,49 L77.5,65 Q77.5,81 77.5,97 L77.5,113" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="15.5" y="72" width="124.1" height="18" rx="3"/><text x="77.5" y="81" text-anchor="middle" dominant-baseline="central">校验 proof 与状态迁移</text></g></g><g data-step="1"><path class="am-edge" d="M77.5,148 L77.5,164 Q77.5,180 77.5,196 L77.5,212" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="32.3" y="171" width="90.5" height="18" rx="3"/><text x="77.5" y="180" text-anchor="middle" dominant-baseline="central">观察及准备结果</text></g></g><g data-step="2"><path class="am-edge" d="M77.5,247 L77.5,263 Q77.5,279 77.5,295 L77.5,311" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="20.8" y="270" width="113.5" height="18" rx="3"/><text x="77.5" y="279" text-anchor="middle" dominant-baseline="central">全组条件与冲突约束</text></g></g><g data-step="3"><path class="am-edge" d="M77.5,346 L77.5,362 Q77.5,378 77.5,394 L77.5,410" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="15" y="369" width="125" height="18" rx="3"/><text x="77.5" y="378" text-anchor="middle" dominant-baseline="central">仅提交共同选择的动作</text></g></g><g data-step="4"><path class="am-edge" d="M77.5,445 L77.5,461 Q77.5,477 77.5,493 L77.5,509" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="49.5" y="468" width="56" height="18" rx="3"/><text x="77.5" y="477" text-anchor="middle" dominant-baseline="central">提交结果</text></g></g><g data-step="5"><path class="am-edge" d="M77.5,544 L77.5,560 Q77.5,576 77.5,592 L77.5,608" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="38" y="567" width="79" height="18" rx="3"/><text x="77.5" y="576" text-anchor="middle" dominant-baseline="central">全组提交成功</text></g></g></g><g><g class="am-node am-node--rect" data-key="本地稳定观察" data-step="0"><rect class="am-node-shape" x="24.5" y="14" width="106" height="35" rx="3"/><text x="77.5" y="31.5" text-anchor="middle" dominant-baseline="central">本地稳定观察</text></g><g class="am-node am-node--rect" data-key="候选完整准备" data-step="0"><rect class="am-node-shape" x="24.5" y="113" width="106" height="35" rx="3"/><text x="77.5" y="130.5" text-anchor="middle" dominant-baseline="central">候选完整准备</text></g><g class="am-node am-node--rect" data-key="第一次 TP 同步" data-step="1"><rect class="am-node-shape" x="18.3" y="212" width="118.5" height="35" rx="3"/><text x="77.5" y="229.5" text-anchor="middle" dominant-baseline="central">第一次 TP 同步</text></g><g class="am-node am-node--rect" data-key="共同计划" data-step="2"><rect class="am-node-shape" x="37.5" y="311" width="80" height="35" rx="3"/><text x="77.5" y="328.5" text-anchor="middle" dominant-baseline="central">共同计划</text></g><g class="am-node am-node--rect" data-key="本地提交" data-step="3"><rect class="am-node-shape" x="37.5" y="410" width="80" height="35" rx="3"/><text x="77.5" y="427.5" text-anchor="middle" dominant-baseline="central">本地提交</text></g><g class="am-node am-node--rect" data-key="第二次 TP 同步" data-step="4"><rect class="am-node-shape" x="18.3" y="509" width="118.5" height="35" rx="3"/><text x="77.5" y="526.5" text-anchor="middle" dominant-baseline="central">第二次 TP 同步</text></g><g class="am-node am-node--rect" data-key="发送 outbox" data-step="5"><rect class="am-node-shape" x="28.3" y="608" width="98.5" height="35" rx="3"/><text x="77.5" y="625.5" text-anchor="middle" dominant-baseline="central">发送 outbox</text></g></g></svg></figure>
+<div class="am-md"><p>候选准备复用 control 的真实迁移规则。
+共同计划排除 room、P slot、D slot 冲突，并使用全组最小记录预算。
+已选候选准备失败时，不提交整批动作。
+真实提交失败时，全组进入 fault，并禁止发送 outbox。</p>
+<p><code>WAITING_RELEASE_ACK</code> 即使已经释放本地 slot，也继续参加协议推进。
+迟到和重复消息仍验证旧 attempt，不能释放新 owner 的 slot。
+P 原生 row 的释放与 P BM slot 的释放继续分开。
+D 完成生成后仍须 drain；P slot 等待 D 的 DONE。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-F">
+<header class="am-panel-head"><span class="am-panel-id">F</span><h2>本地验证与工具问题</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>以下检查由 agent 在开发 Mac 上实际执行，目标为 <code>e838860ed0</code>。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>检查</th>
+<th>结果</th>
+<th>范围</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>独立 CPU unit suite</td>
+<td><span class="am-status am-status--ok"><span class="am-status-icon" aria-hidden="true">✓</span>205 项，5.768 秒</span></td>
+<td>生命周期、TP 事务、资源、writer/fetch、Graph 元数据等</td>
+</tr>
+<tr>
+<td>mypy</td>
+<td><span class="am-status am-status--ok"><span class="am-status-icon" aria-hidden="true">✓</span>33 个源文件</span></td>
+<td>standalone src/scripts、mempool、kv_rows、4 个 PD 控制模块</td>
+</tr>
+<tr>
+<td>Python AST</td>
+<td><span class="am-status am-status--ok"><span class="am-status-icon" aria-hidden="true">✓</span>79 个文件</span></td>
+<td>固定 diff 中现存新增或修改 Python 文件</td>
+</tr>
+<tr>
+<td>Ruff</td>
+<td><span class="am-status am-status--ok"><span class="am-status-icon" aria-hidden="true">✓</span></span></td>
+<td>standalone 46 文件使用 F/UP037；仓库文件按 hook 使用 F401/F821/UP037</td>
+</tr>
+<tr>
+<td>Ruff format</td>
+<td><span class="am-status am-status--ok"><span class="am-status-icon" aria-hidden="true">✓</span>79 个文件</span></td>
+<td>检查模式，未改写</td>
+</tr>
+<tr>
+<td>standalone isort</td>
+<td><span class="am-status am-status--ok"><span class="am-status-icon" aria-hidden="true">✓</span></span></td>
+<td>使用 standalone 配置</td>
+</tr>
+<tr>
+<td>仓库 isort</td>
+<td><span class="am-status am-status--warn"><span class="am-status-icon" aria-hidden="true">!</span>1 个文件</span></td>
+<td><code>disaggregation/ascend/conn.py</code> 的 import 分组缺空行</td>
+</tr>
+<tr>
+<td>shell 语法</td>
+<td><span class="am-status am-status--ok"><span class="am-status-icon" aria-hidden="true">✓</span>4 个脚本</span></td>
+<td><code>run_bm_startup_gate</code>、<code>run_gate</code>、<code>run_service</code>、<code>run_writer_gate</code></td>
+</tr>
+<tr>
+<td>全量 diff 空白检查</td>
+<td><span class="am-status am-status--warn"><span class="am-status-icon" aria-hidden="true">!</span>128 处</span></td>
+<td>已提交的 <code>numa-fabric-address-ranges.html</code> 行尾空白</td>
+</tr>
+</tbody></table></div>
+<p><strong>工具问题 T-01：</strong> <code>conn.py:7–8</code> 缺少第三方 import 与项目 import 之间的空行。
+<strong>工具问题 T-02：</strong> 历史 NUMA HTML 有 128 处行尾空白。
+二者不计入 Standards/Spec 人工发现数量，也未在本轮自动修复。</p>
+<p>本次检查范围比仅检查上一笔提交更大。
+早先增量记录中的 isort/diff 通过，不能覆盖当前全范围检查结果。</p>
+<p>复现 CPU 检查：</p>
+</div>
+<pre class="am-code"><code data-lang="bash">PYTHONPATH=ascend-mempool-test/src \
+  /private/tmp/ascend-mempool-s1/bin/python -m unittest discover \
+  -s ascend-mempool-test/tests/unit -q</code></pre>
+<div class="am-md"><p>复现类型检查：</p>
+</div>
+<pre class="am-code"><code data-lang="bash">/private/tmp/ascend-mempool-s1/bin/mypy \
+  --config-file ascend-mempool-test/pyproject.toml \
+  ascend-mempool-test/src ascend-mempool-test/scripts \
+  python/sglang/srt/hardware_backend/npu/mempool \
+  python/sglang/srt/hardware_backend/npu/kv_rows.py \
+  python/sglang/srt/disaggregation/ascend/mempool_protocol.py \
+  python/sglang/srt/disaggregation/ascend/mempool_control.py \
+  python/sglang/srt/disaggregation/ascend/mempool_tick.py \
+  python/sglang/srt/disaggregation/ascend/mempool_service.py</code></pre>
+<div class="am-md"><p>本地原始日志位于 <code>/private/tmp/ticket03-s64-unit.log</code>、<code>ticket03-s64-mypy.log</code> 和 <code>ticket03-s64-static.json</code>。
+未执行完整 SGLang registered suite，也未执行 NPU 测试。
+轻量 suite 使用 CPU tensor 和 SDK 边界替身，不能证明真实远端读或 Graph replay 正确。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-G">
+<header class="am-panel-head"><span class="am-panel-id">G</span><h2>用户回传的 NPU 结果</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>证据来自本会话粘贴的终端输出。agent 没有直接读取远端报告文件。
+结果在 <code>e838860ed0</code> 推送后的复验流程中回传，但输出未附 P/D 实际部署 SHA。
+正式归档时需要补齐两端 SHA。</p>
+<h3>正式服务与小题目</h3>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>检查</th>
+<th>用户回传结果</th>
+<th>证据范围</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>zero / decode / reuse</td>
+<td><span class="am-status am-status--ok"><span class="am-status-icon" aria-hidden="true">✓</span>1 / 32 / 32 tokens</span></td>
+<td>三个 HTTP 请求通过</td>
+</tr>
+<tr>
+<td><code>verify_service.py</code></td>
+<td>ok <code>FORMAL_SERVICE_PASSED</code></td>
+<td><code>--requests 3 --layers 78</code>；P/D 日志检查</td>
+</tr>
+<tr>
+<td>铅笔小题目</td>
+<td><span class="am-status am-status--ok"><span class="am-status-icon" aria-hidden="true">✓</span>25−7=18，18÷3=6</span></td>
+<td>最终回答完整；153 completion tokens；<code>finish_reason=stop</code></td>
+</tr>
+</tbody></table></div>
+<p>checker 报告路径：<code>/tmp/ticket03-s6-checker/service-result.json</code>。
+checker 通过代表其资源、Graph、生命周期与释放断言通过。
+它不承担模型内容精度或性能判定，也不替代独立 fetch 数值测试。</p>
+<h3>三轮固定负载性能</h3>
+<p>负载为随机输入 128 tokens、输出 64 tokens、并发 1、每轮 64 个请求。
+每轮预热 3 个请求，temperature=0，seed=42，启用 tokenize-prompt。
+三轮共 192 个测量请求全部成功，另有 9 个预热请求。
+每轮输入 8,192 tokens，生成 4,096 tokens。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>指标</th>
+<th align="right">第 1 轮</th>
+<th align="right">第 2 轮</th>
+<th align="right">第 3 轮</th>
+<th align="right">三轮中位数</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>平均 TTFT（ms）</td>
+<td align="right">931.762</td>
+<td align="right">899.922</td>
+<td align="right">910.199</td>
+<td align="right"><strong>910.199</strong></td>
+</tr>
+<tr>
+<td>平均 TPOT（ms）</td>
+<td align="right">129.783</td>
+<td align="right">129.696</td>
+<td align="right">129.747</td>
+<td align="right"><strong>129.747</strong></td>
+</tr>
+<tr>
+<td>输出吞吐（tokens/s）</td>
+<td align="right">7.026</td>
+<td align="right">7.055</td>
+<td align="right">7.044</td>
+<td align="right"><strong>7.044</strong></td>
+</tr>
+<tr>
+<td>平均 E2E（ms）</td>
+<td align="right">9,108.08</td>
+<td align="right">9,070.75</td>
+<td align="right">9,084.23</td>
+<td align="right"><strong>9,084.23</strong></td>
+</tr>
+<tr>
+<td>测量时长（s）</td>
+<td align="right">582.98</td>
+<td align="right">580.58</td>
+<td align="right">581.45</td>
+<td align="right"><strong>581.45</strong></td>
+</tr>
+</tbody></table></div>
+<p>三轮平均 TPOT 极差约 0.087 ms，输出吞吐极差约 0.029 tokens/s。
+这支持当前短请求负载运行稳定。
+未提供同负载旧版本 A/B 数据，因此不能据此量化同步优化收益或严格证明无退化。</p>
+<p>原始远端目录：<code>/tmp/ticket03-s6-perf.oLihG2</code>。
+包含 <code>bench-1/2/3.jsonl</code> 和对应 <code>.log</code>。
+本轮性能已测量；最终是否满足验收目标仍以用户确认为准。</p>
+</div>
+<div class="am-callout am-callout--info" role="note"><div class="am-callout-title">容量边界保持原约定</div><div class="am-callout-body am-md"><p>当前结论限于已测小容量和短请求负载。
+长上下文、NUMA 窗口和大容量由用户在 Ticket09 独立处理。
+不将其加入 Ticket03 的新阻塞项，也不外推本轮结果。</p>
+</div></div></div>
+</section>
+<section class="am-panel" id="panel-H">
+<header class="am-panel-head"><span class="am-panel-id">H</span><h2>后续处理与验收边界</h2></header>
+<div class="am-panel-body"><div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>顺序</th>
+<th>工作</th>
+<th>完成判据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>处理 STD-F01</td>
+<td>新容器符合规范；身份、hash、序列化与隔离语义不变</td>
+</tr>
+<tr>
+<td>2</td>
+<td>处理 SPEC-F01</td>
+<td>删除不可达 shadow 组合；迁移有效覆盖；保留普通 staging 与正式 native abort</td>
+</tr>
+<tr>
+<td>3</td>
+<td>清理 T-01 / T-02</td>
+<td>isort 与全量 diff 空白检查通过</td>
+</tr>
+<tr>
+<td>4</td>
+<td>复查整改并执行本地检查</td>
+<td>关闭上述发现；记录最终目标 SHA</td>
+</tr>
+<tr>
+<td>5</td>
+<td>执行最终版本 NPU 待项</td>
+<td>双机 fetch、普通 sparse PD 实际路径、完整环境 registered 检查</td>
+</tr>
+<tr>
+<td>6</td>
+<td>补齐最终服务验收证据</td>
+<td>按修改影响复验 checker、curl、性能；保存 P/D SHA 和用户确认</td>
+</tr>
+</tbody></table></div>
+<p>writer、资源或传输若在整改中改变，再运行对应组件 gate。
+最终 fetch 使用已有 <code>verify_fetch.py</code>，覆盖 eager/replay、连续五步、padding 和独立数值基准。
+普通模式必须实际运行 main-KV 传输、staging/host 写入和 host miss 读取。
+CPU 模式矩阵不能替代该 NPU 回归。</p>
+<p>既有请求仍在支持范围内的正确性问题，应在 Ticket03 修复。
+不提前扩大到后续票的完整压力、取消故障矩阵或 AIME26 验收。
+维护提示 P3 不要求无依据重构，也不增加新的性能门槛。</p>
+<p>需求依据：<a href="spec.md">spec</a>、<a href="design.md">design</a>、<a href="issues/03-prefill-direct-offload.md">Ticket03</a>、<a href="ticket-03-s6-plan.md">S6 计划</a>、<a href="verification.md">阶段验收</a>。
+历史对照：<a href="ticket-03-s6-review.md">首次全量 review</a>、<a href="ticket-03-s6.2-summary.md">S6.2</a>、<a href="ticket-03-s6.3-summary.md">S6.3</a>、<a href="ticket-03-prepare-summary.md">两轮同步交付</a>。
+运行入口：<a href="../../ascend-mempool-test/FORMAL_SERVICE.md">正式服务</a>、<a href="../../ascend-mempool-test/README.md">独立测试</a>。</p>
+<p><strong>审查计数：Standards 1 项，最高 P2；Spec 1 项，最高 P2。另有 1 项非阻塞维护提示和 2 项工具问题。</strong></p>
+</div></div>
+</section>
+</div>
+</div>
+</main>
+<footer class="am-colophon">Generated by Answer me with HTML 0.4.3 · 2026-10-07 15:48</footer>
+<textarea id="am-source" hidden readonly aria-hidden="true">---
+template: doc
+theme: blueprint
+lang: zh
+title: Ticket03 S6 最终全量 Code Review
+subtitle: 4878a495d8 → e838860ed0 · 2026-10-07 · Standards 与 Spec 分别审查
+scope: 36 个提交 / 123 个文件
+---
+
+## 审查结论
+
+本轮完成最终目标版本的全量审查。发现两项 P2，尚未整改。未发现新的、可确认的正式主路径正确性缺陷。
+
+| 审查轴 | 结果 | 本轴最高严重度 |
+| --- | --- | --- |
+| Standards | 1 项明确规范不符；另保留 1 项非阻塞维护提示 | P2：新增容器仍使用 dataclass |
+| Spec | 1 项清理要求未完成 | P2：shadow staging 分支和测试残留 |
+
+```callout warn 审查完成，Ticket03 继续 open
+先处理两项 P2，再复查受影响代码。最终硬件验收仍有待项。
+本轮只更新报告和进度文档，没有修改生产代码或测试实现。
+```
+
+本地 205 项 CPU 测试通过。用户回传的正式服务 checker 和三轮性能测量也通过各自检查。
+这些结果不能消除清理缺口，也不能替代最终 fetch 和普通模式的 NPU 回归。
+
+新发现使用 `STD-F01`、`SPEC-F01` 编号，与首次审查的五项发现区分。
+
+## Standards
+
+### STD-F01 · P2 · 新增容器尚未遵循 msgspec.Struct 规范
+
+**依据：** [贡献指南](../../docs/docs/developer_guide/contribution_guide.mdx)第 175 行要求：
+
+&gt; Use `msgspec.Struct` for new data containers instead of `dataclasses.dataclass` or `attrs`.
+
+该规则在基线 `4878a495d8` 中已存在。未找到适用豁免。
+完整增量仍新增 26 个生产 dataclass，分布在 9 个文件。standalone 另有 2 个。
+
+下表路径均相对 `python/sglang/srt/`。行号固定于本次目标版本。
+
+| 文件 | 数量 | 代表位置与用途 |
+| --- | ---: | --- |
+| `disaggregation/ascend/mempool_protocol.py` | 6 | L49、L221、L237：布局、请求身份、slot lease |
+| `disaggregation/ascend/mempool_control.py` | 3 | L31、L58、L73：快照、可变请求记录 |
+| `disaggregation/ascend/mempool_tick.py` | 5 | L19、L39、L82、L93、L109：观察与动作 |
+| `disaggregation/ascend/mempool_service.py` | 1 | L27：服务请求记录 |
+| `hardware_backend/npu/mempool/runtime.py` | 6 | L41–97：绑定身份、写入与完成记录 |
+| `hardware_backend/npu/mempool/config.py` | 1 | L15：配置 |
+| `hardware_backend/npu/mempool/layout.py` | 2 | L24、L91：KV 与 pool 布局 |
+| `hardware_backend/npu/mempool/manager.py` | 1 | L529：KV view |
+| `hardware_backend/npu/mempool/copy.py` | 1 | L16：copy 索引 |
+
+standalone 位置为 `ascend-mempool-test/src/ascend_mempool/verification.py:49` 和 `writer_cases.py:35`。
+
+**影响：** 最新提交只迁移了 `_Preparation`。完整开发增量仍不符合容器规范。
+没有证据表明这些 dataclass 导致已测负载退化，也未发现由此造成的数据错误。
+
+**处理：** 统一迁移新增容器，逐类保留冻结、哈希、排序和可变记录语义。
+尤其保留 `KVRowBinding(eq=False)` 的对象身份语义。
+同时核对 `replace`、序列化、构造后校验和隔离复制的调用。
+
+**验证：** 运行协议 roundtrip、proof、prepare 隔离、生命周期和现有 CPU suite。
+迁移后检查正式服务及受影响的 NPU gate。
+
+### 非阻塞维护提示 · P3 · 共同规划函数仍偏长
+
+`mempool_tick.py:486` 的 `_plan` 约 216 行。
+它同时处理消息优先级、清理、P/D 生命周期和新准入。
+贡献指南第 173 行建议函数约 100 行以内，并让编排函数保持高层表达。
+
+可按规划职责抽取 helper。候选准备位于 `:302`，其条件与共同规划并不相同。
+本地候选需覆盖其他 rank 可能触发的动作；共同计划使用全组事实。
+因此不能直接合并两套判断。当前未发现行为错误，本提示不新增独立整改计数。
+
+## Spec
+
+### SPEC-F01 · P2 · shadow staging 专用分支和测试仍残留
+
+**依据：** [S6 计划](ticket-03-s6-plan.md)的“删除全部 shadow 专用代码”要求：
+
+&gt; shadow 专用脚本、fixtures 和测试代码：删除；仍有价值的公共行为覆盖先迁移到正式/普通入口。
+
+**位置：**
+
+- [conn.py](../../python/sglang/srt/disaggregation/ascend/conn.py)：L792–821 的 `update_status()`，L869–875 的 `abort()`。
+- [sparse_pd.py](../../python/sglang/srt/disaggregation/ascend/sparse_pd.py)：L208 的可选 `release` 参数。
+- [test_native_release.py](../../ascend-mempool-test/tests/unit/test_native_release.py)：L87、L103 构造组合；L114、L128、L140、L146 验证相关行为。
+
+这些代码仍处理以下组合：
+
+```python
+sparse_pd_decode_staging is not None
+mempool_control is not None
+```
+
+实际执行当前六种 mode 的能力矩阵后，确认该组合不可达。
+模式能力定义在 `sparsity_driven_kv_offload/config.py:79–86`。
+staging 构造器还在 `sparse_pd.py:56–60` 拒绝其他模式。
+
+| 模式 | staging | mempool BM | 当前组合能否成立 |
+| --- | --- | --- | --- |
+| 普通 `PD_DECODE_OFFLOAD` | 有 | 无 | no |
+| 正式 `PD_DECODE_MEMPOOL` | 无 | 有 | no |
+| 正式 `PD_PREFILL_MEMPOOL` | 无 | 有 | no |
+| 其他模式 | 无 | 无 | no |
+
+**例子：** 单测手动设置 `mempool_control = object()`，再挂一个 staging pool。
+随后断言 abort 后 staging 保留到 drained clear。
+测试可以通过，但真实配置已经无法创建这一组合。
+
+**影响：** S6 的 shadow 清理尚未完成。
+这部分测试仍证明旧组合，不能作为正式 Index K 目的缓冲区安全释放的覆盖。
+当前没有证据说明它导致已验收的正式请求出错。
+
+**处理：** 删除互斥组合的分支和仅服务该组合的参数。
+把有效 abort、ACK、drain 覆盖迁移到正式路径。
+普通 staging 回归继续保留。
+
+```callout warn 保留正式 native abort 协议
+保留 `_send_abort_notification()`、`register_deferred_abort_room()` 和 ABORT_ACK 跟踪。
+正式路径仍有 Index K 等目的缓冲区，必须等待远端写入结束才能释放。
+```
+
+**验证：** 分别使用“普通模式有 staging”和“正式模式无 staging”的 fixture。
+覆盖显式 abort、poll 失败、ACK 只登记一次、延后释放及普通模式即时清理。
+之后执行普通模式实际 NPU 回归。
+
+## 固定范围与已有整改
+
+| 项目 | 固定值 |
+| --- | --- |
+| 分支 | `cryang/dev/mempool` |
+| 基线 | `4878a495d8bbacad52da8b75fd7b9685a32b8926` |
+| 目标 | `e838860ed0e4bfef540087d5cdd5ebbd1bcee992` |
+| Diff | `git diff 4878a495d8...e838860ed0` |
+| 增量 | 36 个提交，123 个文件，30,061 行新增，456 行删除 |
+| 工作区 | 审查开始时无 tracked 修改；3 份已有未跟踪 HTML 未纳入代码范围 |
+
+该范围包含 01–03 的实现和共享接入点，也包含测试、脚本及文档。
+`CONTEXT.md` 的 `295132c4a5` 是项目历史基线，用途不同。
+本报告及进度更新产生于审查之后，不属于上述固定 diff。
+
+Standards 与 Spec 由两个独立 reviewer 并行审查。
+主审另核对 Graph、runtime、共享 hooks 和证据边界，并复核两项发现。
+
+| 首次发现 | 当前代码结果 | 对应提交 |
+| --- | --- | --- |
+| STD-01：row 推导重复 | ok 两条 writer 共用 `kv_rows.py`；各自保留存储约束 | `9ba89e46eb` |
+| STD-02：查询及 tick 依赖全量历史 | ok 直接查询、活跃视图、精简观察；准备只隔离相关记录及有界 slot | `6eb6475f61`、`e838860ed0` |
+| STD-03：fetch 调试统计 | ok 删除统计及 checker 依赖；保留正确性与完成检查 | `25bfbddfa3` |
+| SPEC-01：资源 gate 期待正式模式拒绝 | ok 改为正式资源行为及普通模式回归 | `912012f3d0` |
+| SPEC-02：启动测试期待 shadow | ok 改为正式模式预期，保留非法配置检查 | `912012f3d0` |
+
+这些是代码复查结论。它们不代表所有最终 NPU gate 已完成。
+`SPEC-F01` 是此次完整复查发现的清理遗漏，不能由旧五项整改完成推导为已解决。
+
+## 路径与安全合同复核
+
+下表记录已审查的关键合同。未发现确认缺陷不等于覆盖了所有硬件失效场景。
+
+| 模块范围 | 本轮核对内容 | 结论或边界 |
+| --- | --- | --- |
+| 配置、资源、pool configurator | opt-in；正式 P 保留 native HBM；正式 D 停用旧主 KV；普通路径保留 | 静态与 CPU 检查通过；完整 registered / NPU 构造链仍待验收 |
+| BM layout、manager、copy、writer | P/D 容量、layer base、映射、row/slot 区分、来源路由、invalid/padding | 未发现新确认缺陷；最终远端内容由 fetch gate 验证 |
+| runtime、Graph、cache、attention | 固定 metadata、两路 copy 入图、写入及 miss 完成、cache refill/reset | 代码保持事件依赖；未在 Mac 执行 NPU kernel |
+| protocol、control、tick | attempt/session/generation、proof、retirement、准入预算、历史淘汰 | 已核对旧消息和 slot 复用；两轮同步仍保留逐 rank 校验 |
+| service、Index K 传输 | matching KV_READY 与 native Success 联合就绪；只发布必要 Index K/aux | 正式 checker 已由用户回传通过 |
+| scheduler、prefill/decode、result hooks | deferred free、取消、zero-decode、idle tick、native handoff、drain | 未发现新确认缺陷；shadow staging 残留单列 SPEC-F01 |
+| 测试与工具 | fetch/resources/service gate、模式矩阵、fixture、启动脚本 | 发现旧 fixture 残留；工具问题见下一节 |
+
+### e838860ed0 的两轮 TP 同步
+
+```flow
+本地稳定观察 -&gt; 候选完整准备: 校验 proof 与状态迁移
+候选完整准备 -&gt; 第一次 TP 同步: 观察及准备结果
+第一次 TP 同步 -&gt; 共同计划: 全组条件与冲突约束
+共同计划 -&gt; 本地提交: 仅提交共同选择的动作
+本地提交 -&gt; 第二次 TP 同步: 提交结果
+第二次 TP 同步 -&gt; 发送 outbox: 全组提交成功
+```
+
+候选准备复用 control 的真实迁移规则。
+共同计划排除 room、P slot、D slot 冲突，并使用全组最小记录预算。
+已选候选准备失败时，不提交整批动作。
+真实提交失败时，全组进入 fault，并禁止发送 outbox。
+
+`WAITING_RELEASE_ACK` 即使已经释放本地 slot，也继续参加协议推进。
+迟到和重复消息仍验证旧 attempt，不能释放新 owner 的 slot。
+P 原生 row 的释放与 P BM slot 的释放继续分开。
+D 完成生成后仍须 drain；P slot 等待 D 的 DONE。
+
+## 本地验证与工具问题
+
+以下检查由 agent 在开发 Mac 上实际执行，目标为 `e838860ed0`。
+
+| 检查 | 结果 | 范围 |
+| --- | --- | --- |
+| 独立 CPU unit suite | ok 205 项，5.768 秒 | 生命周期、TP 事务、资源、writer/fetch、Graph 元数据等 |
+| mypy | ok 33 个源文件 | standalone src/scripts、mempool、kv_rows、4 个 PD 控制模块 |
+| Python AST | ok 79 个文件 | 固定 diff 中现存新增或修改 Python 文件 |
+| Ruff | ok | standalone 46 文件使用 F/UP037；仓库文件按 hook 使用 F401/F821/UP037 |
+| Ruff format | ok 79 个文件 | 检查模式，未改写 |
+| standalone isort | ok | 使用 standalone 配置 |
+| 仓库 isort | warn 1 个文件 | `disaggregation/ascend/conn.py` 的 import 分组缺空行 |
+| shell 语法 | ok 4 个脚本 | `run_bm_startup_gate`、`run_gate`、`run_service`、`run_writer_gate` |
+| 全量 diff 空白检查 | warn 128 处 | 已提交的 `numa-fabric-address-ranges.html` 行尾空白 |
+
+**工具问题 T-01：** `conn.py:7–8` 缺少第三方 import 与项目 import 之间的空行。
+**工具问题 T-02：** 历史 NUMA HTML 有 128 处行尾空白。
+二者不计入 Standards/Spec 人工发现数量，也未在本轮自动修复。
+
+本次检查范围比仅检查上一笔提交更大。
+早先增量记录中的 isort/diff 通过，不能覆盖当前全范围检查结果。
+
+复现 CPU 检查：
+
+```bash
+PYTHONPATH=ascend-mempool-test/src \
+  /private/tmp/ascend-mempool-s1/bin/python -m unittest discover \
+  -s ascend-mempool-test/tests/unit -q
+```
+
+复现类型检查：
+
+```bash
+/private/tmp/ascend-mempool-s1/bin/mypy \
+  --config-file ascend-mempool-test/pyproject.toml \
+  ascend-mempool-test/src ascend-mempool-test/scripts \
+  python/sglang/srt/hardware_backend/npu/mempool \
+  python/sglang/srt/hardware_backend/npu/kv_rows.py \
+  python/sglang/srt/disaggregation/ascend/mempool_protocol.py \
+  python/sglang/srt/disaggregation/ascend/mempool_control.py \
+  python/sglang/srt/disaggregation/ascend/mempool_tick.py \
+  python/sglang/srt/disaggregation/ascend/mempool_service.py
+```
+
+本地原始日志位于 `/private/tmp/ticket03-s64-unit.log`、`ticket03-s64-mypy.log` 和 `ticket03-s64-static.json`。
+未执行完整 SGLang registered suite，也未执行 NPU 测试。
+轻量 suite 使用 CPU tensor 和 SDK 边界替身，不能证明真实远端读或 Graph replay 正确。
+
+## 用户回传的 NPU 结果
+
+证据来自本会话粘贴的终端输出。agent 没有直接读取远端报告文件。
+结果在 `e838860ed0` 推送后的复验流程中回传，但输出未附 P/D 实际部署 SHA。
+正式归档时需要补齐两端 SHA。
+
+### 正式服务与小题目
+
+| 检查 | 用户回传结果 | 证据范围 |
+| --- | --- | --- |
+| zero / decode / reuse | ok 1 / 32 / 32 tokens | 三个 HTTP 请求通过 |
+| `verify_service.py` | ok `FORMAL_SERVICE_PASSED` | `--requests 3 --layers 78`；P/D 日志检查 |
+| 铅笔小题目 | ok 25−7=18，18÷3=6 | 最终回答完整；153 completion tokens；`finish_reason=stop` |
+
+checker 报告路径：`/tmp/ticket03-s6-checker/service-result.json`。
+checker 通过代表其资源、Graph、生命周期与释放断言通过。
+它不承担模型内容精度或性能判定，也不替代独立 fetch 数值测试。
+
+### 三轮固定负载性能
+
+负载为随机输入 128 tokens、输出 64 tokens、并发 1、每轮 64 个请求。
+每轮预热 3 个请求，temperature=0，seed=42，启用 tokenize-prompt。
+三轮共 192 个测量请求全部成功，另有 9 个预热请求。
+每轮输入 8,192 tokens，生成 4,096 tokens。
+
+| 指标 | 第 1 轮 | 第 2 轮 | 第 3 轮 | 三轮中位数 |
+| --- | ---: | ---: | ---: | ---: |
+| 平均 TTFT（ms） | 931.762 | 899.922 | 910.199 | **910.199** |
+| 平均 TPOT（ms） | 129.783 | 129.696 | 129.747 | **129.747** |
+| 输出吞吐（tokens/s） | 7.026 | 7.055 | 7.044 | **7.044** |
+| 平均 E2E（ms） | 9,108.08 | 9,070.75 | 9,084.23 | **9,084.23** |
+| 测量时长（s） | 582.98 | 580.58 | 581.45 | **581.45** |
+
+三轮平均 TPOT 极差约 0.087 ms，输出吞吐极差约 0.029 tokens/s。
+这支持当前短请求负载运行稳定。
+未提供同负载旧版本 A/B 数据，因此不能据此量化同步优化收益或严格证明无退化。
+
+原始远端目录：`/tmp/ticket03-s6-perf.oLihG2`。
+包含 `bench-1/2/3.jsonl` 和对应 `.log`。
+本轮性能已测量；最终是否满足验收目标仍以用户确认为准。
+
+```callout info 容量边界保持原约定
+当前结论限于已测小容量和短请求负载。
+长上下文、NUMA 窗口和大容量由用户在 Ticket09 独立处理。
+不将其加入 Ticket03 的新阻塞项，也不外推本轮结果。
+```
+
+## 后续处理与验收边界
+
+| 顺序 | 工作 | 完成判据 |
+| --- | --- | --- |
+| 1 | 处理 STD-F01 | 新容器符合规范；身份、hash、序列化与隔离语义不变 |
+| 2 | 处理 SPEC-F01 | 删除不可达 shadow 组合；迁移有效覆盖；保留普通 staging 与正式 native abort |
+| 3 | 清理 T-01 / T-02 | isort 与全量 diff 空白检查通过 |
+| 4 | 复查整改并执行本地检查 | 关闭上述发现；记录最终目标 SHA |
+| 5 | 执行最终版本 NPU 待项 | 双机 fetch、普通 sparse PD 实际路径、完整环境 registered 检查 |
+| 6 | 补齐最终服务验收证据 | 按修改影响复验 checker、curl、性能；保存 P/D SHA 和用户确认 |
+
+writer、资源或传输若在整改中改变，再运行对应组件 gate。
+最终 fetch 使用已有 `verify_fetch.py`，覆盖 eager/replay、连续五步、padding 和独立数值基准。
+普通模式必须实际运行 main-KV 传输、staging/host 写入和 host miss 读取。
+CPU 模式矩阵不能替代该 NPU 回归。
+
+既有请求仍在支持范围内的正确性问题，应在 Ticket03 修复。
+不提前扩大到后续票的完整压力、取消故障矩阵或 AIME26 验收。
+维护提示 P3 不要求无依据重构，也不增加新的性能门槛。
+
+需求依据：[spec](spec.md)、[design](design.md)、[Ticket03](issues/03-prefill-direct-offload.md)、[S6 计划](ticket-03-s6-plan.md)、[阶段验收](verification.md)。
+历史对照：[首次全量 review](ticket-03-s6-review.md)、[S6.2](ticket-03-s6.2-summary.md)、[S6.3](ticket-03-s6.3-summary.md)、[两轮同步交付](ticket-03-prepare-summary.md)。
+运行入口：[正式服务](../../ascend-mempool-test/FORMAL_SERVICE.md)、[独立测试](../../ascend-mempool-test/README.md)。
+
+**审查计数：Standards 1 项，最高 P2；Spec 1 项，最高 P2。另有 1 项非阻塞维护提示和 2 项工具问题。**
+</textarea>
+<script>
+(() => {
+  const root = document.documentElement;
+  const cycle = (list, cur) => list[(list.indexOf(cur) + 1) % list.length];
+  const label = (btn, value) => {
+    const map = JSON.parse(btn.dataset.labels || '{}');
+    btn.textContent = map[value] || value;
+  };
+  const bind = (name, attr, values) => {
+    const btn = document.querySelector(`[data-am="${name}"]`);
+    if (!btn) return;
+    label(btn, root.getAttribute(attr));
+    btn.addEventListener('click', () => {
+      const next = cycle(values, root.getAttribute(attr));
+      root.setAttribute(attr, next);
+      label(btn, next);
+    });
+  };
+  bind('theme', 'data-theme', ['blueprint', 'shadcn']);
+  bind('mode', 'data-mode', ['auto', 'light', 'dark']);
+
+  const copyBtn = document.querySelector('[data-am="copy"]');
+  copyBtn?.addEventListener('click', async () => {
+    const text = document.getElementById('am-source').value;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = Object.assign(document.createElement('textarea'), { value: text });
+      document.body.append(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    const original = copyBtn.textContent;
+    copyBtn.textContent = copyBtn.dataset.done;
+    setTimeout(() => { copyBtn.textContent = original; }, 1400);
+  });
+})();
+</script>
+</body>
+</html>

@@ -35,9 +35,14 @@ server请求：全16 ranks完成512次Graph replay及slot释放；2026-10-06双�
 S5按已验证的小容量范围验收通过，长上下文容量由用户独立跟进；本票仍待S6完成。原KV传输、D staging/host写入及sparse
 attention的host SHM读取在正式模式关闭、在普通模式保留。
 当前MEMPOOL=1选择正式P/D模式；S6.2已删除shadow模式、旧READBACK配置及相关实现，
-有效测试迁移到正式/普通路径。S6.3三个STD代码整改完成，最终全范围复查和NPU复验待执行。
+有效测试迁移到正式/普通路径。S6.3三个STD代码整改完成；最终全范围复查于2026-10-07
+执行，发现新增容器规范、shadow staging残留两项P2；随后按用户授权完成两项及工具问题整改，
+205项CPU及静态检查通过，两个独立reviewer复查均无新增发现；见
+[最终review](../ticket-03-s6-final-review.md)及[整改交付](../ticket-03-s6-final-fixes.md)。
 2026-10-07按用户后续授权将完整本地准备并入第一次TP同步，取消独立preflight同步及
 全量历史复制；205项CPU测试通过，详见[交付](../ticket-03-prepare-summary.md)。
+用户随后回传正式服务checker、完整curl小题目及三轮短请求性能结果；最终fetch、普通
+模式实际NPU回归和完整环境registered检查仍待完成，P/D部署SHA需随最终验收归档。
 继续使用context1024、P/D各512、TP16、D Graph width16、NUMA `0,2,4,6`的小容量配置。
 大容量/NUMA调查仍归延期的[09](09-numa-allocation-followup.md)，不阻塞本票。
 
@@ -49,7 +54,8 @@ attention的host SHM读取在正式模式关闭、在普通模式保留。
 ### 已确认的启动模式与清理边界
 
 现有 `SGLANG_NPU_ENABLE_MEMPOOL=1` 在S5选择正式路径。S6.2已删除shadow专用enum、
-分支、旧host参考readback、配置及配套脚本/测试代码，历史验收记录和git提交保留。
+旧host参考readback及对应配置和主要调用。最终review发现的staging互斥组合及旧fixture
+残留已按SPEC-F01清理，有效覆盖迁移到正式无staging和普通无mempool的测试；历史验收记录和git提交保留。
 正式路径共用的BM writer、binding、Graph和drain功能继续保留。
 
 关闭 `SGLANG_NPU_ENABLE_MEMPOOL` 后，同一版本必须恢复原非mempool路径；启用
@@ -97,7 +103,7 @@ HBM Index K -> indexer top-k -> HBM sparse cache 查询
 | S3 按模式停用重复存储 | 旧实现保留；正式模式host KV和main-KV staging分配为零 | 已提交；Mac检查通过，用户于2026-10-05确认NPU资源gate通过 |
 | S4 精简PD传输 | 仅保留Index K和必要辅助数据，保留联合readiness | 双机六个case全部通过，用户于2026-10-05确认完成；见[S4总结](../ticket-03-s4-summary.md) |
 | S5 正式服务Graph与性能验收 | 完整mempool链路、curl小题目检查、约定性能达标 | 组件gate、服务checker及小题目通过，当前性能获用户确认；S5已验收，见[总结](../ticket-03-s5-summary.md) |
-| S6 全量review、shadow删除与清理 | 精简代码、普通模式兼容、最终版本重跑S5并交付 | S6.1–S6.3完成，最终全范围复查和NPU复验待执行；见[报告](../ticket-03-s6-review.md)及[计划](../ticket-03-s6-plan.md) |
+| S6 全量review、shadow删除与清理 | 精简代码、普通模式兼容、最终版本重跑S5并交付 | S6.4全量review及两项P2/工具整改已完成；本地205项CPU通过，最终修改版本NPU验收待执行；见[整改交付](../ticket-03-s6-final-fixes.md)及[计划](../ticket-03-s6-plan.md) |
 
 ### S1. 拆分配置与资源职责
 
@@ -415,7 +421,9 @@ shadow专用代码，形成清晰的正式/普通模式实现，并在最终清�
 
 2026-10-06已完成S6.1首次全量审查，报告见[review记录](../ticket-03-s6-review.md)。
 S6.2已删除shadow/旧READBACK并修正Spec两项P2验证代码缺陷；S6.3已完成Standards三项
-整改及增量复查。最终全范围复查和NPU复验待执行，以下总完成条件保持未勾选。
+整改及增量复查。2026-10-07最终全范围复查发现的STD-F01/SPEC-F01两项P2及工具问题
+已整改并复查；本地检查通过。正式服务及性能已有历史回传，最终修改版本的fetch、
+普通模式及完整环境检查仍待完成，硬件相关完成条件保持未勾选。
 用户已确认STD-01共用row推导、STD-02分步查询/活跃视图优化，STD-03改为删除
 fetch调试统计；两个Spec问题已随shadow/READBACK清理迁移，详见S6计划中的处理决定。
 
@@ -442,9 +450,9 @@ fetch调试统计；两个Spec问题已随shadow/READBACK清理迁移，详见S6
 
 完成条件：
 
-- [ ] 全量review与整改后复查有记录，影响本票验收的问题均已解决。
-- [ ] 全部shadow专用代码和入口删除，正式/普通模式的有效功能与回归覆盖保留。
-- [ ] 冗余检查/代码、命名和可读性问题完成有依据的清理，必要正确性约束仍有验证。
+- [x] 全量review与整改后复查有记录，影响本票验收的问题均已解决。
+- [x] 全部shadow专用代码和入口删除，正式/普通模式的有效功能与回归覆盖保留。
+- [x] 冗余检查/代码、命名和可读性问题完成有依据的清理，必要正确性约束仍有验证。
 - [ ] 同一最终版本通过普通模式回归和S5全部复验，包括用户curl检查及约定性能目标。
 - [ ] 文档/脚本/证据与最终版本一致，用户确认实现与NPU验收后才关闭03。
 
@@ -491,6 +499,56 @@ S6记录全量review、整改和复查结果；最终版本再次运行S5及普�
 ticket04内容不变；新数据来源导致输出异常时须在03定位，不能交付已知错误。
 
 ## Comments
+
+### 2026-10-07：STD-F01、SPEC-F01及T-01/T-02整改
+
+用户授权处理最终review的四项问题。STD-F01提交`90bcb1d805`，SPEC-F01/T-01提交
+`2de91045d9`。26个生产dataclass及两个standalone用例容器已改用
+msgspec.Struct，保留冻结、身份比较、hash、构造校验与prepare隔离；协议编码和布局
+signature递归转换，增加迁移前v2握手字节及布局结构的兼容断言。
+
+删除conn/sparse_pd中的shadow staging组合和可选release参数；普通模式仍即时释放
+staging，正式模式仍保留native abort/ACK及service drain。迁移后的正式取消测试使用
+真实ACK tracker，覆盖全部发送端ACK、重复ACK/ABORT和单次drain/释放。
+conn导入分组及历史NUMA HTML128处行尾空白已清理。
+
+Mac实际检查：最终独立CPU suite205项通过（4.608s），mypy33源文件通过；完整开发
+增量79个Python文件AST/format/Ruff/isort、4个shell语法及全量diff空白检查通过。
+两轴整改复查：Standards 0项新增发现，Spec 0项新增发现；原非阻塞维护提示保留。
+详细实现、日志和最终版本复验入口见[整改交付](../ticket-03-s6-final-fixes.md)。
+
+未执行NPU或完整registered suite。Ticket03保持open，等待用户执行最终版本NPU验收；
+历史checker/curl/性能结果继续保留，不直接套用于本次修改。NUMA容量仍归延期09。
+
+### 2026-10-07：S6.4最终全量审查及用户复验结果归档
+
+用户要求通过ask-matt启动最终全量code review，并生成HTML。固定范围为
+`4878a495d8bbacad52da8b75fd7b9685a32b8926...e838860ed0e4bfef540087d5cdd5ebbd1bcee992`，
+36个提交、123个文件。Standards/Spec由两个独立reviewer审查，主审核对数据与Graph路径、
+共享hooks及发现证据；详见[完整报告](../ticket-03-s6-final-review.md)及[HTML](../ticket-03-s6-final-review.html)。
+
+Standards有1项P2：26个新增生产dataclass及两个standalone用例容器未遵循msgspec.Struct
+规范；需保留冻结、哈希、对象身份及序列化语义。另有1项非阻塞规划函数维护提示。
+Spec有1项P2：正式mempool和普通staging已互斥，但conn/sparse_pd及test_native_release
+仍保留旧shadow组合；需迁移有效abort/ACK/drain覆盖后删除。未发现其他可确认的
+正式主路径正确性缺陷。本轮未修改生产代码或测试实现，两项P2均未整改。
+
+agent在Mac实际执行：独立CPU suite205项通过（5.768s），mypy33源文件通过，79个
+变更Python文件AST/format通过，Ruff按standalone及仓库hook规则通过，4个shell脚本
+语法通过。全量isort发现conn.py import分组缺空行；全量diff空白检查发现既有NUMA
+HTML128处行尾空白，单列工具问题。没有执行完整registered suite或NPU测试。
+
+用户回传结果：zero/decode/reuse分别为1/32/32 tokens，verify_service输出
+`FORMAL_SERVICE_PASSED`，远端报告`/tmp/ticket03-s6-checker/service-result.json`。
+铅笔小题目完整回答6支，153 completion tokens，finish_reason=stop。
+性能目录`/tmp/ticket03-s6-perf.oLihG2`：三轮各64个测量请求、并发1、128输入/64输出、
+每轮预热3个，192个测量请求全部成功。平均TTFT/TPOT/输出吞吐的三轮中位数分别为
+910.199ms、129.747ms、7.044tokens/s。数据来自会话终端输出，未直接读取远端文件。
+P/D实际部署SHA待归档；没有旧版本同负载A/B，不能量化收益或据此严格证明无退化。
+
+Ticket03保持open。接下来整改两项P2及工具问题，复查最终提交并补齐fetch、普通模式
+实际NPU回归、完整环境registered检查；按修改影响复验服务/curl/性能并取得最终用户
+确认。NUMA/长上下文容量仍归用户独立处理的09，不增加主线验收门槛。
 
 ### 2026-10-07：完整准备结果并入第一次TP同步
 
