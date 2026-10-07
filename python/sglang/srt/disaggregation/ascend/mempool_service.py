@@ -565,7 +565,7 @@ class MempoolPDService:
         )
 
     def _effect(self, kind: str, room: int) -> None:
-        """Execute scheduler effects only from an approved, preflighted TP plan."""
+        """Execute scheduler effects only from a plan approved by the TP group."""
         if kind == "drain":
             started = self.clock()
             self._drain_host()

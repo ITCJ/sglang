@@ -14,7 +14,7 @@ server Graph、curl小题目输出与性能，S6完成全量review、shadow删�
 
 **State:** open
 
-## 规划状态（2026-10-06）
+## 规划状态（2026-10-07）
 
 02已获用户确认验收并关闭，已有链路、代码入口及证据见[02总结](../ticket-02-summary.md)。
 用户已确认按S1–S6组织本票，并先后授权实施S1和S2。S1代码已提交为`3d2f3c6168`，轻量CPU检查通过，
@@ -36,6 +36,8 @@ S5按已验证的小容量范围验收通过，长上下文容量由用户独立
 attention的host SHM读取在正式模式关闭、在普通模式保留。
 当前MEMPOOL=1选择正式P/D模式；S6.2已删除shadow模式、旧READBACK配置及相关实现，
 有效测试迁移到正式/普通路径。S6.3三个STD代码整改完成，最终全范围复查和NPU复验待执行。
+2026-10-07按用户后续授权将完整本地准备并入第一次TP同步，取消独立preflight同步及
+全量历史复制；205项CPU测试通过，详见[交付](../ticket-03-prepare-summary.md)。
 继续使用context1024、P/D各512、TP16、D Graph width16、NUMA `0,2,4,6`的小容量配置。
 大容量/NUMA调查仍归延期的[09](09-numa-allocation-followup.md)，不阻塞本票。
 
@@ -489,6 +491,26 @@ S6记录全量review、整改和复查结果；最终版本再次运行S5及普�
 ticket04内容不变；新数据来源导致输出异常时须在03定位，不能交付已知错误。
 
 ## Comments
+
+### 2026-10-07：完整准备结果并入第一次TP同步
+
+用户在`6eb6475f61`后讨论proof/预检并授权按本地完整准备、共同规划后提交的方向修改。
+现在每tick固定两次collective：观察连同候选准备结果、真实提交结果。control复用原
+状态迁移，只隔离当前attempt及有界slot状态；删除全量历史复制与独立预检同步。
+proof、session、generation、retirement、phase、ownership和安全drain检查继续保留。
+
+共同计划按room/P/D slot排除相互影响的候选，按全rank最小record预算准入，新record
+最后提交；正常资源不足继续等到下一tick。任何已选候选失败均阻止整批提交，实际
+提交失败仍全组fault并禁止outbox。另修复新D准入只检查leader取消标记的问题。
+
+实际本地验证：TP tick15项、最终独立CPU suite205项、严格mypy33源文件通过；Ruff、
+format、isort和diff检查通过。两轴增量复查后Standards无硬性违反，保留1项候选/规划
+维护提示；Spec无发现。CPU微测显示1活跃/4094终态时tick从约11.55ms降到0.045ms；
+无历史时1活跃从约0.027ms升到0.046ms。模拟collective不代表真实TP16性能，完整测量
+方法、代价、代码路径与复验说明见[交付](../ticket-03-prepare-summary.md)。
+
+未执行NPU、未扩大NUMA/长上下文范围。03继续open，后续按最终提交重跑小容量正式
+服务Graph、zero/decode/reuse、curl输出及性能，同时保留普通模式回归。
 
 ### 2026-10-06：S6.3三个Standards整改
 

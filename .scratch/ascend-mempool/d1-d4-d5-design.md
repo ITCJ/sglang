@@ -7,6 +7,10 @@
 [02 总结](ticket-02-summary.md)。正常请求、零 decode、Graph 读回和 slot 复用已有
 本轮 NPU 证据；完整取消、故障注入矩阵仍由 06/07 验收，不能将本轮通过扩大到这些场景。
 
+2026-10-07更新：用户在S6.3后授权将本地完整校验结果并入第一次TP同步，取消独立的
+post-plan preflight同步。当前实现采用下文新流程；09-29/09-30的三轮设计保留作历史。
+实现和本地验证见[两轮TP同步交付](ticket-03-prepare-summary.md)，新版本NPU复验待执行。
+
 ## D1：同侧统一推进
 
 P16、D16 各自使用完整 TP CPU group；不建立跨 P/D 的32-rank collective。
@@ -34,6 +38,21 @@ D1 首版固定流程：
 3. 根据相同输入构造 plan，并汇总本地 preflight 成功/fault。
 4. 无 fault 时执行统一 plan；捕获本地执行异常。
 5. 固定汇总执行状态。全部成功才发出 outbox 消息并允许模型调度。
+
+2026-10-07起的固定流程：
+
+1. control以相关request和slot元数据准备每个候选，复用真实状态转换校验；不修改live
+   ownership、不执行service副作用。返回结果及新增record需求，不复制无关历史。
+2. 第一次all-gather一起同步逻辑观察、候选校验结果和record容量。原始proof/session
+   仍留在本rank，本地验证结果绑定候选；未选中的消息错误不抢先改变其他请求。
+3. 各rank根据相同输入形成计划。仅选全rank已验证的动作；同一room或P/D slot相互
+   依赖的control动作分tick推进，slot来自本轮开始时的free set，record使用共同预算。
+   新record admission最后执行，避免提前淘汰本轮其他动作仍需要的历史。
+4. 提交计划，再做第二次all-gather汇总提交结果。全部成功后发送outbox；任何实际提交
+   异常都进入既有fail-stop。接收线程仍只入队，新的完成事实留待后续tick。
+
+完整校验和各rank一致准入的要求不变；proof正确本身不足以证明操作可执行。
+空tick同样执行这两次collective。正常容量不足和资源冲突等待，沿用原deadline。
 
 collective 数量/顺序不依赖本地消息数。空输入也参与。
 提交失败不尝试继续服务；具体停机由 D5 负责。本流程不是跨进程故障下的原子事务。

@@ -304,26 +304,50 @@ class MempoolPDControl:
         """Report an attempt's durable lifecycle state for scheduler decisions."""
         return self._record(request).phase
 
-    def preflight(self, operation: Callable[[MempoolPDControl], object]) -> None:
-        """Validate a transaction using the same transitions on isolated state.
+    def admission_capacity(self) -> int:
+        """Count records that can be admitted after evicting terminal history."""
+        return self._max_records - len(self._active_requests)
 
-        The scheduler owns this call. The preview cannot read the inbox or emit
-        messages; only the supplied control transitions are evaluated. Proofs
-        and retirement boundaries match the live owner, with no duplicated
-        validation algorithm in the TP coordinator.
+    def prepare(
+        self,
+        request: RequestIdentity | None,
+        operation: Callable[[MempoolPDControl], object],
+    ) -> int:
+        """Validate one candidate on isolated state and return its record claim.
+
+        Only this attempt may change. Reuse the real transitions, including
+        pair-local proofs and retirement checks, without copying history. The
+        tick combines candidates against admission_capacity and available_slots;
+        this preview deliberately does not spend the shared admission budget.
+        Ownership stays on the scheduler thread between preparation and commit.
         """
         preview = copy(self)
-        preview._records = {key: replace(value) for key, value in self._records.items()}
-        preview._active_requests = self._active_requests.copy()
-        preview._room_record_counts = self._room_record_counts.copy()
-        preview._terminal_order = deque(self._terminal_order)
+        record = self._records.get(request) if request is not None else None
+        preview._records = {record.identity: replace(record)} if record else {}
+        preview._active_requests = (
+            {request} if request in self._active_requests else set()
+        )
+        preview._room_record_counts = (
+            {request.room: self._room_record_counts.get(request.room, 0)}
+            if request is not None
+            else {}
+        )
+        preview._terminal_order = (
+            deque((record.identity,))
+            if record is not None and record.terminal_recorded
+            else deque()
+        )
         preview._seen_d_generation = self._seen_d_generation.copy()
-        preview._room_owner = self._room_owner.copy()
+        owner = self._room_owner.get(request.room) if request is not None else None
+        preview._room_owner = {owner.room: owner} if owner is not None else {}
         preview._slot_owner = self._slot_owner.copy()
         preview._generation = self._generation.copy()
         preview._retired_generation = self._retired_generation.copy()
         preview._inbox = SimpleQueue()
         operation(preview)
+        if any(identity != request for identity in preview._records):
+            raise RuntimeError("mempool preparation changed another request")
+        return int(record is None and request in preview._records)
 
     def reply_endpoint(self, request: RequestIdentity) -> str:
         """Return the D rank's existing ZMQ endpoint for P-side replies."""

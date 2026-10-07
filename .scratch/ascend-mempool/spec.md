@@ -229,8 +229,8 @@ The 2026-10-01 module organization is approved; its implementation remains pendi
 - Maintain a persistent acquired-request table independent of transient sender/receiver handoff tables. Correlate requests through their shared bootstrap room, with pool session/epoch, request attempt, and slot generation checks. Local request IDs are diagnostic rather than the sole cross-side identity.
 - D acquires first, then asks P to acquire independently. Each side uses one common slot ID across its 16 ranks, but P and D slot IDs may differ.
 - Confirmed D1 (2026-09-29): use one control tick per scheduler iteration, after request intake and before the paused branch, on each side's complete TP CPU group. This is state progression, not a periodic reset. P and D coordinate independently; no cross-side collective is required. Accept first-version per-tick CPU metadata synchronization, including empty inputs.
-- Align candidates using common `(room, attempt)` identities and persistent observations; validate pair-local sessions/proofs locally. Use a fixed collective order to plan, preflight, and commit ownership changes; send generated replies and admit model work only after all ranks report success. Receive/result callbacks stage facts rather than releasing slots independently.
-- Synchronize both acquire and release, including safe rollback. Capacity shortage waits before allocation. Unexpected partial acquisition after a successful common preflight is fatal and must not resume serving through rollback/retry. Ordinary request cancellation retains safe rollback semantics. P may schedule prefill only after all P ranks are acquired and the D binding is confirmed.
+- Align candidates using common `(room, attempt)` identities and persistent observations; validate pair-local sessions/proofs locally. Updated by user approval on 2026-10-07: prepare complete local control transitions before the observation all-gather, and include their validation results and admission claims. Form a common plan using these results, available slots and record capacity, then commit and gather commit status. These are two fixed collectives, including empty ticks; no separate post-plan preflight collective is required. Send generated replies and admit model work only after all ranks report success. Receive/result callbacks stage facts rather than releasing slots independently.
+- Synchronize both acquire and release, including safe rollback. Capacity shortage waits before allocation. Only compose prepared actions whose request/slot dependencies do not conflict; conflicting actions wait for a later tick. Retain pair-local identity, binding, generation, retirement, phase and ownership checks, without copying unrelated request history. Unexpected partial acquisition after successful common preparation is fatal and must not resume serving through rollback/retry. Ordinary request cancellation retains safe rollback semantics. P may schedule prefill only after all P ranks are acquired and the D binding is confirmed.
 - D releases its slot only after all D ranks have drained and invalidated old binding references; send DONE after successful rank-wide release. P releases only after all P ranks have corresponding DONE and completed P writes; send RELEASE_ACK after successful rank-wide release. D may reuse its released slot while retaining the old completion record until acknowledgement.
 - See [D1/D4/D5 design](d1-d4-d5-design.md). D4 conservative drain and D5 fatal-error policies are confirmed below; their runtime hooks and fault-detection details still require implementation.
 - Receive threads parse and queue state changes; they do not block for free slots, run collectives independently, or mutate release order asynchronously.
@@ -253,8 +253,10 @@ The 2026-10-01 module organization is approved; its implementation remains pendi
 
 ### Admission Hooks (Confirmed 2026-09-30)
 
-- Retain D1's snapshot all-gather, preflight, commit and empty-input synchronization.
-  The proposed MIN-only/idle-skip optimization is deferred until after the demo.
+- Retain D1's complete observations, common ownership decisions, commit-status
+  synchronization and empty-input participation. The 2026-10-07 preparation
+  update above replaces the original separate preflight round; MIN-only and
+  idle-skip optimizations remain deferred.
 - P checks the tick-approved acquire/binding state at the beginning of
   `finalize_bootstrap`, before metadata allocation or sender initialization.
   Return False to keep waiting when not approved. No local ownership mutation

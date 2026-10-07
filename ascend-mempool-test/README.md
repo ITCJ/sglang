@@ -514,10 +514,13 @@ ACK的请求仍在其中。完整`snapshot()`保留用于诊断，service/tick�
 `binding_confirmed/writes_pending`为P事实，`transfer_ready`为D事实。
 
 TP同步逻辑状态、slot/generation和当前完成事实；完整session、binding proof和历史
-消息留在本rank，由原control preflight验证。每tick复用同一份不可变观察，仍执行
-观察、预检结果、提交结果三次collective；全部rank预检通过后才提交和发送。
-preflight暂时保留全量record复制，复制成本的单独评估见
-[S6.3交付](../.scratch/ascend-mempool/ticket-03-s6.3-summary.md)。
+消息留在本rank。control以单个request的副本及slot元数据准备候选，复用真实状态转换
+检查，结果及record需求随第一次观察all-gather同步；不再复制无关历史记录。
+共同计划只组合全rank通过且room/P/D slot依赖不冲突的动作，按共同record预算准入。
+资源冲突或容量不足留待后续tick；新record最后进入，避免提前淘汰本轮仍需的历史。
+每tick固定执行观察/准备结果、提交结果两次collective，空输入也参加；全部rank提交
+成功后才发送outbox。实际提交异常仍fail-stop，不将已发生的副作用当作可回滚事务。
+范围、检查和NPU复验见[两轮TP同步交付](../.scratch/ascend-mempool/ticket-03-prepare-summary.md)。
 
 两机 gate 沿用01的环境/SDK/BM/test-channel/安全 teardown。默认两层、16 slots、
 P每slot8 tokens、D每slot16 tokens、compact dim576；对齐后各机贡献1 GiB。

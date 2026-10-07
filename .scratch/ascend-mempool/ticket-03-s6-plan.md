@@ -117,6 +117,11 @@ S6沿用S5的curl小题目输出检查，不额外增加正式数据集完整精
 以下方案中SPEC-01/02及shadow删除已在S6.2落实，三个STD已按S6.3完成代码整改；
 preflight保留全量复制并单独记录成本，详见[S6.3交付](ticket-03-s6.3-summary.md)。首次review记录保留。
 
+2026-10-07后续授权：用户进一步要求将候选的完整本地校验前移，并入第一次TP同步，
+改为准备/观察、提交结果两轮同步，删除独立preflight轮次及全量历史复制。
+保留各rank完整校验、批量资源约束和全部提交成功后发送的合同；原S6.3记录作为历史。
+本次实现、检查及待执行NPU复验见[两轮TP同步交付](ticket-03-prepare-summary.md)。
+
 | 发现 | 处理方案 | 执行阶段 |
 | --- | --- | --- |
 | STD-01：row推导重复 | 抽取正式BM和普通host共同使用的纯NPU坐标推导；各自保留地址、binding、容量mask及存储写入职责，覆盖decode/ragged/static/padding/空batch | S6.3 |

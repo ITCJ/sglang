@@ -24,7 +24,7 @@ class CPUCollective:
     def gather(self, rank, value):
         """Gather one serializable value in the same order on every rank."""
         self.values[rank] = value
-        if self.rounds[rank] % 3 == 0:
+        if value is not None and not isinstance(value, str):
             self.observation_bytes[rank] = len(pickle.dumps(value))
         self.barrier.wait()
         result = tuple(self.values)
@@ -79,21 +79,29 @@ class TestMempoolTPTick(unittest.TestCase):
             list(workers.map(lambda tick: tick.advance(facts), ticks))
 
     def test_empty_ticks_keep_fixed_collective_sequence(self):
-        """Empty input still participates in snapshot, preflight and status."""
+        """Empty input uses the same prepare/commit sequence as active ticks."""
         self.advance(self.pt)
         self.advance(self.pt)
-        self.assertEqual(self.pc.rounds, [6] * 16)
+        self.assertEqual(self.pc.rounds, [4] * 16)
         self.assertTrue(all(len(c.available_slots()) == 16 for c in self.p))
 
     def test_decode_acquire_is_same_slot_and_attempt_on_all_ranks(self):
         """Leader attempt and independent D slot are agreed before ACQUIRE leaves."""
-        facts = (RequestObservation(42, 32, 8, 100, attempt="attempt-42"),)
-        self.advance(self.dt, facts)
+        with ThreadPoolExecutor(max_workers=16) as workers:
+            list(
+                workers.map(
+                    lambda rank: self.dt[rank].advance(
+                        (RequestObservation(42, 32, 8, 100, attempt=f"attempt-{rank}"),)
+                    ),
+                    range(16),
+                )
+            )
         records = [c.snapshot().requests[0] for c in self.d]
-        self.assertEqual({r.identity.attempt for r in records}, {"attempt-42"})
+        self.assertEqual({r.identity.attempt for r in records}, {"attempt-0"})
         self.assertEqual({r.d_slot.slot for r in records}, {0})
         self.assertTrue(all(len(c.available_slots()) == 15 for c in self.d))
         self.assertTrue(all(len(c.available_slots()) == 16 for c in self.p))
+        self.assertEqual(self.dc.rounds, [2] * 16)
 
     def test_tick_payload_does_not_grow_with_unrelated_terminal_history(self):
         """One active request sends the same observations after 256 completed ones."""
@@ -289,7 +297,126 @@ class TestMempoolTPTick(unittest.TestCase):
             )
         )
 
-    def test_one_failed_preflight_prevents_every_transition_and_outbox(self):
+    def test_batch_admission_waits_for_record_budget_on_every_rank(self):
+        """Individually valid candidates cannot overspend the shared record budget."""
+        from dataclasses import replace
+
+        for rank, p in enumerate(self.p):
+            d = MempoolPDControl(self.d[rank].local, max_records=1)
+            d.apply(p.apply(d.begin_handshake("tcp://d:1")))
+            self.d[rank] = d
+        self.dt = self.ticks(self.d, self.p, self.dc)
+        first = RequestObservation(42, 32, 8, 100, attempt="first")
+        second = RequestObservation(43, 32, 8, 100, attempt="second")
+        self.advance(self.dt, (first, second))
+        for d in self.d:
+            self.assertEqual(d.get_room_request(42).d_slot.slot, 0)
+            self.assertIsNone(d.get_room_request(43))
+            self.assertEqual(len(d.available_slots()), 15)
+        self.advance(self.dt, (replace(first, cancel=True), second))
+        self.assertTrue(all(d.get_room_request(43) is None for d in self.d))
+        self.advance(self.dt, (second,))
+        for d in self.d:
+            current = d.get_room_request(43)
+            self.assertEqual((current.d_slot.slot, current.d_slot.generation), (0, 2))
+            self.assertFalse(d.has_retained_room(42))
+        self.assertEqual(self.dc.rounds, [6] * 16)
+
+    def test_one_rank_cancellation_is_prepared_on_every_rank(self):
+        """A rank without a local cancel flag still prepares the common rollback."""
+        from dataclasses import replace
+
+        fact = RequestObservation(42, 32, 8, 100, attempt="cancel")
+        self.advance(self.dt, (fact,))
+        with ThreadPoolExecutor(max_workers=16) as workers:
+            list(
+                workers.map(
+                    lambda rank: self.dt[rank].advance(
+                        (replace(fact, cancel=rank == 15),)
+                    ),
+                    range(16),
+                )
+            )
+        self.assertTrue(all(not d.has_pending_requests() for d in self.d))
+        self.assertTrue(all(len(d.available_slots()) == 16 for d in self.d))
+        self.assertEqual(self.effects, [[("cancel", 42), ("drain", 42)]] * 16)
+        self.assertEqual(self.dc.rounds, [4] * 16)
+
+    def test_cancel_on_one_rank_prevents_fresh_admission(self):
+        """A pending request cancelled on a non-leader never acquires a slot."""
+        with ThreadPoolExecutor(max_workers=16) as workers:
+            list(
+                workers.map(
+                    lambda rank: self.dt[rank].advance(
+                        (
+                            RequestObservation(
+                                42,
+                                32,
+                                8,
+                                100,
+                                attempt=f"local-{rank}",
+                                cancel=rank == 15,
+                            ),
+                        )
+                    ),
+                    range(16),
+                )
+            )
+        self.assertTrue(all(not d.has_pending_requests() for d in self.d))
+        self.assertTrue(all(len(d.available_slots()) == 16 for d in self.d))
+        self.assertEqual(
+            self.effects, [[("reject", 42), ("drain", 42), ("native_release", 42)]] * 16
+        )
+        self.assertEqual(self.dc.rounds, [2] * 16)
+
+    def test_commit_effect_failure_prevents_all_outbox_sends(self):
+        """A runtime failure after preparation is fatal, even if peers committed."""
+        from dataclasses import replace
+
+        fact = RequestObservation(42, 32, 8, 100, attempt="effect-failure")
+        self.advance(self.dt, (fact,))
+        for p in self.p:
+            p.drain_inbox()
+
+        def fail_effect(kind, room):
+            raise RuntimeError("injected native effect failure")
+
+        self.dt[-1].effect = fail_effect
+        with self.assertRaisesRegex(RuntimeError, "injected native effect failure"):
+            self.advance(self.dt, (replace(fact, cancel=True),))
+        self.assertEqual([p.drain_inbox() for p in self.p], [[]] * 16)
+        for d in self.d:
+            with self.assertRaisesRegex(RuntimeError, "injected native effect failure"):
+                d.assert_healthy()
+        self.assertEqual(self.dc.rounds, [4] * 16)
+
+    def test_valid_proof_cannot_skip_the_binding_phase(self):
+        """Preparation checks the transition, not only the signed allocation."""
+        from ascend_mempool_pd.mempool_protocol import MempoolMessage, MessageType
+
+        for p, d in zip(self.p, self.d):
+            acquire = d.acquire_decode(42, "early-done", 0, 32, 8, "tcp://d:1")
+            p.apply(acquire)
+            acquired = p.acquire_prefill(acquire.request, 0)
+            p.enqueue(
+                MempoolMessage(
+                    MessageType.DONE,
+                    request=acquired.request,
+                    p_slot=acquired.p_slot,
+                    d_slot=acquired.d_slot,
+                    reason="completed",
+                )
+            )
+        before = [p.snapshot() for p in self.p]
+        with self.assertRaisesRegex(RuntimeError, "DONE arrived outside a bound"):
+            self.advance(self.pt)
+        for old, p in zip(before, self.p):
+            self.assertEqual(p.snapshot().requests, old.requests)
+            self.assertEqual(p.available_slots(), old.available_slots)
+        self.assertEqual([d.drain_inbox() for d in self.d], [[]] * 16)
+        self.assertEqual(self.pc.rounds, [2] * 16)
+
+    def test_one_failed_preparation_prevents_every_transition_and_outbox(self):
         """A malformed pair-local proof cannot partially advance same-side ownership."""
         from dataclasses import replace
 
@@ -300,25 +427,35 @@ class TestMempoolTPTick(unittest.TestCase):
         for _ in range(3):
             self.advance(self.pt, facts)
             self.advance(self.dt, facts)
+        # A valid DONE sorts before the bad one. Neither may change ownership.
+        for p, d in zip(self.p, self.d):
+            acquire = d.acquire_decode(51, "valid", 1, 32, 8, "tcp://d:1")
+            p.apply(acquire)
+            p.apply(d.apply(p.acquire_prefill(acquire.request, 1)))
         before = [c.snapshot() for c in self.p]
         for rank, p in enumerate(self.p):
             p.drain_inbox()
-            record = p.snapshot().requests[0]
-            p.enqueue(
-                MempoolMessage(
-                    MessageType.DONE,
-                    request=record.identity,
-                    p_slot=replace(record.p_slot, proof="0" * 64)
-                    if rank == 15
-                    else record.p_slot,
-                    d_slot=record.d_slot,
-                    reason="test",
+            for record in p.snapshot().requests:
+                p.enqueue(
+                    MempoolMessage(
+                        MessageType.DONE,
+                        request=record.identity,
+                        p_slot=replace(record.p_slot, proof="0" * 64)
+                        if rank == 15 and record.identity.room == 52
+                        else record.p_slot,
+                        d_slot=record.d_slot,
+                        reason="test",
+                    )
                 )
-            )
-        safe = (replace(facts[0], native_freed=True),)
+        safe = (
+            replace(facts[0], native_freed=True),
+            replace(facts[0], room=51, attempt="valid", native_freed=True),
+        )
+        rounds = self.pc.rounds[0]
         with self.assertRaisesRegex(RuntimeError, "mempool TP tick failed"):
             self.advance(self.pt, safe)
         for old, control in zip(before, self.p):
             self.assertEqual(control.snapshot().available_slots, old.available_slots)
             self.assertEqual(control.snapshot().requests, old.requests)
         self.assertEqual([c.drain_inbox() for c in self.d], [[]] * 16)
+        self.assertEqual(self.pc.rounds, [rounds + 2] * 16)

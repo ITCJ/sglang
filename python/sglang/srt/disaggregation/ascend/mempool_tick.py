@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from typing import Any
+
+import msgspec
 
 from .mempool_control import MempoolPDControl, MempoolRequestSnapshot
 from .mempool_protocol import MempoolMessage, MessageType, PoolPeer, RequestIdentity
@@ -79,7 +81,7 @@ class _RequestState:
 
 @dataclass(frozen=True)
 class _MessageState:
-    """Agree on an event's metadata; validate its original message in preflight."""
+    """Agree on metadata after preparing the original message locally."""
 
     key: tuple[Any, ...]
     prompt_tokens: int | None
@@ -100,6 +102,8 @@ class _Observation:
     messages: tuple[_MessageState, ...]
     now: float
     fault: str | None
+    record_capacity: int
+    prepared: tuple[_Preparation, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -112,12 +116,30 @@ class _Action:
     slot: int = -1
     message_key: tuple[Any, ...] = ()
 
+    @property
+    def preparation_key(self) -> tuple[Any, ...]:
+        """D admission prepares a fresh room before the leader chooses attempt.
+
+        Acquisition validates against a representative free slot. The common
+        planner assigns distinct slots from the same observed free set.
+        """
+        attempt = "" if self.kind == "acquire_decode" else self.attempt
+        return self.kind, self.room, attempt, self.message_key
+
+
+class _Preparation(msgspec.Struct, frozen=True):
+    """Carry a candidate's local validation and admission cost in the first gather."""
+
+    key: tuple[Any, ...]
+    record_claim: int = 0
+    error: str | None = None
+
 
 class MempoolTPTick:
-    """Own snapshot/plan/preflight/commit/status and hold outbox until success.
+    """Prepare locally, agree on a plan, then commit and gather its status.
 
     gather is the existing TP CPU group's all-gather boundary. Network threads
-    only enqueue; even an empty advance participates in three collectives.
+    only enqueue; even an empty advance participates in two collectives.
     Effects run on the scheduler thread and must not release protocol slots.
     """
 
@@ -214,35 +236,37 @@ class MempoolTPTick:
             ),
             start,
             fault or snapshot.protocol_fault,
+            self.control.admission_capacity(),
         )
+        facts_by_room = {fact.room: fact for fact in facts}
+        try:
+            if observation.fault is None:
+                observation = replace(
+                    observation,
+                    prepared=self._prepare_candidates(
+                        observation=observation,
+                        facts_by_room=facts_by_room,
+                        records=records,
+                    ),
+                )
+        except Exception as exc:
+            observation = replace(observation, fault=str(exc))
         observations = self.gather(observation)
-        plan: list[_Action] = []
         error = None
+        outbox: list[MempoolMessage] = []
         try:
             if any(o.fault for o in observations):
                 raise RuntimeError("mempool worker reported a fault")
-            plan = self._plan(observations)
-            for action in plan:
-                if action.kind == "message":
-                    peer = self._messages[action.message_key].peer
-                    if peer is not None:
-                        self.verify_peer(peer)
-            self.control.preflight(
-                lambda control: self._commit(
-                    plan, facts, records, control, preview=True
-                )
+            plan = self._approve_plan(self._plan(observations), observations)
+            self.control.assert_healthy()
+            outbox = self._commit(
+                plan=plan,
+                facts_by_room=facts_by_room,
+                records=records,
+                control=self.control,
             )
         except Exception as exc:
             error = str(exc)
-        errors = self.gather(error)
-        outbox: list[MempoolMessage] = []
-        if not any(errors):
-            try:
-                outbox = self._commit(plan, facts, records, self.control)
-            except Exception as exc:
-                error = str(exc)
-        else:
-            error = next(e for e in errors if e)
         statuses = self.gather(error)
         if any(statuses):
             reason = next(e for e in statuses if e)
@@ -274,6 +298,180 @@ class MempoolTPTick:
             self.clock() - start,
             len(plan),
         )
+
+    def _prepare_candidates(
+        self,
+        observation: _Observation,
+        facts_by_room: Mapping[int, RequestObservation],
+        records: dict[tuple[int, str], MempoolRequestSnapshot],
+    ) -> tuple[_Preparation, ...]:
+        """Prepare every control transition the common planner can choose.
+
+        Errors belong to their candidate, not the entire tick: another rank may
+        not have received this message yet, or cancellation may take precedence.
+        No service effects, inbox consumption or ownership changes happen here.
+        """
+        candidates = [
+            _Action("message", key[1], key[2], message_key=key)
+            for key in self._messages
+        ]
+        free_slot = min(observation.available_slots, default=-1)
+        for state in observation.requests:
+            room, attempt = state.room, state.attempt
+            fact = facts_by_room.get(room)
+            if fact is not None and fact.attempt != attempt:
+                fact = None
+            if state.phase not in ("WAITING_RELEASE_ACK", "CANCELLING", "DRAINING"):
+                # Cancellation on any rank can select this on every rank.
+                candidates.append(_Action("cancel", room, attempt))
+            if self.control.local.role == "prefill":
+                if state.phase == "WAITING_ACQUIRE" and free_slot >= 0:
+                    candidates.append(
+                        _Action("acquire_prefill", room, attempt, free_slot)
+                    )
+                elif state.phase == "BOUND":
+                    candidates.append(_Action("start_prefill", room, attempt))
+                elif state.phase == "PREFILLING" and fact and fact.prompt_ready:
+                    candidates.append(_Action("ready", room, attempt))
+                elif (
+                    state.phase == "CANCELLING"
+                    and state.writes_pending
+                    and fact
+                    and fact.writes_done
+                ):
+                    candidates.append(_Action("writes_done", room, attempt))
+            elif state.phase == "WAITING_READY":
+                if not state.transfer_ready and fact and fact.transfer_ready:
+                    candidates.append(_Action("transfer", room, attempt))
+                elif state.transfer_ready and state.prompt_written is not None:
+                    candidates.append(_Action("start_decode", room, attempt))
+            elif (
+                state.phase in ("DECODING", "CANCELLING", "DRAINING")
+                and fact
+                and fact.drained
+            ):
+                # A different rank may be the first to report release=True.
+                candidates.append(_Action("release", room, attempt))
+        if (
+            self.control.local.role == "decode"
+            and observation.peer_ready
+            and free_slot >= 0
+        ):
+            occupied = {
+                state.room for state in (*observation.requests, *observation.cleanup)
+            }
+            candidates.extend(
+                _Action("acquire_decode", f.room, f.attempt, free_slot)
+                for f in facts_by_room.values()
+                if f.room not in occupied and not f.native_freed
+            )
+        prepared = []
+        for action in candidates:
+            try:
+                record = records.get((action.room, action.attempt))
+                request = record.identity if record else None
+                if action.kind == "message":
+                    message = self._messages[action.message_key]
+                    request = message.request
+                    if message.peer is not None:
+                        self.verify_peer(message.peer)
+                elif action.kind == "acquire_decode":
+                    # Each service rank initially proposes its own attempt. Only
+                    # a fresh room is independent of the leader's eventual choice.
+                    if self.control.has_retained_room(action.room):
+                        raise ValueError("D admission requires a fresh bootstrap room")
+                    peer = self.control.peer
+                    if peer is None:
+                        raise RuntimeError("D admission has no paired peer")
+                    request = RequestIdentity(
+                        action.room,
+                        action.attempt,
+                        peer.session,
+                        self.control.local.session,
+                    )
+                claim = self.control.prepare(
+                    request=request,
+                    operation=lambda control: self._commit(
+                        plan=(action,),
+                        facts_by_room=facts_by_room,
+                        records=records,
+                        control=control,
+                        preview=True,
+                    ),
+                )
+                prepared.append(
+                    _Preparation(key=action.preparation_key, record_claim=claim)
+                )
+            except Exception as exc:
+                prepared.append(
+                    _Preparation(key=action.preparation_key, error=str(exc))
+                )
+        return tuple(prepared)
+
+    @staticmethod
+    def _approve_plan(
+        plan: Sequence[_Action], observations: Sequence[_Observation]
+    ) -> list[_Action]:
+        """Combine prepared candidates using only shared, immutable observations.
+
+        One control transition per room and P/D slot keeps independent previews
+        valid when composed. Conflicting work waits for the next tick. Admission
+        spends the minimum rank capacity and runs last so it cannot evict a
+        historical record still needed by another selected operation.
+        """
+        checks = [{p.key: p for p in o.prepared} for o in observations]
+        states = {
+            (r.room, r.attempt): r
+            for o in observations
+            for r in (*o.requests, *o.cleanup)
+        }
+        messages = {m.key: m for m in observations[0].messages}
+        budget = min(o.record_capacity for o in observations)
+        used: set[tuple[str, int]] = set()
+        deferred: set[tuple[int, str]] = set()
+        approved: list[_Action] = []
+        admissions: list[_Action] = []
+        for action in plan:
+            if action.kind in ("reject", "native_release", "drain"):
+                approved.append(action)
+                continue
+            resources = {("room", action.room)}
+            state = states.get((action.room, action.attempt))
+            p_slot, d_slot = (state.p_slot, state.d_slot) if state else (None, None)
+            if action.kind == "message":
+                message = messages[action.message_key]
+                p_slot, d_slot = message.p_slot or p_slot, message.d_slot or d_slot
+            if p_slot is not None:
+                resources.add(("p_slot", p_slot[0]))
+            if d_slot is not None:
+                resources.add(("d_slot", d_slot[0]))
+            if action.kind in ("acquire_prefill", "acquire_decode"):
+                side = "p_slot" if action.kind == "acquire_prefill" else "d_slot"
+                resources.add((side, action.slot))
+            if used.intersection(resources):
+                deferred.add((action.room, action.attempt))
+                continue
+            local = [check.get(action.preparation_key) for check in checks]
+            if any(p is None for p in local):
+                raise RuntimeError("mempool plan has an unprepared transition")
+            errors = [p.error for p in local if p is not None and p.error]
+            if errors:
+                raise RuntimeError(errors[0])
+            claims = {p.record_claim for p in local if p is not None}
+            if len(claims) != 1:
+                raise RuntimeError("TP mempool admission preparation diverged")
+            claim = claims.pop()
+            if claim > budget:
+                deferred.add((action.room, action.attempt))
+                continue
+            budget -= claim
+            used.update(resources)
+            (admissions if claim else approved).append(action)
+        return [
+            action
+            for action in (*approved, *admissions)
+            if (action.room, action.attempt) not in deferred
+        ]
 
     @staticmethod
     def _message_key(message: MempoolMessage) -> tuple[Any, ...]:
@@ -468,7 +666,10 @@ class MempoolTPTick:
                     or not all(fact.room in f for f in facts)
                 ):
                     continue
-                if fact.cancel or first.now >= fact.deadline:
+                if (
+                    any(f[fact.room].cancel for f in facts)
+                    or first.now >= fact.deadline
+                ):
                     plan.append(_Action("reject", fact.room))
                     plan.append(_Action("drain", fact.room))
                     plan.append(_Action("native_release", fact.room))
@@ -502,14 +703,13 @@ class MempoolTPTick:
     def _commit(
         self,
         plan: Sequence[_Action],
-        facts: Sequence[RequestObservation],
+        facts_by_room: Mapping[int, RequestObservation],
         records: dict[tuple[int, str], MempoolRequestSnapshot],
         control: MempoolPDControl,
         *,
         preview: bool = False,
     ) -> list[MempoolMessage]:
-        """Run identical transitions during preflight and commit; effects only commit."""
-        by_room = {f.room: f for f in facts}
+        """Reuse control transitions for preparation; run effects only on commit."""
         outbox = []
         drained = False
         for action in plan:
@@ -523,13 +723,13 @@ class MempoolTPTick:
                 reply = control.apply(message)
                 if not preview:
                     self._last_peer_seen = self.clock()
-                    if message.kind == MessageType.CANCEL and room in by_room:
+                    if message.kind == MessageType.CANCEL and room in facts_by_room:
                         self.effect("cancel", room)
                     if message.kind == MessageType.POOL_HELLO:
                         self.endpoint = message.reply_to
                     del self._messages[action.message_key]
             elif kind == "acquire_decode":
-                fact = by_room[room]
+                fact = facts_by_room[room]
                 reply = control.acquire_decode(
                     room,
                     action.attempt,
@@ -560,7 +760,7 @@ class MempoolTPTick:
                     reply = control.finish_prefill_writes(request)
                     if reply is None:
                         reply = control.publish_kv_ready(
-                            request, by_room[room].prompt_tokens
+                            request, facts_by_room[room].prompt_tokens
                         )
                 elif kind == "writes_done":
                     reply = control.finish_prefill_writes(request)

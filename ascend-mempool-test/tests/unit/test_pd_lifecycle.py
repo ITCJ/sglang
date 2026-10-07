@@ -107,26 +107,39 @@ class TestMempoolPDControl(unittest.TestCase):
         self.assertIsNone(self.d.get_request(replace(request, attempt="unknown")))
         self.assertIsNone(self.d.get_request(replace(request, d_session="old")))
 
-    def test_preview_and_eviction_preserve_query_indexes(self):
-        """Preview may cancel and evict records without changing the live view."""
+    def test_preparation_and_eviction_preserve_query_indexes(self):
+        """Preparing cancellation or admission must not change the live view."""
         d = MempoolPDControl(self.d.local, max_records=2)
         d.apply(self.p.apply(d.begin_handshake("tcp://d:4351")))
         old = d.acquire_decode(1, "old", 0, 32, 16, "tcp://d:4351").request
         d.cancel_local(old, "finished")
         current = d.acquire_decode(2, "current", 0, 32, 16, "tcp://d:4351").request
 
-        def preview(control):
-            control.cancel_local(current, "preview")
-            control.acquire_decode(3, "next", 0, 32, 16, "tcp://d:4351")
-
         before = d.snapshot()
-        d.preflight(preview)
+        self.assertEqual(
+            d.prepare(
+                current, lambda control: control.cancel_local(current, "preview")
+            ),
+            0,
+        )
         self.assertEqual(d.snapshot(), before)
         self.assertEqual([r.identity for r in d.active_snapshot().requests], [current])
         self.assertTrue(d.has_retained_room(1))
         self.assertFalse(d.has_retained_room(3))
         d.cancel_local(current, "finished")
         self.assertFalse(d.has_pending_requests())
+        next_request = replace(current, room=3, attempt="next")
+        before = d.snapshot()
+        self.assertEqual(
+            d.prepare(
+                next_request,
+                lambda control: control.acquire_decode(
+                    3, "next", 0, 32, 16, "tcp://d:4351"
+                ),
+            ),
+            1,
+        )
+        self.assertEqual(d.snapshot(), before)
         d.acquire_decode(3, "next", 0, 32, 16, "tcp://d:4351")
         self.assertIsNone(d.get_request(old))
         self.assertFalse(d.has_retained_room(1))
