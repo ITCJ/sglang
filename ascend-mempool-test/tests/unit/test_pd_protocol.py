@@ -2,7 +2,8 @@
 
 import json
 import unittest
-from dataclasses import replace
+
+from msgspec.structs import asdict, replace
 
 from ascend_mempool_pd.mempool_control import MempoolFrameRouter, MempoolPDControl
 from ascend_mempool_pd.mempool_protocol import (
@@ -84,6 +85,20 @@ class TestMempoolProtocol(unittest.TestCase):
             transfer_layout=layout,
         )
         hello = MempoolMessage(MessageType.POOL_HELLO, peer=d, reply_to="tcp://d:4351")
+        # Canonical v2 frame from before the container migration.
+        expected = (
+            b'{"kind":"POOL_HELLO","peer":{"layout":{"decode_bytes":2147483648,'
+            b'"decode_tokens":16384,"dim":576,"dtype":"bfloat16","heads":1,"layers":2,'
+            b'"prompt_bytes":1073741824,"prompt_tokens":8192,"slots":16,'
+            b'"stride_bytes":2147483648},"pool_id":7,"pp_size":1,"role":"decode",'
+            b'"session":"d-boot","tp_rank":3,"tp_size":16,"transfer_kind":"index_k_only",'
+            b'"transfer_layout":{"aux_item_lens":[8,4],'
+            b'"dtypes":["bfloat16","bfloat16","bfloat16"],"item_lens":[16,16,16],'
+            b'"layer_ids":[1,4,7],"page_size":4,"state_dim_per_tensor":[],"state_item_lens":[],'
+            b'"state_layer_ids":[],"state_types":[]},"transport_session":"d:2"},'
+            b'"reply_to":"tcp://d:4351","version":2}'
+        )
+        self.assertEqual(encode_message(hello), [b"ASCEND_MEMPOOL_V1", expected])
         self.assertEqual(decode_message(encode_message(hello)), hello)
         validate_peer(p, d)
         for bad in (
@@ -96,7 +111,7 @@ class TestMempoolProtocol(unittest.TestCase):
             with self.subTest(peer=bad), self.assertRaisesRegex(ValueError, "transfer"):
                 validate_peer(p, bad)
         with self.assertRaisesRegex(ValueError, "transport session"):
-            replace(d, transport_session=None)
+            PoolPeer(**{**asdict(d), "transport_session": None})
         frames = encode_message(hello)
         payload = json.loads(frames[1])
         payload["version"] = 1
@@ -111,7 +126,7 @@ class TestMempoolProtocol(unittest.TestCase):
             )
         for pool_id in (-1, True, 256):
             with self.subTest(pool_id=pool_id), self.assertRaises(ValueError):
-                replace(self.p, pool_id=pool_id)
+                PoolPeer(**{**asdict(self.p), "pool_id": pool_id})
 
     def test_rejects_mismatched_peer_and_malformed_wire(self):
         """Reject incompatible layouts and unknown or truncated control frames."""

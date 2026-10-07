@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import torch
+from msgspec.structs import replace
 from test_native_release import load_methods
 
 from ascend_mempool.pd_transfer import (
@@ -433,9 +434,7 @@ class TestPDWorker(TestPDTransfer):
 
     def test_session_mismatch_blocks_all_copies(self):
         self.connect()
-        self.p_control.peer = dataclasses.replace(
-            self.p_control.peer, transport_session="stale:2"
-        )
+        self.p_control.peer = replace(self.p_control.peer, transport_session="stale:2")
         self.sender().send(np.array([1, 4], np.int32))
         # Keep the native registration from the original sender; only its peer
         # contract changed, as with a restarted native session.

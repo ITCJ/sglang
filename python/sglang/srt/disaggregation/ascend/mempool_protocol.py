@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, fields
 from enum import Enum
 from typing import Any, TypeVar
+
+import msgspec
 
 WIRE_TAG = b"ASCEND_MEMPOOL_V1"
 # Retain the routing tag so old readers reject the payload version explicitly.
@@ -46,8 +47,7 @@ def _nonempty_string(name: str, value: object) -> None:
         raise ValueError(f"{name} must be a nonempty string")
 
 
-@dataclass(frozen=True)
-class PoolDescriptor:
+class PoolDescriptor(msgspec.Struct, frozen=True):
     """Describe the identical logical layout expected by both paired workers."""
 
     layers: int
@@ -94,8 +94,7 @@ class PoolDescriptor:
             raise ValueError("pool stride is smaller than a local contribution")
 
 
-@dataclass(frozen=True)
-class IndexKTransferLayout:
+class IndexKTransferLayout(msgspec.Struct, frozen=True):
     """Native handoff layout; addresses and pool capacities are peer-local."""
 
     page_size: int
@@ -152,8 +151,7 @@ class IndexKTransferLayout:
                 _nonnegative_int("state slice dimension", dim)
 
 
-@dataclass(frozen=True)
-class PoolPeer:
+class PoolPeer(msgspec.Struct, frozen=True):
     """Identify one worker and its pool across a PD control handshake."""
 
     session: str
@@ -218,8 +216,7 @@ def validate_peer(local: PoolPeer, remote: PoolPeer) -> None:
         raise ValueError("mempool peers must have distinct transport sessions")
 
 
-@dataclass(frozen=True)
-class RequestIdentity:
+class RequestIdentity(msgspec.Struct, frozen=True):
     """Tie a bootstrap room to one attempt and both pool startup sessions."""
 
     room: int
@@ -234,8 +231,7 @@ class RequestIdentity:
             _nonempty_string(name, getattr(self, name))
 
 
-@dataclass(frozen=True)
-class SlotLease:
+class SlotLease(msgspec.Struct, frozen=True):
     """Identify one use of a physical slot across later slot reuse."""
 
     slot: int
@@ -270,8 +266,7 @@ _REQUIRED: dict[MessageType, frozenset[str]] = {
 }
 
 
-@dataclass(frozen=True)
-class MempoolMessage:
+class MempoolMessage(msgspec.Struct, frozen=True):
     """Carry exactly the fields defined for one PD control transition."""
 
     kind: MessageType
@@ -290,9 +285,9 @@ class MempoolMessage:
         if not isinstance(self.kind, MessageType):
             raise ValueError("unknown mempool message kind")
         present = {
-            field.name
-            for field in fields(self)
-            if field.name != "kind" and getattr(self, field.name) is not None
+            name
+            for name in self.__struct_fields__
+            if name != "kind" and getattr(self, name) is not None
         }
         required = _REQUIRED[self.kind]
         allowed = required | (
@@ -332,7 +327,7 @@ def encode_message(message: MempoolMessage) -> list[bytes]:
         "kind": message.kind.value,
         **{
             name: value
-            for name, value in asdict(message).items()
+            for name, value in msgspec.to_builtins(message).items()
             if value is not None and name != "kind"
         },
     }
@@ -353,10 +348,10 @@ _Record = TypeVar(
 
 
 def _record(record_type: type[_Record], value: Any) -> _Record:
-    """Construct a dataclass only from its exact declared JSON object fields."""
+    """Construct a record only from its exact declared JSON object fields."""
     if not isinstance(value, dict):
         raise ValueError(f"{record_type.__name__} must be a JSON object")
-    expected = {field.name for field in fields(record_type)}
+    expected = set(record_type.__struct_fields__)
     if set(value) != expected:
         raise ValueError(f"{record_type.__name__} has missing or unknown fields")
     if record_type is PoolPeer:

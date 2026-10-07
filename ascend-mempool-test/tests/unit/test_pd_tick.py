@@ -123,7 +123,7 @@ class TestMempoolTPTick(unittest.TestCase):
 
     def test_handoff_keeps_p_slot_until_uniform_drain_and_ack(self):
         """Sixteen pairs bind, wait for both readiness facts, then retire together."""
-        from dataclasses import replace
+        from msgspec.structs import replace
 
         facts = (RequestObservation(42, 32, 8, 100, attempt="attempt-42"),)
         self.advance(self.dt, facts)
@@ -279,7 +279,7 @@ class TestMempoolTPTick(unittest.TestCase):
 
     def test_capacity_wait_uses_original_deadline_without_allocating(self):
         """A seventeenth request waits, then retires without taking a busy slot."""
-        from dataclasses import replace
+        from msgspec.structs import replace
 
         for control in self.d:
             for slot in range(16):
@@ -299,7 +299,7 @@ class TestMempoolTPTick(unittest.TestCase):
 
     def test_batch_admission_waits_for_record_budget_on_every_rank(self):
         """Individually valid candidates cannot overspend the shared record budget."""
-        from dataclasses import replace
+        from msgspec.structs import replace
 
         for rank, p in enumerate(self.p):
             d = MempoolPDControl(self.d[rank].local, max_records=1)
@@ -324,7 +324,7 @@ class TestMempoolTPTick(unittest.TestCase):
 
     def test_one_rank_cancellation_is_prepared_on_every_rank(self):
         """A rank without a local cancel flag still prepares the common rollback."""
-        from dataclasses import replace
+        from msgspec.structs import replace
 
         fact = RequestObservation(42, 32, 8, 100, attempt="cancel")
         self.advance(self.dt, (fact,))
@@ -371,7 +371,7 @@ class TestMempoolTPTick(unittest.TestCase):
 
     def test_commit_effect_failure_prevents_all_outbox_sends(self):
         """A runtime failure after preparation is fatal, even if peers committed."""
-        from dataclasses import replace
+        from msgspec.structs import replace
 
         fact = RequestObservation(42, 32, 8, 100, attempt="effect-failure")
         self.advance(self.dt, (fact,))
@@ -418,7 +418,7 @@ class TestMempoolTPTick(unittest.TestCase):
 
     def test_one_failed_preparation_prevents_every_transition_and_outbox(self):
         """A malformed pair-local proof cannot partially advance same-side ownership."""
-        from dataclasses import replace
+        from msgspec.structs import replace
 
         from ascend_mempool_pd.mempool_protocol import MempoolMessage, MessageType
 

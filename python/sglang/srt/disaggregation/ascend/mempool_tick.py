@@ -5,10 +5,10 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
 from typing import Any
 
 import msgspec
+from msgspec.structs import replace
 
 from .mempool_control import MempoolPDControl, MempoolRequestSnapshot
 from .mempool_protocol import MempoolMessage, MessageType, PoolPeer, RequestIdentity
@@ -16,8 +16,7 @@ from .mempool_protocol import MempoolMessage, MessageType, PoolPeer, RequestIden
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class RequestObservation:
+class RequestObservation(msgspec.Struct, frozen=True):
     """Describe local service facts, leaving protocol phase and slots in control."""
 
     room: int
@@ -36,8 +35,7 @@ class RequestObservation:
     native_freed: bool = False
 
 
-@dataclass(frozen=True)
-class _RequestState:
+class _RequestState(msgspec.Struct, frozen=True):
     """Compare logical protocol facts without transferring pair-local proofs."""
 
     room: int
@@ -79,8 +77,7 @@ class _RequestState:
         )
 
 
-@dataclass(frozen=True)
-class _MessageState:
+class _MessageState(msgspec.Struct, frozen=True):
     """Agree on metadata after preparing the original message locally."""
 
     key: tuple[Any, ...]
@@ -90,8 +87,7 @@ class _MessageState:
     d_slot: tuple[int, int] | None
 
 
-@dataclass(frozen=True)
-class _Observation:
+class _Observation(msgspec.Struct, frozen=True):
     """Serialize one worker's durable observations for the same-side TP group."""
 
     requests: tuple[_RequestState, ...]
@@ -106,8 +102,7 @@ class _Observation:
     prepared: tuple[_Preparation, ...] = ()
 
 
-@dataclass(frozen=True)
-class _Action:
+class _Action(msgspec.Struct, frozen=True):
     """Identify an agreed operation without transporting another pair's proofs."""
 
     kind: str

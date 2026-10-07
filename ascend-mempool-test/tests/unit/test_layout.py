@@ -71,6 +71,33 @@ class TestKVLayout(unittest.TestCase):
         self.assertEqual(pool.probe_offset(1), 1207959552)
         self.assertEqual(pool.layout_for_rank(0), prompt)
         self.assertEqual(pool.layout_for_rank(1), decode)
+        self.assertEqual(
+            pool.signature(),
+            {
+                "layout": {
+                    "prompt": {
+                        "layers": 2,
+                        "slots": 16,
+                        "tokens": 16384,
+                        "heads": 1,
+                        "dim": 576,
+                        "dtype": "bfloat16",
+                    },
+                    "decode": {
+                        "layers": 2,
+                        "slots": 16,
+                        "tokens": 32768,
+                        "heads": 1,
+                        "dim": 576,
+                        "dtype": "bfloat16",
+                    },
+                    "alignment_bytes": 1073741824,
+                    "probe_bytes": 64,
+                },
+                "contributions": [1073741824, 2147483648],
+                "rank_stride_bytes": 2147483648,
+            },
+        )
 
     def test_incompatible_peers_and_alignment_are_rejected(self):
         prompt = KVLayout(layers=2, slots=16, tokens=16, heads=1, dim=576)

@@ -8,9 +8,9 @@ import os
 from collections import deque
 from collections.abc import Callable, Sequence
 from contextlib import contextmanager, nullcontext
-from dataclasses import dataclass, field
 from typing import Any, Iterator, Optional, Protocol
 
+import msgspec
 import torch
 from torch import Tensor
 
@@ -38,8 +38,7 @@ class WriteEvent(Protocol):
         ...
 
 
-@dataclass(frozen=True)
-class KVWriteExpectation:
+class KVWriteExpectation(msgspec.Struct, frozen=True):
     """Describe real rows processed this forward, in full-sequence coordinates."""
 
     req_pool_idx: int
@@ -47,8 +46,7 @@ class KVWriteExpectation:
     rows: int
 
 
-@dataclass(frozen=True, eq=False)
-class KVRowBinding:
+class KVRowBinding(msgspec.Struct, frozen=True, eq=False):
     """Identify one local row attachment, even if its coordinates are later reused.
 
     Keep the object returned by bind with the approved request attempt. Object
@@ -62,8 +60,7 @@ class KVRowBinding:
     prompt_slot: Optional[int] = None
 
 
-@dataclass(frozen=True)
-class KVWriteReceipt:
+class KVWriteReceipt(msgspec.Struct, frozen=True):
     """Retain completed local progress after the request row has been detached."""
 
     binding: KVRowBinding
@@ -71,8 +68,7 @@ class KVWriteReceipt:
     completed: int
 
 
-@dataclass
-class _Binding:
+class _Binding(msgspec.Struct):
     """Keep local submission/completion progress independent of output tokens."""
 
     attachment: KVRowBinding
@@ -82,20 +78,18 @@ class _Binding:
     replay_forwards: int = 0
 
 
-@dataclass
-class _Forward:
+class _Forward(msgspec.Struct):
     """Track one Python forward boundary, including graph replay submissions."""
 
     writes: tuple[KVWriteExpectation, ...]
     replay: bool
     capture: bool
-    layers: set[int] = field(default_factory=set)
-    selection_layers: set[int] = field(default_factory=set)
-    fetch_layers: set[int] = field(default_factory=set)
+    layers: set[int] = msgspec.field(default_factory=set)
+    selection_layers: set[int] = msgspec.field(default_factory=set)
+    fetch_layers: set[int] = msgspec.field(default_factory=set)
 
 
-@dataclass
-class _Completion:
+class _Completion(msgspec.Struct):
     """Retain an ordered count snapshot until its device event completes."""
 
     event: WriteEvent

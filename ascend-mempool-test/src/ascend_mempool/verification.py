@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+import msgspec
 
 if TYPE_CHECKING:
     from sglang.srt.hardware_backend.npu.mempool.copy import SparseCopyInputs
@@ -46,8 +47,7 @@ def kv_pattern(
     return values.to(torch.bfloat16)
 
 
-@dataclass
-class CopyCase:
+class CopyCase(msgspec.Struct):
     name: str
     p_slots: list[int]
     d_slots: list[int]

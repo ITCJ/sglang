@@ -9,10 +9,12 @@ import logging
 import secrets
 from collections import deque
 from copy import copy
-from dataclasses import dataclass, replace
 from queue import Empty, SimpleQueue
 from threading import Lock
 from typing import Callable, Iterable
+
+import msgspec
+from msgspec.structs import replace
 
 from .mempool_protocol import (
     MempoolMessage,
@@ -28,8 +30,7 @@ from .mempool_protocol import (
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class MempoolRequestSnapshot:
+class MempoolRequestSnapshot(msgspec.Struct, frozen=True):
     """Expose one attempt's protocol facts without handing out its mutable record.
 
     Slot coordinates can outlive local ownership, notably while D waits for ACK.
@@ -55,8 +56,7 @@ class MempoolRequestSnapshot:
     release_ack: MempoolMessage | None
 
 
-@dataclass(frozen=True)
-class MempoolControlSnapshot:
+class MempoolControlSnapshot(msgspec.Struct, frozen=True):
     """Capture scheduler-owned state as immutable, serializable observations.
 
     Read on the scheduler thread between transitions. Reading neither drains
@@ -70,8 +70,7 @@ class MempoolControlSnapshot:
     protocol_fault: str | None
 
 
-@dataclass
-class _RequestRecord:
+class _RequestRecord(msgspec.Struct):
     """Retain one attempt independently of ordinary PD sender/receiver cleanup."""
 
     identity: RequestIdentity

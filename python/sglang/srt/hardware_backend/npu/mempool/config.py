@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, replace
 from typing import Any
 from urllib.parse import urlsplit
+
+import msgspec
 
 from .layout import KVLayout, PoolLayout, positive_int
 
 MEMPOOL_SLOTS = 16
 
 
-@dataclass(frozen=True)
-class MempoolConfig:
+class MempoolConfig(msgspec.Struct, frozen=True):
     """Set per-request P/D capacities for the fixed 16-slot MLA demo."""
 
     prefill_capacity: int = 16384
@@ -137,12 +137,16 @@ class MempoolConfig:
         """Derive layer slabs from actual local layers and latent-plus-RoPE KV."""
         positive_int("kv_lora_rank", kv_lora_rank)
         positive_int("qk_rope_head_dim", qk_rope_head_dim)
-        prompt = KVLayout(
-            layers=num_layers,
-            slots=MEMPOOL_SLOTS,
-            tokens=self.prefill_capacity,
-            heads=1,
-            dim=kv_lora_rank + qk_rope_head_dim,
-            dtype=dtype,
+        # Construct both sides so each capacity runs the layout bounds checks.
+        prompt, decode = (
+            KVLayout(
+                layers=num_layers,
+                slots=MEMPOOL_SLOTS,
+                tokens=capacity,
+                heads=1,
+                dim=kv_lora_rank + qk_rope_head_dim,
+                dtype=dtype,
+            )
+            for capacity in (self.prefill_capacity, self.decode_capacity)
         )
-        return PoolLayout(prompt, replace(prompt, tokens=self.decode_capacity))
+        return PoolLayout(prompt=prompt, decode=decode)

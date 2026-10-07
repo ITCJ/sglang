@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import importlib
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
+
+import msgspec
 
 from .layout import UINT32_MAX, positive_int
 from .manager import MempoolKVManager, MempoolKVView
@@ -13,8 +14,7 @@ if TYPE_CHECKING:
     from torch import Tensor
 
 
-@dataclass(frozen=True)
-class CopyIndices:
+class CopyIndices(msgspec.Struct, frozen=True):
     """Describe one source's masked rows and their destination positions."""
 
     src_index: Tensor

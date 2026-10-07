@@ -1,10 +1,10 @@
 """Check forward writes and ownership adapters through a CPU kernel boundary."""
 
 import unittest
-from dataclasses import FrozenInstanceError, replace
 from types import SimpleNamespace
 
 import torch
+from msgspec.structs import replace
 from test_offload import CPUWriteKernel
 from test_pool import FakeBM
 
@@ -121,7 +121,7 @@ class TestMempoolRuntime(unittest.TestCase):
         receipt = runtime.detach_row(binding)
         self.assertIs(receipt.binding, binding)
         self.assertEqual((receipt.submitted, receipt.completed), (1, 1))
-        with self.assertRaises(FrozenInstanceError):
+        with self.assertRaises(AttributeError):
             receipt.completed = 99
         self.assertEqual(runtime.row_slot[1].item(), -1)
         self.assertEqual(runtime.row_prompt_len[1].item(), -1)
@@ -144,7 +144,7 @@ class TestMempoolRuntime(unittest.TestCase):
             runtime.assert_bound(req.kv.req_pool_idx, None)
         old = runtime.bind(req.kv.req_pool_idx, slot=2, prompt_tokens=1)
         runtime.assert_bound(req.kv.req_pool_idx, old)
-        with self.assertRaises(FrozenInstanceError):
+        with self.assertRaises(AttributeError):
             old.slot = 3
         with self.assertRaisesRegex(RuntimeError, "binding"):
             runtime.assert_bound(2, old)

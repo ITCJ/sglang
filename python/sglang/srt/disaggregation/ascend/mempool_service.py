@@ -7,8 +7,9 @@ import logging
 import secrets
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
 from typing import Any
+
+import msgspec
 
 from sglang.srt.hardware_backend.npu.mempool.runtime import (
     KVRowBinding,
@@ -24,8 +25,7 @@ from .mempool_tick import MempoolTPTick, RequestObservation
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class _Request:
+class _Request(msgspec.Struct):
     """Retain local request/cleanup facts, never a second protocol phase or slot."""
 
     req: Any

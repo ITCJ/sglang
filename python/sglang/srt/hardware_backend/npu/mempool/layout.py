@@ -1,7 +1,8 @@
 """Logical BF16 KV layout; importing this module needs no NPU libraries."""
 
-from dataclasses import asdict, dataclass
 from typing import Any
+
+import msgspec
 
 UINT32_MAX = (1 << 32) - 1
 MAX_ROW_BYTES = 32 * 1024
@@ -21,8 +22,7 @@ def check_index(name: str, value: int, limit: int) -> None:
         raise IndexError(f"{name} must be an integer in [0, {limit}), got {value}")
 
 
-@dataclass(frozen=True)
-class KVLayout:
+class KVLayout(msgspec.Struct, frozen=True):
     """Describe contiguous BF16 layer slabs with [slot, token, head, dim] axes."""
 
     layers: int
@@ -88,8 +88,7 @@ class KVLayout:
         )
 
 
-@dataclass(frozen=True)
-class PoolLayout:
+class PoolLayout(msgspec.Struct, frozen=True):
     """Describe P rank 0 and D rank 1 contributions with a shared GVA stride."""
 
     prompt: KVLayout
@@ -135,7 +134,7 @@ class PoolLayout:
     def signature(self) -> dict[str, Any]:
         """Return serializable layout metadata for peer compatibility checks."""
         return {
-            "layout": asdict(self),
+            "layout": msgspec.to_builtins(self),
             "contributions": [self.contribution_bytes(0), self.contribution_bytes(1)],
             "rank_stride_bytes": self.rank_stride_bytes,
         }

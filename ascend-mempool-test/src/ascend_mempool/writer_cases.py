@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+import msgspec
 import torch
 
 if TYPE_CHECKING:
@@ -32,8 +32,7 @@ class WriterDestination(NamedTuple):
     position: int
 
 
-@dataclass(frozen=True)
-class WriterCase:
+class WriterCase(msgspec.Struct, frozen=True):
     """Describe forward fields plus explicit source-row to DRAM coordinates."""
 
     name: str

@@ -11,9 +11,10 @@ import socket
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
+
+import msgspec
 
 from .diagnostics import startup_stage
 from .layout import KVLayout, PoolLayout, check_index
@@ -526,8 +527,7 @@ class MempoolKVManager:
                 type(self)._rank_pair_active = False
 
 
-@dataclass(frozen=True)
-class MempoolKVView:
+class MempoolKVView(msgspec.Struct, frozen=True):
     """Expose typed logical coordinates over one rank's mapped KV layer."""
 
     owner: MempoolKVManager

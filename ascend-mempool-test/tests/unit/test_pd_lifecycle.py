@@ -2,7 +2,8 @@
 
 import pickle
 import unittest
-from dataclasses import FrozenInstanceError, replace
+
+from msgspec.structs import replace
 
 from ascend_mempool_pd.mempool_control import MempoolPDControl
 from ascend_mempool_pd.mempool_protocol import (
@@ -174,11 +175,11 @@ class TestMempoolPDControl(unittest.TestCase):
         self.assertNotIn(7, bound.available_slots)
         self.assertEqual(waiting.requests[0].phase, "WAITING_ACQUIRE")
         self.assertEqual(empty.requests, ())
-        with self.assertRaises(FrozenInstanceError):
+        with self.assertRaises(AttributeError):
             bound.requests[0].phase = "RELEASED"
-        with self.assertRaises(FrozenInstanceError):
+        with self.assertRaises(AttributeError):
             bound.requests[0].p_slot.generation = 99
-        with self.assertRaises(FrozenInstanceError):
+        with self.assertRaises(AttributeError):
             bound.requests = ()
         with self.assertRaises(AttributeError):
             bound.available_slots.add(7)
