@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import test_runtime
 import torch
+from test_native_release import native_receiver
 from test_runtime import prefill_batch
 
 import ascend_mempool.runtime
@@ -135,19 +136,24 @@ class TestMempoolPDService(unittest.TestCase):
         acquire = self.d.acquire_decode(9, "cancel", 0, 2, 4, "tcp://d:1")
         self.p.apply(acquire)
         self.p.apply(self.d.apply(self.p.acquire_prefill(acquire.request, 0)))
-        drained = False
-        service.kv_manager = SimpleNamespace(
-            is_abort_release_safe=lambda room, count: drained
+        native_events = []
+        manager, receiver = native_receiver(
+            9, native_events, mempool_control=self.d, senders=2
         )
-        receiver = SimpleNamespace(
-            bootstrap_infos=[object()], abort=lambda: effects.append("native-abort")
-        )
+        service.kv_manager = manager
         service.native_failure(req, SimpleNamespace(kv_receiver=receiver))
         for _ in range(4):
             service.advance()
-        self.assertEqual(effects, ["native-abort", "host-drain", "device-drain"])
+        self.assertEqual(native_events, [("status", "failed"), ("abort", 9)])
+        self.assertEqual(effects, ["host-drain", "device-drain"])
         self.assertNotIn(0, self.d.available_slots())
-        drained = True
+        manager.note_abort_ack(9, 0)
+        manager.note_abort_ack(9, 0)
+        receiver._send_abort_notification()
+        service.advance()
+        self.assertEqual(effects, ["host-drain", "device-drain"])
+        self.assertNotIn(0, self.d.available_slots())
+        manager.note_abort_ack(9, 1)
         service.advance()
         self.assertEqual(effects[-1], "free")
         self.assertIn(0, self.d.available_slots())

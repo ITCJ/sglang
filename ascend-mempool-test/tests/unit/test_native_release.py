@@ -39,57 +39,75 @@ def load_methods(path, name, methods, namespace, *, standalone=False):
     return namespace[name]
 
 
+def native_receiver(room, events, *, mempool_control=None, senders=1):
+    """Use real abort/ACK methods with a native transport status sink."""
+    namespace = dict(
+        KVPoll=SimpleNamespace(Success="success", Failed="failed"),
+        BaseKVReceiver=object,
+        logger=logging.getLogger(__name__),
+    )
+    manager_base = load_methods(
+        "disaggregation/common/conn.py",
+        "CommonKVManager",
+        {
+            "register_deferred_abort_room",
+            "note_abort_ack",
+            "is_abort_release_safe",
+            "clear_deferred_abort_state",
+        },
+        namespace,
+        standalone=True,
+    )
+    manager_base.update_status = lambda manager, room, value: events.append(
+        ("status", value)
+    )
+    namespace["MooncakeKVManager"] = manager_base
+    common = load_methods(
+        "disaggregation/common/conn.py", "CommonKVReceiver", {"abort"}, namespace
+    )
+    common.clear = lambda receiver: events.append(("clear", receiver.bootstrap_room))
+    common._send_abort_notification = lambda receiver: events.append(
+        ("abort", receiver.bootstrap_room)
+    )
+    namespace["MooncakeKVReceiver"] = common
+    manager_cls = load_methods(
+        "disaggregation/ascend/conn.py",
+        "AscendKVManager",
+        {"update_status"},
+        namespace,
+    )
+    receiver_cls = load_methods(
+        "disaggregation/ascend/conn.py",
+        "AscendKVReceiver",
+        {"abort", "clear", "_send_abort_notification"},
+        namespace,
+    )
+    manager = manager_cls()
+    manager.mempool_control = mempool_control
+    manager.sparse_pd_decode_staging = None
+    manager._deferred_abort_ack_tracker = {}
+    manager.record_failure = lambda room, reason: None
+    receiver = receiver_cls()
+    receiver.kv_mgr = manager
+    receiver.bootstrap_room = room
+    receiver.abort_notified = False
+    receiver.bootstrap_infos = [object() for _ in range(senders)]
+    return manager, receiver
+
+
 class TestNativeRelease(unittest.TestCase):
-    """An abort must retain published destinations until the later drained clear."""
+    """Keep ordinary staging cleanup separate from formal mempool ACK retention."""
 
     def setUp(self):
         """Wire real abort/update_status/clear across a fake native boundary."""
         self.events = []
         self.rooms = {7}
-        status = SimpleNamespace(Success="success", Failed="failed")
-
-        class ManagerBase:
-            """Record native transport state without starting a socket or NPU."""
-
-            def update_status(base, room, value):
-                """Model the transport status sink."""
-                self.events.append(("status", value))
-
-        namespace = dict(
-            KVPoll=status,
-            MooncakeKVManager=ManagerBase,
-            BaseKVReceiver=object,
-            logger=logging.getLogger(__name__),
-        )
-        common = load_methods(
-            "disaggregation/common/conn.py", "CommonKVReceiver", {"abort"}, namespace
-        )
-        common.clear = lambda receiver: self.events.append(
-            ("clear", receiver.bootstrap_room)
-        )
-        common._send_abort_notification = lambda receiver: self.events.append(
-            ("abort", 7)
-        )
-        namespace["MooncakeKVReceiver"] = common
-        manager_cls = load_methods(
-            "disaggregation/ascend/conn.py",
-            "AscendKVManager",
-            {"update_status"},
-            namespace,
-        )
-        receiver_cls = load_methods(
-            "disaggregation/ascend/conn.py",
-            "AscendKVReceiver",
-            {"abort", "clear", "_send_abort_notification"},
-            namespace,
-        )
-        self.manager = manager_cls()
-        self.manager.mempool_control = object()
+        self.manager, self.receiver = native_receiver(7, self.events)
         staging_cls = load_methods(
             "disaggregation/ascend/sparse_pd.py",
             "SparsePDDecodeStagingPool",
             {"offload_room_to_host"},
-            namespace,
+            {},
         )
         staging = staging_cls()
         staging.has_room = lambda room: room in self.rooms
@@ -101,32 +119,23 @@ class TestNativeRelease(unittest.TestCase):
             offload_pd_decode_staging_to_host=lambda **kwargs: None
         )
         self.manager.sparse_pd_decode_staging = staging
-        self.manager.record_failure = lambda room, reason: None
-        self.manager.register_deferred_abort_room = lambda room: self.events.append(
-            ("arm", room)
-        )
-        self.receiver = receiver_cls()
-        self.receiver.kv_mgr = self.manager
-        self.receiver.bootstrap_room = 7
-        self.receiver.abort_notified = False
-        self.receiver.bootstrap_infos = [object()]
 
-    def test_abort_retains_staging_until_explicit_drained_clear(self):
-        """The inherited abort's Failed update cannot bypass the retained storage."""
-        self.receiver.abort()
-        self.assertIn(7, self.rooms)
-        self.assertEqual(self.events, [("status", "failed"), ("arm", 7), ("abort", 7)])
-        self.receiver.clear()
-        self.assertNotIn(7, self.rooms)
+    def test_formal_abort_defers_native_clear(self):
+        """Formal mode has no staging; service owns native destination release."""
+        manager, receiver = native_receiver(7, self.events, mempool_control=object())
+        receiver.abort()
+        self.assertIsNone(manager.sparse_pd_decode_staging)
+        self.assertEqual(self.events, [("status", "failed"), ("abort", 7)])
+        self.assertFalse(manager.is_abort_release_safe(7, 1))
 
-    def test_disabled_mempool_preserves_original_immediate_cleanup(self):
-        """The new safety hold is scoped to this feature."""
-        self.manager.mempool_control = None
+    def test_ordinary_abort_releases_staging(self):
+        """Ordinary sparse PD preserves its immediate staging cleanup."""
         self.receiver.abort()
         self.assertNotIn(7, self.rooms)
+        self.assertEqual(self.events, [("status", "failed"), ("abort", 7)])
 
-    def test_offload_error_retains_room_for_service_cleanup(self):
-        """A local staging error also waits for the service's native release."""
+    def test_ordinary_offload_error_releases_staging(self):
+        """A failed host offload cannot leak an ordinary staging slot."""
 
         def fail_offload(*args, **kwargs):
             """Model a device-copy failure after the transfer status arrived."""
@@ -134,7 +143,7 @@ class TestNativeRelease(unittest.TestCase):
 
         self.manager.sparse_pd_decode_staging.manager.offload_pd_decode_staging_to_host = fail_offload
         self.manager.update_status(7, "success")
-        self.assertIn(7, self.rooms)
+        self.assertNotIn(7, self.rooms)
         self.assertEqual(self.events, [("status", "failed")])
 
     def test_successful_staging_commit_releases_the_room(self):
@@ -145,11 +154,13 @@ class TestNativeRelease(unittest.TestCase):
 
     def test_poll_failure_arms_ack_tracking_only_once(self):
         """Timeout polling can send ABORT before the service observes failure."""
-        self.receiver._send_abort_notification()
-        self.receiver._send_abort_notification()
-        self.receiver.abort()
-        self.assertEqual(self.events.count(("arm", 7)), 1)
-        self.assertIn(7, self.rooms)
+        manager, receiver = native_receiver(7, self.events, mempool_control=object())
+        receiver._send_abort_notification()
+        manager.note_abort_ack(7, 0)
+        receiver._send_abort_notification()
+        receiver.abort()
+        self.assertTrue(manager.is_abort_release_safe(7, 1))
+        self.assertNotIn(("clear", 7), self.events)
 
     def test_scheduler_preserves_fake_and_grammar_abort(self):
         """Only an admitted real request delegates its resource lifetime to service."""

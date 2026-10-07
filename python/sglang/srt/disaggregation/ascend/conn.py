@@ -5,6 +5,7 @@ from typing import Any, Callable, List, Optional, Tuple
 
 import numpy as np
 import numpy.typing as npt
+
 from sglang.srt.disaggregation.ascend.mempool_control import (
     MempoolFrameRouter,
     MempoolPDControl,
@@ -794,12 +795,7 @@ class AscendKVManager(MooncakeKVManager):
         if staging is not None:
             if status == KVPoll.Success and staging.has_room(bootstrap_room):
                 try:
-                    metadata = staging.offload_room_to_host(
-                        bootstrap_room,
-                        release=self.mempool_control is None,
-                    )
-                    if self.mempool_control is not None:
-                        staging.release_room(bootstrap_room)
+                    metadata = staging.offload_room_to_host(bootstrap_room)
                     logger.debug(
                         "Ascend sparse KV PD staged transfer committed: "
                         "room=%s slot=%s req_pool_idx=%s token_count=%s",
@@ -809,15 +805,14 @@ class AscendKVManager(MooncakeKVManager):
                         metadata.token_count,
                     )
                 except Exception as exc:
-                    if self.mempool_control is None:
-                        staging.release_room(bootstrap_room)
+                    staging.release_room(bootstrap_room)
                     self.record_failure(
                         bootstrap_room,
                         "Failed to offload Ascend sparse KV PD staging buffer "
                         f"to host sparse KV cache: {exc}",
                     )
                     return super().update_status(bootstrap_room, KVPoll.Failed)
-            elif status == KVPoll.Failed and self.mempool_control is None:
+            elif status == KVPoll.Failed:
                 staging.release_room(bootstrap_room)
 
         return super().update_status(bootstrap_room, status)
@@ -867,11 +862,10 @@ class AscendKVReceiver(MooncakeKVReceiver):
         return super().clear()
 
     def abort(self):
-        """Retain staging on mempool cancellation until native writers acknowledge drain."""
-        if self.kv_mgr.mempool_control is None:
-            staging = getattr(self.kv_mgr, "sparse_pd_decode_staging", None)
-            if staging is not None:
-                staging.release_room(self.bootstrap_room)
+        """Release ordinary sparse PD staging before notifying the sender."""
+        staging = getattr(self.kv_mgr, "sparse_pd_decode_staging", None)
+        if staging is not None:
+            staging.release_room(self.bootstrap_room)
         return super().abort()
 
     def _send_abort_notification(self):

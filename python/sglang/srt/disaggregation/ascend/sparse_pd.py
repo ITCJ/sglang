@@ -205,11 +205,7 @@ class SparsePDDecodeStagingPool:
             )
         return metadata
 
-    def offload_room_to_host(
-        self,
-        room: int,
-        release: bool = True,
-    ) -> SparsePDTransferMetadata:
+    def offload_room_to_host(self, room: int) -> SparsePDTransferMetadata:
         metadata = self.get_transfer_metadata(room)
         try:
             self.manager.offload_pd_decode_staging_to_host(
@@ -218,6 +214,5 @@ class SparsePDDecodeStagingPool:
                 token_count=metadata.token_count,
             )
         finally:
-            if release:
-                self.release_room(room)
+            self.release_room(room)
         return metadata
