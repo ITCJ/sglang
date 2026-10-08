@@ -24,6 +24,13 @@ demo 暂不支持自动 retraction/rebootstrap；采用下文的精度验收标�
 NUMA/大容量分配排查汇总到[09](issues/09-numa-allocation-followup.md)并延期，不阻塞主线。
 下文带日期的早期实施记录按当时阶段解读。
 
+## 当前执行入口（2026-10-07）
+
+01–03已关闭，用户确认03 S6 NPU验收完成。用户要求先执行
+[10: GLM-5.2算法适配](issues/10-glm52-indexer-sharing.md)，完成后继续04。
+10重点区分21层Index K与78层独立compact KV，验证shared top-k在真实稀疏选择及
+Graph中的行为；P/D miss并行调度建议留在04。上方及下文带日期的早期进度保留为历史。
+
 ## ticket02 已实现链路（2026-10-03 验收收尾）
 
 02① storage、②控制协议/单rank状态机、③backend runtime、④真实服务接线及

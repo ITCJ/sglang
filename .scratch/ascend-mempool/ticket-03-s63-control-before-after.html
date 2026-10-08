@@ -1,0 +1,990 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="blueprint" data-mode="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Answer me with HTML 0.4.3">
+<title>6eb6475f61：control 查询与 TP 同步前后对比</title>
+<style>
+html[data-theme="blueprint"], html[data-theme="blueprint"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 0px;
+  --shadow: none;
+  --bw: 1.5px;
+  --head-font: var(--font-sans);
+  --bg: #f6f6f3;
+  --paper: #ffffff;
+  --ink: #16181d;
+  --ink-2: #4b5260;
+  --ink-3: #8b929e;
+  --line: #1d2026;
+  --line-2: #d6dae1;
+  --fill: #f3f5f8;
+  --accent: #1d5fbf;
+  --accent-bg: #e4ecf8;
+  --ok: #1d5fbf;
+  --ok-bg: #e4ecf8;
+  --err: #c62828;
+  --err-bg: #fbeaea;
+  --warn: #a8620a;
+  --warn-bg: #fdf3e2;
+  --head-bg: #16181d;
+  --head-fg: #ffffff;
+}
+html[data-theme="blueprint"][data-mode="dark"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="blueprint"][data-mode="auto"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+}
+
+html[data-theme="shadcn"], html[data-theme="shadcn"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 8px;
+  --shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --bw: 1px;
+  --head-font: var(--font-sans);
+  --bg: #fafafa;
+  --paper: #ffffff;
+  --ink: #09090b;
+  --ink-2: #71717a;
+  --ink-3: #a1a1aa;
+  --line: #e4e4e7;
+  --line-2: #f0f0f2;
+  --fill: #f4f4f5;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --ok: #16a34a;
+  --ok-bg: #f0fdf4;
+  --err: #dc2626;
+  --err-bg: #fef2f2;
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --head-bg: #18181b;
+  --head-fg: #fafafa;
+}
+html[data-theme="shadcn"][data-mode="dark"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="shadcn"][data-mode="auto"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+}
+
+/* Answer me with HTML base — 只引用主题变量，禁止写死颜色（主题 token 见 themes/index.js） */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd { font-family: var(--font-mono); }
+
+/* ── 工具栏 ─────────────────────────────── */
+.am-toolbar {
+  position: fixed; top: 12px; right: 12px; z-index: 10; display: flex; gap: 6px;
+}
+.am-btn {
+  font: 12px/1 var(--font-sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding: 7px 10px; cursor: pointer;
+}
+.am-btn:hover { border-color: var(--ink-3); }
+.am-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── 页头 ───────────────────────────────── */
+.am-head { margin: 0 0 20px; padding-right: 260px; }
+.am-head h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; }
+.am-sub { margin: 4px 0 0; color: var(--ink-2); }
+.am-head-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 12px; color: var(--ink-2); }
+.am-head-meta b { font-family: var(--font-mono); font-weight: 400; color: var(--ink-3); margin-right: 6px; }
+.am-intro { margin-top: 12px; max-width: 80ch; }
+
+/* ── sheet 图纸板 ────────────────────────── */
+.am-sheet { max-width: 1680px; margin: 0 auto; padding: 32px 28px 40px; }
+.am-frame { position: relative; }
+.am-grid {
+  display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 20px; align-items: start;
+}
+.am-ruler { display: none; }
+html[data-theme="blueprint"] .am-frame { border: 1px solid var(--line); padding: 30px; }
+html[data-theme="blueprint"] .am-frame::before {
+  content: ""; position: absolute; inset: 18px; border: 1px solid var(--line); pointer-events: none;
+}
+html[data-theme="blueprint"] .am-ruler {
+  display: flex; position: absolute; font: 10px/1 var(--font-mono); color: var(--ink-3);
+}
+.am-ruler span { flex: 1; display: flex; align-items: center; justify-content: center; }
+.am-ruler--top, .am-ruler--bottom { left: 18px; right: 18px; height: 18px; }
+.am-ruler--top { top: 0; }
+.am-ruler--bottom { bottom: 0; }
+.am-ruler--left, .am-ruler--right { top: 18px; bottom: 18px; width: 18px; flex-direction: column; }
+.am-ruler--left { left: 0; }
+.am-ruler--right { right: 0; }
+.am-ruler--top span + span, .am-ruler--bottom span + span { border-left: 1px solid var(--line); }
+.am-ruler--left span + span, .am-ruler--right span + span { border-top: 1px solid var(--line); }
+
+/* ── 面板 ───────────────────────────────── */
+.am-panel {
+  background: var(--paper); border: var(--bw) solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); min-width: 0; overflow: hidden;
+}
+.am-panel-head {
+  display: flex; align-items: stretch; gap: 0; border-bottom: var(--bw) solid var(--line); min-height: 34px;
+}
+.am-panel-id {
+  display: flex; align-items: center; justify-content: center; min-width: 34px; padding: 0 8px;
+  background: var(--head-bg); color: var(--head-fg); font-weight: 600; font-size: 14px;
+}
+html[data-theme="shadcn"] .am-panel-id { border-radius: 6px; min-width: 24px; height: 24px; margin: 9px 0 9px 14px; font-size: 12px; }
+html[data-theme="shadcn"] .am-panel-head { border-bottom-width: 1px; }
+.am-panel-head h2 { margin: 0; padding: 7px 12px; font-size: 15px; font-weight: 600; flex: 1; display: flex; align-items: center; }
+.am-panel-meta { align-self: center; padding: 0 12px; font: 11px/1.3 var(--font-mono); color: var(--ink-2); text-align: right; }
+.am-panel-body { padding: 14px 16px 16px; }
+.am-panel-body > * + * { margin-top: 12px; }
+
+/* ── Markdown 正文 ───────────────────────── */
+.am-md > :first-child { margin-top: 0; }
+.am-md > :last-child { margin-bottom: 0; }
+.am-md p { margin: 0 0 8px; }
+.am-md ul, .am-md ol { margin: 0 0 8px; padding-left: 20px; }
+.am-md li + li { margin-top: 3px; }
+.am-md h3, .am-md h4 { margin: 14px 0 6px; font-size: 13px; }
+.am-md a { color: var(--accent); }
+.am-md blockquote { margin: 0 0 8px; padding: 2px 12px; border-left: 3px solid var(--line-2); color: var(--ink-2); }
+.am-md :not(pre) > code { font-size: 0.9em; background: var(--fill); padding: 1px 5px; border-radius: 4px; }
+.am-md hr { border: 0; border-top: 1px solid var(--line-2); margin: 12px 0; }
+.am-md table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.am-md th {
+  text-align: left; font: 11px/1.3 var(--font-mono); color: var(--ink-2); font-weight: 400;
+  padding: 6px 10px; border-bottom: 1px solid var(--line-2);
+}
+.am-md td { padding: 7px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.am-md tbody tr:nth-child(even) td { background: var(--fill); }
+.am-table-wrap { overflow-x: auto; }
+.am-code {
+  margin: 0; padding: 12px 14px; background: var(--fill); border: 1px solid var(--line-2);
+  border-radius: var(--radius); overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+}
+
+/* ── 状态徽章 ok / no / warn ──────────────── */
+.am-status { white-space: nowrap; font-weight: 500; }
+.am-status--ok { color: var(--ok); }
+.am-status--no { color: var(--err); }
+.am-status--warn { color: var(--warn); }
+.am-status-icon { display: inline-block; width: 1.1em; font-weight: 700; }
+
+/* ── callout ─────────────────────────────── */
+.am-callout {
+  border: 1px solid var(--line-2); border-left: 3px solid var(--accent); background: var(--accent-bg);
+  padding: 10px 14px; border-radius: var(--radius);
+}
+.am-callout--ok { border-left-color: var(--ok); background: var(--ok-bg); }
+.am-callout--warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.am-callout--err { border-left-color: var(--err); background: var(--err-bg); }
+.am-callout-title { font-weight: 600; margin-bottom: 4px; }
+
+/* ── kv 标题栏格 ─────────────────────────── */
+.am-kv {
+  display: grid; grid-template-columns: repeat(var(--kv-cols, 2), minmax(0, 1fr)); margin: 0;
+  border-top: var(--bw) solid var(--line); border-left: var(--bw) solid var(--line);
+}
+.am-kv-cell { border-right: var(--bw) solid var(--line); border-bottom: var(--bw) solid var(--line); padding: 6px 10px 8px; min-width: 0; }
+.am-kv-cell--wide { grid-column: 1 / -1; }
+.am-kv dt { font: 11px/1.4 var(--font-mono); color: var(--ink-2); }
+.am-kv dd { margin: 2px 0 0; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.am-kv-cell--wide dd { font-size: 17px; font-weight: 600; }
+html[data-theme="shadcn"] .am-kv { border-color: var(--line); border-radius: var(--radius); overflow: hidden; }
+
+/* ── timeline ────────────────────────────── */
+.am-timeline { list-style: none; margin: 0; padding: 0; }
+.am-timeline--h { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); padding-top: 4px; }
+.am-timeline--h li { position: relative; text-align: center; padding: 0 6px; }
+.am-timeline--h li::before {
+  content: ""; position: absolute; top: 31px; left: 0; right: 0; border-top: var(--bw) solid var(--line);
+}
+.am-timeline--h li:first-child::before { left: 50%; }
+.am-timeline--h li:last-child::before { right: 50%; }
+.am-tl-when { display: block; font-size: 15px; font-weight: 500; height: 24px; }
+.am-tl-dot {
+  position: relative; display: block; width: 11px; height: 11px; margin: 2px auto 8px;
+  border: var(--bw) solid var(--line); border-radius: 50%; background: var(--paper);
+}
+.am-tl-item--hi .am-tl-dot { background: var(--accent); border-color: var(--accent); }
+.am-tl-title { display: block; font-size: 12.5px; font-weight: 500; }
+.am-tl-text { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.45; }
+.am-timeline--v li { position: relative; padding: 0 0 14px 22px; }
+.am-timeline--v li::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: -6px; border-left: var(--bw) solid var(--line-2); }
+.am-timeline--v li:last-child::before { display: none; }
+.am-timeline--v .am-tl-dot { position: absolute; left: 0; top: 4px; margin: 0; }
+.am-timeline--v .am-tl-when { display: inline; height: auto; font: 12px var(--font-mono); color: var(--ink-2); margin-right: 8px; }
+.am-timeline--v .am-tl-title { display: inline; font-size: 14px; }
+.am-timeline--v .am-tl-text { margin-top: 2px; }
+
+/* ── annot 句子标注 ──────────────────────── */
+.am-annot + .am-annot { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.am-annot-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.am-annot-meta { font: 11px var(--font-mono); font-weight: 400; color: var(--ink-2); }
+.am-annot-scroll { overflow-x: auto; }
+.am-annot-line {
+  position: relative; display: inline-block; white-space: pre; font: 14px/1.6 var(--font-mono);
+  padding-bottom: calc(var(--rows, 0) * 17px + 14px);
+}
+.am-annot-line--wrap { display: block; white-space: normal; padding-bottom: 10px; }
+.am-annot-line--wrap .am-seg { white-space: nowrap; }
+.am-seg { position: relative; }
+.am-seg::after {
+  content: ""; position: absolute; left: 1px; right: 1px; top: calc(100% + 1px); height: 5px;
+  border: 1px solid var(--accent); border-top: 0;
+}
+.am-seg-n {
+  position: absolute; left: 0; top: calc(100% + 8px + var(--row, 0) * 17px);
+  font: 11px/16px var(--font-sans); color: var(--accent); white-space: nowrap;
+}
+.am-seg--err { color: var(--err); }
+.am-seg--err::after { border-color: var(--err); }
+.am-seg--err .am-seg-n { color: var(--err); }
+.am-annot-caption { font-size: 12px; color: var(--ink-2); }
+
+/* ── limits 限值条 ───────────────────────── */
+.am-lim + .am-lim { margin-top: 14px; }
+.am-lim-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; margin-bottom: 4px; }
+.am-lim-val { font: 12px var(--font-mono); color: var(--accent); white-space: nowrap; }
+.am-lim-track { position: relative; height: 12px; border: 1px solid var(--line-2); background: var(--fill); border-radius: calc(var(--radius) / 2); }
+.am-lim-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-bg); border-right: 1px solid var(--accent); }
+.am-lim-mark { position: absolute; top: -4px; bottom: -4px; border-left: 2px solid var(--accent); }
+.am-lim.is-over .am-lim-fill { background: var(--err-bg); border-right-color: var(--err); }
+.am-lim.is-over .am-lim-val { color: var(--err); }
+.am-lim-ticks { position: relative; height: 16px; font: 10px/16px var(--font-mono); color: var(--ink-3); }
+.am-lim-ticks span { position: absolute; transform: translateX(-50%); }
+.am-lim-ticks span:first-child { transform: none; }
+.am-lim-note { font-size: 11px; color: var(--ink-2); margin-left: 6px; }
+
+/* ── tree 结构树 ─────────────────────────── */
+.am-tree { font-size: 13px; }
+.am-tree-root { display: flex; justify-content: center; position: relative; padding-bottom: 18px; }
+.am-tree-root::after { content: ""; position: absolute; bottom: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-root--solo { padding-bottom: 12px; }
+.am-tree-root--solo::after { display: none; }
+.am-tree-box {
+  border: var(--bw) solid var(--line); background: var(--paper); padding: 6px 14px; text-align: center;
+  border-radius: var(--radius); font-weight: 600;
+}
+.am-tree-box small { display: block; font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.am-tree-box--root { background: var(--accent-bg); font-size: 15px; padding: 8px 28px; }
+.am-tree-cols { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
+.am-tree-col { position: relative; padding: 18px 8px 0; min-width: 0; }
+.am-tree-col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; border-top: var(--bw) solid var(--line); }
+.am-tree-col:first-child::before { left: 50%; }
+.am-tree-col:last-child::before { right: 50%; }
+.am-tree-col::after { content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-list, .am-tree-list ul { list-style: none; margin: 0; padding: 0; }
+.am-tree-col > .am-tree-list { margin: 8px 0 0 14px; }
+.am-tree-list ul { margin-left: 16px; }
+.am-tree-list li { position: relative; padding: 3px 0 3px 18px; }
+.am-tree-list li::before { content: ""; position: absolute; left: 0; top: 0.95em; width: 12px; border-top: 1px solid var(--ink-3); }
+.am-tree-list li::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--ink-3); }
+.am-tree-list li:last-child::after { bottom: auto; height: 0.95em; }
+.am-tree-tag { font: 11px var(--font-mono); color: var(--ink-3); margin-right: 4px; }
+.am-tree code { font: 12px var(--font-mono); }
+.am-tree-sub { display: block; font-size: 11.5px; color: var(--ink-2); }
+.am-tree-hi > .am-tree-label { color: var(--accent); font-weight: 600; }
+
+/* ── 图（flow / sequence）───────────────── */
+.am-diagram { margin: 0; overflow-x: auto; text-align: center; }
+.am-diagram svg { max-width: 100%; height: auto; font-family: var(--font-sans); }
+.am-diagram text { fill: var(--ink); font-size: 13px; }
+.am-node-shape { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-node--hi .am-node-shape { fill: var(--accent-bg); stroke: var(--accent); }
+.am-node--hi text { fill: var(--accent); font-weight: 600; }
+.am-edge { fill: none; stroke: var(--ink-2); stroke-width: 1.3; }
+.am-edge--dashed { stroke-dasharray: 5 4; }
+.am-arrow { fill: var(--ink-2); }
+.am-edge-label rect { fill: var(--paper); }
+.am-diagram .am-edge-label text { fill: var(--accent); font-size: 11.5px; }
+.am-cluster { fill: var(--fill); stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 4 3; }
+.am-diagram .am-cluster-label { fill: var(--ink-2); font: 11px var(--font-mono); }
+.am-lifeline { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 4 4; }
+.am-actor { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-note { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 1; }
+.am-diagram .am-step { fill: var(--ink-3); font: 10px var(--font-mono); }
+
+/* ── doc 线性讲解 ────────────────────────── */
+.am-doc { max-width: 1120px; margin: 0 auto; padding: 40px 28px 64px; }
+.am-doc-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
+.am-doc-layout--notoc { grid-template-columns: minmax(0, 1fr); max-width: 860px; }
+.am-toc { position: sticky; top: 24px; font-size: 13px; }
+.am-toc a { display: block; color: var(--ink-2); text-decoration: none; padding: 4px 0 4px 10px; border-left: 2px solid var(--line-2); }
+.am-toc a:hover { color: var(--ink); border-left-color: var(--accent); }
+.am-doc-body > .am-panel + .am-panel { margin-top: 20px; }
+
+/* ── 响应式与打印 ─────────────────────────── */
+@media (max-width: 1100px) {
+  .am-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .am-grid > .am-panel { grid-column: auto !important; }
+  .am-grid > .am-panel.am-span-wide { grid-column: 1 / -1 !important; }
+}
+@media (max-width: 760px) {
+  .am-sheet, .am-doc { padding: 56px 12px 24px; }
+  .am-head { padding-right: 0; }
+  .am-grid { grid-template-columns: minmax(0, 1fr); }
+  .am-grid > .am-panel.am-span-wide { grid-column: auto !important; }
+  html[data-theme="blueprint"] .am-frame { padding: 0; border: 0; }
+  html[data-theme="blueprint"] .am-frame::before, html[data-theme="blueprint"] .am-ruler { display: none; }
+  .am-doc-layout { grid-template-columns: minmax(0, 1fr); }
+  .am-toc { position: static; }
+  .am-timeline--h { grid-template-columns: minmax(0, 1fr); }
+  .am-tree-cols { grid-template-columns: minmax(0, 1fr); }
+}
+.am-colophon { text-align: center; padding: 0 0 28px; font: 11px var(--font-mono); color: var(--ink-3); }
+
+@media print {
+  .am-toolbar { display: none; }
+  body { background: var(--paper); }
+  .am-panel { break-inside: avoid; box-shadow: none; }
+}
+.am-panel--bare { border: 0; background: transparent; box-shadow: none; }
+.am-panel--bare > .am-panel-body { padding: 0; }
+.am-panel--bare .am-kv { background: var(--paper); }
+
+</style>
+</head>
+<body>
+<div class="am-toolbar">
+<button class="am-btn" type="button" data-am="theme" data-labels="{&quot;blueprint&quot;:&quot;主题：图纸&quot;,&quot;shadcn&quot;:&quot;主题：卡片&quot;}">主题：图纸</button>
+<button class="am-btn" type="button" data-am="mode" data-labels="{&quot;auto&quot;:&quot;明暗：跟随系统&quot;,&quot;light&quot;:&quot;明暗：亮&quot;,&quot;dark&quot;:&quot;明暗：暗&quot;}">明暗：跟随系统</button>
+<button class="am-btn" type="button" data-am="copy" data-done="已复制 ✓">复制源稿</button>
+</div>
+<main class="am-doc">
+<header class="am-head"><h1>6eb6475f61：control 查询与 TP 同步前后对比</h1><p class="am-sub">用单请求查询、等待释放确认、slot 复用三个例子理解这次改动</p><div class="am-head-meta"><span><b>source</b>父提交 9ba89e46eb → 6eb6475f61</span></div><div class="am-intro am-md"><div class="am-md"><p>这次提交减少了查询和 TP 同步对历史记录的依赖。历史验证与释放协议仍保留；preflight 的全量复制成本也仍存在。</p>
+</div></div></header>
+<div class="am-doc-layout">
+<nav class="am-toc" aria-label="目录"><a href="#panel-A">A · 这次提交到底改变了什么？</a><a href="#panel-B">B · 例子一：256 个旧请求，只查当前这一个</a><a href="#panel-C">C · “分离活跃与终态”是不是拆成两个字典？</a><a href="#panel-D">D · TP 同步具体精简了什么？</a><a href="#panel-E">E · 例子三：slot 复用后，旧 DONE 到达</a><a href="#panel-F">F · 为什么还需要“可选终态清理记录”？</a><a href="#panel-G">G · 收益在哪里？还有什么没优化？</a><a href="#panel-H">H · 从哪里读代码？验证到哪一步？</a></nav><div class="am-doc-body">
+<section class="am-panel" id="panel-A">
+<header class="am-panel-head"><span class="am-panel-id">A</span><h2>这次提交到底改变了什么？</h2></header>
+<div class="am-panel-body"><div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>环节</th>
+<th>提交前</th>
+<th>提交后</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>service 查一个请求</td>
+<td>生成全部记录的快照，再筛选</td>
+<td>按完整 identity 直接取一条快照</td>
+</tr>
+<tr>
+<td>service 尚未取得 identity</td>
+<td>在全部快照中按 room 查找</td>
+<td>通过当前 room owner 定位</td>
+</tr>
+<tr>
+<td>判断协议是否还有工作</td>
+<td>扫描全部快照中的 phase</td>
+<td>查询活跃请求索引</td>
+</tr>
+<tr>
+<td>tick 观察请求</td>
+<td>携带活跃记录和近期终态记录</td>
+<td>携带活跃记录及本轮所需清理记录</td>
+</tr>
+<tr>
+<td>TP 交换内容</td>
+<td>完整 control 快照和消息对象</td>
+<td>逻辑状态、事实与消息摘要</td>
+</tr>
+<tr>
+<td>同一 tick 内读取</td>
+<td>多处重复生成全量快照</td>
+<td>复用本轮观察，日志按 identity 查询</td>
+</tr>
+<tr>
+<td>preflight</td>
+<td>复制全部记录后试执行</td>
+<td>仍复制全部记录后试执行</td>
+</tr>
+</tbody></table></div>
+<p>生产修改集中在三个文件。service 收集请求事实；control 管理生命周期；tick 协调同侧 TP 决策。</p>
+<p>这次提交没有修改 KV 搬运算子。删除统计、共用 row 推导属于前两个提交。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-B">
+<header class="am-panel-head"><span class="am-panel-id">B</span><h2>例子一：256 个旧请求，只查当前这一个</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>**示意场景：**control 留存 256 个已结束请求，另有请求 A 正在 decode。service 现在只想知道 A 的状态。</p>
+</div>
+<figure class="am-diagram am-flow"><svg viewBox="0 0 525 134" width="525" height="134" role="img" aria-label="流程图：旧查询、生成257条快照、按identity筛选、得到A、新查询、字典定位A、生成1条快照" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am1-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><g></g><g><g data-step="0"><path class="am-edge" d="M81,102.5 L92.5,102.5 Q104,102.5 115.5,102.5 L127,102.5" marker-end="url(#am1-arrow)"/></g><g data-step="0"><path class="am-edge" d="M241.8,102.5 L253.3,102.5 Q264.8,102.5 276.3,102.5 L287.8,102.5" marker-end="url(#am1-arrow)"/></g><g data-step="0"><path class="am-edge" d="M400.6,102.5 L412.1,102.5 Q423.6,102.5 437.5,93.5 L451.5,84.5" marker-end="url(#am1-arrow)"/></g><g data-step="1"><path class="am-edge" d="M81,31.5 L92.5,31.5 Q104,31.5 122,31.5 L140,31.5" marker-end="url(#am1-arrow)"/></g><g data-step="1"><path class="am-edge" d="M228.8,31.5 L246.8,31.5 Q264.8,31.5 279.5,31.5 L294.1,31.5" marker-end="url(#am1-arrow)"/></g><g data-step="1"><path class="am-edge" d="M394.4,31.5 L409,31.5 Q423.6,31.5 437.5,40.5 L451.5,49.5" marker-end="url(#am1-arrow)"/></g></g><g><g class="am-node am-node--rect" data-key="旧查询" data-step="0"><rect class="am-node-shape" x="14" y="85" width="67" height="35" rx="3"/><text x="47.5" y="102.5" text-anchor="middle" dominant-baseline="central">旧查询</text></g><g class="am-node am-node--rect" data-key="生成257条快照" data-step="0"><rect class="am-node-shape" x="127" y="85" width="114.8" height="35" rx="3"/><text x="184.4" y="102.5" text-anchor="middle" dominant-baseline="central">生成257条快照</text></g><g class="am-node am-node--rect" data-key="按identity筛选" data-step="0"><rect class="am-node-shape" x="287.8" y="85" width="112.8" height="35" rx="3"/><text x="344.2" y="102.5" text-anchor="middle" dominant-baseline="central">按identity筛选</text></g><g class="am-node am-node--rect" data-key="得到A" data-step="0"><rect class="am-node-shape" x="446.6" y="49.5" width="64" height="35" rx="3"/><text x="478.6" y="67" text-anchor="middle" dominant-baseline="central">得到A</text></g><g class="am-node am-node--rect" data-key="新查询" data-step="1"><rect class="am-node-shape" x="14" y="14" width="67" height="35" rx="3"/><text x="47.5" y="31.5" text-anchor="middle" dominant-baseline="central">新查询</text></g><g class="am-node am-node--rect" data-key="字典定位A" data-step="1"><rect class="am-node-shape" x="140" y="14" width="88.8" height="35" rx="3"/><text x="184.4" y="31.5" text-anchor="middle" dominant-baseline="central">字典定位A</text></g><g class="am-node am-node--rect" data-key="生成1条快照" data-step="1"><rect class="am-node-shape" x="294.1" y="14" width="100.3" height="35" rx="3"/><text x="344.2" y="31.5" text-anchor="middle" dominant-baseline="central">生成1条快照</text></g></g></svg></figure>
+<div class="am-md"><p>下面是简化后的调用逻辑。</p>
+</div>
+<pre class="am-code"><code data-lang="python"># 提交前：service 的查询路径
+for request in control.snapshot().requests:
+    if request.identity == identity:
+        return request
+
+# 提交后：只构造目标请求的不可变快照
+return control.get_request(identity)</code></pre>
+<div class="am-md"><p>新查询平均为 O(1)，旧路径为 O(N)。这里的 N 包括留存的历史请求。</p>
+<p><code>RequestIdentity</code> 包含 room、attempt、P session 和 D session。已有 identity 时，查找必须完整匹配。</p>
+<p>尚无 identity 时，<code>get_room_request(room)</code> 查询当前 owner。它不会随便选取这个 room 的某条历史记录。</p>
+</div>
+<div class="am-callout am-callout--info" role="note"><div class="am-callout-title">查询接口的边界</div><div class="am-callout-body am-md"><p>变化针对 service 原先“全量快照后筛选”的路径。返回值仍是快照，service 不能直接修改 control 内部记录。</p>
+</div></div></div>
+</section>
+<section class="am-panel" id="panel-C">
+<header class="am-panel-head"><span class="am-panel-id">C</span><h2>“分离活跃与终态”是不是拆成两个字典？</h2></header>
+<div class="am-panel-body"><div class="am-md"><p><strong>没有拆成两套请求状态。</strong><code>_records</code> 仍是统一的记录存储。新增索引用于快速选出不同用途的记录。</p>
+</div>
+<div class="am-tree"><div class="am-tree-root"><div class="am-tree-box am-tree-box--root" data-key="control" data-step="0">control</div></div><div class="am-tree-cols" style="--n: 4"><div class="am-tree-col"><div class="am-tree-box" data-key="_records" data-step="1">_records<small>活跃记录与近期终态记录，统一存储</small></div></div><div class="am-tree-col"><div class="am-tree-box" data-key="_active_requests" data-step="2">_active_requests<small>仍需协议推进的 identity 集合</small></div></div><div class="am-tree-col"><div class="am-tree-box" data-key="_room_owner" data-step="3">_room_owner<small>room 当前归属的 identity</small></div></div><div class="am-tree-col"><div class="am-tree-box" data-key="_room_record_counts" data-step="4">_room_record_counts<small>room 是否还有留存记录</small></div></div></div></div>
+<div class="am-md"><p><code>snapshot()</code> 保留完整诊断视图。<code>active_snapshot(include)</code> 生成调度视图；include 补入本轮本地清理所需的 identity。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>请求示例</th>
+<th>当前状态</th>
+<th>是否参与普通协议推进</th>
+<th>是否保留记录</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>A</td>
+<td>DECODING</td>
+<td>是</td>
+<td>是</td>
+</tr>
+<tr>
+<td>B</td>
+<td>WAITING_RELEASE_ACK</td>
+<td>是，即使本地 slot 已释放</td>
+<td>是</td>
+</tr>
+<tr>
+<td>C</td>
+<td>CLOSED，但本地 Req 尚未移出队列</td>
+<td>作为可选清理记录加入本轮</td>
+<td>是</td>
+</tr>
+<tr>
+<td>D</td>
+<td>CLOSED，本地也已清理完</td>
+<td>不随普通调度反复传递</td>
+<td>在有界历史中继续留存</td>
+</tr>
+</tbody></table></div>
+<p>终态淘汰时，control 同时维护这些索引。历史留存仍服务于重复、迟到消息处理。</p>
+</div>
+<div class="am-callout am-callout--warn" role="note"><div class="am-callout-title">例子二：slot 空闲，不代表协议结束</div><div class="am-callout-body am-md"><p>D 已释放本地 slot 并发送 DONE，正在等 P 的 RELEASE_ACK。此时 B 仍属于活跃协议请求。若把“无 slot”当成“无工作”，确认流程就可能停止推进。</p>
+</div></div></div>
+</section>
+<section class="am-panel" id="panel-D">
+<header class="am-panel-head"><span class="am-panel-id">D</span><h2>TP 同步具体精简了什么？</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>这里的 TP 同步是同一侧各 rank 之间交换调度信息。P→D 的 Index K 传输、远端 KV 读取是另一条路径。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>需要同侧共同决策的内容</th>
+<th>提交后的表示</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>请求身份与阶段</td>
+<td>room、attempt、phase</td>
+</tr>
+<tr>
+<td>slot 是否属于该请求</td>
+<td>slot、generation、owns_slot</td>
+</tr>
+<tr>
+<td>是否可以开始或结束</td>
+<td>绑定、传输、写入与释放事实</td>
+</tr>
+<tr>
+<td>容量与错误</td>
+<td>可用 slot、peer 是否就绪、fault</td>
+</tr>
+<tr>
+<td>收到什么协议消息</td>
+<td>消息种类、room、attempt、长度和 slot 摘要</td>
+</tr>
+</tbody></table></div>
+<p>完整 peer layout、各 P/D pair 的 session 和 proof 不再放进 TP 观察载荷。原始消息仍保留在本 rank，交给 control 做完整校验。</p>
+</div>
+<figure class="am-diagram am-seq"><svg viewBox="0 0 671 430" width="671" height="430" role="img" aria-label="时序图：本rank、同侧TP组、本地control副本、本地control、对侧PD" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am2-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><line class="am-lifeline" x1="54" y1="42" x2="54" y2="426"/><g data-key="本rank"><rect class="am-actor" x="12" y="8" width="84" height="34" rx="2"/><text x="54" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">本rank</text></g><line class="am-lifeline" x1="231" y1="42" x2="231" y2="426"/><g data-key="同侧TP组"><rect class="am-actor" x="188.7" y="8" width="84.7" height="34" rx="2"/><text x="231" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">同侧TP组</text></g><line class="am-lifeline" x1="362.1" y1="42" x2="362.1" y2="426"/><g data-key="本地control副本"><rect class="am-actor" x="301.3" y="8" width="121.6" height="34" rx="2"/><text x="362.1" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">本地control副本</text></g><line class="am-lifeline" x1="498.7" y1="42" x2="498.7" y2="426"/><g data-key="本地control"><rect class="am-actor" x="450.9" y="8" width="95.6" height="34" rx="2"/><text x="498.7" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">本地control</text></g><line class="am-lifeline" x1="616.5" y1="42" x2="616.5" y2="426"/><g data-key="对侧PD"><rect class="am-actor" x="574.5" y="8" width="84" height="34" rx="2"/><text x="616.5" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">对侧PD</text></g><g data-step="0"><text x="142.5" y="70" text-anchor="middle">交换本轮逻辑状态和事实</text><path class="am-edge" d="M54,80 L229,80" marker-end="url(#am2-arrow)"/><text class="am-step" x="60" y="74" text-anchor="start">1</text></g><g data-step="1"><text x="142.5" y="110" text-anchor="middle">形成共同计划</text><path class="am-edge am-edge--dashed" d="M231,120 L56,120" marker-end="url(#am2-arrow)"/><text class="am-step" x="225" y="114" text-anchor="end">2</text></g><g data-step="2"><text x="208.1" y="150" text-anchor="middle">preflight，验证原始消息并试执行</text><path class="am-edge" d="M54,160 L360.1,160" marker-end="url(#am2-arrow)"/><text class="am-step" x="60" y="154" text-anchor="start">3</text></g><g data-step="3"><text x="142.5" y="190" text-anchor="middle">交换预检结果</text><path class="am-edge" d="M54,200 L229,200" marker-end="url(#am2-arrow)"/><text class="am-step" x="60" y="194" text-anchor="start">4</text></g><g data-step="4"><text x="142.5" y="230" text-anchor="middle">所有 rank 预检通过</text><path class="am-edge am-edge--dashed" d="M231,240 L56,240" marker-end="url(#am2-arrow)"/><text class="am-step" x="225" y="234" text-anchor="end">5</text></g><g data-step="5"><text x="276.4" y="270" text-anchor="middle">提交计划</text><path class="am-edge" d="M54,280 L496.7,280" marker-end="url(#am2-arrow)"/><text class="am-step" x="60" y="274" text-anchor="start">6</text></g><g data-step="6"><text x="142.5" y="310" text-anchor="middle">交换提交结果</text><path class="am-edge" d="M54,320 L229,320" marker-end="url(#am2-arrow)"/><text class="am-step" x="60" y="314" text-anchor="start">7</text></g><g data-step="7"><text x="142.5" y="350" text-anchor="middle">所有 rank 提交成功</text><path class="am-edge am-edge--dashed" d="M231,360 L56,360" marker-end="url(#am2-arrow)"/><text class="am-step" x="225" y="354" text-anchor="end">8</text></g><g data-step="8"><text x="335.3" y="390" text-anchor="middle">发送本轮 outbox</text><path class="am-edge" d="M54,400 L614.5,400" marker-end="url(#am2-arrow)"/><text class="am-step" x="60" y="394" text-anchor="start">9</text></g></svg></figure>
+<div class="am-md"><p>**仍有三次 collective：观察、预检结果、提交结果。**此次减少的是载荷和重复取快照；没有把协议简化成一个 KVPoll 状态。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-E">
+<header class="am-panel-head"><span class="am-panel-id">E</span><h2>例子三：slot 复用后，旧 DONE 到达</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>**示意场景：**请求 A 使用 room=41、attempt=a、slot=0、generation=7。A 正常结束后，请求 B 使用 room=42、attempt=b，复用 slot=0、generation=8。</p>
+</div>
+<figure class="am-diagram am-seq"><svg viewBox="0 0 343 382" width="343" height="382" role="img" aria-label="时序图：D、P" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am3-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><line class="am-lifeline" x1="54" y1="42" x2="54" y2="378"/><g data-key="D"><rect class="am-actor" x="12" y="8" width="84" height="34" rx="2"/><text x="54" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">D</text></g><line class="am-lifeline" x1="213.6" y1="42" x2="213.6" y2="378"/><g data-key="P"><rect class="am-actor" x="171.6" y="8" width="84" height="34" rx="2"/><text x="213.6" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">P</text></g><g data-step="0"><text x="133.8" y="70" text-anchor="middle">A 的 DONE</text><path class="am-edge" d="M54,80 L211.6,80" marker-end="url(#am3-arrow)"/><text class="am-step" x="60" y="74" text-anchor="start">1</text></g><g data-step="1"><text x="133.8" y="110" text-anchor="middle">A 的 RELEASE_ACK</text><path class="am-edge am-edge--dashed" d="M213.6,120 L56,120" marker-end="url(#am3-arrow)"/><text class="am-step" x="207.6" y="114" text-anchor="end">2</text></g><g data-step="2"><rect class="am-note" x="34" y="144" width="199.6" height="28" rx="2"/><text x="133.8" y="158" text-anchor="middle" dominant-baseline="central" font-size="12">A 结束；历史记录按策略留存</text></g><g data-step="3"><rect class="am-note" x="34" y="188" width="199.6" height="28" rx="2"/><text x="133.8" y="202" text-anchor="middle" dominant-baseline="central" font-size="12">B 获得 slot 0，generation 变为 8</text></g><g data-step="4"><text x="133.8" y="238" text-anchor="middle">A 的重复 DONE 迟到</text><path class="am-edge" d="M54,248 L211.6,248" marker-end="url(#am3-arrow)"/><text class="am-step" x="60" y="242" text-anchor="start">3</text></g><g data-step="5"><rect class="am-note" x="117.9" y="272" width="191.4" height="28" rx="2"/><text x="213.6" y="286" text-anchor="middle" dominant-baseline="central" font-size="12">用 A 的完整身份及释放信息校验</text></g><g data-step="6"><rect class="am-note" x="96.2" y="316" width="234.8" height="44" rx="2"/><text x="213.6" y="330" text-anchor="middle" dominant-baseline="central" font-size="12">不能把 B 的 generation 8 当成 A 的资源</text><text x="213.6" y="346" text-anchor="middle" dominant-baseline="central" font-size="12">释放</text></g></svg></figure>
+<div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>提交前</th>
+<th>提交后</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>普通 tick 也传递 A 等留存记录</td>
+<td>普通 tick 主要传递 B 等活跃记录</td>
+</tr>
+<tr>
+<td>control 按原协议校验旧消息</td>
+<td>control 仍按原协议校验旧消息</td>
+</tr>
+<tr>
+<td>历史记录出现在完整 TP 快照中</td>
+<td>A 的消息摘要参与决策，原始消息在各 rank 本地校验</td>
+</tr>
+</tbody></table></div>
+<p>防止旧消息误释放新 slot 的要求，前后都存在。此次保留 session、generation、retirement、绑定证明及所有权校验。</p>
+<p>历史已淘汰时，也继续走原有旧消息处理规则。测试覆盖了部分 rank 先淘汰历史的情况。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-F">
+<header class="am-panel-head"><span class="am-panel-id">F</span><h2>为什么还需要“可选终态清理记录”？</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>各 rank 的本地队列不一定在同一 tick 移除已结束 Req。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>同一个已结束请求</th>
+<th>rank 0</th>
+<th>rank 1</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>control 协议状态</td>
+<td>CLOSED</td>
+<td>CLOSED</td>
+</tr>
+<tr>
+<td>本地服务队列</td>
+<td>已移除 Req</td>
+<td>仍有 Req 等待清理</td>
+</tr>
+<tr>
+<td>本轮附加的终态快照</td>
+<td>无</td>
+<td>有</td>
+</tr>
+</tbody></table></div>
+<p>如果把两边整个调度视图强制比较相等，就会误报 TP 分歧。</p>
+<p>提交后，<strong>活跃协议状态必须一致</strong>。可选终态清理记录则合并；同一记录在多处出现时仍检查冲突。</p>
+<p>已 native_free 的旧事实不能触发新 admission。另一个边界是 P 已处理 ACQUIRE/CANCEL，HTTP 请求随后才到达。</p>
+<p>这时 room 已无当前 owner，但仍留存终态记录。service 会让迟到请求进入取消清理，避免一直等待绑定。</p>
+<p>这些处理用于保持原有取消和清理语义，防止精简视图引入回归。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-G">
+<header class="am-panel-head"><span class="am-panel-id">G</span><h2>收益在哪里？还有什么没优化？</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>以下来自本次交付记录中的 CPU 微基准。环境为开发 Mac、Python 3.9.6，每项取 31 组中位数。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th align="right">留存终态数</th>
+<th align="right">新单请求查询</th>
+<th align="right">当前完整快照</th>
+<th align="right">TP 观察载荷</th>
+<th align="right">preflight 取消预检</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="right">0</td>
+<td align="right">2.139 µs</td>
+<td align="right">3.708 µs</td>
+<td align="right">458 B</td>
+<td align="right">0.011 ms</td>
+</tr>
+<tr>
+<td align="right">256</td>
+<td align="right">2.128 µs</td>
+<td align="right">548.500 µs</td>
+<td align="right">458 B</td>
+<td align="right">0.706 ms</td>
+</tr>
+<tr>
+<td align="right">4094</td>
+<td align="right">2.213 µs</td>
+<td align="right">9143.292 µs</td>
+<td align="right">458 B</td>
+<td align="right">11.549 ms</td>
+</tr>
+</tbody></table></div>
+<p>场景固定为一个活跃请求。458 B 是该微基准的观察载荷，不是所有服务请求的固定大小。</p>
+<p>“完整快照”列测量保留下来的 snapshot() 接口。它展示全量复制成本，不等同于提交前服务端的完整耗时。</p>
+</div>
+<div class="am-callout am-callout--warn" role="note"><div class="am-callout-title">不能据此说“整个 tick 已与历史数量无关”</div><div class="am-callout-body am-md"><p>preflight 仍复制全部请求记录和相关索引。接近留存上限时，这项成本约为 11.5 ms。局部复制或写时复制需要单独设计与验证。</p>
+</div></div>
+<div class="am-md"><p>这些结果证明查询和载荷规模得到控制。它们不包含真实 TP 通信、NPU 或网络耗时，不能换算成服务 TPOT 收益。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-H">
+<header class="am-panel-head"><span class="am-panel-id">H</span><h2>从哪里读代码？验证到哪一步？</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>文件均在 <code>python/sglang/srt/disaggregation/ascend/</code> 下。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>阅读顺序</th>
+<th>文件及入口</th>
+<th>对应变化</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>mempool_service.py：_protocol、has_pending_work</td>
+<td>service 改用单请求查询与活跃索引</td>
+</tr>
+<tr>
+<td>2</td>
+<td>mempool_control.py：get_request、get_room_request</td>
+<td>完整身份或当前 owner 直接定位</td>
+</tr>
+<tr>
+<td>3</td>
+<td>mempool_control.py：active_snapshot、_remember_terminal</td>
+<td>活跃视图与终态留存分别维护</td>
+</tr>
+<tr>
+<td>4</td>
+<td>mempool_tick.py：_RequestState、_Observation、advance</td>
+<td>精简 TP 载荷，复用本轮观察</td>
+</tr>
+<tr>
+<td>5</td>
+<td>mempool_tick.py：_plan；control.py：preflight</td>
+<td>合并清理记录，保留事务预检</td>
+</tr>
+</tbody></table></div>
+</div>
+<pre class="am-code"><code data-lang="bash"># 精确查看本次提交，不包含前两个整改提交
+git diff 6eb6475f61^ 6eb6475f61 -- \
+  python/sglang/srt/disaggregation/ascend/mempool_control.py \
+  python/sglang/srt/disaggregation/ascend/mempool_service.py \
+  python/sglang/srt/disaggregation/ascend/mempool_tick.py</code></pre>
+<div class="am-md"><p>本次新增测试覆盖历史增长、旧消息、等待 ACK、取消及队列清理时序。最终 S6.3 独立 CPU suite 共 200 项通过，严格 mypy 覆盖 34 个源文件。</p>
+<p>本地通过不替代硬件验收。交付记录中，最终版本的 NPU 服务与性能复验仍待执行。</p>
+<p>依据：<a href="ticket-03-s6.3-summary.md">S6.3 交付与微基准记录</a>。本页只解释 <code>6eb6475f61</code> 相对其父提交的差异。</p>
+</div></div>
+</section>
+</div>
+</div>
+</main>
+<footer class="am-colophon">Generated by Answer me with HTML 0.4.3 · 2026-10-07 00:22</footer>
+<textarea id="am-source" hidden readonly aria-hidden="true">---
+template: doc
+theme: blueprint
+title: 6eb6475f61：control 查询与 TP 同步前后对比
+subtitle: 用单请求查询、等待释放确认、slot 复用三个例子理解这次改动
+lang: zh
+source: 父提交 9ba89e46eb → 6eb6475f61
+---
+这次提交减少了查询和 TP 同步对历史记录的依赖。历史验证与释放协议仍保留；preflight 的全量复制成本也仍存在。
+
+## A 这次提交到底改变了什么？
+
+| 环节 | 提交前 | 提交后 |
+| --- | --- | --- |
+| service 查一个请求 | 生成全部记录的快照，再筛选 | 按完整 identity 直接取一条快照 |
+| service 尚未取得 identity | 在全部快照中按 room 查找 | 通过当前 room owner 定位 |
+| 判断协议是否还有工作 | 扫描全部快照中的 phase | 查询活跃请求索引 |
+| tick 观察请求 | 携带活跃记录和近期终态记录 | 携带活跃记录及本轮所需清理记录 |
+| TP 交换内容 | 完整 control 快照和消息对象 | 逻辑状态、事实与消息摘要 |
+| 同一 tick 内读取 | 多处重复生成全量快照 | 复用本轮观察，日志按 identity 查询 |
+| preflight | 复制全部记录后试执行 | 仍复制全部记录后试执行 |
+
+生产修改集中在三个文件。service 收集请求事实；control 管理生命周期；tick 协调同侧 TP 决策。
+
+这次提交没有修改 KV 搬运算子。删除统计、共用 row 推导属于前两个提交。
+
+## B 例子一：256 个旧请求，只查当前这一个
+
+**示意场景：**control 留存 256 个已结束请求，另有请求 A 正在 decode。service 现在只想知道 A 的状态。
+
+```flow LR
+旧查询 -&gt; 生成257条快照 -&gt; 按identity筛选 -&gt; 得到A
+新查询 -&gt; 字典定位A -&gt; 生成1条快照 -&gt; 得到A
+```
+
+下面是简化后的调用逻辑。
+
+```python
+# 提交前：service 的查询路径
+for request in control.snapshot().requests:
+    if request.identity == identity:
+        return request
+
+# 提交后：只构造目标请求的不可变快照
+return control.get_request(identity)
+```
+
+新查询平均为 O(1)，旧路径为 O(N)。这里的 N 包括留存的历史请求。
+
+`RequestIdentity` 包含 room、attempt、P session 和 D session。已有 identity 时，查找必须完整匹配。
+
+尚无 identity 时，`get_room_request(room)` 查询当前 owner。它不会随便选取这个 room 的某条历史记录。
+
+```callout info 查询接口的边界
+变化针对 service 原先“全量快照后筛选”的路径。返回值仍是快照，service 不能直接修改 control 内部记录。
+```
+
+## C “分离活跃与终态”是不是拆成两个字典？
+
+**没有拆成两套请求状态。**`_records` 仍是统一的记录存储。新增索引用于快速选出不同用途的记录。
+
+```tree
+control
+  _records | 活跃记录与近期终态记录，统一存储
+  _active_requests | 仍需协议推进的 identity 集合
+  _room_owner | room 当前归属的 identity
+  _room_record_counts | room 是否还有留存记录
+```
+
+`snapshot()` 保留完整诊断视图。`active_snapshot(include)` 生成调度视图；include 补入本轮本地清理所需的 identity。
+
+| 请求示例 | 当前状态 | 是否参与普通协议推进 | 是否保留记录 |
+| --- | --- | --- | --- |
+| A | DECODING | 是 | 是 |
+| B | WAITING_RELEASE_ACK | 是，即使本地 slot 已释放 | 是 |
+| C | CLOSED，但本地 Req 尚未移出队列 | 作为可选清理记录加入本轮 | 是 |
+| D | CLOSED，本地也已清理完 | 不随普通调度反复传递 | 在有界历史中继续留存 |
+
+终态淘汰时，control 同时维护这些索引。历史留存仍服务于重复、迟到消息处理。
+
+```callout warn 例子二：slot 空闲，不代表协议结束
+D 已释放本地 slot 并发送 DONE，正在等 P 的 RELEASE_ACK。此时 B 仍属于活跃协议请求。若把“无 slot”当成“无工作”，确认流程就可能停止推进。
+```
+
+## D TP 同步具体精简了什么？
+
+这里的 TP 同步是同一侧各 rank 之间交换调度信息。P→D 的 Index K 传输、远端 KV 读取是另一条路径。
+
+| 需要同侧共同决策的内容 | 提交后的表示 |
+| --- | --- |
+| 请求身份与阶段 | room、attempt、phase |
+| slot 是否属于该请求 | slot、generation、owns_slot |
+| 是否可以开始或结束 | 绑定、传输、写入与释放事实 |
+| 容量与错误 | 可用 slot、peer 是否就绪、fault |
+| 收到什么协议消息 | 消息种类、room、attempt、长度和 slot 摘要 |
+
+完整 peer layout、各 P/D pair 的 session 和 proof 不再放进 TP 观察载荷。原始消息仍保留在本 rank，交给 control 做完整校验。
+
+```sequence num
+本rank -&gt; 同侧TP组: 交换本轮逻辑状态和事实
+同侧TP组 --&gt; 本rank: 形成共同计划
+本rank -&gt; 本地control副本: preflight，验证原始消息并试执行
+本rank -&gt; 同侧TP组: 交换预检结果
+同侧TP组 --&gt; 本rank: 所有 rank 预检通过
+本rank -&gt; 本地control: 提交计划
+本rank -&gt; 同侧TP组: 交换提交结果
+同侧TP组 --&gt; 本rank: 所有 rank 提交成功
+本rank -&gt; 对侧PD: 发送本轮 outbox
+```
+
+**仍有三次 collective：观察、预检结果、提交结果。**此次减少的是载荷和重复取快照；没有把协议简化成一个 KVPoll 状态。
+
+## E 例子三：slot 复用后，旧 DONE 到达
+
+**示意场景：**请求 A 使用 room=41、attempt=a、slot=0、generation=7。A 正常结束后，请求 B 使用 room=42、attempt=b，复用 slot=0、generation=8。
+
+```sequence num
+D -&gt; P: A 的 DONE
+P --&gt; D: A 的 RELEASE_ACK
+note P, D: A 结束；历史记录按策略留存
+note P, D: B 获得 slot 0，generation 变为 8
+D -&gt; P: A 的重复 DONE 迟到
+note P: 用 A 的完整身份及释放信息校验
+note P: 不能把 B 的 generation 8 当成 A 的资源释放
+```
+
+| 提交前 | 提交后 |
+| --- | --- |
+| 普通 tick 也传递 A 等留存记录 | 普通 tick 主要传递 B 等活跃记录 |
+| control 按原协议校验旧消息 | control 仍按原协议校验旧消息 |
+| 历史记录出现在完整 TP 快照中 | A 的消息摘要参与决策，原始消息在各 rank 本地校验 |
+
+防止旧消息误释放新 slot 的要求，前后都存在。此次保留 session、generation、retirement、绑定证明及所有权校验。
+
+历史已淘汰时，也继续走原有旧消息处理规则。测试覆盖了部分 rank 先淘汰历史的情况。
+
+## F 为什么还需要“可选终态清理记录”？
+
+各 rank 的本地队列不一定在同一 tick 移除已结束 Req。
+
+| 同一个已结束请求 | rank 0 | rank 1 |
+| --- | --- | --- |
+| control 协议状态 | CLOSED | CLOSED |
+| 本地服务队列 | 已移除 Req | 仍有 Req 等待清理 |
+| 本轮附加的终态快照 | 无 | 有 |
+
+如果把两边整个调度视图强制比较相等，就会误报 TP 分歧。
+
+提交后，**活跃协议状态必须一致**。可选终态清理记录则合并；同一记录在多处出现时仍检查冲突。
+
+已 native_free 的旧事实不能触发新 admission。另一个边界是 P 已处理 ACQUIRE/CANCEL，HTTP 请求随后才到达。
+
+这时 room 已无当前 owner，但仍留存终态记录。service 会让迟到请求进入取消清理，避免一直等待绑定。
+
+这些处理用于保持原有取消和清理语义，防止精简视图引入回归。
+
+## G 收益在哪里？还有什么没优化？
+
+以下来自本次交付记录中的 CPU 微基准。环境为开发 Mac、Python 3.9.6，每项取 31 组中位数。
+
+| 留存终态数 | 新单请求查询 | 当前完整快照 | TP 观察载荷 | preflight 取消预检 |
+| ---: | ---: | ---: | ---: | ---: |
+| 0 | 2.139 µs | 3.708 µs | 458 B | 0.011 ms |
+| 256 | 2.128 µs | 548.500 µs | 458 B | 0.706 ms |
+| 4094 | 2.213 µs | 9143.292 µs | 458 B | 11.549 ms |
+
+场景固定为一个活跃请求。458 B 是该微基准的观察载荷，不是所有服务请求的固定大小。
+
+“完整快照”列测量保留下来的 snapshot() 接口。它展示全量复制成本，不等同于提交前服务端的完整耗时。
+
+```callout warn 不能据此说“整个 tick 已与历史数量无关”
+preflight 仍复制全部请求记录和相关索引。接近留存上限时，这项成本约为 11.5 ms。局部复制或写时复制需要单独设计与验证。
+```
+
+这些结果证明查询和载荷规模得到控制。它们不包含真实 TP 通信、NPU 或网络耗时，不能换算成服务 TPOT 收益。
+
+## H 从哪里读代码？验证到哪一步？
+
+文件均在 `python/sglang/srt/disaggregation/ascend/` 下。
+
+| 阅读顺序 | 文件及入口 | 对应变化 |
+| --- | --- | --- |
+| 1 | mempool_service.py：_protocol、has_pending_work | service 改用单请求查询与活跃索引 |
+| 2 | mempool_control.py：get_request、get_room_request | 完整身份或当前 owner 直接定位 |
+| 3 | mempool_control.py：active_snapshot、_remember_terminal | 活跃视图与终态留存分别维护 |
+| 4 | mempool_tick.py：_RequestState、_Observation、advance | 精简 TP 载荷，复用本轮观察 |
+| 5 | mempool_tick.py：_plan；control.py：preflight | 合并清理记录，保留事务预检 |
+
+```bash
+# 精确查看本次提交，不包含前两个整改提交
+git diff 6eb6475f61^ 6eb6475f61 -- \
+  python/sglang/srt/disaggregation/ascend/mempool_control.py \
+  python/sglang/srt/disaggregation/ascend/mempool_service.py \
+  python/sglang/srt/disaggregation/ascend/mempool_tick.py
+```
+
+本次新增测试覆盖历史增长、旧消息、等待 ACK、取消及队列清理时序。最终 S6.3 独立 CPU suite 共 200 项通过，严格 mypy 覆盖 34 个源文件。
+
+本地通过不替代硬件验收。交付记录中，最终版本的 NPU 服务与性能复验仍待执行。
+
+依据：[S6.3 交付与微基准记录](ticket-03-s6.3-summary.md)。本页只解释 `6eb6475f61` 相对其父提交的差异。
+</textarea>
+<script>
+(() => {
+  const root = document.documentElement;
+  const cycle = (list, cur) => list[(list.indexOf(cur) + 1) % list.length];
+  const label = (btn, value) => {
+    const map = JSON.parse(btn.dataset.labels || '{}');
+    btn.textContent = map[value] || value;
+  };
+  const bind = (name, attr, values) => {
+    const btn = document.querySelector(`[data-am="${name}"]`);
+    if (!btn) return;
+    label(btn, root.getAttribute(attr));
+    btn.addEventListener('click', () => {
+      const next = cycle(values, root.getAttribute(attr));
+      root.setAttribute(attr, next);
+      label(btn, next);
+    });
+  };
+  bind('theme', 'data-theme', ['blueprint', 'shadcn']);
+  bind('mode', 'data-mode', ['auto', 'light', 'dark']);
+
+  const copyBtn = document.querySelector('[data-am="copy"]');
+  copyBtn?.addEventListener('click', async () => {
+    const text = document.getElementById('am-source').value;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = Object.assign(document.createElement('textarea'), { value: text });
+      document.body.append(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    const original = copyBtn.textContent;
+    copyBtn.textContent = copyBtn.dataset.done;
+    setTimeout(() => { copyBtn.textContent = original; }, 1400);
+  });
+})();
+</script>
+</body>
+</html>

@@ -7,7 +7,8 @@ GLM-5.1 请求、decode Graph replay、短 greedy baseline 对照和正常释放
 
 **Parent:** [Ascend mempool spec](../spec.md)
 
-**Blocked by:** [03: 正式 mempool 数据路径 cutover](03-prefill-direct-offload.md).
+**Blocked by:** [03: 正式 mempool 数据路径 cutover](03-prefill-direct-offload.md)（已关闭）、
+[10: GLM-5.2 算法适配与 indexer 跨层复用](10-glm52-indexer-sharing.md)。
 
 **Status:** ready-for-agent
 
@@ -42,7 +43,37 @@ GLM-5.1 请求、decode Graph replay、短 greedy baseline 对照和正常释放
 
 ## Comments
 
-任务已建立；尚未实现，NPU 验收尚未执行。
+任务已建立；03完成后复用其正式路径，本票独立集成验收尚未执行。
 
 2026-09-30：按用户确认校正阶段边界：02 shadow、03 cutover、04正式集成验收。
 保留本票数据路径检查项作为03变更的系统验收，不要求重复实现。尚未实现/验收。
+
+### 2026-10-07：03关闭；建议纳入P/D miss并行读取
+
+用户确认03 S6 NPU验收完成，03依赖解除。用户提出两个来源写入的selected KV
+目的位置互斥，要求解决当前P/D miss串行读取，并询问归属。本轮建议将其纳入本票，
+作为Graph/fetch集成增强；具体范围待用户确认，本次不修改生产实现或宣称04已通过。
+
+建议方案：
+
+- 保留HBM hit独立stream；P prompt miss与D decode miss分别在独立stream提交。
+- 公共metadata和两路indices准备完成后再分流；禁止在一个stream写metadata时另一个
+  stream读取未就绪内容。共享scratch和跨layer/forward复用须等待所有消费者完成。
+- D miss等待当前layer的D BM写入；保留P matching KV_READY/native readiness、binding、
+  written-range、padding和互斥destination mask约束。
+- 分别记录P/D完成事件，再合并为既有miss完成语义，或由消费者显式等待两路；
+  attention、refill、forward完成和drain都必须覆盖新增stream。两路zero-valid仍入图。
+- 扩展现有fetch gate，覆盖P-only、D-only、mixed、all-hit、zero-valid、连续异步
+  forward和Graph replay；证明固定metadata复用不会被下一轮覆盖。
+- NPU timeline验证实际重叠，比较修改前后同负载的mixed miss耗时及服务TTFT/TPOT。
+  多stream只是允许并行，实际收益受算子资源和链路带宽限制，不能预先承诺加速。
+- 完成原有短greedy token级普通sparse PD baseline对照和正常安全释放验收。
+  不把03的人工小题目确认替代本票的固定输入token对照。
+
+本建议不包含P端HBM/BM双写并行、NUMA窗口修复或后续票完整并发/故障矩阵。
+
+### 2026-10-07：先执行GLM-5.2算法适配
+
+用户要求继续本票之前先适配GLM-5.2，并明确创建10。增加10作为前置依赖，
+执行顺序为03 → 10 → 04；本票P/D miss并行读取建议继续保留，未开始实现。
+10负责模型算法适配及其回归，本票复用验收证据，再对后续Graph/fetch调度变更复验。

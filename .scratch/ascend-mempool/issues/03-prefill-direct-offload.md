@@ -12,7 +12,16 @@ server Graph、curl小题目输出与性能，S6完成全量review、shadow删�
 
 **Status:** ready-for-agent
 
-**State:** open
+**State:** closed
+
+## 最终状态（2026-10-07）
+
+用户在交付最终验收命令页后明确确认“我已经在npu机器上验收了s6”。
+据此记录S6及本票硬件验收完成，关闭03，解锁04；无剩余代码整改项。
+交付目标为`4baa6038d5`，最终命令页覆盖双机fetch、资源gate、正式service checker、
+回答/性能、同版本普通模式及完整环境registered检查。证据来源为用户整体验收确认；
+本轮未收到逐项新日志或P/D实际部署SHA，agent未独立执行或核验NPU结果。
+下文旧阶段“待验收”描述保留为历史，以本节及最新Comments为准。
 
 ## 规划状态（2026-10-07）
 
@@ -98,12 +107,12 @@ HBM Index K -> indexer top-k -> HBM sparse cache 查询
 
 | 步骤 | 交付结果 | 当前进度 |
 | --- | --- | --- |
-| S1 拆分配置与资源职责 | 明确运行模式、派生能力、资源归属及初始化合同 | 代码已实现；轻量CPU通过，完整环境及NPU回归待执行 |
+| S1 拆分配置与资源职责 | 明确运行模式、派生能力、资源归属及初始化合同 | 已实现；随用户最终S6整体验收确认收尾 |
 | S2 接入正式BM fetch | attention消费BM miss结果，保留HBM hit/refill | 实现已核对；K=2048独立NPU gate的30个case通过，用户已确认 |
 | S3 按模式停用重复存储 | 旧实现保留；正式模式host KV和main-KV staging分配为零 | 已提交；Mac检查通过，用户于2026-10-05确认NPU资源gate通过 |
 | S4 精简PD传输 | 仅保留Index K和必要辅助数据，保留联合readiness | 双机六个case全部通过，用户于2026-10-05确认完成；见[S4总结](../ticket-03-s4-summary.md) |
 | S5 正式服务Graph与性能验收 | 完整mempool链路、curl小题目检查、约定性能达标 | 组件gate、服务checker及小题目通过，当前性能获用户确认；S5已验收，见[总结](../ticket-03-s5-summary.md) |
-| S6 全量review、shadow删除与清理 | 精简代码、普通模式兼容、最终版本重跑S5并交付 | S6.4全量review及两项P2/工具整改已完成；本地205项CPU通过，最终修改版本NPU验收待执行；见[整改交付](../ticket-03-s6-final-fixes.md)及[计划](../ticket-03-s6-plan.md) |
+| S6 全量review、shadow删除与清理 | 精简代码、普通模式兼容、最终版本重跑S5并交付 | S6.4全量review及两项P2/工具整改已完成；本地205项CPU通过，用户确认S6 NPU验收完成；见[整改交付](../ticket-03-s6-final-fixes.md)及[计划](../ticket-03-s6-plan.md) |
 
 ### S1. 拆分配置与资源职责
 
@@ -453,36 +462,36 @@ fetch调试统计；两个Spec问题已随shadow/READBACK清理迁移，详见S6
 - [x] 全量review与整改后复查有记录，影响本票验收的问题均已解决。
 - [x] 全部shadow专用代码和入口删除，正式/普通模式的有效功能与回归覆盖保留。
 - [x] 冗余检查/代码、命名和可读性问题完成有依据的清理，必要正确性约束仍有验证。
-- [ ] 同一最终版本通过普通模式回归和S5全部复验，包括用户curl检查及约定性能目标。
-- [ ] 文档/脚本/证据与最终版本一致，用户确认实现与NPU验收后才关闭03。
+- [x] 同一最终版本通过普通模式回归和S5全部复验，包括用户curl检查及约定性能目标。
+- [x] 文档/脚本/证据与最终版本一致，用户确认实现与NPU验收后才关闭03。
 
 ## Acceptance criteria
 
 S2独立gate已通过并获用户确认；以下为整票正式服务验收，仍须结合S3–S6的资源、
 PD控制和真实attention执行结果核对，不以独立materialization gate替代。
 
-- [ ] 复用02 backend runtime、P/D writer、统一 tick、准入和 drain，不重复开发真实 P
+- [x] 复用02 backend runtime、P/D writer、统一 tick、准入和 drain，不重复开发真实 P
   offload；P native HBM cache 继续服务 chunked prefill。
-- [ ] 将已验证的 P/D sparse fetch 接入 attention 输入；依据 prompt length/实际写入
+- [x] 将已验证的 P/D sparse fetch 接入 attention 输入；依据 prompt length/实际写入
   范围区分两个来源，保持 HBM sparse cache hit/miss/refill 和重置行为正确；
   始终校验binding、维护可读范围，padding/未写入位置不污染cache。
-- [ ] 两个来源的 copy 在 Graph 中均存在，含 zero-valid 路径；attention 等待 copy
+- [x] 两个来源的 copy 在 Graph 中均存在，含 zero-valid 路径；attention 等待 copy
   和相关写入完成，不产生冲突 destination。
-- [ ] 逐项确认 buffer 后关闭 main compact-KV transfer/staging；Index K/state/aux/meta
+- [x] 逐项确认 buffer 后关闭 main compact-KV transfer/staging；Index K/state/aux/meta
   管理和传输保留，D 联合 readiness gate 仍成立；不兼容的peer传输契约明确失败。
-- [ ] 正式模式不分配重复长期 host KV，保留 SparseKVCacheManager 的 HBM sparse cache、
+- [x] 正式模式不分配重复长期 host KV，保留 SparseKVCacheManager 的 HBM sparse cache、
   materialization和reset职责；mempool runtime 不依赖该类的创建或生命周期。
-- [ ] 用实际分配/注册/发送证据证明旧host KV、main-KV staging和main-KV traffic均为零；
+- [x] 用实际分配/注册/发送证据证明旧host KV、main-KV staging和main-KV traffic均为零；
   保留sparse设备路径与Index K容量计算，不能以关闭整个offload模式绕过检查。
-- [ ] 旧main-KV传输、staging、host写入和sparse host读取代码均保留，按启动模式选择；
+- [x] 旧main-KV传输、staging、host写入和sparse host读取代码均保留，按启动模式选择；
   同一版本关闭mempool后通过普通sparse PD回归，正式模式不发生隐式host回退。
-- [ ] 保留 opt-in；普通与正式模式的短请求smoke、cutover数据内容及Graph由用户在NPU
+- [x] 保留 opt-in；普通与正式模式的短请求smoke、cutover数据内容及Graph由用户在NPU
   验证；用户用curl小题目核对输出，性能满足预先约定的目标。本票不加入正式数据集
   完整精度验收，04现有范围不变。
-- [ ] 01–03全部mempool开发增量及共享接入点完成review和整改；shadow专用代码全部
+- [x] 01–03全部mempool开发增量及共享接入点完成review和整改；shadow专用代码全部
   删除，检查、重复逻辑、命名及可读性完成清理，原非mempool实现保留。
-- [ ] S6最终清理版本重跑S5全部验收及普通模式回归，不沿用清理前版本的通过结论。
-- [ ] 按[阶段交付流程](../verification.md)核对实现、交付脚本并记录用户硬件验收。
+- [x] S6最终清理版本重跑S5全部验收及普通模式回归，不沿用清理前版本的通过结论。
+- [x] 按[阶段交付流程](../verification.md)核对实现、交付脚本并记录用户硬件验收。
 
 ## Verification
 
@@ -499,6 +508,19 @@ S6记录全量review、整改和复查结果；最终版本再次运行S5及普�
 ticket04内容不变；新数据来源导致输出异常时须在03定位，不能交付已知错误。
 
 ## Comments
+
+### 2026-10-07：用户确认S6 NPU验收，关闭03
+
+确认原文：“我已经在npu机器上验收了s6”。本次按用户确认勾选整票验收项并关闭。
+此前Mac已完成205项CPU测试、类型/静态检查及整改复查；本次没有重跑这些检查。
+最新交付版本为`4baa6038d5`，命令页约定环境为P 10.120.72.31、D 10.120.72.32、
+TP16、Graph16和已验证的小容量配置；这是交付配置，不冒充本轮独立采集的部署信息。
+本次新增证据仅为用户整体确认，原始报告/实际部署SHA尚未回传，不能编造新性能数值。
+既有详细S5/S6历史结果继续保留。后续可补充原始验收资料，不要求重复已确认的测试。
+
+用户另提出P/D mempool miss应并行读取。当前串行读取满足03原有正确性合同；
+并行调度属于下一阶段增强，建议归04的Graph/fetch集成范围，不重新打开03。
+Prefill双写并行不在本次读取优化建议内。NUMA/长上下文容量仍归09。
 
 ### 2026-10-07：STD-F01、SPEC-F01及T-01/T-02整改
 

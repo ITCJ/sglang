@@ -4,11 +4,12 @@
 **Status:** ready-for-agent
 **State:** open
 
-**Current stage (2026-10-03):** Tickets 01 and 02 are accepted and closed. The user
-confirmed ticket 02's real-service shadow writes, selected-KV readback, Graph,
-normal lifecycle, and physical slot reuse. See the [ticket 02 summary](ticket-02-summary.md)
-for code paths and evidence. Ticket 03 is unblocked and remains unimplemented;
-the overall feature remains open through formal cutover and later acceptance.
+**Current stage (2026-10-07):** Tickets 01–03 are accepted and closed, including
+user-confirmed S6 NPU acceptance of the final cutover cleanup. The user requested
+[10: GLM-5.2 algorithm adaptation](issues/10-glm52-indexer-sharing.md) before
+continuing [04](issues/04-single-request-graph-decode.md): execution order is
+03 → 10 → 04, followed by the existing downstream dependencies. Ticket09 remains
+deferred. The overall feature remains open.
 
 **Historical review (2026-09-28):** [Design and code review](design-review-2026-09-28.md)
 records the findings that informed subsequent work. Unapproved proposals there do
@@ -93,6 +94,24 @@ comparison against the existing sparse PD TransferEngine baseline.
 42. As an Ascend maintainer, I want implementation concentrated in Ascend/NPU modules with necessary shared hooks kept small, so that the demo respects the project's upstream boundaries.
 
 ## Implementation Decisions
+
+### GLM-5.2 Algorithm Adaptation (2026-10-07)
+
+The user supplied a 78-layer `GlmMoeDsaForCausalLM` configuration with 21 full
+indexer layers and 57 shared layers, plus a W8A8/W8A8_DYNAMIC/FLOAT quantization
+manifest excerpt. Ticket10 adds support and verification for this concrete model
+before ticket04. Explicit `indexer_types` controls top-k production/reuse; shared
+layers reuse token positions while retaining their own compact KV at every layer.
+Compact Index K storage/transfer follows producer layer IDs, independently of the
+78-layer BF16 mempool layout. The model's declared weight dtype does not select
+KV quantization. Initial acceptance uses non-speculative TP16/PP1 decoding;
+NextN/MTP inference is not implied by configuration fields.
+
+Verify actual sparse selection above index_topk=2048, eager/Graph results,
+same-weight ordinary sparse PD versus mempool token sequences, normal release,
+and GLM-5.1 compatibility. Existing GLM-5.1 requirements remain in force.
+Ticket10 is an added delivery requirement; P/D miss parallelization remains a
+separate ticket04 proposal, and NUMA investigation remains deferred in ticket09.
 
 ### Demo Priority and Deferred NUMA Investigation (2026-10-02)
 
