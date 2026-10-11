@@ -8,7 +8,7 @@ GLM-5.1 请求、decode Graph replay、短 greedy baseline 对照和正常释放
 **Parent:** [Ascend mempool spec](../spec.md)
 
 **Blocked by:** [03: 正式 mempool 数据路径 cutover](03-prefill-direct-offload.md)（已关闭）、
-[10: GLM-5.2 算法适配与 indexer 跨层复用](10-glm52-indexer-sharing.md)。
+[10: GLM-5.2 算法适配与 indexer 跨层复用](10-glm52-indexer-sharing.md)（已关闭）。
 
 **Status:** ready-for-agent
 
@@ -77,3 +77,11 @@ GLM-5.1 请求、decode Graph replay、短 greedy baseline 对照和正常释放
 用户要求继续本票之前先适配GLM-5.2，并明确创建10。增加10作为前置依赖，
 执行顺序为03 → 10 → 04；本票P/D miss并行读取建议继续保留，未开始实现。
 10负责模型算法适配及其回归，本票复用验收证据，再对后续Graph/fetch调度变更复验。
+
+
+### 2026-10-12：ticket10验收关闭，本票已解锁
+
+用户确认10及剩余核对项无问题，10已关闭；03与10两项前置依赖均满足。
+本票可开始，State仍为open，尚未启动新的Graph/fetch调度修改。
+后续复用10的GLM-5.2四组及GLM-5.1快速回归证据，按本票范围补齐调度变更与对照验收；
+新增测试遵循根AGENTS.md的自主运行约定。

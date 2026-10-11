@@ -7,7 +7,8 @@
 
 1. 仓库根目录 `AGENTS.md`、`CONTEXT.md`。
 2. [阶段交付与 NPU 验收](verification.md)。Mac 做开发和适用的 CPU 检查，用户执行 NPU 验收。
-3. [spec](spec.md)及[10：GLM-5.2 算法适配](issues/10-glm52-indexer-sharing.md)。
+3. [spec](spec.md)、[04：正式Graph与模型集成](issues/04-single-request-graph-decode.md)，
+   再看[10的关闭证据](issues/10-glm52-indexer-sharing.md)。
 4. 仅在继续排障时读取[近期启动问题记录](startup-investigation-2026-10-11.md)。
 
 ## 当前工作区
@@ -37,8 +38,8 @@
 | [01](issues/01-mempool-kv-view-graph.md) KV view / Graph | closed，双机组件验收通过 | 保留回归 |
 | [02](issues/02-rank-pair-control-lifecycle.md) 16 rank-pair 控制闭环 | closed，历史 shadow/读回/正常生命周期通过 | shadow 已由03删除，旧记录仅作历史 |
 | [03](issues/03-prefill-direct-offload.md) 正式路径 cutover | closed，用户确认 S6 NPU 验收完成，无剩余整改项 | 不重开 S6 |
-| [10](issues/10-glm52-indexer-sharing.md) GLM-5.2 indexer sharing | open，用户回传glm52-r2双机全部自动项通过 | 归档详细报告，补GLM-5.1回归及部署/性能核对 |
-| [04](issues/04-single-request-graph-decode.md) 正式 Graph / 模型集成 | open，等待10；包含 P/D miss 并行读取建议 | 10后执行；并行具体方案仍需落实 |
+| [10](issues/10-glm52-indexer-sharing.md) GLM-5.2 indexer sharing | closed，用户确认两模型验收及剩余核对项无问题 | 保留回归证据 |
+| [04](issues/04-single-request-graph-decode.md) 正式 Graph / 模型集成 | open，前置03/10均关闭；包含 P/D miss 并行读取建议 | 下一项；并行具体方案仍需落实 |
 | [05](issues/05-batch-slot-reuse.md) batch / slot复用 | open，等待04 | 多请求与复用系统验证 |
 | [06](issues/06-acquire-wait-cancel.md) acquire等待 / decode前取消 | open，等待04 | 容量压力、超时、取消 |
 | [07](issues/07-active-cancel-peer-failure.md) active取消 / 故障 | open，等待04 | drain、peer/rank故障、安全保留slot |
@@ -48,7 +49,7 @@
 执行依赖：01 → 02 → 03 → 10 → 04；04之后05/06/07，05之后08。
 全部 feature 验收仍需各票条件满足，03通过不替代04–08或10。
 
-## 继续 ticket10 的起点
+## ticket10已关闭，接续04
 
 当前启动脚本使用 `/data_lib/data/models/GLM-5.2-w4a8`；最初配置来自`glm-q`目录。
 模型身份与producer布局依据实际config核对。
@@ -64,8 +65,9 @@
 紧凑21层Index K的容量估算、分配与普通/正式Ascend PD接线已完成，78层compact KV
 继续独立。用户已回传glm52-r2两端控制台：组件、四组模型、token对照全部通过；
 详细P/D summary及两组formal service.json已收到并核对，实机SHA为`4dc8607ef3`。
-此结果为用户实际NPU执行证据；GLM-5.1未运行，用户已把其范围简化为快速冒烟。
-下一步按[容器自动验收说明](../../ascend-mempool-test/TICKET10_DOCKER.md)在P/D各运行一次
+此结果为用户实际NPU执行证据。GLM-5.1已按用户简化范围完成glm51-quick-r2双机
+快速冒烟，修复BatchEncoding准备错误后通过。2026-10-12用户确认剩余核对项无问题，
+明确要求关闭10，已完成关闭并解锁04。两模型无需重跑；历史回归入口见[容器自动验收说明](../../ascend-mempool-test/TICKET10_DOCKER.md)在P/D各运行一次
 `run_ticket10.sh --suite glm51-quick`，只启动一次GLM-5.1正式Graph，自动执行8个短请求
 及答案/78层布局/生命周期检查；无需重跑GLM-5.2。日志统一在`/home/cryang/log/`，
 保持MTP关闭。以后测试都交付自主运行入口，约定已写入根AGENTS.md。
@@ -92,10 +94,10 @@
 
 ```text
 $ask-matt 请先读取 .scratch/ascend-mempool/SESSION-RESUME.md，
-再读取 ticket10、spec 和 verification.md，核对当前分支与工作区。
+再读取 ticket04、spec、verification.md及ticket10关闭记录，核对当前分支与工作区。
 join 已解决；TransferEngine URL parser 失败在当前机器未复现，按记录封存。
-GLM-5.2紧凑Index K实现已交付；请接续ticket10的容器自动验收和日志核对。
+ticket10已由我确认关闭；请总结ticket04已有支持与剩余工作，再继续04。
 ```
 
-新会话读取后应能说明：当前待验收的是10、已有短生成证据的边界、自动验收入口、
+新会话读取后应能说明：10已关闭、下一票是04、已有实机证据的边界、自主验收入口、
 两项启动问题的最新状态。达到这些条件即可继续，无需重读旧聊天或全部历史review。

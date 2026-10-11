@@ -13,7 +13,7 @@
 
 **Status:** ready-for-agent
 
-**State:** open
+**State:** closed
 
 ## 执行顺序与范围
 
@@ -93,26 +93,27 @@ NUMA/驱动窗口及大容量调查仍由用户在09独立跟进；本票不承�
 
 ## Acceptance criteria
 
-- [ ] 使用提供配置验证21个producer和57个shared层及完整复用链；配置入口保持通用，
+- [x] 使用提供配置验证21个producer和57个shared层及完整复用链；配置入口保持通用，
   不按模型目录名硬编码。非法或无法满足的共享关系给出明确错误，不静默读取旧索引。
-- [ ] 主模型W8A8加载成功，shared层无indexer权重不触发未初始化计算；
+- [x] 主模型W8A8加载成功，shared层无indexer权重不触发未初始化计算；
   核对完整量化描述、RoPE配置和实际backend，记录部署版本与配置。
-- [ ] 普通与mempool两种模式均保持78层独立compact KV；紧凑Index K布局使用正确的
+- [x] 普通与mempool两种模式均保持78层独立compact KV；紧凑Index K布局使用正确的
   21个model layer ID。资源/传输报告分别记录模型层数和Index K层数。
-- [ ] 受控数值用例使用每层不同的KV pattern，验证shared层沿用同一token位置但取回
+- [x] 受控数值用例使用每层不同的KV pattern，验证shared层沿用同一token位置但取回
   自己的KV；覆盖P-only、D-only、mixed、hit、zero-valid和padding。
-- [ ] eager与Graph capture/replay均通过；Graph batch width至少16。
+- [x] eager与Graph capture/replay均通过；Graph batch width至少16。
   连续forward、请求切换、row/slot复用不会沿用前一个forward/request的top-k或KV。
-- [ ] 真实GLM-5.2请求覆盖有效序列长度小于、等于、大于index_topk=2048，验证
+- [x] 真实GLM-5.2请求覆盖有效序列长度小于、等于、大于index_topk=2048，验证
   真正需要稀疏选择时的producer/shared路径；只通过短请求不算本票完成。
-- [ ] 对照相同GLM-5.2权重、输入、tokenizer/chat模板、greedy采样、thinking和
+- [x] 对照相同GLM-5.2权重、输入、tokenizer/chat模板、greedy采样、thinking和
   非投机配置的普通sparse PD与mempool输出token序列；差异定位解决，不只比较HTTP状态。
   普通baseline先做合理输出检查，不能把两条路径同错当作正确。
-- [ ] 真实P/D请求通过handoff、Graph decode、drain、DONE/RELEASE_ACK及slot归还；
+- [x] 真实P/D请求通过handoff、Graph decode、drain、DONE/RELEASE_ACK及slot归还；
   21层Index K的handoff不能导致78层KV完成检查误判。
-- [ ] 同版本GLM-5.1正式mempool + Graph快速冒烟通过（用户2026-10-11简化回归范围）；记录GLM-5.2性能观测，
+- [x] GLM-5.1正式mempool + Graph快速冒烟通过（用户2026-10-11简化回归范围；glm51-quick-r2通过）。
+- [x] 记录GLM-5.2性能观测，
   不预设跨模型相同速度或固定加速比例。
-- [ ] 完成Standards/Spec review、本地检查、用户代码核对和用户NPU验收，
+- [x] 完成Standards/Spec review、本地检查、用户代码核对和用户NPU验收，
   按[阶段交付流程](../verification.md)记录证据后关闭10并解锁04。
 
 ## Verification
@@ -297,3 +298,42 @@ Mac使用真实BatchEncoding类型及替代tokenizer，在prepare→JSON边界�
 修复后定向6项及全量235项CPU测试通过；Ruff/format/isort、变更脚本mypy及diff检查通过。
 该测试不使用实际GLM-5.1权重，不替代实机回归。重测两侧同步修复提交、使用新的
 run-id glm51-quick-r2，继续原自主入口；保留r1失败日志，ticket仍等待实机通过。
+
+
+### 2026-10-12：用户回传GLM-5.1快速回归双机通过
+
+用户在P 10.120.72.31、D 10.120.72.32执行`run_ticket10.sh --suite glm51-quick`
+（run-id glm51-quick-r2），两侧均回传PASS glm51/formal-graph、PASS glm51/quick-smoke及
+AUTOMATED_CHECKS_PASSED。P完成prepare、launcher、router及requests阶段。
+此前BatchEncoding准备失败在修复后的本次实机运行未再出现。
+这是用户实机证据；按已交付入口语义，8个短请求的答案校验、78层Index K/KV、
+Graph及全rank生命周期/slot复用检查已通过。按用户简化后的范围勾选GLM-5.1快速回归，
+不宣称执行GLM-5.1四组对照或长请求。
+
+日志位于`/home/cryang/log/ticket10/glm51-quick-r2/<prefill|decode>/`；对应交付修复为
+55ad8431d5，用户本次未粘贴summary里的实机精确SHA及依赖，不能把交付SHA当作已核对值。
+结合此前glm52-r2完整自动验收，约定的两模型功能测试均已有通过反馈，无需重复运行。
+仍待部署/完整量化与性能观测的收尾记录及用户最终关闭确认，State保持open。
+
+
+### 2026-10-12：用户最终确认，关闭ticket10
+
+用户明确确认：“ticket10可以关闭了，剩下的我看了没有问题”。据此接受本票实现、
+NPU验收及剩余部署/完整量化、输出合理性和性能观测项，勾选验收条件，State改为closed。
+用户确认未附新增性能数值或完整量化文件；仅记录用户已核对无问题，不虚构测量结果，
+也不把这些人工核对记为agent独立验证。
+
+关闭依据：
+- GLM-5.2：npu1-31/32双机容器，TP16/PP1，非投机，glm52-r2；实机SHA
+  `4dc8607ef3ffa7353dadc68c04a7f490a2b6345b`，两侧依赖/模型元数据一致。
+  transfer、fetch、native/formal × eager/Graph四组、算术sanity、2048边界/3072输入、
+  token一致性与生命周期通过。P/D summary及formal两组service.json均已在会话核对。
+- GLM-5.1：按用户简化范围，glm51-quick-r2双机正式Graph快速回归通过；对应交付修复
+  `55ad8431d5`，包含BatchEncoding回归修复。用户回传两侧控制台成功，未另附该轮精确
+  实机SHA，保持证据边界；不宣称执行过GLM-5.1四组对照。
+- 命令为run_ticket10.sh，两次run-id及逐侧role/host参数见本票前述记录；日志分别在
+  `/home/cryang/log/ticket10/glm52-r2/`和`/home/cryang/log/ticket10/glm51-quick-r2/`。
+- Agent本地最终235项CPU测试及对应静态检查通过，Standards/Spec审查已完成。
+
+解锁04“正式mempool Graph与模型集成验收”；本轮只关闭10，不开始04实现。
+09继续延期，不影响本票关闭；后续04–08仍按各自范围验收。

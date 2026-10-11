@@ -4,12 +4,12 @@
 **Status:** ready-for-agent
 **State:** open
 
-**Current stage (2026-10-07):** Tickets 01–03 are accepted and closed, including
-user-confirmed S6 NPU acceptance of the final cutover cleanup. The user requested
-[10: GLM-5.2 algorithm adaptation](issues/10-glm52-indexer-sharing.md) before
-continuing [04](issues/04-single-request-graph-decode.md): execution order is
-03 → 10 → 04, followed by the existing downstream dependencies. Ticket09 remains
-deferred. The overall feature remains open.
+**Current stage (2026-10-12):** Tickets 01–03 and
+[10: GLM-5.2 algorithm adaptation](issues/10-glm52-indexer-sharing.md) are accepted
+and closed. The user confirmed ticket10 closure after GLM-5.2 full automated
+acceptance and the agreed GLM-5.1 quick regression, including remaining manual
+checks. [04](issues/04-single-request-graph-decode.md) is now unblocked and has not
+started. Ticket09 remains deferred. The overall feature remains open.
 
 **Historical review (2026-09-28):** [Design and code review](design-review-2026-09-28.md)
 records the findings that informed subsequent work. Unapproved proposals there do
