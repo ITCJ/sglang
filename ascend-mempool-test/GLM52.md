@@ -1,5 +1,9 @@
 # Ticket10：GLM-5.2 紧凑 Index K 验收
 
+容器内自动运行入口见 [双机自动验收](TICKET10_DOCKER.md)：每侧执行一次命令，
+自动完成组件、四组服务、token对照及生命周期检查，日志统一保存到`/home/cryang/log/`。
+下面保留逐步运行方式，供单阶段排查。
+
 适用主模型、TP16/PP1、BF16 KV、普通非投机 decode。`indexer_types` 决定 producer，
 GLM-5.2 为 21 个 Index K 层、78 个独立 compact KV 层。普通 sparse PD 和正式
 mempool 使用同一布局选择。MTP、CP/DCP、HiCache/HiSparse 等路径保持原有布局策略。

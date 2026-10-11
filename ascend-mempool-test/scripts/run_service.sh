@@ -18,7 +18,7 @@ cd "$repo_dir"
 P_IP=${P_IP:-10.120.72.31}
 D_IP=${D_IP:-10.120.72.32}
 MODEL_PATH=${MODEL_PATH:-/data_lib/data/models/GLM-5.1-w4a8}
-LOG_DIR=${LOG_DIR:-/tmp/ticket03-s5-$mode}
+LOG_DIR=${LOG_DIR:-/home/cryang/log/mempool-$mode}
 CONTEXT_LENGTH=${CONTEXT_LENGTH:-1024}
 PREFILL_CAPACITY=${PREFILL_CAPACITY:-512}
 DECODE_CAPACITY=${DECODE_CAPACITY:-512}

@@ -192,3 +192,33 @@ Standards/Spec两路review完成：交付成功标记及算术sanity的发现已
 无未解决的代码/交付阻塞。仍待用户代码核对、完整W8A8量化与实际加载、真实21→57
 复用链、2048边界/长请求、NPU eager/Graph数值、服务生命周期、token对照和GLM-5.1
 硬件回归。按verification.md保持 `State: open`、验收项未勾选，04尚未解锁。
+
+### 2026-10-11：容器内自动验收入口交付
+
+用户反馈正式服务已正常启动、小问题回答正常，并回传BM初始化日志：78层、
+16个request slots、每slot 4096 tokens、max_context_len8192。这是用户提供的短请求
+证据，agent未执行NPU测试；slots不表示模型层数，容量观测不等于百万token上下文验收。
+尚缺完整组件/模型对照报告，故不据此勾选其余验收项或关闭ticket。
+
+应用户要求新增[容器自动验收说明](../../../ascend-mempool-test/TICKET10_DOCKER.md)，
+入口为 `ascend-mempool-test/scripts/run_ticket10.sh` / `run_ticket10.py`。
+P/D现有容器各启动一次，通过固定阶段控制通道协调，不需要SSH。
+默认执行21层Index K transfer、78层独立KV/Graph数值组件，以及同一GLM-5.2的
+native/formal × eager/Graph四组服务；复用已有10请求fixture、逐token对照和正式服务
+生命周期checker。可选追加GLM-5.1同矩阵，未运行时报告明确写`not run`。
+运行前核对两侧SHA、依赖版本、模型/tokenizer元数据；日志与报告保存到
+`/home/cryang/log/ticket10/<run-id>/<role>/`，禁止覆盖已有run。
+子进程使用独立进程组，阶段失败只清理本入口拥有的进程；进程检查失败也回收子进程。
+`run_service.sh`默认日志同步移至`/home/cryang/log/`，其他服务参数未改。
+本次修改均为独立验收工具、测试和文档，没有修改SGLang通用生产模块或NPU运行时。
+
+Agent在Mac实际执行：独立CPU全量231项通过（新增8项），覆盖双端四组编排、
+真实日志checker/报告对照、错误传播、分帧日志传输和清理异常；模型可执行进程由fixture
+替换，不能作为NPU通过证据。Ruff、format、isort、Python3.9语法检查、bash -n、
+无NPU的`--describe`及git diff --check通过。临时Python3.12配置下mypy检查30个源文件
+通过，沿用前次对未修改`verify_resources.py`的排除。Mac沙箱阻止ps的初次测试失败；
+修复清理异常路径后在允许ps的执行环境重跑，上述结果为最终实际结果。
+Standards/Spec审查发现的mini-lb健康路由和未执行回归误标均已修复、补测并复核。
+
+等待用户执行NPU验收。`automated_checks_passed`仅表示所选自动项通过；仍需用户
+核对baseline文本、完整量化/实际后端、性能观测及GLM-5.1回归证据，再确认关闭10。

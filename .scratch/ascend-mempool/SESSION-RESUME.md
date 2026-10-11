@@ -13,8 +13,8 @@
 ## 当前工作区
 
 - 记录时目录：`/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang`。
-- 分支：`cryang/dev/mempool`；HEAD：`8717142d31b3afd01b619bffd08ba31f27212bf5`。
-- 本轮记录前工作区干净。本轮只整理文档，未修改生产代码，未执行 NPU 测试。
+- 分支：`cryang/dev/mempool`；紧凑Index K实现为`8705f5de45`，已推送。
+- 最新交付新增容器自动验收入口，版本以实时git log为准；agent未执行NPU测试。
 - 新会话先执行 `git status --short --branch` 和 `git log -5 --oneline`，以实时结果为准。
 - 邻接脚本库：`../ascend-sglang-script`；MF 研究库：`../gitcode/memfabric_hybrid`、`../gitcode/memcache`。
   `../memfabric_hybrid` 是另一个较旧 checkout，不能与 gitcode 版本或机器安装版混为一谈。
@@ -37,7 +37,7 @@
 | [01](issues/01-mempool-kv-view-graph.md) KV view / Graph | closed，双机组件验收通过 | 保留回归 |
 | [02](issues/02-rank-pair-control-lifecycle.md) 16 rank-pair 控制闭环 | closed，历史 shadow/读回/正常生命周期通过 | shadow 已由03删除，旧记录仅作历史 |
 | [03](issues/03-prefill-direct-offload.md) 正式路径 cutover | closed，用户确认 S6 NPU 验收完成，无剩余整改项 | 不重开 S6 |
-| [10](issues/10-glm52-indexer-sharing.md) GLM-5.2 indexer sharing | open，可开始；已有不启用 offload 的单机短请求反馈 | 下一项，先审计已有支持及缺口 |
+| [10](issues/10-glm52-indexer-sharing.md) GLM-5.2 indexer sharing | open，实现已交付；用户反馈正式服务启动及短请求正常 | 运行容器自动验收并核对结果 |
 | [04](issues/04-single-request-graph-decode.md) 正式 Graph / 模型集成 | open，等待10；包含 P/D miss 并行读取建议 | 10后执行；并行具体方案仍需落实 |
 | [05](issues/05-batch-slot-reuse.md) batch / slot复用 | open，等待04 | 多请求与复用系统验证 |
 | [06](issues/06-acquire-wait-cancel.md) acquire等待 / decode前取消 | open，等待04 | 容量压力、超时、取消 |
@@ -50,7 +50,8 @@
 
 ## 继续 ticket10 的起点
 
-用户模型路径 `/data_lib/data/models/glm-q`，模型身份按用户提供的 GLM-5.2 记录。
+当前启动脚本使用 `/data_lib/data/models/GLM-5.2-w4a8`；最初配置来自`glm-q`目录。
+模型身份与producer布局依据实际config核对。
 显式 `indexer_types` 是21个 full、57个 shared；78层 compact KV仍各自独立。
 例如3/4/5层复用2层的 token 索引，但必须读取3/4/5层自己的KV。
 完整 producer 列表、量化证据、源码入口和验收矩阵均在10，避免在此重复维护。
@@ -60,9 +61,11 @@
 不能以该字段识别真实权重；部署 SHA、实际权重和完整量化格式在后续 baseline 归档。
 该结果是模型加载/短生成的初步证据，不证明 >2048 稀疏选择、普通 sparse PD 或 mempool 正确。
 
-建议下一会话先核对代码已有的跳层/producer传递、Index K紧凑布局及PD层映射，
-列出缺口与实施顺序，再按用户选择实施。关闭MTP，保持GLM-5.1兼容。
-真实请求要覆盖长度小于、等于、大于2048，不能只复用03的context1024验收。
+紧凑21层Index K的容量估算、分配与普通/正式Ascend PD接线已完成，78层compact KV
+继续独立。用户随后反馈正式服务及短请求正常，但尚无完整NPU验收报告。
+下一步按[容器自动验收说明](../../ascend-mempool-test/TICKET10_DOCKER.md)在P/D各运行一次
+`run_ticket10.sh`，覆盖组件、2048边界/长请求、四组token对照与生命周期；可追加GLM-5.1。
+日志统一在`/home/cryang/log/`，保持MTP关闭。CPU231项通过不替代硬件验收。
 
 ## 已接受的工程边界
 
@@ -88,8 +91,8 @@
 $ask-matt 请先读取 .scratch/ascend-mempool/SESSION-RESUME.md，
 再读取 ticket10、spec 和 verification.md，核对当前分支与工作区。
 join 已解决；TransferEngine URL parser 失败在当前机器未复现，按记录封存。
-我们继续 GLM-5.2 适配：先总结已有支持、待补缺口和下一步实施计划。
+GLM-5.2紧凑Index K实现已交付；请接续ticket10的容器自动验收和日志核对。
 ```
 
-新会话读取后应能说明：下一票是10、已有短生成证据的边界、尚需NPU验收的内容、
+新会话读取后应能说明：当前待验收的是10、已有短生成证据的边界、自动验收入口、
 两项启动问题的最新状态。达到这些条件即可继续，无需重读旧聊天或全部历史review。
