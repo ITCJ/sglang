@@ -1,6 +1,7 @@
 """Token comparison must reject equal-but-invalid and nonidentical workloads."""
 
 import copy
+import json
 import sys
 import tempfile
 import unittest
@@ -119,6 +120,47 @@ class TestModelTokens(unittest.TestCase):
             self.assertTrue(case["rendered_input"].endswith("</user><assistant>"))
             self.assertIn("Compute 17 + 25", case["rendered_input"])
             self.assertNotIn("Answer: 42", case["rendered_input"])
+
+    def test_quick_fixture_serializes_when_tokenized_chat_returns_batch_encoding(self):
+        from transformers.tokenization_utils_base import BatchEncoding
+
+        class Tokenizer:
+            def apply_chat_template(self, messages, **kwargs):
+                rendered = "<user>" + messages[0]["content"] + "</user><assistant>"
+                if not kwargs.get("tokenize"):
+                    return rendered
+                ids = self.encode(rendered, add_special_tokens=False)
+                return BatchEncoding(
+                    {"input_ids": ids, "attention_mask": [1] * len(ids)}
+                )
+
+            def encode(self, text, **kwargs):
+                # Chat template already contains special tokens.
+                assert kwargs.get("add_special_tokens") is False
+                return list(map(ord, text))
+
+            def decode(self, ids):
+                if isinstance(ids, BatchEncoding):
+                    ids = ids["input_ids"]
+                return "".join(map(chr, ids))
+
+        tokenizer = Tokenizer()
+        transformers = SimpleNamespace(
+            AutoTokenizer=SimpleNamespace(from_pretrained=lambda *a, **kw: tokenizer)
+        )
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            patch.dict(sys.modules, {"transformers": transformers}),
+        ):
+            # Exercise the same prepare -> JSON boundary as the failing CLI.
+            fixture = json.loads(json.dumps(gate.prepare(Path(folder), quick=True)))
+        self.assertEqual(len(fixture["cases"]), 4)
+        for case in fixture["cases"]:
+            self.assertIsInstance(case["input_ids"], list)
+            self.assertTrue(all(type(i) is int for i in case["input_ids"]))
+            self.assertEqual(
+                tokenizer.decode(case["input_ids"]), case["rendered_input"]
+            )
 
 
 if __name__ == "__main__":

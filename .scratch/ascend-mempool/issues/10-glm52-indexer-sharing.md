@@ -282,3 +282,18 @@ Mac实际执行：独立CPU全量234项通过；双端快速编排使用替代�
 --describe、git diff --check通过；沿用临时3.12配置及verify_resources.py排除的mypy
 30源文件通过。Standards/Spec审查无阻断问题；续接文档已改为运行GLM-5.1快速入口，
 避免重跑已通过的GLM-5.2。GLM-5.1实机结果待用户回传，ticket保持open。
+
+
+### 2026-10-12：修复GLM-5.1快速输入准备的BatchEncoding序列化失败
+
+用户运行glm51-quick-r1，P在prepare阶段失败，模型服务尚未启动；回传prepare.log的
+异常为`TypeError: Object of type BatchEncoding is not JSON serializable`。
+快速分支把apply_chat_template(tokenize=True)的返回值直接作为input_ids，实际tokenizer
+返回BatchEncoding而非list。此前替代tokenizer仅返回list，漏测此情况。
+修复为与完整模式一致的tokenize=False渲染，然后encode(add_special_tokens=False)，
+保存纯token ID列表且避免重复模板特殊token；不修改生产运行时。
+
+Mac使用真实BatchEncoding类型及替代tokenizer，在prepare→JSON边界先复现同一TypeError，
+修复后定向6项及全量235项CPU测试通过；Ruff/format/isort、变更脚本mypy及diff检查通过。
+该测试不使用实际GLM-5.1权重，不替代实机回归。重测两侧同步修复提交、使用新的
+run-id glm51-quick-r2，继续原自主入口；保留r1失败日志，ticket仍等待实机通过。

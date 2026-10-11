@@ -62,7 +62,7 @@ def prepare(model: Path, *, quick: bool = False) -> dict[str, Any]:
     if quick:
         cases = []
         for expression, answer in (("17 + 25", 42), ("9 * 7", 63), ("100 - 16", 84)):
-            ids = tokenizer.apply_chat_template(
+            rendered = tokenizer.apply_chat_template(
                 [
                     dict(
                         role="user",
@@ -72,10 +72,13 @@ def prepare(model: Path, *, quick: bool = False) -> dict[str, Any]:
                         ),
                     )
                 ],
-                tokenize=True,
+                tokenize=False,
                 add_generation_prompt=True,
                 enable_thinking=False,
             )
+            # Some tokenizers return BatchEncoding when chat tokenization is enabled.
+            # Match the full suite's explicit text -> token IDs path for JSON fixtures.
+            ids = tokenizer.encode(rendered, add_special_tokens=False)
             if not 0 < len(ids) <= 512:
                 raise ValueError("quick chat input must fit within 512 tokens")
             cases.append(
