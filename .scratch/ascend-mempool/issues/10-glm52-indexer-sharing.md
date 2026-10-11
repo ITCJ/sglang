@@ -132,6 +132,20 @@ Graph/service日志、baseline/mempool token序列及差异、性能数据和用
 
 ## Comments
 
+### 2026-10-11：补记用户单机短请求反馈，继续作为下一实施票
+
+用户在建立本票后的会话中回传`glm52.sh`运行结果，并明确说明是单机P/D collocation、
+未启用sparse KV offload。铅笔算术题返回正确答案6，`finish_reason=stop`，
+completion_tokens=507，其中reasoning_tokens=391，content与reasoning_content分开。
+这是用户提供的模型加载/短生成初步证据，agent未在NPU独立执行。
+响应中的model字段仍为`GLM-5.1-w4a8`，不能以此字段确认实际加载权重；后续归档部署SHA、
+模型路径/config和完整量化描述。此短请求不覆盖>2048的真实稀疏选择，也不替代普通
+sparse PD与mempool对照，验收项保持未勾选。
+
+2026-10-11用户确认join问题已解决，TransferEngine解析失败在当前可访问机器未复现，
+两项按[独立记录](../startup-investigation-2026-10-11.md)保存，不继续作为本票的启动阻塞。
+下一会话由[续接入口](../SESSION-RESUME.md)恢复，先审计已有算法接线与缺口。
+
 ### 2026-10-07：用户要求优先创建GLM-5.2算法适配票
 
 用户提供GLM-5.2模型配置及量化描述片段，随后明确要求创建ticket10。
