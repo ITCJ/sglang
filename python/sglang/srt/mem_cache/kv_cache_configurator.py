@@ -1560,6 +1560,9 @@ class KVCacheConfigurator:
         from sglang.srt.hardware_backend.npu.memory_pool_npu import (
             NPUMLATokenToKVPool,
         )
+        from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config import (
+            get_sparse_pd_indexer_layer_ids,
+        )
         from sglang.srt.hardware_backend.npu.utils import is_npu_arch35
 
         is_arch35 = is_npu_arch35()
@@ -1568,8 +1571,10 @@ class KVCacheConfigurator:
             and is_arch35
             and _should_elide_dsa_index_k(is_draft_worker=self.is_draft_worker)
         )
-        indexer_layer_ids = None
-        if use_compact_indexer_layout:
+        indexer_layer_ids = (
+            get_sparse_pd_indexer_layer_ids(self) if is_dsa_model else None
+        )
+        if indexer_layer_ids is None and use_compact_indexer_layout:
             indexer_layer_ids = tuple(
                 layer_id
                 for layer_id in range(

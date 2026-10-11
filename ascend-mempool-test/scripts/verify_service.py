@@ -6,7 +6,7 @@ import argparse
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 RANKS = set(range(16))
 
@@ -36,7 +36,9 @@ def check_resources(role: str, data: dict[str, Any]) -> None:
         raise RuntimeError(f"unexpected formal {role} resources: {data}")
 
 
-def check_completion(data: dict[str, Any], layers: int, slots: tuple[int, ...]) -> str:
+def check_completion(
+    data: dict[str, Any], layers: int, slots: tuple[int, ...], *, graph: bool = True
+) -> str:
     """Require graph, binding and validated completion facts before release."""
     steps = data["forwards"]
     if (
@@ -46,7 +48,7 @@ def check_completion(data: dict[str, Any], layers: int, slots: tuple[int, ...]) 
         or data["layer_checks"] != steps * layers
         or data["submitted_kv"] != steps
         or data["written_kv"] != steps
-        or data["replay_forwards"] != steps
+        or data["replay_forwards"] != (steps if graph else 0)
     ):
         raise RuntimeError(f"incomplete formal decode: {data}")
     if data["status"] == "zero_decode":
@@ -66,7 +68,13 @@ def check_completion(data: dict[str, Any], layers: int, slots: tuple[int, ...]) 
 
 
 def check_logs(
-    prefill: list[Path], decode: list[Path], requests: int = 3, *, layers: int = 78
+    prefill: list[Path],
+    decode: list[Path],
+    requests: int = 3,
+    *,
+    layers: int = 78,
+    indexer_layer_ids: Optional[list[int]] = None,
+    graph: bool = True,
 ) -> dict[str, Any]:
     """Require complete attempts, every TP rank and physical slot reuse."""
     if requests < 3 or layers < 1:
@@ -120,6 +128,14 @@ def check_logs(
                         raise RuntimeError("duplicate startup; use fresh server logs")
                     data = json.loads(line.split(" data=", 1)[1])
                     check_resources(role, data)
+                    if indexer_layer_ids is not None and (
+                        data.get("model_layers") != layers
+                        or data.get("indexer_layer_ids") != indexer_layer_ids
+                        or data["registered_index_k_entries"] != len(indexer_layer_ids)
+                    ):
+                        raise RuntimeError(
+                            f"unexpected model/Index K layer layout: {data}"
+                        )
                     resources[role, rank] = data
                 if "mempool native_copy " in line:
                     if int(fields["main_kv_bytes"]) != 0:
@@ -169,8 +185,10 @@ def check_logs(
                             generations[slot_key] = generation
     if any(value != RANKS for value in mapping.values()):
         raise RuntimeError(f"missing mapping_ready on all 16 ranks: {mapping}")
-    if captured != RANKS or replayed != RANKS:
+    if graph and (captured != RANKS or replayed != RANKS):
         raise RuntimeError("missing capture/replay evidence on all 16 devices")
+    if not graph and (captured or replayed):
+        raise RuntimeError("unexpected Graph execution in eager logs")
     for rank in RANKS:
         for role in mapping:
             if (role, rank) not in resources or final_free.get((role, rank)) != 16:
@@ -224,7 +242,7 @@ def check_logs(
                 < p_events.index("DONE")
             ):
                 raise RuntimeError(f"misordered P readiness: room={room} rank={rank}")
-            rank_statuses.add(check_completion(data, layers, bound_slots))
+            rank_statuses.add(check_completion(data, layers, bound_slots, graph=graph))
             ordered = [
                 "acquire_decode",
                 "ACQUIRED",
@@ -250,11 +268,12 @@ def check_logs(
             raise RuntimeError(f"TP ranks disagree on request completion: room={room}")
         statuses[rank_statuses.pop()] += 1
     if statuses["zero_decode"] < 1 or statuses["completed"] < 2:
-        raise RuntimeError("require zero-decode and at least two real graph requests")
+        raise RuntimeError("require zero-decode and at least two real decode requests")
     if any(ranks != RANKS for ranks in reused.values()):
         raise RuntimeError("missing P/D physical slot reuse with new generations")
     return dict(
         status="formal_service_passed",
+        execution="graph" if graph else "eager",
         requests=len(attempts),
         ranks_per_side=16,
         zero_decode_requests=statuses["zero_decode"],
@@ -274,11 +293,18 @@ def main() -> None:
     parser.add_argument("--decode-log", type=Path, nargs="+", required=True)
     parser.add_argument("--requests", type=int, default=3)
     parser.add_argument("--layers", type=int, default=78)
+    parser.add_argument("--indexer-layer-ids", type=int, nargs="+")
+    parser.add_argument("--execution", choices=("graph", "eager"), default="graph")
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
     try:
         report = check_logs(
-            args.prefill_log, args.decode_log, args.requests, layers=args.layers
+            args.prefill_log,
+            args.decode_log,
+            args.requests,
+            layers=args.layers,
+            indexer_layer_ids=args.indexer_layer_ids,
+            graph=args.execution == "graph",
         )
     except Exception as exc:
         args.report.write_text(

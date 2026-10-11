@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import logging
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Sequence
 
 if TYPE_CHECKING:
     from sglang.srt.configs.model_config import ModelConfig
+    from sglang.srt.mem_cache.kv_cache_configurator import KVCacheConfigurator
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,16 @@ class SparseKVOffloadMode(str, Enum):
     def uses_index_k_only_transfer(self) -> bool:
         """Publish native Index K while compact KV stays in P/D BM."""
         return self in (
+            SparseKVOffloadMode.PD_PREFILL_MEMPOOL,
+            SparseKVOffloadMode.PD_DECODE_MEMPOOL,
+        )
+
+    @property
+    def uses_sparse_pd_transfer(self) -> bool:
+        """Ascend transfer with independent main-KV and Index K layer lists."""
+        return self in (
+            SparseKVOffloadMode.PD_PREFILL_NATIVE,
+            SparseKVOffloadMode.PD_DECODE_OFFLOAD,
             SparseKVOffloadMode.PD_PREFILL_MEMPOOL,
             SparseKVOffloadMode.PD_DECODE_MEMPOOL,
         )
@@ -224,6 +235,58 @@ def get_sparsity_driven_kv_offload_index_head_dim(
     return index_head_dim
 
 
+def get_sparse_pd_indexer_layer_ids(
+    kvc: KVCacheConfigurator,
+) -> Optional[tuple[int, ...]]:
+    """Select compact Index K only for the supported Ascend sparse PD path.
+
+    Both sizing and allocation use this policy. Other transports and cache
+    managers retain their existing layout; compact MLA KV still has every layer.
+    """
+    if (
+        kvc.sparse_kv_offload_mode is None
+        or not kvc.sparse_kv_offload_mode.uses_sparse_pd_transfer
+    ):
+        return None
+    import torch
+
+    from sglang.srt.configs.model_config import dsa_layer_skips_topk
+    from sglang.srt.runtime_context import get_memory, get_parallel
+
+    memory, parallel = get_memory(), get_parallel()
+    if (
+        kvc.kv_cache_dtype != torch.bfloat16
+        or kvc.is_draft_worker
+        or not kvc.spec_algorithm.is_none()
+        or memory.enable_hisparse
+        or memory.enable_hierarchical_cache
+        or memory.enable_unified_cache_external_linker
+        or parallel.pp_size != 1
+        or parallel.attn_cp_size != 1
+        or parallel.attn_dcp_size != 1
+    ):
+        return None
+    hf_config = kvc.model_config.hf_config
+    indexer_types = getattr(hf_config, "indexer_types", None)
+    if indexer_types is not None and (
+        not isinstance(indexer_types, (list, tuple))
+        or len(indexer_types) != hf_config.num_hidden_layers
+        or any(kind not in ("full", "shared") for kind in indexer_types)
+    ):
+        raise ValueError(
+            "Ascend sparse PD indexer_types must contain one full/shared entry "
+            "per model layer"
+        )
+    layer_ids = tuple(
+        layer_id
+        for layer_id in range(kvc.layer_info.start_layer, kvc.layer_info.end_layer)
+        if not dsa_layer_skips_topk(hf_config, layer_id)
+    )
+    if not layer_ids or layer_ids[0] != kvc.layer_info.start_layer:
+        raise ValueError("Ascend sparse PD requires a full indexer producer first")
+    return layer_ids
+
+
 def get_sparsity_driven_kv_offload_cell_size(
     *,
     model_config: ModelConfig,
@@ -231,6 +294,7 @@ def get_sparsity_driven_kv_offload_cell_size(
     num_layers: int,
     element_size: int,
     mode: Optional[SparseKVOffloadMode] = None,
+    indexer_layer_ids: Optional[Sequence[int]] = None,
 ) -> Optional[int]:
     if mode is None:
         mode = resolve_sparse_kv_offload_mode(
@@ -243,4 +307,5 @@ def get_sparsity_driven_kv_offload_cell_size(
     index_head_dim = get_sparsity_driven_kv_offload_index_head_dim(
         model_config=model_config
     )
-    return index_head_dim * num_layers * element_size
+    indexer_layers = num_layers if indexer_layer_ids is None else len(indexer_layer_ids)
+    return index_head_dim * indexer_layers * element_size

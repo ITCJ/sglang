@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ticket03 S5: the tested GLM-5.1 small-capacity launch, formal or native baseline.
+# Ascend sparse PD launch, formal or native baseline. Defaults retain ticket03.
 # Usage: bash ascend-mempool-test/scripts/run_service.sh prefill|decode [formal|native] [--dry-run]
 # Source the installed Ascend toolkit/ATB environments before running this script.
 set -euo pipefail
@@ -19,6 +19,15 @@ P_IP=${P_IP:-10.120.72.31}
 D_IP=${D_IP:-10.120.72.32}
 MODEL_PATH=${MODEL_PATH:-/data_lib/data/models/GLM-5.1-w4a8}
 LOG_DIR=${LOG_DIR:-/tmp/ticket03-s5-$mode}
+CONTEXT_LENGTH=${CONTEXT_LENGTH:-1024}
+PREFILL_CAPACITY=${PREFILL_CAPACITY:-512}
+DECODE_CAPACITY=${DECODE_CAPACITY:-512}
+GRAPH_MODE=${GRAPH_MODE:-graph}
+MAX_TOTAL_TOKENS=${MAX_TOTAL_TOKENS:-}
+if [[ "$GRAPH_MODE" != graph && "$GRAPH_MODE" != eager ]]; then
+    echo "GRAPH_MODE must be graph or eager" >&2
+    exit 2
+fi
 export PYTHONPATH="$repo_dir/python${PYTHONPATH:+:$PYTHONPATH}"
 export SGLANG_SET_CPU_AFFINITY=1
 export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
@@ -32,24 +41,25 @@ if [[ "$mode" == formal ]]; then export SGLANG_NPU_ENABLE_MEMPOOL=1; fi
 export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=${SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE:-0,2,4,6}
 export SGLANG_NPU_MEMPOOL_DIAGNOSTICS=0
 export SGLANG_NPU_USE_MLAPO=0
+export SGLANG_USE_FIA_NZ=0
 export HCCL_BUFFSIZE=1024
 export HCCL_SOCKET_IFNAME=${HCCL_SOCKET_IFNAME:-bond4}
 export GLOO_SOCKET_IFNAME=${GLOO_SOCKET_IFNAME:-bond4}
 export PYTHONUNBUFFERED=1
-unset ASCEND_LAUNCH_BLOCKING ASCEND_MF_TRANSFER_PROTOCOL
+unset ASCEND_LAUNCH_BLOCKING ASCEND_MF_TRANSFER_PROTOCOL SGLANG_ENABLE_SPEC_V2
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
 
 common=(
     python3 -m sglang.launch_server --model-path "$MODEL_PATH"
     --tp 16 --base-gpu-id 0 --gpu-id-step 1 --trust-remote-code
     --attention-backend ascend --device npu --quantization modelslim
-    --watchdog-timeout 9000 --mem-fraction-static 0.75 --context-length 1024
-    --disable-radix-cache --chunked-prefill-size -1 --max-prefill-tokens 512
+    --watchdog-timeout 9000 --mem-fraction-static 0.75 --context-length "$CONTEXT_LENGTH"
+    --disable-radix-cache --chunked-prefill-size -1 --max-prefill-tokens "$PREFILL_CAPACITY"
     --enable-dp-attention --dp-size 1 --enable-dp-lm-head --max-running-requests 16
     --prefill-max-requests 1 --disaggregation-transfer-backend ascend
     --disaggregation-mode "$role" --nnodes 1 --node-rank 0
     --moe-dense-tp-size 1 --moe-a2a-backend deepep --disable-shared-experts-fusion
-    --load-balance-method round_robin --dtype bfloat16
+    --load-balance-method round_robin --dtype bfloat16 --kv-cache-dtype bfloat16
 )
 if [[ "$role" == prefill ]]; then
     local_ip=$P_IP
@@ -63,7 +73,6 @@ if [[ "$role" == prefill ]]; then
 else
     local_ip=$D_IP
     export SGLANG_ENABLE_OVERLAP_PLAN_STREAM=1
-    export SGLANG_ENABLE_SPEC_V2=1
     export SGLANG_NPU_USE_MULTI_STREAM=1
     export SGLANG_DEEPEP_NUM_MAX_DISPATCH_TOKENS_PER_RANK=32
     export TASK_QUEUE_ENABLE=0
@@ -71,12 +80,18 @@ else
         --disaggregation-decode-extra-slots 0 --deepep-mode low_latency
         --cuda-graph-bs-decode 16)
 fi
+if [[ "$role" == decode && "$GRAPH_MODE" == eager ]]; then
+    common+=(--disable-cuda-graph)
+fi
+if [[ -n "$MAX_TOTAL_TOKENS" ]]; then
+    common+=(--max-total-tokens "$MAX_TOTAL_TOKENS")
+fi
 common+=(--dist-init-addr "$local_ip:10000")
 if [[ "$mode" == formal ]]; then
     common+=(--mempool-prefill-host "$P_IP" --mempool-bootstrap-port 8995
         --mempool-base-port 19000 --mempool-pool-id 104
-        --mempool-nic "tcp://$local_ip:25670" --mempool-prefill-capacity 512
-        --mempool-decode-capacity 512 --mempool-timeout 600)
+        --mempool-nic "tcp://$local_ip:25670" --mempool-prefill-capacity "$PREFILL_CAPACITY"
+        --mempool-decode-capacity "$DECODE_CAPACITY" --mempool-timeout 600)
 fi
 if [[ "$dry_run" == --dry-run ]]; then
     printf 'MEMPOOL=%s role=%s mode=%s\n' \
@@ -97,6 +112,7 @@ mkdir -p "$LOG_DIR"
         SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD SGLANG_NPU_ENABLE_MEMPOOL \
         SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE \
         SGLANG_NPU_MEMPOOL_DIAGNOSTICS SGLANG_NPU_USE_MLAPO \
+        SGLANG_USE_FIA_NZ \
         SGLANG_ENABLE_OVERLAP_PLAN_STREAM SGLANG_ENABLE_SPEC_V2 SGLANG_NPU_USE_MULTI_STREAM \
         SGLANG_DEEPEP_NUM_MAX_DISPATCH_TOKENS_PER_RANK ASCEND_MF_STORE_URL \
         HCCL_BUFFSIZE HCCL_SOCKET_IFNAME GLOO_SOCKET_IFNAME TASK_QUEUE_ENABLE \
@@ -108,5 +124,7 @@ mkdir -p "$LOG_DIR"
     done
     python3 -m pip list --format=freeze
     npu-smi info
+    cp "$MODEL_PATH/config.json" "$LOG_DIR/$role-model-config.json"
+    cp "$MODEL_PATH/quant_model_description.json" "$LOG_DIR/$role-quant-model-description.json"
 } > "$LOG_DIR/$role-environment.txt" 2>&1
 "${common[@]}" 2>&1 | tee "$LOG_DIR/$role.log"

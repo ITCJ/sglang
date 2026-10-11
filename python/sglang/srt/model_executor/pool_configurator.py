@@ -319,6 +319,7 @@ class DefaultPoolConfigurator(MemoryPoolConfigurator):
             ):
                 # NPU sparse KV offload uses an index-only device pool.
                 from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config import (
+                    get_sparse_pd_indexer_layer_ids,
                     get_sparsity_driven_kv_offload_cell_size,
                 )
 
@@ -328,6 +329,9 @@ class DefaultPoolConfigurator(MemoryPoolConfigurator):
                     num_layers=num_layers,
                     element_size=kv_size,
                     mode=kvc.sparse_kv_offload_mode,
+                    indexer_layer_ids=(
+                        get_sparse_pd_indexer_layer_ids(kvc) if _is_npu else None
+                    ),
                 )
                 if offload_cell_size is not None:
                     return offload_cell_size
@@ -486,6 +490,9 @@ class DefaultPoolConfigurator(MemoryPoolConfigurator):
             DSATokenToKVPool.index_k_with_scale_buffer_dtype
         )
         if _is_npu:
+            from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config import (
+                get_sparse_pd_indexer_layer_ids,
+            )
             from sglang.srt.hardware_backend.npu.utils import is_npu_arch35
 
             dtype = kvc.kv_cache_dtype
@@ -493,6 +500,12 @@ class DefaultPoolConfigurator(MemoryPoolConfigurator):
             if dtype != torch.float8_e4m3fn:
                 indexer_size_per_token = index_head_dim
                 element_size = torch._utils._element_size(dtype)
+            if not allocate_all_layers:
+                indexer_layer_ids = get_sparse_pd_indexer_layer_ids(kvc)
+                if indexer_layer_ids is not None:
+                    return (
+                        indexer_size_per_token * len(indexer_layer_ids) * element_size
+                    )
             if not is_npu_arch35():
                 allocate_all_layers = True
         memory_config = get_memory()

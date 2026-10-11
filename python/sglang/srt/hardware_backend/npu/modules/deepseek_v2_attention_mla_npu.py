@@ -372,6 +372,10 @@ def forward_dsa_prepare_npu(
     layer_scatter_modes,
     prev_topk_indices: torch.Tensor = None,
 ):
+    if m.skip_topk and not m.is_nextn and prev_topk_indices is None:
+        raise ValueError(
+            f"DSA shared layer {m.layer_id} requires top-k from this forward's producer"
+        )
     dynamic_scale = None
     mla_preprocess_used = (
         is_mla_preprocess_enabled()

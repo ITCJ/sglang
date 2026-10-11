@@ -1,3 +1,4 @@
+import logging
 from typing import TYPE_CHECKING, Optional, Sequence
 
 import torch
@@ -24,6 +25,8 @@ if TYPE_CHECKING:
 
 if is_npu():
     import torch_npu
+
+logger = logging.getLogger(__name__)
 
 
 def _mla_fia_nz_scatter_indices(
@@ -722,6 +725,13 @@ class NPUMLATokenToKVPool(MLATokenToKVPool):
                     )
 
         self._finalize_allocation_log(size)
+        if self.index_head_dim is not None:
+            logger.info(
+                "Ascend Index K layout: model_layers=%s indexer_layers=%s layer_ids=%s",
+                self.layer_num,
+                self.num_indexer_layers,
+                list(self.indexer_layer_ids),
+            )
 
     def get_kv_size_bytes(self):
         kv_size_bytes = 0

@@ -26,6 +26,8 @@ def service_logs():
                 index_k_bytes=100,
                 registered_index_k_entries=2,
                 registered_main_kv_entries=0,
+                model_layers=2,
+                indexer_layer_ids=[0, 1],
             )
             lines.append(
                 f"mempool resources role={role} rank={rank} data={json.dumps(resources)}"
@@ -102,15 +104,34 @@ def service_logs():
 
 
 class TestServiceGate(unittest.TestCase):
-    def check(self, logs):
+    def check(self, logs, **kwargs):
         with tempfile.TemporaryDirectory() as directory:
             paths = {}
             for role, content in logs.items():
                 paths[role] = Path(directory) / f"{role}.log"
                 paths[role].write_text(content)
             return verify_service.check_logs(
-                [paths["prefill"]], [paths["decode"]], requests=3, layers=2
+                [paths["prefill"]], [paths["decode"]], requests=3, layers=2, **kwargs
             )
+
+    def test_indexer_layout_is_checked_separately_from_all_kv_layers(self):
+        logs = {
+            role: text.replace(
+                '"registered_index_k_entries": 2', '"registered_index_k_entries": 1'
+            ).replace('"indexer_layer_ids": [0, 1]', '"indexer_layer_ids": [0]')
+            for role, text in service_logs().items()
+        }
+        self.check(logs, indexer_layer_ids=[0])
+        for old, new in (
+            ('"model_layers": 2', '"model_layers": 1'),
+            ('"indexer_layer_ids": [0]', '"indexer_layer_ids": [1]'),
+            ('"registered_index_k_entries": 1', '"registered_index_k_entries": 2'),
+        ):
+            with self.subTest(field=old), self.assertRaisesRegex(RuntimeError, "layer"):
+                self.check(
+                    {role: text.replace(old, new) for role, text in logs.items()},
+                    indexer_layer_ids=[0],
+                )
 
     def test_accepts_complete_formal_graph_and_reused_slots(self):
         report = self.check(service_logs())
@@ -119,6 +140,22 @@ class TestServiceGate(unittest.TestCase):
         self.assertEqual(report["decode_requests"], 2)
         self.assertEqual(report["accuracy"], "pending user curl check")
         self.assertEqual(report["performance"], "pending measured acceptance")
+
+    def test_eager_requires_zero_replays_and_all_layer_completion(self):
+        logs = service_logs()
+        logs["decode"] = "\n".join(
+            line.replace('"replay_forwards": 3', '"replay_forwards": 0')
+            for line in logs["decode"].splitlines()
+            if "mempool graph_" not in line
+        )
+        self.assertEqual(self.check(logs, graph=False)["execution"], "eager")
+        with self.assertRaises(RuntimeError):
+            self.check(logs)
+        logs["decode"] = logs["decode"].replace(
+            '"layer_checks": 6', '"layer_checks": 3'
+        )
+        with self.assertRaises(RuntimeError):
+            self.check(logs, graph=False)
 
     def test_rejects_incomplete_or_contradictory_server_evidence(self):
         cases = (

@@ -5,11 +5,13 @@ import ctypes
 import dataclasses
 import enum
 import logging
+import sys
 import time
 import unittest
 from collections import deque
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 import torch
@@ -224,6 +226,39 @@ def make_pool(mode):
 
 
 class TestPDPublication(unittest.TestCase):
+    def test_native_publication_keeps_noncontiguous_indexer_layer_ids(self):
+        namespace = {}
+        load_functions("disaggregation/utils.py", {"build_kv_layer_ids"}, namespace)
+        memory = SimpleNamespace(HybridLinearKVPool=type("HybridLinearKVPool", (), {}))
+        with patch.dict(sys.modules, {"sglang.srt.mem_cache.memory_pool": memory}):
+            pool = make_pool(Mode.PD_PREFILL_NATIVE)
+            ids = namespace["build_kv_layer_ids"](
+                token_to_kv_pool=pool,
+                draft_token_to_kv_pool=None,
+                num_draft_entries=0,
+                num_hidden_layers=8,
+            )
+        self.assertEqual(ids, list(range(8)) * 2 + [1, 4, 7])
+
+    def test_ordinary_sparse_pd_rejects_same_count_different_producers(self):
+        pool = make_pool(Mode.PD_PREFILL_NATIVE)
+        args = fill_args(API.KVArgs, pool, torch.zeros((4, 1), dtype=torch.int64))
+        args.prefill_start_layer, args.prefill_end_layer = 0, 8
+        args.kv_layer_ids = pool.get_kv_layer_ids()
+        manager = make_manager(
+            MANAGER, args, CopyEngine(), API.DisaggregationMode.PREFILL
+        )
+        with self.assertRaisesRegex(RuntimeError, "index-state layout mismatch"):
+            manager.send_kvcache(
+                "d:2",
+                np.array([1], dtype=np.int32),
+                args.kv_data_ptrs,
+                np.array([2], dtype=np.int32),
+                executor=None,
+                dst_layer_ids=list(range(8)) * 2 + [1, 4, 6],
+                dst_device_kv_indices=np.array([3], dtype=np.int32),
+            )
+
     def test_npu_gate_control_layout_is_valid(self):
         # Run the gate's actual fixture through production bounds validation
         # on CPU, before the paired NPU test can reach its first handshake.
@@ -232,6 +267,40 @@ class TestPDPublication(unittest.TestCase):
         self.assertEqual(descriptor.prompt_bytes, 37748736)
         self.assertEqual(descriptor.decode_bytes, 4718592)
         self.assertGreaterEqual(descriptor.stride_bytes, descriptor.prompt_bytes)
+        glm = make_gate_descriptor(PoolDescriptor, layers=78)
+        self.assertEqual(glm.layers, 78)
+        self.assertEqual(glm.prompt_bytes, 78 * 16 * 256 * 576 * 2)
+
+    def test_ordinary_sparse_pd_copies_all_kv_and_only_producer_index_k(self):
+        pool, target = make_pool(Mode.PD_PREFILL_NATIVE), make_pool(Mode.DISABLED)
+        args, _ = make_args(pool)
+        dst, _ = make_args(target)
+        args.prefill_start_layer, args.prefill_end_layer = 0, 8
+        args.kv_layer_ids = pool.get_kv_layer_ids()
+        manager = make_manager(
+            MANAGER, args, CopyEngine(), API.DisaggregationMode.PREFILL
+        )
+        for i in range(8):
+            pool.k_buffer[i, 1].fill_(i + 1)
+            pool.v_buffer[i, 1].fill_(-i - 1)
+        for slot, layer in enumerate(pool.indexer_layer_ids):
+            pool.index_k_buffer[slot, 1].fill_(layer + 20)
+        result = manager.send_kvcache(
+            "d:2",
+            np.array([1], np.int32),
+            dst.kv_data_ptrs,
+            np.array([2], np.int32),
+            executor=None,
+            dst_layer_ids=target.get_kv_layer_ids(),
+            dst_device_kv_indices=np.array([3], np.int32),
+        )
+        self.assertEqual(result, 0)
+        torch.testing.assert_close(target.k_buffer[:, 2], pool.k_buffer[:, 1])
+        torch.testing.assert_close(target.v_buffer[:, 2], pool.v_buffer[:, 1])
+        torch.testing.assert_close(
+            target.index_k_buffer[:, 3], pool.index_k_buffer[:, 1]
+        )
+        self.assertTrue((target.index_k_buffer[:, 2] == 0).all())
 
     def test_formal_both_sides_publish_only_actual_indexer_layers(self):
         for mode in (Mode.PD_PREFILL_MEMPOOL, Mode.PD_DECODE_MEMPOOL):

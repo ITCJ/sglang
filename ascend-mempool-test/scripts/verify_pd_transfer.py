@@ -53,8 +53,17 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--store-port", type=int, default=18875)
     parser.add_argument("--control-port", type=int, default=18876)
     parser.add_argument("--timeout", type=float, default=600)
+    parser.add_argument("--layers", type=int, default=8)
+    parser.add_argument("--indexer-layer-ids", type=int, nargs="+", default=[1, 4, 7])
     parser.add_argument("--report", type=Path, required=True)
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if (
+        args.layers < 1
+        or sorted(set(args.indexer_layer_ids)) != args.indexer_layer_ids
+        or any(i < 0 or i >= args.layers for i in args.indexer_layer_ids)
+    ):
+        parser.error("Index K layer IDs must be unique, sorted and within --layers")
+    return args
 
 
 def pack(message: Any) -> list[str]:
@@ -158,7 +167,7 @@ def verify(args: argparse.Namespace, channel: TestChannel) -> dict[str, Any]:
     )
     from sglang.srt.observability.trace import TraceNullContext
 
-    descriptor = make_gate_descriptor(PoolDescriptor)
+    descriptor = make_gate_descriptor(PoolDescriptor, layers=args.layers)
     torch.npu.set_device(args.device_id)
     device = f"npu:{args.device_id}"
     mode = Mode.PD_PREFILL_MEMPOOL if args.rank == 0 else Mode.PD_DECODE_MEMPOOL
@@ -173,7 +182,7 @@ def verify(args: argparse.Namespace, channel: TestChannel) -> dict[str, Any]:
         device=device,
         enable_memory_saver=False,
         index_head_dim=128,
-        indexer_layer_ids=(1, 4, 7),
+        indexer_layer_ids=args.indexer_layer_ids,
         sparse_kv_offload_mode=mode,
     )
     metadata = MetadataBuffers(6, 16, torch.bfloat16, max_sampling_mask_tokens=16)
@@ -189,8 +198,12 @@ def verify(args: argparse.Namespace, channel: TestChannel) -> dict[str, Any]:
     # service finalizes logical fields before receiver metadata publication.
     manager.register_buffer_to_engine()
     layout = manager.configure_mempool_transfer(pool)
-    assert layout.layer_ids == (1, 4, 7) and kv_args.kv_buf_groups == 1
-    assert len(engine.registered) == 3 + len(kv_args.aux_data_ptrs)
+    assert (
+        layout.layer_ids == tuple(args.indexer_layer_ids) and kv_args.kv_buf_groups == 1
+    )
+    assert len(engine.registered) == len(args.indexer_layer_ids) + len(
+        kv_args.aux_data_ptrs
+    )
     control = MempoolPDControl(
         PoolPeer(
             f"gate-{args.rank}-{os.getpid()}",
@@ -230,9 +243,9 @@ def verify(args: argparse.Namespace, channel: TestChannel) -> dict[str, Any]:
         for tensor in tensors.values():
             tensor.zero_()
         if args.rank == 0:
-            for i, layer in enumerate((1, 4, 7)):
-                pool.index_k_buffer[i, 1].fill_(10 * layer + 1)
-                pool.index_k_buffer[i, 4].fill_(10 * layer + 4)
+            for i, layer in enumerate(args.indexer_layer_ids):
+                pool.index_k_buffer[i, 1].fill_(layer + 1)
+                pool.index_k_buffer[i, 4].fill_(-layer - 1)
             for i, name in enumerate(sorted(tensors)):
                 tensors[name][1].fill_(i + 1)
             metadata.output_ids[1, 0] = 123 + case_index
@@ -257,9 +270,9 @@ def verify(args: argparse.Namespace, channel: TestChannel) -> dict[str, Any]:
             torch.npu.synchronize()
             expected = torch.full_like(pool.index_k_buffer, -9, device="cpu")
             if not empty and case != "bad_layout":
-                for i, layer in enumerate((1, 4, 7)):
-                    expected[i, 5].fill_(10 * layer + 1)
-                    expected[i, 2].fill_(10 * layer + 4)
+                for i, layer in enumerate(args.indexer_layer_ids):
+                    expected[i, 5].fill_(layer + 1)
+                    expected[i, 2].fill_(-layer - 1)
             torch.testing.assert_close(
                 pool.index_k_buffer.cpu(), expected, rtol=0, atol=0
             )
@@ -349,7 +362,7 @@ def verify(args: argparse.Namespace, channel: TestChannel) -> dict[str, Any]:
             sender = make_sender(AscendKVSender, manager, room, pages, KVPoll)
             sender.trace_ctx = TraceNullContext()
             if case == "bad_layout":
-                target.dst_kv_layer_ids = [0, 1, 2]
+                target.dst_kv_layer_ids = [i + args.layers for i in layout.layer_ids]
             if case == "cancel_inflight":
 
                 def cancel_during_copy() -> None:
@@ -405,6 +418,7 @@ def verify(args: argparse.Namespace, channel: TestChannel) -> dict[str, Any]:
         "main_kv_registered_entries": 0,
         "main_kv_sent_bytes": 0,
         "index_k_layer_ids": list(layout.layer_ids),
+        "model_layers": descriptor.layers,
         "aux_entries": len(kv_args.aux_data_ptrs),
         "scope": "one paired TP rank; real native transfer; BM readiness fixture; no model/TP collective",
     }

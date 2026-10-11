@@ -228,6 +228,8 @@ class MempoolPDService:
                             else 0
                         ),
                         index_k_bytes=pool.index_k_buffer.nbytes,
+                        model_layers=pool.layer_num,
+                        indexer_layer_ids=list(pool.indexer_layer_ids),
                         registered_index_k_entries=len(manager.kv_args.kv_data_ptrs),
                         registered_main_kv_entries=len(
                             set(manager.kv_args.kv_data_ptrs) - index_ptrs

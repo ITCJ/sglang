@@ -994,6 +994,17 @@ def build_kv_layer_ids(
     """
     from sglang.srt.mem_cache.memory_pool import HybridLinearKVPool
 
+    # Ascend sparse PD publishes K/V for every model layer and Index K only
+    # for its producers. Preserve the source's actual IDs; inferring them from
+    # the destination would accept peers with different same-length layouts.
+    sparse_pd_mode = getattr(token_to_kv_pool, "sparse_kv_offload_mode", None)
+    if (
+        sparse_pd_mode is not None
+        and sparse_pd_mode.uses_sparse_pd_transfer
+        and draft_token_to_kv_pool is None
+    ):
+        return token_to_kv_pool.get_kv_layer_ids()
+
     if not isinstance(token_to_kv_pool, HybridLinearKVPool):
         return []
     layer_ids = token_to_kv_pool.get_kv_layer_ids()

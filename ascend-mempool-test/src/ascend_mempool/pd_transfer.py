@@ -14,9 +14,9 @@ from types import SimpleNamespace
 from typing import Any
 
 
-def make_gate_descriptor(descriptor_cls: Any) -> Any:
+def make_gate_descriptor(descriptor_cls: Any, *, layers: int = 8) -> Any:
     """Describe the standalone gate's BM fixture without allocating BM storage."""
-    layers, slots, prompt_tokens, decode_tokens, heads, dim = 8, 16, 256, 32, 1, 576
+    slots, prompt_tokens, decode_tokens, heads, dim = 16, 256, 32, 1, 576
     all_slot_row_bytes = layers * slots * heads * dim * 2  # BF16
     prompt_bytes = prompt_tokens * all_slot_row_bytes
     decode_bytes = decode_tokens * all_slot_row_bytes

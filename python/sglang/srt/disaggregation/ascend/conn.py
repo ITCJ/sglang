@@ -774,6 +774,23 @@ class AscendKVManager(MooncakeKVManager):
             for layer_id in dst_state_layer_ids
             if start_layer <= layer_id < end_layer
         ]
+        source_layer_ids = self.kv_args.kv_layer_ids
+        if source_layer_ids:
+            if (
+                source_layer_ids[: 2 * len(source_main_layer_ids)]
+                != source_main_layer_ids * 2
+                or source_layer_ids[2 * len(source_main_layer_ids) :]
+                != source_state_layer_ids
+            ):
+                raise RuntimeError(
+                    "Sparse KV PD source/destination index-state layout mismatch: "
+                    "producer layer IDs differ"
+                )
+        elif source_state_count != len(source_main_layer_ids):
+            raise RuntimeError(
+                "Sparse KV PD compact index-state layout mismatch: "
+                "source must publish actual producer layer IDs"
+            )
         if len(source_state_layer_ids) != source_state_count:
             raise RuntimeError(
                 "Sparse KV PD source/destination index-state layout mismatch: "

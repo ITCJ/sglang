@@ -138,3 +138,43 @@ Graph/service日志、baseline/mempool token序列及差异、性能数据和用
 本轮建立任务、算法合同、实施顺序及硬件验收条件；03已关闭，10可开始，04等待10。
 目前只完成已有代码入口核对，未实施本票、未执行GLM-5.2模型或NPU验收。
 用户尚未反馈普通GLM-5.2 sparse PD是否已跑通；该事实在baseline阶段核实。
+
+### 2026-10-11：紧凑 Index K 实现交付，等待用户执行 NPU 验收
+
+本轮基线为 `cryang/dev/mempool` 的 `8717142d31`。已有计算路径继续按显式
+`indexer_types` 产生/复用 top-k；新增策略仅开放受支持的 Ascend BF16 sparse PD
+（普通及正式 mempool，PP/CP/DCP=1、主模型非投机、无 HiCache/HiSparse 等缓存扩展），
+把实际 producer 层集合同时接入 pool 分配和容量估算。提供配置选出21层，
+GLM-5.1 全 full 配置保留78层。非法 indexer_types 或首层无 producer 明确拒绝。
+
+普通 sparse PD 发布 P 的实际层号，拒绝同数量但 producer 不同的传输；正式 mempool
+继续使用已有 peer 布局准入及 Index K-only handoff。NPU shared 层缺少本 forward
+producer 时提前报错。资源报告分别记录78个 model layers 和21个 indexer layer IDs。
+全部78层 compact KV 的 BM writer/fetch、cache 与完成检查继续使用模型层数。
+P 在写入完成后发布 KV_READY，Index K/aux 仍走 native handoff；D 等两类就绪后运行，
+drain 和 DONE/RELEASE_ACK 后才能归还 slot，Index K 紧凑化不改变这些所有权条件。
+
+必要的通用文件修改有三处：`mem_cache/kv_cache_configurator.py` 的 NPU pool 工厂选择
+producer 集合；`model_executor/pool_configurator.py` 的 NPU 成本分支与实际分配一致；
+`disaggregation/utils.py` 为 Ascend sparse PD 发布真实源层号。布局策略本身放在
+NPU `sparsity_driven_kv_offload/config.py`，通用 `_should_elide_dsa_index_k()` 的
+非PD限制保持原样，其他后端未开放紧凑PD。
+
+新增/扩展的独立 gate 覆盖21层布局/映射/字节数、普通与正式传输、同数量布局拒绝、
+78层独立KV数值/完成/重绑，以及资源日志与输出token校验。
+[GLM52 NPU说明](../../../ascend-mempool-test/GLM52.md)提供组件gate、3072-token输入容量、
+四组普通/正式 eager/Graph启动、固定chat输入、逐token比对、GLM-5.1回归及回传清单。
+算术 sanity 输入不含答案，checker拒绝截断、被裁剪的prompt和42.5等错误答案。
+
+Agent 在 Mac 实际执行：独立 CPU 全量223项通过；审查整改后 token gate 的4项定向测试
+通过；变更文件 Ruff、format、按目录配置的isort、Python3.9语法解析、bash -n、
+服务启动dry-run及git diff --check通过。mypy2.4检查29个相关源文件通过；全目录检查
+另发现未修改的 `scripts/verify_resources.py:243` 有 NumPy `pages` 变量的
+`var-annotated` 报错，因此该文件从通过的29项范围排除。mypy2.4不支持目标Python3.9，
+本次仅在临时配置切换至3.12运行类型检查，仓库配置未改。
+SGLang注册单测在Mac因缺少triton无法收集；未执行NPU、真实模型或远端BM测试。
+
+Standards/Spec两路review完成：交付成功标记及算术sanity的发现已修复并复核，
+无未解决的代码/交付阻塞。仍待用户代码核对、完整W8A8量化与实际加载、真实21→57
+复用链、2048边界/长请求、NPU eager/Graph数值、服务生命周期、token对照和GLM-5.1
+硬件回归。按verification.md保持 `State: open`、验收项未勾选，04尚未解锁。
