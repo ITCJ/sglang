@@ -110,7 +110,7 @@ NUMA/驱动窗口及大容量调查仍由用户在09独立跟进；本票不承�
   普通baseline先做合理输出检查，不能把两条路径同错当作正确。
 - [ ] 真实P/D请求通过handoff、Graph decode、drain、DONE/RELEASE_ACK及slot归还；
   21层Index K的handoff不能导致78层KV完成检查误判。
-- [ ] 同版本GLM-5.1原有配置、普通/正式模式回归通过；记录GLM-5.2性能观测，
+- [ ] 同版本GLM-5.1正式mempool + Graph快速冒烟通过（用户2026-10-11简化回归范围）；记录GLM-5.2性能观测，
   不预设跨模型相同速度或固定加速比例。
 - [ ] 完成Standards/Spec review、本地检查、用户代码核对和用户NPU验收，
   按[阶段交付流程](../verification.md)记录证据后关闭10并解锁04。
@@ -222,3 +222,63 @@ Standards/Spec审查发现的mini-lb健康路由和未执行回归误标均已�
 
 等待用户执行NPU验收。`automated_checks_passed`仅表示所选自动项通过；仍需用户
 核对baseline文本、完整量化/实际后端、性能观测及GLM-5.1回归证据，再确认关闭10。
+
+### 2026-10-11：用户回传 glm52-r2 双机自动验收通过
+
+用户在npu1-31（P，10.120.72.31）和npu1-32（D，10.120.72.32）的现有容器内，
+从`/home/cryang/sglang`运行`run_ticket10.sh`，run-id为`glm52-r2`，模型路径为
+`/data_lib/data/models/GLM-5.2-w4a8`。两侧回传的完整控制台阶段结果均为：
+transfer、fetch、native-eager、native-graph、formal-eager、formal-graph、
+glm52/token-comparison通过，最终输出`AUTOMATED_CHECKS_PASSED`。
+P还显示三组compare进程均成功完成。
+
+这是用户实际NPU执行证据，不是agent的CPU模拟测试。按交付入口的检查语义，覆盖
+21层Index K传输、78层独立KV数值/Graph组件、四组真实模型请求、正式生命周期checker，
+以及其他三组相对native-eager逐token一致性。固定输入包含1024、2047、2048、3072
+prompt tokens，另有zero-decode，两轮共10请求；请求checker包含算术sanity。
+
+日志根目录：`/home/cryang/log/ticket10/glm52-r2/`，两侧报告分别为
+`prefill/summary.json`和`decode/summary.json`。交付提交为`4dc8607ef3`，实机精确SHA、
+依赖及模型摘要仍以待回传的identity/summary为准；目前未读取详细JSON、模型响应或rank日志。
+本次命令未传`--glm51-model-path`，因此GLM-5.1回归尚未执行。
+下一步归档详细报告，核对部署/完整量化与性能观测，补GLM-5.1回归后由用户确认关闭。
+保留State: open；不把GLM-5.2已通过的自动项继续记为尚未运行。
+
+
+### 2026-10-11：详细报告核对，GLM-5.1回归改为快速冒烟
+
+用户补齐P/D summary与formal eager/Graph service.json。两侧SHA均为
+`4dc8607ef3ffa7353dadc68c04a7f490a2b6345b`；依赖均为torch `2.10.0+cpu`、
+torch-npu `2.10.0`、sgl-kernel-npu `2026.9.0`、memfabric-hybrid `1.1.4`。
+模型config、quant描述、tokenizer及chat模板摘要两侧一致。
+两组formal报告均为formal_service_passed，每侧16 ranks、10请求，其中2个zero-decode、
+8个decode。所有P/D rank均为model_layers=78、registered_index_k_entries=21，
+producer层号与提供配置完全一致；index_k_bytes=44728320。
+registered_main_kv_entries、host_kv_bytes、staging_bytes均为0，transport_staging=false；
+P native_kv_bytes=747601920，D native_kv_bytes=0、sparse_cache_bytes=3128426496。
+每rank本轮累计Index K传输99090432 bytes、aux 97920 bytes，两组一致。
+这些累计传输量不能与pool常驻分配字节数直接比较。
+
+service.json的accuracy/performance pending是独立生命周期checker的固定字段，
+不覆盖summary中已完成的算术sanity及逐token一致性结果；性能仍未测量。
+用户要求GLM-5.1“快速的就可以，不用那么复杂”，后续回归范围据此改为正式mempool +
+Graph的短请求冒烟：确认加载成功、78层Index K、连续不同问题正常回答且无错误。
+不要求重跑GLM-5.2或GLM-5.1四组矩阵；该快速回归不宣称普通/正式逐token对照已完成。
+当前仍等待该冒烟结果及用户最终验收确认。
+
+
+### 2026-10-12：GLM-5.1快速自主回归入口
+
+按用户要求扩展现有run_ticket10入口，增加`--suite glm51-quick`。P/D各运行一次，
+自动核对版本/模型元数据、启动GLM-5.1正式mempool + Graph及router，发送三道短题
+各两轮和两个zero-decode（共8请求），检查答案42/63/84、78层Index K及KV、Graph、
+全rank释放/slot复用，然后清理自有进程。默认权重路径为GLM-5.1-w4a8，context1024、
+P/D容量512，日志仍在/home/cryang/log/ticket10/<run-id>/<role>。
+成功报告标记glm51_regression=quick_smoke_passed，不运行GLM-5.2、组件或四组对照。
+根AGENTS.md新增用户要求的自主测试约定。仅改独立验收工具/测试/文档，未改生产运行时。
+
+Mac实际执行：独立CPU全量234项通过；双端快速编排使用替代模型进程，保留真实
+生命周期checker及控制通信，未运行NPU。Ruff/format/isort、Python3.9语法、bash -n、
+--describe、git diff --check通过；沿用临时3.12配置及verify_resources.py排除的mypy
+30源文件通过。Standards/Spec审查无阻断问题；续接文档已改为运行GLM-5.1快速入口，
+避免重跑已通过的GLM-5.2。GLM-5.1实机结果待用户回传，ticket保持open。

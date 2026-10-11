@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 
-def prepare(model: Path) -> dict[str, Any]:
+def prepare(model: Path, *, quick: bool = False) -> dict[str, Any]:
     from transformers import AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(str(model), trust_remote_code=True)
@@ -59,6 +59,34 @@ def prepare(model: Path) -> dict[str, Any]:
                 rendered_input=tokenizer.decode(ids),
             )
         )
+    if quick:
+        cases = []
+        for expression, answer in (("17 + 25", 42), ("9 * 7", 63), ("100 - 16", 84)):
+            ids = tokenizer.apply_chat_template(
+                [
+                    dict(
+                        role="user",
+                        content=(
+                            f"Compute {expression}. Give one short English sentence explaining "
+                            "the calculation, and finish with 'Answer: <number>'."
+                        ),
+                    )
+                ],
+                tokenize=True,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            )
+            if not 0 < len(ids) <= 512:
+                raise ValueError("quick chat input must fit within 512 tokens")
+            cases.append(
+                dict(
+                    name=f"answer_{answer}",
+                    input_ids=ids,
+                    max_new_tokens=128,
+                    expected_answer=answer,
+                    rendered_input=tokenizer.decode(ids),
+                )
+            )
     zero = dict(cases[0], name="zero_decode", max_new_tokens=1)
     patterns = (
         "config.json",
@@ -101,11 +129,12 @@ def check_response(case: dict[str, Any], response: dict[str, Any]) -> None:
         return
     if len(ids) < 2 or meta["finish_reason"]["type"] != "stop":
         raise ValueError(f"{case['name']}: require real decode and a complete answer")
+    answer = re.escape(str(case.get("expected_answer", 42)))
     if not re.search(
-        r"\bAnswer:\s*42[.!]?\s*\Z", response.get("text", ""), re.IGNORECASE
+        rf"\bAnswer:\s*{answer}[.!]?\s*\Z", response.get("text", ""), re.IGNORECASE
     ):
         raise ValueError(
-            f"{case['name']}: answer sanity check failed (expected Answer: 42)"
+            f"{case['name']}: answer sanity check failed (expected Answer: {answer})"
         )
 
 
@@ -184,6 +213,9 @@ def main() -> None:
     prep = commands.add_parser("prepare")
     prep.add_argument("--model-path", type=Path, required=True)
     prep.add_argument("--output", type=Path, required=True)
+    prep.add_argument(
+        "--quick", action="store_true", help="Three short arithmetic cases"
+    )
     execute = commands.add_parser("run")
     execute.add_argument("--url", required=True)
     execute.add_argument("--cases", type=Path, required=True)
@@ -194,7 +226,10 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "prepare":
         args.output.write_text(
-            json.dumps(prepare(args.model_path), ensure_ascii=False, indent=2) + "\n"
+            json.dumps(
+                prepare(args.model_path, quick=args.quick), ensure_ascii=False, indent=2
+            )
+            + "\n"
         )
     elif args.command == "run":
         run(args.url, json.loads(args.cases.read_text()), args.report)

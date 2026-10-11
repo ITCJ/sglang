@@ -70,6 +70,33 @@ BF16 KV和普通非投机decode。P/D每rank BM各6GiB，每机96GiB；模型输
 
 ## 可选参数与结果
 
+### GLM-5.1快速自主回归
+
+两侧同步代码、释放旧服务后，P先执行，D随即执行（各自在仓库根目录）：
+
+```bash
+# P容器
+bash ascend-mempool-test/scripts/run_ticket10.sh \
+  --role prefill --prefill-host 10.120.72.31 --decode-host 10.120.72.32 \
+  --run-id glm51-quick-r1 --suite glm51-quick
+
+# D容器
+bash ascend-mempool-test/scripts/run_ticket10.sh \
+  --role decode --prefill-host 10.120.72.31 --decode-host 10.120.72.32 \
+  --run-id glm51-quick-r1 --suite glm51-quick
+```
+
+默认权重为`/data_lib/data/models/GLM-5.1-w4a8`，可用`--glm51-model-path`覆盖。
+只运行GLM-5.1正式mempool + Graph一次启动，自动处理router、请求、日志及进程清理。
+短题17+25、9×7、100−16各跑两遍，加两个zero-decode，共8个请求；输入最多512 tokens，
+输出最多128 tokens。服务context1024、P/D容量512、Graph bucket16、非投机decode。
+检查答案42/63/84、78层Index K及KV、全rank Graph/生命周期和slot复用。
+该模式不运行组件、GLM-5.2或native/eager对照；不宣称覆盖长请求或完整精度回归。
+成功时两侧summary的`glm51_regression`为`quick_smoke_passed`；P侧另存
+`glm51/formal-graph/tokens.json`和`service.json`。日志仍在统一的run-id目录下。
+
+### 原有完整流程
+
 - 只跑组件：两边加 `--suite components`。
 - 组件已有通过证据，只跑四组模型：两边加 `--suite models`。
 - 连同GLM-5.1回归：两边加 `--glm51-model-path /data_lib/data/models/GLM-5.1-w4a8`。
@@ -85,4 +112,4 @@ formal的D日志副本及service.json。
 这只代表选择的自动检查通过；未选GLM-5.1时报告明确标记`not run`。
 保留两侧目录并回传summary及失败阶段日志。最终还需人工核对baseline文本合理、
 实际量化/后端与性能观测，再按verification.md确认关闭ticket10。
-本自动入口只在Mac做过CPU编排和脚本检查，真实双机NPU首跑待用户验收。
+GLM-5.2完整入口已收到用户glm52-r2双机通过报告；GLM-5.1快速模式的实机结果待用户回传。

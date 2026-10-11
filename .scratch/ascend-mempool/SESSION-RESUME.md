@@ -1,6 +1,6 @@
 # Ascend mempool：新会话入口
 
-更新日期：2026-10-11。用途：从长会话切换到新会话，继续开发。
+更新日期：2026-10-12。用途：从长会话切换到新会话，继续开发。
 本文件是进度快照；需求与验收以链接的 spec、ticket 最新记录为准。
 
 ## 先读这些
@@ -37,7 +37,7 @@
 | [01](issues/01-mempool-kv-view-graph.md) KV view / Graph | closed，双机组件验收通过 | 保留回归 |
 | [02](issues/02-rank-pair-control-lifecycle.md) 16 rank-pair 控制闭环 | closed，历史 shadow/读回/正常生命周期通过 | shadow 已由03删除，旧记录仅作历史 |
 | [03](issues/03-prefill-direct-offload.md) 正式路径 cutover | closed，用户确认 S6 NPU 验收完成，无剩余整改项 | 不重开 S6 |
-| [10](issues/10-glm52-indexer-sharing.md) GLM-5.2 indexer sharing | open，实现已交付；用户反馈正式服务启动及短请求正常 | 运行容器自动验收并核对结果 |
+| [10](issues/10-glm52-indexer-sharing.md) GLM-5.2 indexer sharing | open，用户回传glm52-r2双机全部自动项通过 | 归档详细报告，补GLM-5.1回归及部署/性能核对 |
 | [04](issues/04-single-request-graph-decode.md) 正式 Graph / 模型集成 | open，等待10；包含 P/D miss 并行读取建议 | 10后执行；并行具体方案仍需落实 |
 | [05](issues/05-batch-slot-reuse.md) batch / slot复用 | open，等待04 | 多请求与复用系统验证 |
 | [06](issues/06-acquire-wait-cancel.md) acquire等待 / decode前取消 | open，等待04 | 容量压力、超时、取消 |
@@ -62,10 +62,13 @@
 该结果是模型加载/短生成的初步证据，不证明 >2048 稀疏选择、普通 sparse PD 或 mempool 正确。
 
 紧凑21层Index K的容量估算、分配与普通/正式Ascend PD接线已完成，78层compact KV
-继续独立。用户随后反馈正式服务及短请求正常，但尚无完整NPU验收报告。
+继续独立。用户已回传glm52-r2两端控制台：组件、四组模型、token对照全部通过；
+详细P/D summary及两组formal service.json已收到并核对，实机SHA为`4dc8607ef3`。
+此结果为用户实际NPU执行证据；GLM-5.1未运行，用户已把其范围简化为快速冒烟。
 下一步按[容器自动验收说明](../../ascend-mempool-test/TICKET10_DOCKER.md)在P/D各运行一次
-`run_ticket10.sh`，覆盖组件、2048边界/长请求、四组token对照与生命周期；可追加GLM-5.1。
-日志统一在`/home/cryang/log/`，保持MTP关闭。CPU231项通过不替代硬件验收。
+`run_ticket10.sh --suite glm51-quick`，只启动一次GLM-5.1正式Graph，自动执行8个短请求
+及答案/78层布局/生命周期检查；无需重跑GLM-5.2。日志统一在`/home/cryang/log/`，
+保持MTP关闭。以后测试都交付自主运行入口，约定已写入根AGENTS.md。
 
 ## 已接受的工程边界
 

@@ -42,6 +42,15 @@ class TestModelTokens(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 gate.check_response(self.case, response)
 
+    def test_quick_answer_cannot_reuse_previous_question_result(self):
+        for answer in (63, 84):
+            case = dict(self.case, expected_answer=answer)
+            with self.assertRaisesRegex(ValueError, "answer"):
+                gate.check_response(case, self.response)
+            gate.check_response(
+                case, dict(self.response, text=f"Calculation done. Answer: {answer}")
+            )
+
     def test_comparison_checks_tokens_and_workload(self):
         report = dict(
             status="passed",
@@ -72,7 +81,8 @@ class TestModelTokens(unittest.TestCase):
         class Tokenizer:
             def apply_chat_template(self, messages, **kwargs):
                 self.options = kwargs
-                return "<user>" + messages[0]["content"] + "</user><assistant>"
+                text = "<user>" + messages[0]["content"] + "</user><assistant>"
+                return self.encode(text) if kwargs.get("tokenize") else text
 
             def encode(self, text, **kwargs):
                 return list(map(ord, text))
@@ -89,6 +99,17 @@ class TestModelTokens(unittest.TestCase):
             patch.dict(sys.modules, {"transformers": transformers}),
         ):
             fixture = gate.prepare(Path(folder))
+            quick = gate.prepare(Path(folder), quick=True)
+        self.assertEqual(
+            [c["expected_answer"] for c in quick["cases"]], [42, 42, 63, 84]
+        )
+        self.assertEqual(quick["cases"][0]["max_new_tokens"], 1)
+        for case in quick["cases"]:
+            self.assertLessEqual(len(case["input_ids"]), 512)
+            self.assertNotIn("PADDING", case["rendered_input"])
+            self.assertNotIn(
+                f"Answer: {case['expected_answer']}", case["rendered_input"]
+            )
         self.assertFalse(tokenizer.options["enable_thinking"])
         self.assertEqual(
             [len(c["input_ids"]) for c in fixture["cases"]],

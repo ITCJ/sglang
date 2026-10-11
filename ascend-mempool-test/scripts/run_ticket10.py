@@ -74,7 +74,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--glm51-model-path", type=Path, help="Also run the GLM-5.1 regression matrix"
     )
     parser.add_argument(
-        "--suite", choices=("all", "components", "models"), default="all"
+        "--suite", choices=("all", "components", "models", "glm51-quick"), default="all"
     )
     parser.add_argument(
         "--log-root", type=Path, default=Path("/home/cryang/log/ticket10")
@@ -89,6 +89,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Show plan without opening sockets or launching processes",
     )
     args = parser.parse_args(argv)
+    if args.suite == "glm51-quick" and args.glm51_model_path is None:
+        args.glm51_model_path = Path("/data_lib/data/models/GLM-5.1-w4a8")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", args.run_id):
         parser.error("run-id must be a simple directory name, at most 80 characters")
     if (
@@ -276,7 +278,8 @@ class Acceptance:
                 "commit or restore local code/test edits before paired acceptance"
             )
         if self.args.suite != "components":
-            identity["glm52"] = model_identity(self.args.model_path, "glm52")
+            if self.args.suite != "glm51-quick":
+                identity["glm52"] = model_identity(self.args.model_path, "glm52")
             if self.args.glm51_model_path:
                 identity["glm51"] = model_identity(self.args.glm51_model_path, "glm51")
         self.peer.send("identity", value=identity)
@@ -371,7 +374,13 @@ class Acceptance:
             self.completed(name)
 
     def check_lifecycle(
-        self, root: Path, label: str, execution: str, watch: Callable[[], None]
+        self,
+        root: Path,
+        label: str,
+        execution: str,
+        watch: Callable[[], None],
+        *,
+        requests: int = 10,
     ) -> None:
         deadline = time.monotonic() + min(self.args.timeout, 180)
         while True:
@@ -382,7 +391,7 @@ class Acceptance:
                 result = verify_service.check_logs(
                     [root / "prefill.log"],
                     [root / "decode.log"],
-                    10,
+                    requests,
                     layers=78,
                     indexer_layer_ids=PRODUCERS
                     if label == "glm52"
@@ -399,7 +408,9 @@ class Acceptance:
                     raise
                 time.sleep(2)
 
-    def model(self, label: str, model: Path) -> None:
+    def model(self, label: str, model: Path, *, quick: bool = False) -> None:
+        if quick and label != "glm51":
+            raise ValueError("quick smoke is only defined for GLM-5.1")
         model_root = self.root / label
         cases = model_root / "cases.json"
         if self.is_p:
@@ -413,13 +424,14 @@ class Acceptance:
                         str(model),
                         "--output",
                         str(cases),
+                        *(["--quick"] if quick else []),
                     ),
                 )
                 jobs.wait(
                     "prepare", child, timeout=self.args.timeout, check=self.peer.check
                 )
         self.peer.barrier(label + "-prepared")
-        for mode_name in MODES:
+        for mode_name in ("formal-graph",) if quick else MODES:
             mode, execution = mode_name.split("-")
             root = model_root / mode_name
             self.peer.barrier(label + "-" + mode_name)
@@ -433,9 +445,9 @@ class Acceptance:
                     MODEL_PATH=str(model),
                     LOG_DIR=str(root),
                     GRAPH_MODE=execution,
-                    CONTEXT_LENGTH="8192",
-                    PREFILL_CAPACITY="4096",
-                    DECODE_CAPACITY="4096",
+                    CONTEXT_LENGTH="1024" if quick else "8192",
+                    PREFILL_CAPACITY="512" if quick else "4096",
+                    DECODE_CAPACITY="512" if quick else "4096",
                     MAX_TOTAL_TOKENS="8192",
                 )
 
@@ -503,7 +515,13 @@ class Acceptance:
                         check=watch_router,
                     )
                     if mode == "formal":
-                        self.check_lifecycle(root, label, execution, watch_router)
+                        self.check_lifecycle(
+                            root,
+                            label,
+                            execution,
+                            watch_router,
+                            requests=8 if quick else 10,
+                        )
                     self.peer.send("requests-done")
                 else:
                     while True:
@@ -516,6 +534,9 @@ class Acceptance:
                 self.peer.barrier("requests-checked")
             self.peer.barrier("servers-stopped")
             self.completed(label + "/" + mode_name)
+        if quick:
+            self.completed(label + "/quick-smoke")
+            return
         if self.is_p:
             with Processes(model_root, self.env) as jobs:
                 for candidate in MODES[1:]:
@@ -555,8 +576,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     role=args.role,
                     logs=str(root),
                     suite=args.suite,
-                    components=["transfer", "fetch"] if args.suite != "models" else [],
-                    model_modes=MODES if args.suite != "components" else [],
+                    components=["transfer", "fetch"]
+                    if args.suite in ("all", "components")
+                    else [],
+                    model_modes=("formal-graph",)
+                    if args.suite == "glm51-quick"
+                    else MODES
+                    if args.suite != "components"
+                    else [],
+                    models=["glm51"]
+                    if args.suite == "glm51-quick"
+                    else (
+                        []
+                        if args.suite == "components"
+                        else ["glm52"] + (["glm51"] if args.glm51_model_path else [])
+                    ),
                     glm51_regression=args.suite != "components"
                     and args.glm51_model_path is not None,
                 ),
@@ -577,9 +611,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             runner = Acceptance(args, peer, root)
             try:
                 runner.preflight()
-                if args.suite != "models":
+                if args.suite in ("all", "components"):
                     runner.components()
-                if args.suite != "components":
+                if args.suite == "glm51-quick":
+                    runner.model("glm51", args.glm51_model_path, quick=True)
+                elif args.suite != "components":
                     runner.model("glm52", args.model_path)
                     if args.glm51_model_path:
                         runner.model("glm51", args.glm51_model_path)
@@ -589,6 +625,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     acceptance="pending user review of output, deployment and performance",
                     glm51_regression="passed"
                     if "glm51/token-comparison" in runner.report["stages"]
+                    else "quick_smoke_passed"
+                    if "glm51/quick-smoke" in runner.report["stages"]
                     else "not run",
                 )
                 write_json(root / "summary.json", runner.report)

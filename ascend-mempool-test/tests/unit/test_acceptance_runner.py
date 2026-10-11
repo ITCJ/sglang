@@ -111,6 +111,48 @@ class TestAcceptanceRunner(unittest.TestCase):
                 sending.result(timeout=3)
             self.assertEqual(dest.read_bytes(), source.read_bytes())
 
+    def test_quick_entry_skips_components_and_reports_smoke_only(self):
+        def passed(agent, label, model, *, quick):
+            self.assertEqual(label, "glm51")
+            self.assertEqual(model, Path("/data_lib/data/models/GLM-5.1-w4a8"))
+            self.assertTrue(quick)
+            agent.completed("glm51/formal-graph")
+            agent.completed("glm51/quick-smoke")
+
+        with tempfile.TemporaryDirectory() as folder:
+            old_handler = signal.getsignal(signal.SIGTERM)
+            self.addCleanup(signal.signal, signal.SIGTERM, old_handler)
+            with (
+                patch.object(runner, "connect"),
+                patch.object(runner, "Peer"),
+                patch.object(runner.Acceptance, "preflight"),
+                patch.object(runner.Acceptance, "components") as components,
+                patch.object(runner.Acceptance, "model", new=passed),
+            ):
+                status = runner.main(
+                    [
+                        "--role",
+                        "prefill",
+                        "--prefill-host",
+                        "p",
+                        "--decode-host",
+                        "d",
+                        "--run-id",
+                        "quick",
+                        "--suite",
+                        "glm51-quick",
+                        "--log-root",
+                        folder,
+                    ]
+                )
+            self.assertEqual(status, 0)
+            components.assert_not_called()
+            report = json.loads(
+                (Path(folder) / "quick/prefill/summary.json").read_text()
+            )
+            self.assertEqual(report["glm51_regression"], "quick_smoke_passed")
+            self.assertNotIn("glm51/token-comparison", report["stages"])
+
     def test_model_metadata_rejects_different_producer_with_same_count(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -135,7 +177,17 @@ class TestAcceptanceRunner(unittest.TestCase):
                 runner.model_identity(root, "glm52")
 
     def test_two_peers_finish_four_modes_and_check_real_reports(self):
+        self.exercise_model_pair(quick=False)
+
+    def test_quick_pair_runs_only_glm51_graph_and_checks_78_indexers(self):
+        self.exercise_model_pair(quick=True)
+
+    def exercise_model_pair(self, *, quick):
         """Substitute model executables; keep coordination and result checks real."""
+        label = "glm51" if quick else "glm52"
+        request_count = 8 if quick else 10
+        producers = list(range(78)) if quick else runner.PRODUCERS
+        launched = []
         fixture = dict(
             cases=[dict(name="long", input_ids=[1] * 3072, max_new_tokens=128)]
         )
@@ -158,12 +210,13 @@ class TestAcceptanceRunner(unittest.TestCase):
                 root.mkdir(parents=True, exist_ok=True)
 
             def start(self, name, command, **env):
+                launched.append((name, command))
                 if name == "launcher":
                     role = command[-2]
                     lines = service_logs()[role].splitlines()
                     # Extend the independent service fixture to ten requests.
                     template = [line for line in lines if "room=3 " in line]
-                    for room in range(4, 11):
+                    for room in range(4, request_count + 1):
                         lines += [
                             line.replace("room=3 ", f"room={room} ")
                             .replace("attempt3", f"attempt{room}")
@@ -178,11 +231,11 @@ class TestAcceptanceRunner(unittest.TestCase):
                     )
                     data = data.replace(
                         '"registered_index_k_entries": 2',
-                        '"registered_index_k_entries": 21',
+                        f'"registered_index_k_entries": {len(producers)}',
                     )
                     data = data.replace(
                         '"indexer_layer_ids": [0, 1]',
-                        '"indexer_layer_ids": ' + json.dumps(runner.PRODUCERS),
+                        '"indexer_layer_ids": ' + json.dumps(producers),
                     )
                     if env["GRAPH_MODE"] == "eager":
                         data = "\n".join(
@@ -239,7 +292,8 @@ class TestAcceptanceRunner(unittest.TestCase):
                 concurrent.futures.ThreadPoolExecutor() as threads,
             ):
                 futures = [
-                    threads.submit(agent.model, "glm52", root) for agent in agents
+                    threads.submit(agent.model, label, root, quick=quick)
+                    for agent in agents
                 ]
                 for future in futures:
                     future.result(timeout=10)
@@ -249,15 +303,30 @@ class TestAcceptanceRunner(unittest.TestCase):
                 for call in readiness.call_args_list
                 if "6699" in call.args[0]
             ]
-            self.assertEqual(router_probes, ["http://127.0.0.1:6699/health"] * 4)
-            for mode in ("formal-eager", "formal-graph"):
+            self.assertEqual(
+                router_probes, ["http://127.0.0.1:6699/health"] * (1 if quick else 4)
+            )
+            for mode in (
+                ("formal-graph",) if quick else ("formal-eager", "formal-graph")
+            ):
                 report = json.loads(
-                    (root / "prefill/glm52" / mode / "service.json").read_text()
+                    (root / "prefill" / label / mode / "service.json").read_text()
                 )
-                self.assertEqual(report["requests"], 10)
+                self.assertEqual(report["requests"], request_count)
                 self.assertEqual(report["status"], "formal_service_passed")
             self.assertEqual(agents[0].report["stages"], agents[1].report["stages"])
-            self.assertEqual(len(agents[0].report["stages"]), 5)
+            self.assertEqual(len(agents[0].report["stages"]), 2 if quick else 5)
+            if quick:
+                self.assertEqual(
+                    agents[0].report["stages"],
+                    ["glm51/formal-graph", "glm51/quick-smoke"],
+                )
+                self.assertFalse(
+                    any(name.startswith("compare-") for name, _ in launched)
+                )
+                self.assertIn(
+                    "--quick", next(cmd for name, cmd in launched if name == "prepare")
+                )
 
 
 if __name__ == "__main__":
