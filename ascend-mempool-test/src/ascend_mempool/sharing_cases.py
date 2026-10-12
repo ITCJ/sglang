@@ -23,7 +23,14 @@ class Case:
         return asdict(self)
 
 
-def cases(smoke: bool = False) -> list[Case]:
+def cases(smoke: bool = False, diagnostic: bool = False) -> list[Case]:
+    if diagnostic:
+        if smoke:
+            raise ValueError("write/read diagnostic requires eager and Graph")
+        return [
+            Case(f"write_then_read-{active}", "write_then_read", active=active)
+            for active in (1, 16)
+        ]
     if smoke:
         return [Case("write-tail", "logical", rows=17), Case("mixed-read", "read")]
     result = [

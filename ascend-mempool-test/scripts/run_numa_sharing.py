@@ -47,6 +47,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--control-port", type=int, default=19400)
     parser.add_argument("--timeout", type=float, default=3600)
     parser.add_argument(
+        "--diagnose-write-read",
+        action="store_true",
+        help="Only independent write_then_read 1/16-request cases; never acceptance",
+    )
+    parser.add_argument(
         "--log-root", type=Path, default=Path("/home/cryang/log/numa-sharing")
     )
     parser.add_argument(
@@ -60,6 +65,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Print configuration without NPU imports or network",
     )
     args = parser.parse_args(argv)
+    if args.diagnose_write_read and args.smoke:
+        parser.error("write/read diagnostic cannot be combined with smoke")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", args.run_id):
         parser.error("run-id must be a simple directory name, at most 80 characters")
     if args.prefill_host == args.decode_host:
@@ -81,7 +88,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         parser.error(
             "rounds, samples, repeats, warmup and delay-matmuls must be positive"
         )
-    if not args.smoke and (args.rounds < 3 or args.samples < 3):
+    if not (args.smoke or args.diagnose_write_read) and (
+        args.rounds < 3 or args.samples < 3
+    ):
         parser.error("full comparison needs at least three rounds and three samples")
     if args.topk != 2048 or min(args.prompt_tokens, args.decode_tokens) < 8192:
         parser.error("this matrix requires topk=2048 and P/D capacities >=8192")
@@ -101,21 +110,29 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 def describe(args: argparse.Namespace) -> dict[str, Any]:
     plan = SharingPlan(args.prompt_tokens, args.decode_tokens, slots=16)
     return dict(
-        scope="eager_smoke" if args.smoke else "full_component",
+        scope="write_read_diagnostic"
+        if args.diagnose_write_read
+        else "eager_smoke"
+        if args.smoke
+        else "full_component",
         plan=asdict(plan),
         topk=args.topk,
         block_dims=args.block_dims,
         engines=["eager"] if args.smoke else ["eager", "graph"],
         consumer_sides=[0, 1],
         consumer_schedule="one side at a time; opposite side joined and idle",
-        mode_order=[
+        mode_order=[["independent"]]
+        if args.diagnose_write_read
+        else [
             ["independent", "shared"] if r % 2 == 0 else ["shared", "independent"]
             for r in range(args.rounds)
         ],
         independent_contributions=plan.contributions("independent"),
         shared_contributions=plan.contributions("shared"),
         rank_stride_bytes=plan.layout().rank_stride_bytes,
-        cases=[case.signature() for case in cases(args.smoke)],
+        cases=[
+            case.signature() for case in cases(args.smoke, args.diagnose_write_read)
+        ],
         samples=args.samples,
         repeats=args.repeats,
         warmup=args.warmup,
@@ -154,6 +171,12 @@ def local_groups(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
         )
     config = reports[0]["config"]
     contract = ("mode", "round", "side", "smoke", "block_dims", "samples", "repeats")
+    if any(
+        r["config"].get("diagnose_write_read", False)
+        != config.get("diagnose_write_read", False)
+        for r in reports
+    ):
+        raise RuntimeError("local workers disagree on diagnostic scope")
     if {r["config"]["member"] for r in reports} != {0, 1} or any(
         any(r["config"][name] != config[name] for name in contract) for r in reports
     ):
@@ -162,7 +185,7 @@ def local_groups(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
         )
     expected = {
         json.dumps([case.signature(), engine, blocks, sample], sort_keys=True)
-        for case in cases(config["smoke"])
+        for case in cases(config["smoke"], config.get("diagnose_write_read", False))
         for engine in (["eager"] if config["smoke"] else ["eager", "graph"])
         for blocks in config["block_dims"]
         for sample in range(config["samples"])
@@ -351,17 +374,23 @@ def add_reader_efficiency(comparison: list[dict[str, Any]]) -> None:
 
 
 def completion_outcome(
-    smoke: bool, local_numa_verified: bool, peer_numa_verified: bool
+    smoke: bool,
+    local_numa_verified: bool,
+    peer_numa_verified: bool,
+    *,
+    diagnostic: bool = False,
 ) -> dict[str, Any]:
     """Both hosts retain incomplete acceptance while still returning measurements."""
     verified = local_numa_verified and peer_numa_verified
     return dict(
-        status="smoke_passed"
+        status="diagnostic_passed"
+        if diagnostic
+        else "smoke_passed"
         if smoke
         else "component_checks_passed"
         if verified
         else "component_results_pending_numa",
-        exit_code=0 if smoke or verified else 2,
+        exit_code=0 if diagnostic or smoke or verified else 2,
         numa_placement_verified=verified,
         numa_acceptance="verified" if verified else "pending",
     )
@@ -410,6 +439,7 @@ def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
                             topk=args.topk,
                             block_dims=args.block_dims,
                             smoke=args.smoke,
+                            diagnose_write_read=args.diagnose_write_read,
                             warmup=args.warmup,
                             samples=args.samples,
                             repeats=args.repeats,
@@ -469,13 +499,18 @@ def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
     if type(peer_numa_verified) is not bool:
         raise RuntimeError("invalid peer NUMA result")
     result = dict(
-        **completion_outcome(args.smoke, local_numa_verified, peer_numa_verified),
+        **completion_outcome(
+            args.smoke,
+            local_numa_verified,
+            peer_numa_verified,
+            diagnostic=args.diagnose_write_read,
+        ),
         scope=plan["scope"],
         role=args.role,
         identity=identity,
         physical_allocations=allocations,
         groups=all_groups,
-        comparison=summarize(all_groups),
+        comparison=[] if args.diagnose_write_read else summarize(all_groups),
         service_performance_acceptance="not run",
         user_acceptance="pending",
         ticket_state="open",

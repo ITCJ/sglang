@@ -53,6 +53,24 @@ Mac 使用已安装CPU torch的Python环境，可在同一完整命令上添加 
 每个 case 暖机3次、3个样本、每样本64次操作。`--timeout` 默认每阶段3600秒。
 正式计时与 profiler 单独运行。
 
+### run-2 写后读阻塞的诊断入口
+
+两侧原命令改用新的相同run-id，并追加
+`--diagnose-write-read --block-dims 48 --timeout 300`。
+诊断仅执行一次independent，保留`write_then_read-1`→`write_then_read-16`的
+原有顺序、双consumer及eager/Graph切换；默认仍为3 samples、64 repeats。
+不运行shared、多轮对照及delayed-publication profiler。
+诊断成功仅输出`DIAGNOSTIC_PASSED`、退出0，scope为`write_read_diagnostic`，
+comparison为空；NUMA证据仍如实记录，不能作为完整组件验收。
+若成功，只能说明缩小后的场景未复现，不能宣布原完整矩阵的阻塞已修复。
+
+诊断worker将带UTC时间的步骤写入日志及`member-*/progress.json`，每次步骤
+推进会重置60秒栈转储计时器；无进展60秒后自动打印Python线程栈并每60秒重复。
+这些诊断步骤位于设备计时区间外，不新增设备同步或改变copy/HCCL的执行顺序。
+`--timeout`仍是父进程对整个worker的时间预算，不是按case重置的无进展计时器；
+300秒超时后还需自身进程的清理时间。诊断失败返回非零，请回传两侧worker日志
+最后的`[DEBUG-numa-sharing]`步骤、自动栈及父进程错误；无需等待完整矩阵。
+
 默认 BF16 compact row 为576维／1152 bytes；2层、16 slots，P 每slot8192 tokens、
 D 每slot16384 tokens，top-k2048。每个 owner 额外256-byte identity probe，
 按既有1 GiB粒度对齐，故独立模式每侧2 GiB，共享模式每侧1 GiB。

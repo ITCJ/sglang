@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import faulthandler
 import importlib
 import json
 import math
@@ -13,10 +14,11 @@ import signal
 import sys
 import time
 import traceback
+from functools import partial
 from itertools import product
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -34,6 +36,14 @@ def save(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, indent=2) + "\n")
 
 
+def checkpoint(output: Path, label: str) -> None:
+    """Keep the last host boundary and dump stacks after a minute without progress."""
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    save(output / "progress.json", dict(phase=label, timestamp=now))
+    print(f"[DEBUG-numa-sharing] {now} {label}", flush=True)
+    faulthandler.dump_traceback_later(60, repeat=True)
+
+
 def check_work(
     work: CopyWorkload,
     pipeline: Pipeline,
@@ -44,21 +54,33 @@ def check_work(
     variant: int,
     *,
     empty: bool = False,
+    progress: Callable[[str], None] = lambda label: None,
 ) -> None:
+    progress(label + "/load")
     work.load(variant, empty=empty)
     pipeline.update()
+    progress(label + "/metadata-sync")
     torch.npu.synchronize()
+    progress(label + "/reset-ready")
     cohort.exchange(label + "/reset-ready")
+    progress(label + "/reset-write")
     if work.has_write:
         work.reset_write_region(torch)
+    progress(label + "/reset-done")
     cohort.exchange(label + "/reset-done")
+    progress(label + "/launch")
     with torch.npu.stream(pipeline.main):
         pipeline.main.wait_stream(torch.npu.default_stream())
         pipeline.run(invoke)
+    progress(label + "/device-sync")
     torch.npu.synchronize()
+    progress(label + "/verify-selected")
     pipeline.verify()
+    progress(label + "/copies-drained")
     cohort.exchange(label + "/copies-drained")
+    progress(label + "/verify-writes")
     work.verify_writes(torch)
+    progress(label + "/verified")
     cohort.exchange(label + "/verified")
 
 
@@ -66,12 +88,17 @@ def benchmark(
     pool: SharingPool, cohort: Cohort, config: dict[str, Any], torch: Any, output: Path
 ) -> list[dict[str, Any]]:
     results = []
+    diagnostic = config.get("diagnose_write_read", False)
+    progress: Callable[[str], None] = (
+        partial(checkpoint, output) if diagnostic else lambda label: None
+    )
     engines = ["eager"] if config["smoke"] else ["eager", "graph"]
     for blocks in config["block_dims"]:
-        for case, consumer_side in product(cases(config["smoke"]), (0, 1)):
+        for case, consumer_side in product(cases(config["smoke"], diagnostic), (0, 1)):
             for engine in engines:
                 label = f"{blocks}/{case.name}/consumer-{consumer_side}/{engine}"
                 print(f"BEGIN {label}", flush=True)
+                progress(label + "/create-workload")
                 active_side = pool.rank == consumer_side
                 work = CopyWorkload(
                     pool,
@@ -80,10 +107,12 @@ def benchmark(
                     block_dim=blocks,
                     side_active=active_side,
                 )
+                progress(label + "/create-pipeline")
                 pipeline = Pipeline(work, torch, measure_selected=active_side)
                 graph = None
                 invoke = pipeline.launch
                 if engine == "graph" and active_side:
+                    progress(label + "/graph-warmup")
                     work.load(0, empty=True)
                     pipeline.update()
                     with torch.npu.stream(pipeline.main):
@@ -91,6 +120,7 @@ def benchmark(
                         for _ in range(config["warmup"]):
                             pipeline.run(pipeline.launch)
                     torch.npu.synchronize()
+                    progress(label + "/graph-capture")
                     graph = torch.npu.NPUGraph()
                     with torch.npu.graph(
                         graph, stream=pipeline.main, auto_dispatch_capture=True
@@ -107,13 +137,16 @@ def benchmark(
                         f"{label}/correctness-{variant}-{empty}",
                         variant,
                         empty=empty,
+                        progress=progress,
                     )
+                progress(label + "/sample-warmup")
                 with torch.npu.stream(pipeline.main):
                     for _ in range(config["warmup"]):
                         pipeline.run(invoke)
                 torch.npu.synchronize()
                 counts = work.byte_counts()
                 for sample in range(config["samples"]):
+                    progress(f"{label}/sample-{sample}")
                     repeats = config["repeats"]
                     event_pairs = [
                         (
@@ -182,6 +215,7 @@ def benchmark(
                     results.append(row)
                     # A barrier after every sample also bounds scratch lifetimes.
                     cohort.exchange(f"{label}/sample-{sample}/done")
+                progress(label + "/post-check")
                 pipeline.verify()
                 work.verify_writes(torch)
                 cohort.exchange(label + "/post-check")
@@ -191,6 +225,7 @@ def benchmark(
                 cohort.exchange(label + "/restore")
                 save(output / "samples.json", results)
                 print(f"PASS {label}", flush=True)
+                progress(label + "/release")
                 del graph, invoke, pipeline, work
                 torch.npu.empty_cache()
     return results
@@ -418,7 +453,7 @@ def run(config: dict[str, Any], output: Path) -> int:
             )
             distributed_ready = True
         report["samples"] = benchmark(pool, cohort, config, torch, output)
-        if not config["smoke"]:
+        if not config["smoke"] and not config.get("diagnose_write_read", False):
             report["delayed_publication"] = delayed_publication(
                 pool, cohort, config, torch, output
             )
@@ -480,7 +515,16 @@ def main() -> int:
         raise RuntimeError(f"worker received signal {signum}")
 
     signal.signal(signal.SIGTERM, stop)
-    return run(json.loads(args.config.read_text()), args.output)
+    config = json.loads(args.config.read_text())
+    diagnostic = config.get("diagnose_write_read", False)
+    if diagnostic:
+        faulthandler.enable()
+        checkpoint(args.output, "worker-start")
+    try:
+        return run(config, args.output)
+    finally:
+        if diagnostic:
+            faulthandler.cancel_dump_traceback_later()
 
 
 if __name__ == "__main__":

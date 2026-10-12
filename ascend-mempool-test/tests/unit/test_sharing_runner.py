@@ -57,6 +57,29 @@ class TestSharingRunner(unittest.TestCase):
         self.assertEqual(plan["scope"], "eager_smoke")
         self.assertEqual(plan["engines"], ["eager"])
 
+    def test_hang_diagnostic_preserves_preceding_graph_but_cannot_claim_acceptance(
+        self,
+    ):
+        args = self.args("--diagnose-write-read", "--block-dims", "48")
+        plan = runner.describe(args)
+        self.assertEqual(plan["scope"], "write_read_diagnostic")
+        self.assertEqual(plan["mode_order"], [["independent"]])
+        self.assertEqual(plan["engines"], ["eager", "graph"])
+        self.assertEqual(
+            [c["name"] for c in plan["cases"]],
+            ["write_then_read-1", "write_then_read-16"],
+        )
+        self.assertEqual(plan["samples"], 3)
+        self.assertEqual(plan["repeats"], 64)
+        for verified in (True, False):
+            outcome = runner.completion_outcome(
+                False, verified, verified, diagnostic=True
+            )
+            self.assertEqual(outcome["status"], "diagnostic_passed")
+            self.assertEqual(outcome["exit_code"], 0)
+        with self.assertRaises(SystemExit):
+            self.args("--diagnose-write-read", "--smoke")
+
     def test_unobservable_numa_on_either_host_cannot_claim_full_pass(self):
         for local, peer in ((False, True), (True, False), (False, False)):
             with self.subTest(local=local, peer=peer):
