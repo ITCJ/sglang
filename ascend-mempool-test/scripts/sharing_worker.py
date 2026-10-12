@@ -244,7 +244,11 @@ def delayed_publication(
             pool, case, topk=config["topk"], block_dim=config["block_dims"][0]
         )
         pipeline = Pipeline(
-            work, torch, delay_matmuls=config["delay_matmuls"], publication=True
+            work,
+            torch,
+            delay_matmuls=config["delay_matmuls"],
+            publication=True,
+            publication_timing=engine == "eager",
         )
         pipeline.update()
         graph = None
@@ -262,6 +266,7 @@ def delayed_publication(
                 pipeline.launch()
             invoke = graph.replay
         for variant in (0, 1):
+            print(f"BEGIN delay/{engine}/{variant}", flush=True)
             work.load(variant)
             pipeline.update()
             torch.npu.synchronize()
@@ -273,15 +278,47 @@ def delayed_publication(
                 pipeline.prepare()
                 invoke()
             early = None
-            if engine == "eager" and pool.member == 1:
-                pipeline.selected_ready.synchronize()
-                early = not pipeline.writer_done.query()
-                if not early:
-                    raise AssertionError(
-                        "delay fixture did not expose selected-ready before writer completion; increase --delay-matmuls"
-                    )
+            timing = {}
             torch.npu.synchronize()
             pipeline.verify()
+            if engine == "eager":
+                if not hasattr(pipeline.ready, "recorded_time"):
+                    raise RuntimeError(
+                        "publication diagnostic requires torch_npu Event.recorded_time()"
+                    )
+                # Same-device timestamps use microseconds since device startup.
+                # elapsed_time's start/end contract requires the same stream.
+                ready_us, selected_us, writer_us = (
+                    event.recorded_time()
+                    for event in (
+                        pipeline.ready,
+                        pipeline.selected_ready,
+                        pipeline.writer_done,
+                    )
+                )
+                if (
+                    any(
+                        type(v) is not int or v < 0
+                        for v in (ready_us, selected_us, writer_us)
+                    )
+                    or selected_us < ready_us
+                    or writer_us < ready_us
+                ):
+                    raise AssertionError(
+                        "invalid delayed-publication device timestamps"
+                    )
+                selected_ms = (selected_us - ready_us) / 1000
+                writer_ms = (writer_us - ready_us) / 1000
+                gap_ms = (writer_us - selected_us) / 1000
+                early = gap_ms > 0
+                timing = dict(
+                    ready_timestamp_us=ready_us,
+                    selected_timestamp_us=selected_us,
+                    writer_timestamp_us=writer_us,
+                    selected_ms=selected_ms,
+                    writer_ms=writer_ms,
+                    writer_minus_selected_ms=gap_ms,
+                )
             results.append(
                 dict(
                     engine=engine,
@@ -290,10 +327,18 @@ def delayed_publication(
                     publication_readback_passed=True,
                     graph_early_order_evidence="separate trace"
                     if engine == "graph"
-                    else "device event query",
+                    else "device timestamps relative to common ready event",
+                    **timing,
                 )
             )
+            save(output / "delayed-publication.json", results)
+            if engine == "eager" and pool.member == 1 and not early:
+                raise AssertionError(
+                    "delay fixture has no positive device overlap window: "
+                    f"{timing}; inspect stream ordering or increase --delay-matmuls"
+                )
             cohort.exchange(f"delay/{engine}/{variant}/done")
+            print(f"PASS delay/{engine}/{variant} {timing}", flush=True)
         # Profiling is a separate run and is NEVER merged into benchmark samples.
         torch_npu = importlib.import_module("torch_npu")
         with torch_npu.profiler.profile(
@@ -454,8 +499,15 @@ def run(config: dict[str, Any], output: Path) -> int:
                 timeout=datetime.timedelta(seconds=config["timeout"]),
             )
             distributed_ready = True
-        report["samples"] = benchmark(pool, cohort, config, torch, output)
-        if not config["smoke"] and not config.get("diagnostic", False):
+        report["samples"] = (
+            []
+            if config.get("diagnose_publication", False)
+            else benchmark(pool, cohort, config, torch, output)
+        )
+        if not config["smoke"] and (
+            not config.get("diagnostic", False)
+            or config.get("diagnose_publication", False)
+        ):
             report["delayed_publication"] = delayed_publication(
                 pool, cohort, config, torch, output
             )

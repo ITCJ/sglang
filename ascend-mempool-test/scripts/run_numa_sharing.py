@@ -57,6 +57,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="One complete independent matrix with stack diagnostics; never acceptance",
     )
+    diagnostics.add_argument(
+        "--diagnose-publication",
+        action="store_true",
+        help="Only delayed publication and traces in both pool modes; never acceptance",
+    )
     parser.add_argument(
         "--log-root", type=Path, default=Path("/home/cryang/log/numa-sharing")
     )
@@ -71,7 +76,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Print configuration without NPU imports or network",
     )
     args = parser.parse_args(argv)
-    args.diagnostic = args.diagnose_write_read or args.diagnose_independent
+    args.diagnostic = (
+        args.diagnose_write_read
+        or args.diagnose_independent
+        or args.diagnose_publication
+    )
     if args.diagnostic and args.smoke:
         parser.error("diagnostic cannot be combined with smoke")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", args.run_id):
@@ -115,7 +124,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 def describe(args: argparse.Namespace) -> dict[str, Any]:
     plan = SharingPlan(args.prompt_tokens, args.decode_tokens, slots=16)
     return dict(
-        scope="write_read_diagnostic"
+        scope="publication_diagnostic"
+        if args.diagnose_publication
+        else "write_read_diagnostic"
         if args.diagnose_write_read
         else "independent_diagnostic"
         if args.diagnose_independent
@@ -128,7 +139,9 @@ def describe(args: argparse.Namespace) -> dict[str, Any]:
         engines=["eager"] if args.smoke else ["eager", "graph"],
         consumer_sides=[0, 1],
         consumer_schedule="one side at a time; opposite side joined and idle",
-        mode_order=[["independent"]]
+        mode_order=[["independent", "shared"]]
+        if args.diagnose_publication
+        else [["independent"]]
         if args.diagnostic
         else [
             ["independent", "shared"] if r % 2 == 0 else ["shared", "independent"]
@@ -137,9 +150,9 @@ def describe(args: argparse.Namespace) -> dict[str, Any]:
         independent_contributions=plan.contributions("independent"),
         shared_contributions=plan.contributions("shared"),
         rank_stride_bytes=plan.layout().rank_stride_bytes,
-        cases=[
-            case.signature() for case in cases(args.smoke, args.diagnose_write_read)
-        ],
+        cases=[]
+        if args.diagnose_publication
+        else [case.signature() for case in cases(args.smoke, args.diagnose_write_read)],
         samples=args.samples,
         repeats=args.repeats,
         warmup=args.warmup,
@@ -181,7 +194,7 @@ def local_groups(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if any(
         r["config"].get(field, False) != config.get(field, False)
         for r in reports
-        for field in ("diagnostic", "diagnose_write_read")
+        for field in ("diagnostic", "diagnose_write_read", "diagnose_publication")
     ):
         raise RuntimeError("local workers disagree on diagnostic scope")
     if {r["config"]["member"] for r in reports} != {0, 1} or any(
@@ -190,6 +203,37 @@ def local_groups(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
         raise RuntimeError(
             "local worker configurations do not describe one matched pair"
         )
+    if config.get("diagnose_publication", False):
+        for report in reports:
+            rows = report.get("delayed_publication", [])
+            expected_rows = {
+                (engine, variant) for engine in ("eager", "graph") for variant in (0, 1)
+            }
+            if (
+                report.get("samples") != []
+                or len(rows) != 4
+                or {(r["engine"], r["variant"]) for r in rows} != expected_rows
+                or any(r.get("publication_readback_passed") is not True for r in rows)
+            ):
+                raise RuntimeError("incomplete publication diagnostic report")
+            for row in rows:
+                if row["engine"] != "eager":
+                    continue
+                selected, writer, gap = (
+                    row[name]
+                    for name in ("selected_ms", "writer_ms", "writer_minus_selected_ms")
+                )
+                if (
+                    not all(math.isfinite(v) for v in (selected, writer, gap))
+                    or min(selected, writer) < 0
+                    or not math.isclose(gap, writer - selected)
+                    or (
+                        report["config"]["member"] == 1
+                        and (gap <= 0 or row["selected_before_writer_done"] is not True)
+                    )
+                ):
+                    raise RuntimeError("invalid publication diagnostic timing")
+        return []
     expected = {
         json.dumps([case.signature(), engine, blocks, sample], sort_keys=True)
         for case in cases(config["smoke"], config.get("diagnose_write_read", False))
@@ -412,6 +456,7 @@ def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
     write_json(root / "identity.json", identity)
     all_groups: list[dict[str, Any]] = []
     allocations: list[dict[str, Any]] = []
+    publication_reports: list[dict[str, Any]] = []
     for round_id, order in enumerate(plan["mode_order"]):
         for mode in order:
             phase = f"round-{round_id}/{mode}"
@@ -448,6 +493,7 @@ def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
                             smoke=args.smoke,
                             diagnose_write_read=args.diagnose_write_read,
                             diagnostic=args.diagnostic,
+                            diagnose_publication=args.diagnose_publication,
                             warmup=args.warmup,
                             samples=args.samples,
                             repeats=args.repeats,
@@ -492,6 +538,16 @@ def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
                 groups = local_groups(reports)
                 all_groups.extend(groups)
                 allocations.extend(r["mapping"] for r in reports)
+                publication_reports.extend(
+                    dict(
+                        mode=mode,
+                        round=round_id,
+                        member=r["config"]["member"],
+                        checks=r["delayed_publication"],
+                    )
+                    for r in reports
+                    if "delayed_publication" in r
+                )
                 write_json(stage / "groups.json", groups)
                 peer.barrier(phase + "/closed")
                 print(f"PASS {phase}", flush=True)
@@ -517,6 +573,7 @@ def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
         role=args.role,
         identity=identity,
         physical_allocations=allocations,
+        delayed_publication=publication_reports,
         groups=all_groups,
         comparison=[] if args.diagnostic else summarize(all_groups),
         service_performance_acceptance="not run",

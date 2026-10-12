@@ -110,6 +110,7 @@ class Pipeline:
         *,
         delay_matmuls: int = 0,
         publication: bool = False,
+        publication_timing: bool = False,
         measure_selected: bool = False,
     ) -> None:
         self.work, self.torch = work, torch
@@ -133,11 +134,11 @@ class Pipeline:
             if work.case.operation == "current_parallel"
             else self.main
         )
-        self.ready = torch.npu.Event()
-        self.writer_done = torch.npu.Event()
+        self.ready = torch.npu.Event(enable_timing=publication_timing)
+        self.writer_done = torch.npu.Event(enable_timing=publication_timing)
         self.history_done = torch.npu.Event()
         self.current_done = torch.npu.Event()
-        self.selected_ready = torch.npu.Event()
+        self.selected_ready = torch.npu.Event(enable_timing=publication_timing)
         self.observer_graph = None
         self.selected_signal = None
         if measure_selected and work.case.operation in (

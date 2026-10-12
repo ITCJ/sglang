@@ -119,6 +119,63 @@ class TestSharingRunner(unittest.TestCase):
             with self.subTest(extra=extra), self.assertRaises(SystemExit):
                 self.args("--diagnose-independent", extra)
 
+    def test_publication_diagnostic_skips_benchmark_but_requires_publication_rows(self):
+        args = self.args("--diagnose-publication")
+        plan = runner.describe(args)
+        self.assertEqual(plan["scope"], "publication_diagnostic")
+        self.assertEqual(plan["mode_order"], [["independent", "shared"]])
+        self.assertEqual(plan["cases"], [])
+        reports = []
+        for member in (0, 1):
+            reports.append(
+                dict(
+                    status="checks_passed",
+                    closed=True,
+                    config=dict(
+                        member=member,
+                        side=1,
+                        mode="shared",
+                        round=0,
+                        smoke=False,
+                        block_dims=[24, 48],
+                        samples=3,
+                        repeats=64,
+                        diagnostic=True,
+                        diagnose_publication=True,
+                    ),
+                    samples=[],
+                    delayed_publication=[
+                        dict(
+                            engine=engine,
+                            variant=variant,
+                            publication_readback_passed=True,
+                            selected_before_writer_done=True
+                            if engine == "eager"
+                            else None,
+                            selected_ms=2.0,
+                            writer_ms=5.0,
+                            writer_minus_selected_ms=3.0,
+                        )
+                        for engine in ("eager", "graph")
+                        for variant in (0, 1)
+                    ],
+                )
+            )
+        self.assertEqual(runner.local_groups(reports), [])
+        for mutation in ("missing", "duplicate", "readback", "overlap"):
+            changed = deepcopy(reports)
+            rows = changed[1]["delayed_publication"]
+            if mutation == "missing":
+                rows.pop()
+            elif mutation == "duplicate":
+                rows[-1] = rows[0]
+            elif mutation == "readback":
+                rows[0]["publication_readback_passed"] = False
+            else:
+                rows[0]["writer_minus_selected_ms"] = -1
+            with self.subTest(mutation=mutation), self.assertRaises(RuntimeError):
+                runner.local_groups(changed)
+
     def test_partial_duplicate_or_competing_reports_cannot_pass(self):
         reports = []
         for member in (0, 1):

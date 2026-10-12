@@ -152,10 +152,24 @@ stream时将通信堵在等待之后。selected时间包含host提交与观察�
 [ExternalEvent wait/record实现](https://github.com/Ascend/pytorch/blob/master/torch_npu/csrc/core/npu/interface/AsyncTaskQueueInterface.cpp)。
 
 完整模式另做延迟writer测试：本地selected先可用，writer完成后接入本机两成员
-HCCL，再立即在设备上读取完整共享新行，之后才做host rendezvous。eager检查
-selected就绪时延迟writer仍未完成；Graph验证完整数据并输出独立trace。
+HCCL，再立即在设备上读取完整共享新行，之后才做host rendezvous。eager在设备
+drain后用`Event.recorded_time()`读取同一设备的原始微秒时间戳，计算ready→selected、ready→writer设备计时，要求延迟writer
+的完成时间严格晚于selected。host晚调度时query看到两者都完成不能判定设备先后。
+Graph验证完整数据并输出独立trace，不用capture内的旧时间戳判定重叠。
 此组件通信依赖不证明02真实模型TP hook已经接好。默认用512次矩阵乘产生延迟，
 如果设备上不足以形成可观察窗口，入口失败，需两侧一致调大 `--delay-matmuls`。
+
+run-6-full首轮shared性能矩阵完成后，D member-1在旧host query断言失败。
+设备计时修正后可先用`--diagnose-publication --timeout 600`和新run-id重测：
+只执行一轮independent/shared的初始化、映射/重入检查、KV staging及延迟发布
+eager/Graph、两种variant和独立trace，不执行性能矩阵。保留默认delay-matmuls=512，
+先区分host观测误报与设备间隔确实不足。scope为publication_diagnostic，成功仅为
+DIAGNOSTIC_PASSED，不作为三轮性能或NUMA完整验收；与其他diagnose及smoke互斥。
+只对eager发布检查启用事件计时；需要torch_npu提供
+[`Event.recorded_time()`](https://www.hiascend.com/document/detail/zh/Pytorch/700/apiref/apilist/ptaoplist_000248.html)。
+每个worker的delayed-publication.json逐项保存原始timestamp_us、selected_ms、writer_ms和
+writer_minus_selected_ms（eager）；后者不大于0时仍失败，失败前保留时间差。
+summary.json包含成功的delayed_publication记录，Graph先后关系仍需trace核对。
 
 全部worker停止提交、完成所有相关streams后才共同确认drained，再leave/destroy。
 异常会中止其他worker的阶段；只有四方确认drain才正常释放。超时、设备错误或
