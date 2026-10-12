@@ -37,18 +37,62 @@ def numa_evidence(address: int, node: int) -> dict[str, Any]:
         if lo <= address < hi:
             row = next((r for r in rows if int(r.split()[0], 16) == lo), "")
             pages = {int(n): int(p) for n, p in re.findall(r"\bN(\d+)=(\d+)", row)}
+            verified = pages.get(node, 0) > 0 and all(
+                n == node or p == 0 for n, p in pages.items()
+            )
+            fields = mapping.split(maxsplit=5)
+            driver_mapping = (
+                len(fields) == 6
+                and fields[5] == "/dev/davinci_manager"
+                and "file=/dev/davinci_manager" in row.split()
+            )
+            if verified:
+                status, reason = "verified", "resident pages are on the requested node"
+            elif any(p > 0 for p in pages.values()):
+                status, reason = (
+                    "mismatch",
+                    "resident pages include a different NUMA node",
+                )
+            elif driver_mapping:
+                status, reason = (
+                    "unobservable_driver_mapping",
+                    "davinci_manager mapping has no per-node page counts in /proc/self/numa_maps",
+                )
+            else:
+                status, reason = (
+                    "unobservable",
+                    "mapping has no per-node resident page counts",
+                )
             return dict(
                 host_address=hex(address),
+                requested_numa_node=node,
                 mapping=mapping,
                 numa_map=row,
                 resident_pages=pages,
-                placement_verified=pages.get(node, 0) > 0
-                and all(n == node or p == 0 for n, p in pages.items()),
+                placement_verified=verified,
+                status=status,
+                reason=reason,
             )
     return dict(
         host_address=hex(address),
+        requested_numa_node=node,
         placement_verified=False,
+        status="unmapped",
         reason="owner host mapping absent from /proc/self/maps",
+    )
+
+
+def check_numa_placement(evidence: dict[str, Any]) -> bool:
+    """Permit unobservable driver mappings for data collection, never verification."""
+    if evidence["placement_verified"]:
+        return True
+    if evidence.get("status") == "unobservable_driver_mapping":
+        return False
+    raise RuntimeError(
+        f"NUMA placement {evidence.get('status', 'unverified')}: "
+        f"{evidence.get('reason', 'missing placement evidence')}; "
+        f"requested={evidence.get('requested_numa_node')} "
+        f"resident_pages={evidence.get('resident_pages', {})}"
     )
 
 
@@ -230,7 +274,10 @@ class SharingPool(MempoolKVManager):
 
     def report(self) -> dict[str, Any]:
         evidence: dict[str, Any] = dict(
-            placement_verified=True, resident_pages={}, zero_contribution=True
+            placement_verified=True,
+            resident_pages={},
+            zero_contribution=True,
+            status="not_applicable",
         )
         if self.contribution:
             host = self._handle.gva_to_va(

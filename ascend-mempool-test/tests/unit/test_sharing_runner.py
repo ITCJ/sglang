@@ -57,6 +57,21 @@ class TestSharingRunner(unittest.TestCase):
         self.assertEqual(plan["scope"], "eager_smoke")
         self.assertEqual(plan["engines"], ["eager"])
 
+    def test_unobservable_numa_on_either_host_cannot_claim_full_pass(self):
+        for local, peer in ((False, True), (True, False), (False, False)):
+            with self.subTest(local=local, peer=peer):
+                outcome = runner.completion_outcome(False, local, peer)
+                self.assertEqual(outcome["status"], "component_results_pending_numa")
+                self.assertEqual(outcome["exit_code"], 2)
+                self.assertFalse(outcome["numa_placement_verified"])
+        complete = runner.completion_outcome(False, True, True)
+        self.assertEqual(complete["status"], "component_checks_passed")
+        self.assertEqual(complete["exit_code"], 0)
+        smoke = runner.completion_outcome(True, False, False)
+        self.assertEqual(smoke["status"], "smoke_passed")
+        self.assertEqual(smoke["exit_code"], 0)
+        self.assertFalse(smoke["numa_placement_verified"])
+
     def test_partial_duplicate_or_competing_reports_cannot_pass(self):
         reports = []
         for member in (0, 1):

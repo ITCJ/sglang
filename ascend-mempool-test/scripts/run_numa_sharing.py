@@ -144,7 +144,9 @@ def code_identity() -> dict[str, str]:
 
 def local_groups(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if len(reports) != 2 or any(
-        r.get("status") not in ("checks_passed", "smoke_passed") or not r.get("closed")
+        r.get("status")
+        not in ("checks_passed", "checks_passed_numa_unverified", "smoke_passed")
+        or not r.get("closed")
         for r in reports
     ):
         raise RuntimeError(
@@ -348,6 +350,23 @@ def add_reader_efficiency(comparison: list[dict[str, Any]]) -> None:
             )
 
 
+def completion_outcome(
+    smoke: bool, local_numa_verified: bool, peer_numa_verified: bool
+) -> dict[str, Any]:
+    """Both hosts retain incomplete acceptance while still returning measurements."""
+    verified = local_numa_verified and peer_numa_verified
+    return dict(
+        status="smoke_passed"
+        if smoke
+        else "component_checks_passed"
+        if verified
+        else "component_results_pending_numa",
+        exit_code=0 if smoke or verified else 2,
+        numa_placement_verified=verified,
+        numa_acceptance="verified" if verified else "pending",
+    )
+
+
 def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
     plan = describe(args)
     identity = dict(run_id=args.run_id, plan=plan, code=code_identity())
@@ -441,8 +460,16 @@ def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
             finally:
                 if server is not None:
                     server.close()
+    owners = [r for r in allocations if r["local_dram_bytes"] > 0]
+    if not owners:
+        raise RuntimeError("no physical owner allocation reports")
+    local_numa_verified = all(r["numa"]["placement_verified"] for r in owners)
+    peer.send("numa-result", placement_verified=local_numa_verified)
+    peer_numa_verified = peer.expect("numa-result")["placement_verified"]
+    if type(peer_numa_verified) is not bool:
+        raise RuntimeError("invalid peer NUMA result")
     result = dict(
-        status="smoke_passed" if args.smoke else "component_checks_passed",
+        **completion_outcome(args.smoke, local_numa_verified, peer_numa_verified),
         scope=plan["scope"],
         role=args.role,
         identity=identity,
@@ -488,7 +515,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     pass
                 raise
         print(f"{result['status'].upper()}: {root / 'summary.json'}", flush=True)
-        return 0
+        return int(result["exit_code"])
     except BaseException as exc:
         write_json(
             root / "failure.json",

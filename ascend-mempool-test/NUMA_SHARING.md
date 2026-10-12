@@ -71,8 +71,12 @@ reach 查询，记录 group callbacks，并在所有设备 drain 后让两名零
 分别 leave/rejoin，要求其他成员在本次操作开始后依次观察到 LEAVE/JOIN、
 映射保持稳定、probe仍正确；最初join的旧通知不能满足重入检查。
 这提供成员状态与访问的实际证据；不把参考SDK源码或普通join当成全部通过。
-物理owner的 `/proc/self/maps` 和 `numa_maps` 驻留页记录用于确认落点；完整模式
-不能证明落点时返回失败，并保留原始证据供核对。
+物理owner的 `/proc/self/maps` 和 `numa_maps` 驻留页记录用于确认落点。
+完整模式若观测到其他节点的驻留页，立即失败。两份记录均匹配的`/dev/davinci_manager`驱动映射
+可能不提供任何节点页计数；这种情况记录`unobservable_driver_mapping`，保持
+`placement_verified=false`，继续采集完整矩阵和trace，不将缺失计数当成节点错误。
+其他无法确认映射的情况仍立即失败。SDK分配日志（如`HalMemCreate ret:0 numa:0`）
+保留为补充证据，不自动替代物理落点的独立观测。
 
 固定地址的 inputs/source/output 支持空mask捕获后重放有效数据，覆盖slot/index
 切换、padding和重复replay。每次计时前后独立核对完整selected结果；写入由两个
@@ -148,8 +152,13 @@ mixed/scattered单请求读取另将同负载的双reader和owner/follower单rea
 报告 `dual_reader_efficiency`：实测双reader BM带宽除以两次实测单reader带宽之和。
 分母只用于效率诊断，报告中的双reader吞吐始终来自同时运行的那组样本。
 
-完整成功输出 `COMPONENT_CHECKS_PASSED`，smoke仅为 `SMOKE_PASSED`。
+完整成功输出 `COMPONENT_CHECKS_PASSED`，smoke仅为 `SMOKE_PASSED`，退出码0。
+完整模式若任一侧任一owner的驱动映射没有节点页计数，完成测量、双侧报告收集和清理后，
+两侧均输出`COMPONENT_RESULTS_PENDING_NUMA`并返回退出码2；`summary.json`包含
+完整结果、`numa_placement_verified=false`和`numa_acceptance=pending`。
+这表示数据采集完成、NUMA证据仍待确认，不能作为完整验收通过或解锁02。
+smoke保留未验证的NUMA状态，但不执行完整模式的落点门禁；smoke退出码0不代表完整验收。
 内容错误、版本／配置不一致、NUMA／mapping／成员检查失败、缺样本、无法对齐、
-timeout或cleanup错误均返回非零。组件不引入逐case的3%门槛；用户审阅读写瓶颈、
+timeout或cleanup错误返回退出码1。组件不引入逐case的3%门槛；用户审阅读写瓶颈、
 selected-ready、去重和可用候选后，才按verification.md确认关闭01并解锁02。
 TP16吞吐与ITL三项3%正式门槛仍由03验收。
