@@ -205,7 +205,7 @@ def benchmark(
                         device_ms=sum(durations),
                         device_calls_ms=durations,
                         selected_calls_ms=selected_times,
-                        selected_timing="captured external wait with fresh observer timestamp; includes observer delay"
+                        selected_timing="captured external wait submitted after producer; fresh observer timestamp includes host submission and observer delay"
                         if pipeline.selected_signal is not None
                         else "same as complete copy",
                         fixture_cache_reset_in_host_envelope=case.operation

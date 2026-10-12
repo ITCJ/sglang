@@ -143,6 +143,11 @@ graph；包括warmup/check在内，每次实际调用都消费信号，再允许
 旧event后端在main上reset，value-wait后端由wait消费并清零。每次在graph外
 创建新计时事件，因此结果包括观察stream调度延迟，不读取内部capture事件
 的旧时间戳。该机制仍须在部署SDK上实测，版本不兼容会直接失败。
+观察等待在producer（含HCCL）提交后入队，避免观察stream复用已缓存的HCCL
+stream时将通信堵在等待之后。selected时间包含host提交与观察调度延迟，是就绪
+延迟的观测上界，不能单独据此断言writer是否发生重叠；另用独立trace核对。
+依据：[HCCL stream分配与缓存](https://github.com/Ascend/pytorch/blob/master/torch_npu/csrc/distributed/ProcessGroupHCCL.cpp)、
+[stream池复用](https://github.com/Ascend/pytorch/blob/master/torch_npu/csrc/core/npu/NPUStream.cpp)。
 接口依据：[torch_npu events](https://github.com/Ascend/pytorch/blob/master/torch_npu/npu/streams.py)、
 [ExternalEvent wait/record实现](https://github.com/Ascend/pytorch/blob/master/torch_npu/csrc/core/npu/interface/AsyncTaskQueueInterface.cpp)。
 

@@ -211,14 +211,19 @@ class Pipeline:
             selected = selected if selected is not None else torch.npu.Event()
         if start is not None:
             self.main.record_event(start)
+        # HCCL caches a stream from the same pool as these Python streams. After
+        # enough cases the observer can alias that cached communication stream.
+        # Submit the producer/collective before the observer's external wait;
+        # otherwise that wait blocks HCCL, while main waits for HCCL before it
+        # can record the signal. This also applies to replayed producer graphs.
+        invoke()
+        if end is not None:
+            self.main.record_event(end)
         if self.observer_graph is not None:
             with torch.npu.stream(self.observer):
                 self.observer.wait_event(start)
                 self.observer_graph.replay()
                 self.observer.record_event(selected)
-        invoke()
-        if end is not None:
-            self.main.record_event(end)
         if self.observer_graph is not None:
             # Do not reset/re-record until the previous wait consumed its signal.
             self.main.wait_event(selected)
