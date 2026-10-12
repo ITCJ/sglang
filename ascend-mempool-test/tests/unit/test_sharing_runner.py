@@ -95,6 +95,30 @@ class TestSharingRunner(unittest.TestCase):
         self.assertEqual(smoke["exit_code"], 0)
         self.assertFalse(smoke["numa_placement_verified"])
 
+    def test_independent_diagnostic_preserves_entire_original_matrix(self):
+        full = runner.describe(self.args())
+        args = self.args("--diagnose-independent")
+        diagnostic = runner.describe(args)
+        self.assertTrue(args.diagnostic)
+        self.assertEqual(diagnostic["scope"], "independent_diagnostic")
+        self.assertEqual(diagnostic["mode_order"], [["independent"]])
+        for field in (
+            "cases",
+            "block_dims",
+            "engines",
+            "consumer_sides",
+            "samples",
+            "repeats",
+            "warmup",
+            "plan",
+            "topk",
+        ):
+            self.assertEqual(diagnostic[field], full[field], field)
+        self.assertEqual(diagnostic["block_dims"], [24, 48])
+        for extra in ("--smoke", "--diagnose-write-read"):
+            with self.subTest(extra=extra), self.assertRaises(SystemExit):
+                self.args("--diagnose-independent", extra)
+
     def test_partial_duplicate_or_competing_reports_cannot_pass(self):
         reports = []
         for member in (0, 1):

@@ -46,10 +46,16 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--delay-matmuls", type=int, default=512)
     parser.add_argument("--control-port", type=int, default=19400)
     parser.add_argument("--timeout", type=float, default=3600)
-    parser.add_argument(
+    diagnostics = parser.add_mutually_exclusive_group()
+    diagnostics.add_argument(
         "--diagnose-write-read",
         action="store_true",
         help="Only independent write_then_read 1/16-request cases; never acceptance",
+    )
+    diagnostics.add_argument(
+        "--diagnose-independent",
+        action="store_true",
+        help="One complete independent matrix with stack diagnostics; never acceptance",
     )
     parser.add_argument(
         "--log-root", type=Path, default=Path("/home/cryang/log/numa-sharing")
@@ -65,8 +71,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Print configuration without NPU imports or network",
     )
     args = parser.parse_args(argv)
-    if args.diagnose_write_read and args.smoke:
-        parser.error("write/read diagnostic cannot be combined with smoke")
+    args.diagnostic = args.diagnose_write_read or args.diagnose_independent
+    if args.diagnostic and args.smoke:
+        parser.error("diagnostic cannot be combined with smoke")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", args.run_id):
         parser.error("run-id must be a simple directory name, at most 80 characters")
     if args.prefill_host == args.decode_host:
@@ -88,9 +95,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         parser.error(
             "rounds, samples, repeats, warmup and delay-matmuls must be positive"
         )
-    if not (args.smoke or args.diagnose_write_read) and (
-        args.rounds < 3 or args.samples < 3
-    ):
+    if not (args.smoke or args.diagnostic) and (args.rounds < 3 or args.samples < 3):
         parser.error("full comparison needs at least three rounds and three samples")
     if args.topk != 2048 or min(args.prompt_tokens, args.decode_tokens) < 8192:
         parser.error("this matrix requires topk=2048 and P/D capacities >=8192")
@@ -112,6 +117,8 @@ def describe(args: argparse.Namespace) -> dict[str, Any]:
     return dict(
         scope="write_read_diagnostic"
         if args.diagnose_write_read
+        else "independent_diagnostic"
+        if args.diagnose_independent
         else "eager_smoke"
         if args.smoke
         else "full_component",
@@ -122,7 +129,7 @@ def describe(args: argparse.Namespace) -> dict[str, Any]:
         consumer_sides=[0, 1],
         consumer_schedule="one side at a time; opposite side joined and idle",
         mode_order=[["independent"]]
-        if args.diagnose_write_read
+        if args.diagnostic
         else [
             ["independent", "shared"] if r % 2 == 0 else ["shared", "independent"]
             for r in range(args.rounds)
@@ -172,9 +179,9 @@ def local_groups(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
     config = reports[0]["config"]
     contract = ("mode", "round", "side", "smoke", "block_dims", "samples", "repeats")
     if any(
-        r["config"].get("diagnose_write_read", False)
-        != config.get("diagnose_write_read", False)
+        r["config"].get(field, False) != config.get(field, False)
         for r in reports
+        for field in ("diagnostic", "diagnose_write_read")
     ):
         raise RuntimeError("local workers disagree on diagnostic scope")
     if {r["config"]["member"] for r in reports} != {0, 1} or any(
@@ -440,6 +447,7 @@ def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
                             block_dims=args.block_dims,
                             smoke=args.smoke,
                             diagnose_write_read=args.diagnose_write_read,
+                            diagnostic=args.diagnostic,
                             warmup=args.warmup,
                             samples=args.samples,
                             repeats=args.repeats,
@@ -503,14 +511,14 @@ def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
             args.smoke,
             local_numa_verified,
             peer_numa_verified,
-            diagnostic=args.diagnose_write_read,
+            diagnostic=args.diagnostic,
         ),
         scope=plan["scope"],
         role=args.role,
         identity=identity,
         physical_allocations=allocations,
         groups=all_groups,
-        comparison=[] if args.diagnose_write_read else summarize(all_groups),
+        comparison=[] if args.diagnostic else summarize(all_groups),
         service_performance_acceptance="not run",
         user_acceptance="pending",
         ticket_state="open",

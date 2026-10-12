@@ -88,13 +88,15 @@ def benchmark(
     pool: SharingPool, cohort: Cohort, config: dict[str, Any], torch: Any, output: Path
 ) -> list[dict[str, Any]]:
     results = []
-    diagnostic = config.get("diagnose_write_read", False)
+    diagnostic = config.get("diagnostic", False)
     progress: Callable[[str], None] = (
         partial(checkpoint, output) if diagnostic else lambda label: None
     )
     engines = ["eager"] if config["smoke"] else ["eager", "graph"]
     for blocks in config["block_dims"]:
-        for case, consumer_side in product(cases(config["smoke"], diagnostic), (0, 1)):
+        for case, consumer_side in product(
+            cases(config["smoke"], config.get("diagnose_write_read", False)), (0, 1)
+        ):
             for engine in engines:
                 label = f"{blocks}/{case.name}/consumer-{consumer_side}/{engine}"
                 print(f"BEGIN {label}", flush=True)
@@ -453,7 +455,7 @@ def run(config: dict[str, Any], output: Path) -> int:
             )
             distributed_ready = True
         report["samples"] = benchmark(pool, cohort, config, torch, output)
-        if not config["smoke"] and not config.get("diagnose_write_read", False):
+        if not config["smoke"] and not config.get("diagnostic", False):
             report["delayed_publication"] = delayed_publication(
                 pool, cohort, config, torch, output
             )
@@ -516,7 +518,7 @@ def main() -> int:
 
     signal.signal(signal.SIGTERM, stop)
     config = json.loads(args.config.read_text())
-    diagnostic = config.get("diagnose_write_read", False)
+    diagnostic = config.get("diagnostic", False)
     if diagnostic:
         faulthandler.enable()
         checkpoint(args.output, "worker-start")

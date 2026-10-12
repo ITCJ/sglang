@@ -71,6 +71,15 @@ comparison为空；NUMA证据仍如实记录，不能作为完整组件验收。
 300秒超时后还需自身进程的清理时间。诊断失败返回非零，请回传两侧worker日志
 最后的`[DEBUG-numa-sharing]`步骤、自动栈及父进程错误；无需等待完整矩阵。
 
+用户run-3-diag两侧通过，缩小后的序列未复现run-2阻塞。下一步使用
+`--diagnose-independent --block-dims 24 48 --timeout 2400`及新的run-id，
+保留原完整矩阵的所有前置用例、顺序、双consumer、eager/Graph与默认采样参数，
+仅执行一次independent并开启上述诊断；不执行shared和后续轮次，也不执行
+delayed-publication profiler。scope为`independent_diagnostic`，结果仍仅为
+`DIAGNOSTIC_PASSED`或失败，不构成完整验收。两个diagnose选项互斥，也不能与smoke合用。
+run-2此前保存的样本覆盖约29分钟；2400秒是本次worker的40分钟预算，另需清理时间，
+不是对实际完成时长的保证。若再次阻塞，收集60秒无进展后自动输出的P侧栈。
+
 默认 BF16 compact row 为576维／1152 bytes；2层、16 slots，P 每slot8192 tokens、
 D 每slot16384 tokens，top-k2048。每个 owner 额外256-byte identity probe，
 按既有1 GiB粒度对齐，故独立模式每侧2 GiB，共享模式每侧1 GiB。
