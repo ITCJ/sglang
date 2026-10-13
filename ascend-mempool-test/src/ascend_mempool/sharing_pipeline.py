@@ -280,16 +280,15 @@ class Pipeline:
         work.output.zero_()
         stream.record_event(self.ready)
         async_write = op in ("write_with_history", "current_serial", "current_parallel")
+        # Only the synthetic publication fixture defers writer submission. Its
+        # hundreds of eager mm calls can consume their own device delay while the
+        # host is still submitting, starving selected of any chance to run.
+        # Submit the independent selected branch first; no device dependency is
+        # added from selected to writer, and the benchmark order stays unchanged.
+        defer_writer = async_write and self.publication and self.delay_matmuls > 0
         if async_write:
-            with torch.npu.stream(self.writer):
-                self.writer.wait_event(self.ready)
-                if work.pool.member == 1:
-                    for _ in range(self.delay_matmuls):
-                        torch.mm(
-                            self.delay_source, self.delay_source, out=self.delay_target
-                        )
-                work.write()
-                self.writer.record_event(self.writer_done)
+            if not defer_writer:
+                self.submit_writer()
         else:
             work.write()
             if op == "write_then_read":
@@ -312,6 +311,8 @@ class Pipeline:
                 work.current()
             work.history()
         self.selected()
+        if defer_writer:
+            self.submit_writer()
         if async_write:
             # Teardown/next source use needs the writer, selected-ready does not.
             stream.wait_event(self.writer_done)
@@ -334,6 +335,18 @@ class Pipeline:
                 work.pool.view(work.pool.rank, work.layer).device_base,
                 None,
             )
+
+    def submit_writer(self) -> None:
+        torch, work = self.torch, self.work
+        with torch.npu.stream(self.writer):
+            self.writer.wait_event(self.ready)
+            if work.pool.member == 1:
+                for _ in range(self.delay_matmuls):
+                    torch.mm(
+                        self.delay_source, self.delay_source, out=self.delay_target
+                    )
+            work.write()
+            self.writer.record_event(self.writer_done)
 
     def verify(self) -> None:
         self.work.verify_selected()

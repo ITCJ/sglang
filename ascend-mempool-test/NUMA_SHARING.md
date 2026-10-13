@@ -157,7 +157,12 @@ drain后用`Event.recorded_time()`读取同一设备的原始微秒时间戳，�
 的完成时间严格晚于selected。host晚调度时query看到两者都完成不能判定设备先后。
 Graph验证完整数据并输出独立trace，不用capture内的旧时间戳判定重叠。
 此组件通信依赖不证明02真实模型TP hook已经接好。默认用512次矩阵乘产生延迟，
-如果设备上不足以形成可观察窗口，入口失败，需两侧一致调大 `--delay-matmuls`。
+延迟发布fixture先提交selected分支，再提交writer延迟循环；二者仍只依赖共同ready，
+不增加selected→writer设备等待。否则eager主机逐个提交512次mm的时间可能消耗
+整个设备延迟，selected尚未提交writer就已完成（run-8 D member-1间隔-0.230ms）。
+该调度仅用于publication+delay检查，正常性能矩阵的提交顺序不变；此fixture只证明
+selected不必等待writer及发布后的读回，不将人为间隔用作性能收益。
+若设备仍没有正向间隔，检查保持失败；不自动重试到成功，也不放宽断言。
 
 run-6-full首轮shared性能矩阵完成后，D member-1在旧host query断言失败。
 设备计时修正后可先用`--diagnose-publication --timeout 600`和新run-id重测：
@@ -208,3 +213,26 @@ smoke保留未验证的NUMA状态，但不执行完整模式的落点门禁；sm
 timeout或cleanup错误返回退出码1。组件不引入逐case的3%门槛；用户审阅读写瓶颈、
 selected-ready、去重和可用候选后，才按verification.md确认关闭01并解锁02。
 TP16吞吐与ITL三项3%正式门槛仍由03验收。
+
+## 进度显示与续跑
+
+父进程每10秒从本机两份worker日志增量读取BEGIN/PASS，显示总组进度条、当前
+round/mode、两名worker较慢者的已完成用例数、各自当前阶段及本次耗时。
+百分比按用例计算，不是剩余时间预测；setup/staging、发布和清理也会显示，组关闭
+前最多99%。不在设备计时区间插入进度I/O。
+
+若run-8-full前两轮四组都成功，可在两侧使用新run-id并添加
+`--resume-from run-8-full --resume-round 2`。其余参数保持
+`--block-dims 24 48 --rounds 3 --timeout 3600`，角色/IP/NPU/NUMA不变。
+入口先核对旧plan、旧source指纹、每worker的硬件/负载配置、成功状态、closed、
+发布读回、非空trace和完整性能样本，然后两侧互认复用列表，才启动第三轮independent/shared。
+旧报告按member核对SDK/驱动/CANN/内核/设备/hostname/CPU亲和性；新worker在BM
+初始化前对照旧environment，任何差异都拒绝混合。
+仅接受相同代码或已审阅的622c93f88e精确源指纹迁移：这次只修发布fixture，
+常规性能测量未变。迁移同时锁定当前实现的代码指纹，未来更改计时实现后需要重新
+审阅兼容性；不接受任意旧版本、失败组或缺失样本。
+
+新目录保留复用report副本，resume.json及summary.resumed_from标注源目录和版本；
+每组reuse.json指向原始trace/log。不要删除源目录。汇总包含复用的前两轮和新第三轮，
+不把失败的第三轮样本并入，也不宣称这是一次连续运行。NUMA未确认仍exit2，
+trace人工复核和用户验收仍保留。入口拒绝配置不一致，不用手工拼JSON绕过。

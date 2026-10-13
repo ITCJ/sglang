@@ -17,6 +17,8 @@ from typing import Any, Optional, Sequence
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from run_ticket10 import connect, receive_log, send_log, write_json
+from sharing_progress import Progress
+from sharing_resume import load_completed_rounds
 from ticket10_processes import Peer, Processes
 
 from ascend_mempool.sharing import SharingPlan, group_sample, port_plan
@@ -40,6 +42,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--topk", type=int, default=2048)
     parser.add_argument("--block-dims", type=int, nargs="+", default=[24, 48])
     parser.add_argument("--rounds", type=int, default=3)
+    parser.add_argument("--resume-from", help="Reuse completed rounds from this run ID")
+    parser.add_argument(
+        "--resume-round",
+        type=int,
+        default=0,
+        help="First round to run again (zero based)",
+    )
     parser.add_argument("--samples", type=int, default=3)
     parser.add_argument("--repeats", type=int, default=64)
     parser.add_argument("--warmup", type=int, default=3)
@@ -85,6 +94,16 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         parser.error("diagnostic cannot be combined with smoke")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", args.run_id):
         parser.error("run-id must be a simple directory name, at most 80 characters")
+    if args.resume_from:
+        if (
+            not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", args.resume_from)
+            or args.resume_from == args.run_id
+        ):
+            parser.error("resume-from must name a different simple run directory")
+        if args.diagnostic or args.smoke or not 0 < args.resume_round < args.rounds:
+            parser.error("resume requires full mode and 0 < resume-round < rounds")
+    elif args.resume_round:
+        parser.error("resume-round requires resume-from")
     if args.prefill_host == args.decode_host:
         parser.error("two different P/D hosts are required")
     if min(args.devices) < 0 or len(set(args.devices)) != 2:
@@ -449,11 +468,35 @@ def completion_outcome(
 
 def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
     plan = describe(args)
-    identity = dict(run_id=args.run_id, plan=plan, code=code_identity())
+    identity = dict(
+        run_id=args.run_id,
+        plan=plan,
+        code=code_identity(),
+        resume=dict(run_id=args.resume_from, first_new_round=args.resume_round),
+    )
     peer.send("identity", value=identity)
     if peer.expect("identity")["value"] != identity:
         raise RuntimeError("P/D plan, code fingerprint or run ID differs")
     write_json(root / "identity.json", identity)
+    reused, provenance = load_completed_rounds(args, plan, identity["code"])
+    # Validate all reused sample pairs before either host starts more hardware work.
+    for reports in reused.values():
+        local_groups(reports)
+    peer.send(
+        "resume-ready",
+        phases=list(reused),
+        source_code=provenance.get("source_identity", {}).get("code"),
+    )
+    if peer.expect("resume-ready") != dict(
+        phases=list(reused),
+        source_code=provenance.get("source_identity", {}).get("code"),
+    ):
+        raise RuntimeError("P/D resume sources differ")
+    write_json(root / "resume.json", provenance)
+    total_cases = len(plan["cases"]) * len(args.block_dims) * 2 * len(plan["engines"])
+    if not args.smoke and (not args.diagnostic or args.diagnose_publication):
+        total_cases += 6  # Four publication variants and two separate profiles.
+    progress = Progress(sum(map(len, plan["mode_order"])), total_cases)
     all_groups: list[dict[str, Any]] = []
     allocations: list[dict[str, Any]] = []
     publication_reports: list[dict[str, Any]] = []
@@ -462,79 +505,95 @@ def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
             phase = f"round-{round_id}/{mode}"
             stage = root / phase
             stage.mkdir(parents=True)
+            progress.begin(phase, stage)
             server = None
             try:
-                if args.role == "prefill":
-                    server = CohortServer(
-                        args.prefill_host,
-                        args.control_port + 1,
-                        f"{args.run_id}/{phase}",
-                        args.timeout,
+                if phase in reused:
+                    reports = reused[phase]
+                    write_json(
+                        stage / "reuse.json",
+                        dict(source=str(Path(provenance["source_root"]) / phase)),
                     )
-                peer.barrier(phase + "/coordinator")
-                with Processes(stage) as processes:
-                    children = []
-                    for member, device in enumerate(args.devices):
-                        config = dict(
-                            plan=plan["plan"],
-                            mode=mode,
-                            side=0 if args.role == "prefill" else 1,
-                            member=member,
-                            device_id=device,
-                            numa_node=args.numa_node,
-                            prefill_host=args.prefill_host,
-                            decode_host=args.decode_host,
-                            control_port=args.control_port,
-                            timeout=args.timeout,
-                            identity=f"{args.run_id}/{phase}",
-                            round=round_id,
-                            topk=args.topk,
-                            block_dims=args.block_dims,
-                            smoke=args.smoke,
-                            diagnose_write_read=args.diagnose_write_read,
-                            diagnostic=args.diagnostic,
-                            diagnose_publication=args.diagnose_publication,
-                            warmup=args.warmup,
-                            samples=args.samples,
-                            repeats=args.repeats,
-                            delay_matmuls=args.delay_matmuls,
+                    for member, report in enumerate(reports):
+                        dest = stage / f"member-{member}"
+                        dest.mkdir()
+                        write_json(dest / "report.json", report)
+                else:
+                    if args.role == "prefill":
+                        server = CohortServer(
+                            args.prefill_host,
+                            args.control_port + 1,
+                            f"{args.run_id}/{phase}",
+                            args.timeout,
                         )
-                        config_path = stage / f"member-{member}.json"
-                        write_json(config_path, config)
-                        children.append(
-                            processes.start(
-                                f"member-{member}",
-                                [
-                                    sys.executable,
-                                    "-u",
-                                    str(SCRIPTS / "sharing_worker.py"),
-                                    "--config",
-                                    str(config_path),
-                                    "--output",
-                                    str(stage / f"member-{member}"),
-                                ],
+                    peer.barrier(phase + "/coordinator")
+                    with Processes(stage) as processes:
+                        children = []
+                        for member, device in enumerate(args.devices):
+                            config = dict(
+                                resume_environment=provenance.get(
+                                    "environments", [None, None]
+                                )[member],
+                                plan=plan["plan"],
+                                mode=mode,
+                                side=0 if args.role == "prefill" else 1,
+                                member=member,
+                                device_id=device,
+                                numa_node=args.numa_node,
+                                prefill_host=args.prefill_host,
+                                decode_host=args.decode_host,
+                                control_port=args.control_port,
+                                timeout=args.timeout,
+                                identity=f"{args.run_id}/{phase}",
+                                round=round_id,
+                                topk=args.topk,
+                                block_dims=args.block_dims,
+                                smoke=args.smoke,
+                                diagnose_write_read=args.diagnose_write_read,
+                                diagnostic=args.diagnostic,
+                                diagnose_publication=args.diagnose_publication,
+                                warmup=args.warmup,
+                                samples=args.samples,
+                                repeats=args.repeats,
+                                delay_matmuls=args.delay_matmuls,
                             )
-                        )
-
-                    def check_children() -> None:
-                        peer.check()
-                        for child in children:
-                            if child.poll() not in (None, 0):
-                                raise RuntimeError(
-                                    f"worker {child.pid} failed with {child.returncode}; see {stage}"
+                            config_path = stage / f"member-{member}.json"
+                            write_json(config_path, config)
+                            children.append(
+                                processes.start(
+                                    f"member-{member}",
+                                    [
+                                        sys.executable,
+                                        "-u",
+                                        str(SCRIPTS / "sharing_worker.py"),
+                                        "--config",
+                                        str(config_path),
+                                        "--output",
+                                        str(stage / f"member-{member}"),
+                                    ],
                                 )
+                            )
 
-                    for member, child in enumerate(children):
-                        processes.wait(
-                            f"member-{member}",
-                            child,
-                            timeout=args.timeout,
-                            check=check_children,
-                        )
-                reports = [
-                    json.loads((stage / f"member-{m}/report.json").read_text())
-                    for m in (0, 1)
-                ]
+                        def check_children() -> None:
+                            progress.update()
+                            peer.check()
+                            for child in children:
+                                if child.poll() not in (None, 0):
+                                    raise RuntimeError(
+                                        f"worker {child.pid} failed with {child.returncode}; see {stage}"
+                                    )
+
+                        for member, child in enumerate(children):
+                            processes.wait(
+                                f"member-{member}",
+                                child,
+                                timeout=args.timeout,
+                                check=check_children,
+                            )
+                    reports = [
+                        json.loads((stage / f"member-{m}/report.json").read_text())
+                        for m in (0, 1)
+                    ]
                 groups = local_groups(reports)
                 all_groups.extend(groups)
                 allocations.extend(r["mapping"] for r in reports)
@@ -550,7 +609,8 @@ def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
                 )
                 write_json(stage / "groups.json", groups)
                 peer.barrier(phase + "/closed")
-                print(f"PASS {phase}", flush=True)
+                progress.update(finished=True, reused=phase in reused)
+                print(f"{'REUSED' if phase in reused else 'PASS'} {phase}", flush=True)
             finally:
                 if server is not None:
                     server.close()
@@ -572,6 +632,7 @@ def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
         scope=plan["scope"],
         role=args.role,
         identity=identity,
+        resumed_from=provenance,
         physical_allocations=allocations,
         delayed_publication=publication_reports,
         groups=all_groups,

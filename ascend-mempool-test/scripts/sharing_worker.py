@@ -22,6 +22,7 @@ from typing import Any, Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from sharing_resume import check_resume_environment
 from verify_graph import load_runtime, stage_local_kv
 
 from ascend_mempool.sharing import SharingPlan, port_plan
@@ -325,6 +326,7 @@ def delayed_publication(
                     variant=variant,
                     selected_before_writer_done=early,
                     publication_readback_passed=True,
+                    fixture_submission_order="selected before delayed writer; no selected-to-writer device fence",
                     graph_early_order_evidence="separate trace"
                     if engine == "graph"
                     else "device timestamps relative to common ready event",
@@ -355,6 +357,7 @@ def delayed_publication(
         profiler.export_chrome_trace(str(output / f"delayed-{engine}-trace.json"))
         pipeline.verify()
         cohort.exchange(f"delay/{engine}/profile-done")
+        print(f"PASS delay/{engine}/profile", flush=True)
         work.reset_write_region(torch)
         torch.npu.synchronize()
         cohort.exchange(f"delay/{engine}/restore")
@@ -395,6 +398,9 @@ def run(config: dict[str, Any], output: Path) -> int:
             report["environment"][path] = (
                 file.read_text() if file.is_file() else "unavailable"
             )
+        check_resume_environment(
+            report["environment"], config.get("resume_environment")
+        )
         rank = config["side"] * 2 + config["member"]
         ports = port_plan(
             config["control_port"], config["mode"], config["side"], config["member"]
