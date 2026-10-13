@@ -56,6 +56,7 @@ class CopyWorkload:
         import torch
 
         self.pool, self.case, self.topk, self.block_dim = pool, case, topk, block_dim
+        self.tp_size = pool.tp_size
         self.device = device
         self.kernel = kernel if kernel is not None else torch.ops.npu.unidex_copy
         self.batch = min(16, pool.layout.prompt.slots)
@@ -123,7 +124,7 @@ class CopyWorkload:
     @property
     def write_extent(self) -> int:
         return self.case.rows * (
-            2
+            self.tp_size
             if self.case.operation == "equal_bytes" and self.pool.mode == "shared"
             else 1
         )
@@ -208,8 +209,8 @@ class CopyWorkload:
         self.write_dst.copy_(
             self.write_slots_host * local.tokens + self.write_tokens_host
         )
-        self.feature_src.copy_(self.write_src * 2 + pool.member)
-        self.feature_dst.copy_(self.write_dst * 2 + pool.member)
+        self.feature_src.copy_(self.write_src * self.tp_size + pool.member)
+        self.feature_dst.copy_(self.write_dst * self.tp_size + pool.member)
         ownership = torch.ones(self.write_count, dtype=torch.bool)
         if (
             pool.mode == "shared"
@@ -219,10 +220,12 @@ class CopyWorkload:
             if case.partition == "token":
                 ownership.zero_()
                 ownership[
-                    writer_rows("shared", "logical", self.write_count, pool.member)
+                    writer_rows(
+                        "shared", "logical", self.write_count, pool.member, self.tp_size
+                    )
                 ] = True
             elif case.partition == "layer":
-                ownership.fill_(self.layer % 2 == pool.member)
+                ownership.fill_(self.layer % self.tp_size == pool.member)
         ownership &= self.enabled and not empty and self.has_write
         self.write_valid.copy_(ownership)
         current_values = pattern_rows(
@@ -256,7 +259,7 @@ class CopyWorkload:
             and case.accessor == -1
         )
         self.feature_split = feature
-        self.write_payload = write_units * row_bytes // (2 if feature else 1)
+        self.write_payload = write_units * row_bytes // (self.tp_size if feature else 1)
         self.read_payload = (
             int((active.sum() * self.topk) - local_current.sum()) * row_bytes
             if self.has_read
@@ -282,9 +285,9 @@ class CopyWorkload:
                 self.feature_src,
                 self.feature_dst,
                 self.write_valid,
-                self.write_count * 2,
-                local.slots * local.tokens * 2,
-                local.row_bytes // 2,
+                self.write_count * self.tp_size,
+                local.slots * local.tokens * self.tp_size,
+                local.row_bytes // self.tp_size,
                 self.write_count,
                 self.block_dim,
                 None,
@@ -370,7 +373,7 @@ class CopyWorkload:
             )
 
     def verify_writes(self, torch: Any) -> None:
-        """Both members independently read complete modified rows AND untouched guards."""
+        """All members independently read complete modified rows AND untouched guards."""
         if not self.side_active or not self.has_write:
             return
         layout = self.pool.layout.layout_for_rank(self.pool.rank)
@@ -455,7 +458,7 @@ class CopyWorkload:
             valid_write_units=int(self.write_valid.cpu().sum()),
             partition=self.case.partition,
             block_dim=self.block_dim,
-            feature_span_bytes=self.pool.layout.prompt.row_bytes // 2
+            feature_span_bytes=self.pool.layout.prompt.row_bytes // self.tp_size
             if self.feature_split
             else None,
         )

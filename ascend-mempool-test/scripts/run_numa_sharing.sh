@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One invocation in each existing NPU container; the runner owns both local workers.
+# One invocation in each existing NPU container; the runner owns all local workers.
 set -eo pipefail
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 if [[ " $* " != *" --describe "* && " $* " != *" --help "* ]]; then

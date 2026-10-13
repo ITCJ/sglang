@@ -1,4 +1,4 @@
-"""Test-only four-participant allocation using the production logical KV views."""
+"""Test-only TP2/TP4 allocation using the production logical KV views."""
 
 from __future__ import annotations
 
@@ -120,10 +120,12 @@ class SharingPool(MempoolKVManager):
             raise ValueError(f"NUMA node {numa_node} is not online")
         if not 0 <= numa_node <= 126:
             raise ValueError("NUMA node must be in [0, 126]")
+        plan.owner(mode, side=side, member=member)
         self.plan, self.mode, self.member = plan, mode, member
-        self.participant = side * 2 + member if mode == "shared" else side
+        self.tp_size = plan.tp_size
+        self.participant = side * self.tp_size + member if mode == "shared" else side
         self.world_size = len(plan.participants(mode))
-        self.contribution = plan.contributions(mode)[side * 2 + member]
+        self.contribution = plan.contributions(mode)[side * self.tp_size + member]
         self.events: list[dict[str, Any]] = []
         layout = plan.layout()
         handle = bm.create2(
@@ -205,7 +207,7 @@ class SharingPool(MempoolKVManager):
 
     def rejoin_follower(self, timeout: float) -> None:
         """Caller first drains ALL participants; exercise SDK group rebuilding."""
-        if self.mode != "shared" or self.member != 1:
+        if self.mode != "shared" or self.member == 0:
             raise ValueError("only a zero-contribution follower can rejoin")
         before = dict(self._bases)
         self.check(self._handle.leave(), "follower leave")
@@ -253,7 +255,7 @@ class SharingPool(MempoolKVManager):
                 global_rank = (
                     participant
                     if self.mode == "shared"
-                    else participant * 2 + self.member
+                    else participant * self.tp_size + self.member
                 )
                 marker = torch.empty(64, dtype=torch.uint8, device="npu")
                 self.check(
@@ -285,6 +287,7 @@ class SharingPool(MempoolKVManager):
             )
             evidence = numa_evidence(host, self.numa_node)
         return dict(
+            tp_size=self.tp_size,
             participant=self.participant,
             logical_side=self.rank,
             member=self.member,

@@ -56,13 +56,14 @@ def load_completed_rounds(
         raise ValueError(
             "current implementation differs from the audited resume target"
         )
+    tp_size = plan["plan"].get("tp_size", 2)
     reports_by_phase = {}
     environments: dict[int, dict[str, Any]] = {}
     for round_id, order in enumerate(plan["mode_order"][: args.resume_round]):
         for mode in order:
             phase = f"round-{round_id}/{mode}"
             reports = []
-            for member in (0, 1):
+            for member in range(tp_size):
                 report = json.loads(
                     (source / phase / f"member-{member}/report.json").read_text()
                 )
@@ -111,7 +112,7 @@ def load_completed_rounds(
                     raise ValueError(
                         f"resume publication evidence incomplete: {phase}/member-{member}"
                     )
-                if member == 1 and any(
+                if member == tp_size - 1 and any(
                     r.get("selected_before_writer_done") is not True
                     or not r.get("writer_minus_selected_ms", 0) > 0
                     for r in rows
@@ -171,7 +172,7 @@ def load_completed_rounds(
         source_root=str(source),
         source_identity=identity,
         reused_phases=list(reports_by_phase),
-        environments=[environments[m] for m in (0, 1)],
+        environments=[environments[m] for m in range(tp_size)],
         measurement_compatibility="identical source"
         if identity["code"] == code
         else "audited 622c93f88e migration; timed benchmark unchanged",

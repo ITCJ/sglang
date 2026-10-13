@@ -10,6 +10,8 @@ import run_numa_sharing as runner
 
 
 class TestSharingRunner(unittest.TestCase):
+    tp_size = 2
+
     def args(self, *extra):
         return runner.parse_args(
             [
@@ -40,6 +42,25 @@ class TestSharingRunner(unittest.TestCase):
         self.assertEqual(plan["topk"], 2048)
         self.assertEqual(plan["scope"], "full_component")
         self.assertEqual(plan["shared_contributions"], [1 << 30, 0, 1 << 30, 0])
+
+    def test_tp4_plan_and_capacity_are_explicit_before_starting_children(self):
+        plan = runner.describe(self.args("--devices", "0", "1", "2", "3"))
+        self.assertEqual(plan["plan"]["tp_size"], 4)
+        self.assertEqual(plan["plan"]["layers"], 4)
+        self.assertEqual(plan["plan"]["prompt_tokens"], 16384)
+        self.assertEqual(plan["shared_contributions"], [2 << 30, 0, 0, 0] * 2)
+        self.assertEqual(plan["independent_contributions"], [2 << 30] * 8)
+        self.assertEqual(len(plan["cases"]), 53)
+        self.assertEqual({c["accessor"] for c in plan["cases"]}, {-1, 0, 1, 2, 3})
+        self.assertEqual({c["layer"] for c in plan["cases"]}, {0, 1, 2, 3})
+        for extra in (
+            ("--devices", "0", "1", "2"),
+            ("--devices", "0", "1", "2", "2"),
+            ("--devices", "0", "1", "2", "3", "--prompt-tokens", "8192"),
+            ("--devices", "0", "1", "2", "3", "--decode-tokens", "8192"),
+        ):
+            with self.subTest(extra=extra), self.assertRaises(SystemExit):
+                self.args(*extra)
 
     def test_bad_configuration_fails_before_starting_children(self):
         for extra in (
@@ -126,12 +147,13 @@ class TestSharingRunner(unittest.TestCase):
         self.assertEqual(plan["mode_order"], [["independent", "shared"]])
         self.assertEqual(plan["cases"], [])
         reports = []
-        for member in (0, 1):
+        for member in range(self.tp_size):
             reports.append(
                 dict(
                     status="checks_passed",
                     closed=True,
                     config=dict(
+                        plan=dict(tp_size=self.tp_size),
                         member=member,
                         side=1,
                         mode="shared",
@@ -178,8 +200,9 @@ class TestSharingRunner(unittest.TestCase):
 
     def test_partial_duplicate_or_competing_reports_cannot_pass(self):
         reports = []
-        for member in (0, 1):
+        for member in range(self.tp_size):
             config = dict(
+                plan=dict(tp_size=self.tp_size),
                 member=member,
                 side=1,
                 mode="shared",
@@ -215,8 +238,25 @@ class TestSharingRunner(unittest.TestCase):
             reports.append(
                 dict(status="smoke_passed", closed=True, config=config, samples=rows)
             )
-        self.assertEqual(len(runner.local_groups(list(reversed(reports)))), 2)
-        for mutation in ("missing", "duplicate", "competing", "timing"):
+        groups = runner.local_groups(list(reversed(reports)))
+        self.assertEqual(len(groups), 2)
+        independent = deepcopy(groups)
+        for group in independent:
+            group["mode"] = "independent"
+        comparison = runner.summarize(groups + independent)
+        for row in comparison:
+            self.assertEqual(row["tp_size"], self.tp_size)
+            self.assertEqual(len(row["shared"]["per_rank_device_ms"]), self.tp_size)
+            self.assertEqual(len(row["shared"]["per_rank_selected_ms"]), self.tp_size)
+            self.assertEqual(row["shared_over_independent_group_p50"], 1.0)
+        for mutation in (
+            "missing",
+            "duplicate",
+            "competing",
+            "timing",
+            "member",
+            "width",
+        ):
             changed = deepcopy(reports)
             with self.subTest(mutation=mutation):
                 if mutation == "missing":
@@ -226,10 +266,41 @@ class TestSharingRunner(unittest.TestCase):
                     changed[0]["samples"].append(changed[0]["samples"][0])
                 elif mutation == "competing":
                     changed[0]["samples"][0]["opposite_side_idle"] = False
+                elif mutation == "member":
+                    changed.pop()
+                elif mutation == "width":
+                    changed[-1]["config"]["plan"]["tp_size"] = (
+                        2 if self.tp_size == 4 else 4
+                    )
                 else:
                     changed[0]["samples"][0]["selected_calls_ms"] = [float("nan")]
                 with self.assertRaises(RuntimeError):
                     runner.local_groups(changed)
+
+    def test_four_reader_efficiency_uses_all_four_single_measurements(self):
+        rows = []
+        for accessor, throughput in ((-1, 300), (0, 90), (1, 110), (2, 100), (3, 200)):
+            case = runner.cases(True)[1].signature()
+            case.update(name=str(accessor), accessor=accessor)
+            rows.append(
+                dict(
+                    case=case,
+                    side=1,
+                    engine="graph",
+                    block_dim=24,
+                    tp_size=4,
+                    independent=dict(bm_payload_gbps_p50=throughput),
+                    shared=dict(bm_payload_gbps_p50=throughput),
+                )
+            )
+        runner.add_reader_efficiency(rows[:-1])
+        self.assertNotIn("reader_efficiency", rows[0]["shared"])
+        runner.add_reader_efficiency(rows)
+        result = rows[0]["shared"]["reader_efficiency"]
+        self.assertEqual(result["fraction"], 0.6)
+        self.assertEqual(result["concurrent_measured_bm_gbps"], 300)
+        self.assertEqual(result["single_measured_bm_gbps"], [90, 110, 100, 200])
+        self.assertNotIn("dual_reader_efficiency", rows[0]["shared"])
 
     def test_reader_efficiency_does_not_present_sum_of_singles_as_dual_bandwidth(self):
         rows = []
@@ -255,6 +326,10 @@ class TestSharingRunner(unittest.TestCase):
         self.assertEqual(result["fraction"], 0.6)
         self.assertEqual(result["dual_measured_bm_gbps"], 120)
         self.assertEqual(result["single_measured_bm_gbps"], [90, 110])
+
+
+class TestTP4Runner(TestSharingRunner):
+    tp_size = 4
 
 
 if __name__ == "__main__":

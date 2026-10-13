@@ -7,21 +7,22 @@ from pathlib import Path
 
 
 class Progress:
-    def __init__(self, total_groups: int, total_cases: int) -> None:
+    def __init__(self, total_groups: int, total_cases: int, tp_size: int = 2) -> None:
+        self.tp_size = tp_size
         self.total_groups, self.total_cases = total_groups, total_cases
         self.started = time.monotonic()
         self.last_print = float("-inf")
         self.done = 0
-        self.offsets = [0, 0]
-        self.counts = [0, 0]
-        self.labels = ["setup / staging", "setup / staging"]
+        self.offsets = [0] * self.tp_size
+        self.counts = [0] * self.tp_size
+        self.labels = ["setup / staging"] * self.tp_size
         self.phase = ""
         self.stage = Path()
 
     def begin(self, phase: str, stage: Path) -> None:
         self.phase, self.stage = phase, stage
-        self.offsets, self.counts = [0, 0], [0, 0]
-        self.labels = ["setup / staging", "setup / staging"]
+        self.offsets, self.counts = [0] * self.tp_size, [0] * self.tp_size
+        self.labels = ["setup / staging"] * self.tp_size
         self.last_print = float("-inf")
         self.update()
 
@@ -30,7 +31,7 @@ class Progress:
         if not finished and now - self.last_print < 10:
             return
         self.last_print = now
-        for member in (0, 1):
+        for member in range(self.tp_size):
             path = self.stage / f"member-{member}.log"
             if not path.exists():
                 continue
@@ -61,7 +62,7 @@ class Progress:
             if finished
             else (
                 f"cases {completed}/{self.total_cases} | "
-                + " | ".join(f"m{m}: {self.labels[m]}" for m in (0, 1))
+                + " | ".join(f"m{m}: {self.labels[m]}" for m in range(self.tp_size))
             )
         )
         print(

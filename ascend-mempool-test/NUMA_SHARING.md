@@ -1,7 +1,7 @@
-# NUMA 共享 ticket01：双 rank 组件对照
+# NUMA 共享 ticket01：TP2 / TP4 组件对照
 
-入口：`scripts/run_numa_sharing.sh`。P/D 各运行一次，入口自动启动本机两个
-worker、协调四个 participant、检查内容、交替运行 independent/shared、收集
+入口：`scripts/run_numa_sharing.sh`。P/D 各运行一次，入口按 `--devices` 自动启动本机两个或四个
+worker、协调四个或八个 participant、检查内容、交替运行 independent/shared、收集
 报告并清理自己启动的进程。无需启动 SGLang 服务或加载模型。
 
 这是共享01的组件实现。NPU 尚待用户执行；成功标记也不关闭 ticket。
@@ -11,7 +11,7 @@ worker、协调四个 participant、检查内容、交替运行 independent/shar
 [SharingPool](src/ascend_mempool/sharing_pool.py)负责物理贡献和映射，
 [CopyWorkload](src/ascend_mempool/sharing_copy.py)负责分片、真实copy和内容校验，
 [Pipeline](src/ascend_mempool/sharing_pipeline.py)负责stream依赖和selected-ready，
-[Cohort](src/ascend_mempool/sharing_control.py)负责四方阶段同步及最终drain。
+[Cohort](src/ascend_mempool/sharing_control.py)负责所有成员阶段同步及最终drain。
 
 ## 配置与命令
 
@@ -52,6 +52,64 @@ Mac 使用已安装CPU torch的Python环境，可在同一完整命令上添加 
 默认完整矩阵为3轮 A/B、B/A、A/B，每种模式中独立检查 eager/Graph、24/48 cores，
 每个 case 暖机3次、3个样本、每样本64次操作。`--timeout` 默认每阶段3600秒。
 正式计时与 profiler 单独运行。
+
+### TP4：每侧四个 rank 共享一个 NUMA 池
+
+`--devices 0 1 2 3` 自动选择 TP4；仍支持原有 `--devices 0 1` 的 TP2。
+用户已确认这两台机器四张卡对应 NUMA 0。两侧先更新到相同代码，再各运行一次：
+
+```bash
+# P: 10.120.72.31，/home/cryang/sglang
+bash ascend-mempool-test/scripts/run_numa_sharing.sh \
+  --role prefill --prefill-host 10.120.72.31 --decode-host 10.120.72.32 \
+  --devices 0 1 2 3 --numa-node 0 --run-id run-10-tp4 \
+  --block-dims 24 48 --rounds 3 --timeout 7200
+```
+
+```bash
+# D: 10.120.72.32，/home/cryang/sglang
+bash ascend-mempool-test/scripts/run_numa_sharing.sh \
+  --role decode --prefill-host 10.120.72.31 --decode-host 10.120.72.32 \
+  --devices 0 1 2 3 --numa-node 0 --run-id run-10-tp4 \
+  --block-dims 24 48 --rounds 3 --timeout 7200
+```
+
+TP4 的 independent 是四个 P_i/D_i session；shared 是一个八 participant
+session，成员顺序 `[P0,P1,P2,P3,D0,D1,D2,D3]`。P0、D0 为各自主机的唯一
+物理 owner，其余六个成员贡献0，直接访问本侧和对侧 owner，不经 owner 转发。
+本机 HCCL group 为四成员；六个 follower 逐个进行 drain→leave/rejoin→probe。
+TP4 预留端口19400–19438（`control-port` 起共39个），本机HCCL端口19438。
+
+默认 BF16 576维、4层、16 slots、P/D 每slot均16384 tokens、top-k2048。
+每owner有512-byte身份探针；SDK按1 GiB对齐后每owner贡献2 GiB。因此每侧
+independent合计8 GiB、shared合计2 GiB，VA reservation另计。
+层数用于覆盖四个不同layer owner；每个计时case仍只操作指定的一层。
+等字节大写入用例需要 `2049×4=8196` 行及两行guard，故不能沿用TP2的
+P容量8192。CLI会在启动前拒绝不足容量；正常等逻辑写入仍只写一份2049行。
+TP4的容量/层数与历史TP2不同，不把两次绝对延迟直接作为固定形状的扩展效率结论。
+
+四rank等逻辑写入为independent合计4L、shared合计L；等字节写入均为4W，
+shared写四段互斥地址。这项仅测同总写量下的竞争，不代表四份正常共享KV。
+feature分片为四个连续288-byte片段；token按local member步长4分片；
+layer用layer编号模4分配。单token仍只有一个writer。
+
+并发读取时四rank使用相同slot、索引和top-k，各自把同一份完整selected KV
+读到本卡；增加member 2/3单reader对照。仍先测P侧四rank、再测D侧四rank，
+另一侧保持加入且不提交copy。53个case覆盖eager/Graph、24/48 cores及三轮交替。
+发布诊断延迟member 3，并使用四个有效请求，保证延迟成员确有待写数据。
+进度条取四成员最慢进度；完成报告必须包含全部四成员。
+`reader_efficiency` 使用实测四reader吞吐除以四次单reader吞吐之和；不把单测相加
+冒充并发带宽。TP2仍同时输出旧 `dual_reader_efficiency` 字段。
+
+7200秒是每组worker预算，不是预计完成时间。总共六组，实际耗时看进度。
+结果与失败判据沿用下文；驱动无驻留页计数时仍输出
+`COMPONENT_RESULTS_PENDING_NUMA`、退出2并保留完整测量。TP4 Graph/HCCL/BM
+尚待用户执行，CPU通过不能替代硬件验收。
+
+本次应使用新run-id完整采集，不复用TP2样本。续跑只接受相同TP宽度、完整plan
+和相同代码；历史622c93f88e→424152677f迁移仍锁定旧目标指纹，本版不开放该迁移。
+
+下面关于两个成员、两层和两份贡献的具体数字描述的是默认TP2配置；TP4按本节执行。
 
 ### run-2 写后读阻塞的诊断入口
 
@@ -216,12 +274,13 @@ TP16吞吐与ITL三项3%正式门槛仍由03验收。
 
 ## 进度显示与续跑
 
-父进程每10秒从本机两份worker日志增量读取BEGIN/PASS，显示总组进度条、当前
-round/mode、两名worker较慢者的已完成用例数、各自当前阶段及本次耗时。
+父进程每10秒从本机全部worker日志增量读取BEGIN/PASS，显示总组进度条、当前
+round/mode、最慢worker的已完成用例数、各自当前阶段及本次耗时。
 百分比按用例计算，不是剩余时间预测；setup/staging、发布和清理也会显示，组关闭
 前最多99%。不在设备计时区间插入进度I/O。
 
-若run-8-full前两轮四组都成功，可在两侧使用新run-id并添加
+以下是旧版424152677f对run-8的续跑操作记录，本版不接受该旧代码迁移。
+相同本版代码的后续续跑仍使用相同参数。旧操作：run-8-full前两轮四组成功后，使用新run-id并添加
 `--resume-from run-8-full --resume-round 2`。其余参数保持
 `--block-dims 24 48 --rounds 3 --timeout 3600`，角色/IP/NPU/NUMA不变。
 入口先核对旧plan、旧source指纹、每worker的硬件/负载配置、成功状态、closed、

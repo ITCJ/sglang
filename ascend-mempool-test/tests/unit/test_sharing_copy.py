@@ -13,21 +13,24 @@ from ascend_mempool.verification import kv_pattern
 
 
 class TestSharedCopies(unittest.TestCase):
+    tp_size = 2
+
     def setUp(self):
         self.layout = PoolLayout(
-            KVLayout(2, 2, 64, 1, 576), KVLayout(2, 2, 128, 1, 576)
+            KVLayout(self.tp_size, self.tp_size, 64, 1, 576),
+            KVLayout(self.tp_size, self.tp_size, 128, 1, 576),
         )
         self.pools = []
         self.memory = {}
-        for member in (0, 1):
+        for member in range(self.tp_size):
             pool = MempoolKVManager.create(self.layout, 1, bm_module=FakeBM(1))
             pool.join(timeout=0.1)
-            pool.mode, pool.member = "shared", member
+            pool.mode, pool.member, pool.tp_size = "shared", member, self.tp_size
             self.pools.append(pool)
             self.addCleanup(pool.close, drain=lambda: None)
         for side in (0, 1):
             layout = self.layout.layout_for_rank(side)
-            for layer in (0, 1):
+            for layer in range(self.tp_size):
                 self.memory[self.pools[0].view(side, layer).device_base] = torch.stack(
                     [
                         kv_pattern(side, layer, slot, 0, layout.tokens, 1, layout.dim)
@@ -51,7 +54,9 @@ class TestSharedCopies(unittest.TestCase):
         )
 
     def test_shared_token_feature_and_layer_writes_preserve_guards(self):
-        for partition, layer in (("token", 0), ("feature", 0), ("layer", 1)):
+        for partition, layer in [("token", 0), ("feature", 0)] + [
+            ("layer", layer) for layer in range(self.tp_size)
+        ]:
             with self.subTest(partition=partition):
                 work = [
                     self.work(
@@ -60,7 +65,7 @@ class TestSharedCopies(unittest.TestCase):
                         ),
                         member,
                     )
-                    for member in (0, 1)
+                    for member in range(self.tp_size)
                 ]
                 for item in work:
                     item.write()
@@ -75,21 +80,26 @@ class TestSharedCopies(unittest.TestCase):
                         work[0].verify_writes(torch)
 
     def test_both_readers_get_the_full_selection_after_slot_and_index_switch(self):
-        work = [self.work(Case("read", "read", active=2), member) for member in (0, 1)]
+        work = [
+            self.work(Case("read", "read", active=self.tp_size), member)
+            for member in range(self.tp_size)
+        ]
         for variant in (0, 1, 0):
             for item in work:
                 item.load(variant)
                 item.history()
                 item.verify_selected()
-                self.assertEqual(item.byte_counts()["bm_read_bytes"], 18432)
+                self.assertEqual(
+                    item.byte_counts()["bm_read_bytes"], self.tp_size * 8 * 1152
+                )
                 item.load(variant, empty=True)
                 item.history()
                 self.assertTrue(torch.equal(item.output, torch.zeros_like(item.output)))
 
     def test_current_fill_and_history_are_disjoint_before_peer_write_completes(self):
         work = [
-            self.work(Case("selected", "current_parallel", active=2), member)
-            for member in (0, 1)
+            self.work(Case("selected", "current_parallel", active=self.tp_size), member)
+            for member in range(self.tp_size)
         ]
         for item in work:
             item.current()
@@ -103,29 +113,40 @@ class TestSharedCopies(unittest.TestCase):
 
     def test_sequential_baseline_reads_same_current_kv_from_bm(self):
         baseline = [
-            self.work(Case("sequential", "write_then_read", active=2), member)
-            for member in (0, 1)
+            self.work(
+                Case("sequential", "write_then_read", active=self.tp_size), member
+            )
+            for member in range(self.tp_size)
         ]
-        overlap = self.work(Case("overlap", "write_with_history", active=2), 0)
+        overlap = self.work(
+            Case("overlap", "write_with_history", active=self.tp_size), 0
+        )
         self.assertTrue(torch.equal(baseline[0].host_positions, overlap.host_positions))
         self.assertTrue(torch.equal(baseline[0].expected, overlap.expected))
-        baseline[0].write()
+        for item in baseline[:-1]:
+            item.write()
         baseline[0].history()
         with self.assertRaises(AssertionError):
             baseline[0].verify_selected()
-        baseline[1].write()
+        baseline[-1].write()
         for item in baseline:
             item.history()
             item.verify_selected()
-            self.assertEqual(item.byte_counts()["bm_read_bytes"], 18432)
+            self.assertEqual(
+                item.byte_counts()["bm_read_bytes"], self.tp_size * 8 * 1152
+            )
             self.assertEqual(item.byte_counts()["current_bytes"], 0)
-        self.assertEqual(overlap.byte_counts()["bm_read_bytes"], 13824)
-        self.assertEqual(overlap.byte_counts()["current_bytes"], 4608)
+        self.assertEqual(
+            overlap.byte_counts()["bm_read_bytes"], self.tp_size * 6 * 1152
+        )
+        self.assertEqual(
+            overlap.byte_counts()["current_bytes"], self.tp_size * 2 * 1152
+        )
 
     def test_idle_consumer_side_issues_no_payload(self):
         item = CopyWorkload(
             self.pools[0],
-            Case("idle", "write_with_history", active=2),
+            Case("idle", "write_with_history", active=self.tp_size),
             topk=8,
             block_dim=24,
             device="cpu",
@@ -142,6 +163,42 @@ class TestSharedCopies(unittest.TestCase):
         self.assertEqual(item.byte_counts()["logical_bytes"], 0)
         for address, value in self.memory.items():
             self.assertTrue(torch.equal(value, before[address]))
+
+    def test_equal_bytes_uses_disjoint_ranges_without_changing_per_rank_payload(self):
+        work = [
+            self.work(Case("equal", "equal_bytes", rows=5), m)
+            for m in range(self.tp_size)
+        ]
+        rows = [set(item.write_tokens_host.tolist()) for item in work]
+        self.assertEqual(len(set.union(*rows)), self.tp_size * 5)
+        for item in work:
+            item.write()
+        for item in work:
+            item.verify_writes(torch)
+            self.assertEqual(item.byte_counts()["write_bytes"], 5 * 1152)
+        logical = [
+            self.work(Case("logical", "logical", rows=5), m)
+            for m in range(self.tp_size)
+        ]
+        self.assertEqual(sum(w.byte_counts()["write_bytes"] for w in logical), 5 * 1152)
+
+    def test_single_reader_can_select_each_follower_without_extra_copies(self):
+        for accessor in range(self.tp_size):
+            work = [
+                self.work(Case("single", "read", accessor=accessor), m)
+                for m in range(self.tp_size)
+            ]
+            for member, item in enumerate(work):
+                item.history()
+                item.verify_selected()
+                self.assertEqual(
+                    item.byte_counts()["bm_read_bytes"],
+                    8 * 1152 if member == accessor else 0,
+                )
+
+
+class TestTP4Copies(TestSharedCopies):
+    tp_size = 4
 
 
 if __name__ == "__main__":

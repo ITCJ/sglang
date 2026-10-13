@@ -64,6 +64,8 @@ class Device:
 
 
 class TestPipelineSubmission(unittest.TestCase):
+    tp_size = 2
+
     def test_delayed_writer_does_not_hold_back_selected_host_submission(self):
         # Model an eager host whose delay submissions cost as long as the device
         # kernels. The old order consumes the entire delay before selected exists.
@@ -80,7 +82,8 @@ class TestPipelineSubmission(unittest.TestCase):
         torch.mm.side_effect = lambda *a, **kw: clock.__setitem__(0, clock[0] + 1.0)
         work = Mock()
         work.case.operation = "current_parallel"
-        work.pool.member = 1
+        work.pool.member = self.tp_size - 1
+        work.pool.tp_size = self.tp_size
         work.pool.layout.layout_for_rank.return_value = SimpleNamespace(
             slots=16, tokens=8192, row_bytes=576
         )
@@ -164,6 +167,10 @@ class TestPipelineSubmission(unittest.TestCase):
 
     def test_distinct_communication_stream_also_drains(self):
         self.exercise(alias=False, timed=True)
+
+
+class TestTP4PipelineSubmission(TestPipelineSubmission):
+    tp_size = 4
 
 
 if __name__ == "__main__":

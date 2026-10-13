@@ -89,10 +89,12 @@ class GroupSDK(FakeBM):
 
 
 class TestSharingPool(unittest.TestCase):
-    def pool(self, side, member):
-        sdk = GroupSDK(side * 2 + member)
+    def pool(self, side, member, tp_size=2):
+        sdk = GroupSDK(side * tp_size + member)
         with patch.object(Path, "read_text", return_value="0-3"):
-            pool = SharingPool(SharingPlan(), "shared", side, member, sdk, numa_node=2)
+            pool = SharingPool(
+                SharingPlan(tp_size=tp_size), "shared", side, member, sdk, numa_node=2
+            )
         self.addCleanup(pool.close, drain=lambda: None)
         pool.join(timeout=0.01)
         return pool, sdk
@@ -110,6 +112,23 @@ class TestSharingPool(unittest.TestCase):
                 if member == 1:
                     pool.rejoin_follower(timeout=0.01)
         self.assertEqual(contributions, [1 << 30, 0, 1 << 30, 0])
+
+    def test_tp4_eight_members_map_two_owners_and_six_followers_rejoin(self):
+        contributions = []
+        for side in (0, 1):
+            for member in range(4):
+                pool, sdk = self.pool(side, member, tp_size=4)
+                contributions.append(pool.contribution)
+                self.assertEqual(pool.world_size, 8)
+                self.assertEqual(pool.layout.probe_bytes, 512)
+                self.assertEqual(pool.view(0, 0).gva_base, 0x1000000000)
+                self.assertEqual(pool.view(1, 0).gva_base, 0x1100000000)
+                if member:
+                    pool.rejoin_follower(timeout=0.01)
+                else:
+                    with self.assertRaises(ValueError):
+                        pool.rejoin_follower(timeout=0.01)
+        self.assertEqual(contributions, [1 << 30, 0, 0, 0] * 2)
 
     def test_old_or_out_of_order_join_cannot_satisfy_follower_rejoin(self):
         pool, sdk = self.pool(0, 0)

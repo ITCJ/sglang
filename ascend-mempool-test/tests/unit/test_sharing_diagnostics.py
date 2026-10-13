@@ -26,7 +26,7 @@ class StreamContext:
 
 
 class TestSharingDiagnostics(unittest.TestCase):
-    def publication(self, selected_ms, writer_ms):
+    def publication(self, selected_ms, writer_ms, tp_size=2):
         work, pipeline, cohort = Mock(), Mock(), Mock()
         # Both events completed before the host got scheduled to inspect them.
         pipeline.writer_done.query.return_value = True
@@ -52,7 +52,7 @@ class TestSharingDiagnostics(unittest.TestCase):
             patch("sharing_worker.importlib.import_module", return_value=profiler),
         ):
             return delayed_publication(
-                SimpleNamespace(member=1),
+                SimpleNamespace(member=tp_size - 1, tp_size=tp_size),
                 cohort,
                 dict(topk=2048, block_dims=[24], delay_matmuls=512),
                 SimpleNamespace(npu=npu),
@@ -70,6 +70,11 @@ class TestSharingDiagnostics(unittest.TestCase):
             with self.subTest(selected=selected, writer=writer):
                 with self.assertRaises(AssertionError):
                     self.publication(selected, writer)
+
+    def test_tp4_last_writer_overlap_is_checked(self):
+        self.assertEqual(len(self.publication(2.0, 5.0, tp_size=4)), 4)
+        with self.assertRaises(AssertionError):
+            self.publication(5.0, 2.0, tp_size=4)
 
     def test_device_sync_failure_keeps_boundary_and_never_announces_drained(self):
         work, pipeline, cohort = Mock(), Mock(), Mock()

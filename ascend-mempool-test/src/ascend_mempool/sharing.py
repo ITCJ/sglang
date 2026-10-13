@@ -1,4 +1,4 @@
-"""CPU-readable contract for the two-member NUMA sharing experiment."""
+"""CPU-readable contract for the TP2/TP4 NUMA sharing experiment."""
 
 from __future__ import annotations
 
@@ -18,52 +18,71 @@ class SharingPlan:
     slots: int = 2
     layers: int = 2
     dim: int = 576
+    tp_size: int = 2
+
+    def __post_init__(self) -> None:
+        if self.tp_size not in (2, 4):
+            raise ValueError("tp_size must be 2 or 4")
+        if self.dim % self.tp_size:
+            raise ValueError(
+                "KV feature dimension must divide evenly across TP members"
+            )
 
     def layout(self) -> PoolLayout:
         return PoolLayout(
             KVLayout(self.layers, self.slots, self.prompt_tokens, 1, self.dim),
             KVLayout(self.layers, self.slots, self.decode_tokens, 1, self.dim),
-            probe_bytes=256,
+            probe_bytes=2 * self.tp_size * 64,
         )
 
     def participants(self, mode: str) -> list[int]:
         if mode not in ("independent", "shared"):
             raise ValueError("mode must be independent or shared")
-        return list(range(4 if mode == "shared" else 2))
+        return list(range(2 * self.tp_size if mode == "shared" else 2))
 
     def contributions(self, mode: str) -> list[int]:
         self.participants(mode)
         layout = self.layout()
         p, d = (layout.contribution_bytes(side) for side in (0, 1))
-        return [p, 0, d, 0] if mode == "shared" else [p, p, d, d]
+        return (
+            [p] + [0] * (self.tp_size - 1) + [d] + [0] * (self.tp_size - 1)
+            if mode == "shared"
+            else [p] * self.tp_size + [d] * self.tp_size
+        )
 
     def owner(self, mode: str, *, side: int, member: int) -> int:
         self.participants(mode)
-        if side not in (0, 1) or member not in (0, 1):
-            raise ValueError("side and member must be 0 or 1")
-        return side * 2 if mode == "shared" else side
+        if side not in (0, 1) or member not in range(self.tp_size):
+            raise ValueError("invalid side or local TP member")
+        return side * self.tp_size if mode == "shared" else side
 
 
-def port_plan(base: int, mode: str, side: int, member: int) -> dict[str, int]:
-    """MF binds NIC base + BM rank; reserve offsets 0..12 on each host."""
-    SharingPlan().owner(mode, side=side, member=member)
-    if not 1 <= base <= 65523:
-        raise ValueError("control-port must leave thirteen consecutive ports available")
-    rank = side * 2 + member if mode == "shared" else side
-    nic = base + 4 + 4 * member
+def port_plan(
+    base: int, mode: str, side: int, member: int, tp_size: int = 2
+) -> dict[str, int]:
+    """MF binds NIC base + BM rank; disjoint control/store/NIC/HCCL ranges."""
+    SharingPlan(tp_size=tp_size).owner(mode, side=side, member=member)
+    collective_offset = 2 + tp_size + 2 * tp_size * tp_size
+    if not 1 <= base <= 65535 - collective_offset:
+        raise ValueError(
+            f"control-port must leave {collective_offset + 1} consecutive ports available"
+        )
+    rank = side * tp_size + member if mode == "shared" else side
+    nic = base + 2 + tp_size + 2 * tp_size * member
     return dict(
         coordinator=base + 1,
         store=base + 2 + (member if mode == "independent" else 0),
         nic_base=nic,
         nic_actual=nic + rank,
-        collective=base + 12,
+        collective=base + collective_offset,
     )
 
 
-def writer_rows(mode: str, experiment: str, rows: int, member: int) -> list[int]:
+def writer_rows(
+    mode: str, experiment: str, rows: int, member: int, tp_size: int = 2
+) -> list[int]:
     """Physical row offsets; equal-bytes uses disjoint ranges in the shared pool."""
-    if mode not in ("independent", "shared") or member not in (0, 1):
-        raise ValueError("invalid pool mode or member")
+    SharingPlan(tp_size=tp_size).owner(mode, side=0, member=member)
     if (
         experiment not in ("logical", "equal_bytes")
         or type(rows) is not int
@@ -74,13 +93,13 @@ def writer_rows(mode: str, experiment: str, rows: int, member: int) -> list[int]
         return list(range(rows))
     if experiment == "equal_bytes":
         return list(range(member * rows, (member + 1) * rows))
-    return list(range(member, rows, 2))
+    return list(range(member, rows, tp_size))
 
 
-def group_sample(samples: list[dict[str, Any]]) -> dict[str, Any]:
-    """Combine only two members on ONE host; never subtract P and D clocks."""
-    if len(samples) != 2 or {s["member"] for s in samples} != {0, 1}:
-        raise ValueError("a group sample needs both local members")
+def group_sample(samples: list[dict[str, Any]], tp_size: int = 2) -> dict[str, Any]:
+    """Combine all local members on ONE host; never subtract P and D clocks."""
+    if len(samples) != tp_size or {s["member"] for s in samples} != set(range(tp_size)):
+        raise ValueError("a group sample needs every local TP member")
     if len({s["repeats"] for s in samples}) != 1:
         raise ValueError("members must submit the same repeat count")
     start = min(s["start_ns"] for s in samples)

@@ -1,4 +1,4 @@
-"""Four-worker rendezvous for the standalone experiment, outside device timing."""
+"""Multi-worker rendezvous for the standalone experiment, outside device timing."""
 
 from __future__ import annotations
 
@@ -14,7 +14,12 @@ from .control import TestChannel
 class CohortServer:
     """Collect identical phases; on failure allow a final all-worker drain only."""
 
-    def __init__(self, host: str, port: int, identity: str, timeout: float) -> None:
+    def __init__(
+        self, host: str, port: int, identity: str, timeout: float, tp_size: int = 2
+    ) -> None:
+        if tp_size not in (2, 4):
+            raise ValueError("tp_size must be 2 or 4")
+        self.world_size = 2 * tp_size
         self.identity, self.timeout = identity, timeout
         self.condition = threading.Condition()
         self.phases: dict[str, dict[int, dict[str, Any]]] = {}
@@ -33,7 +38,7 @@ class CohortServer:
                         if (
                             hello.get("identity") != identity
                             or type(rank) is not int
-                            or rank not in range(4)
+                            or rank not in range(owner.world_size)
                             or rank in owner.connected
                         ):
                             raise ValueError(
@@ -79,7 +84,7 @@ class CohortServer:
             if len({m["phase"] for m in entries.values()}) != 1:
                 self.error = f"workers disagree at phase {seq}"
             self.condition.notify_all()
-            while len(entries) < 4:
+            while len(entries) < self.world_size:
                 if self.error and phase != "drained":
                     return self.error
                 remaining = deadline - time.monotonic()
@@ -93,7 +98,7 @@ class CohortServer:
                     return "one or more devices did not drain"
             elif self.error:
                 return self.error
-            return [entries[i]["payload"] for i in range(4)]
+            return [entries[i]["payload"] for i in range(self.world_size)]
 
     def close(self) -> None:
         self.server.shutdown()
@@ -103,8 +108,17 @@ class CohortServer:
 
 class Cohort:
     def __init__(
-        self, host: str, port: int, rank: int, identity: str, timeout: float
+        self,
+        host: str,
+        port: int,
+        rank: int,
+        identity: str,
+        timeout: float,
+        tp_size: int = 2,
     ) -> None:
+        if tp_size not in (2, 4) or rank not in range(2 * tp_size):
+            raise ValueError("invalid TP size or cohort rank")
+        self.tp_size = tp_size
         deadline = time.monotonic() + timeout
         while True:
             try:
@@ -114,9 +128,7 @@ class Cohort:
                 break
             except OSError:
                 if time.monotonic() >= deadline:
-                    raise TimeoutError(
-                        "four-worker coordinator was not reachable"
-                    ) from None
+                    raise TimeoutError("worker coordinator was not reachable") from None
                 time.sleep(0.1)
         connection.settimeout(timeout)
         self.channel = TestChannel(connection)
@@ -133,7 +145,8 @@ class Cohort:
     def aligned_start(self, phase: str) -> None:
         self.exchange(phase + "/ready")
         stamps = self.exchange(phase + "/clock", ns=time.monotonic_ns())
-        local = stamps[(self.rank // 2) * 2 : (self.rank // 2) * 2 + 2]
+        offset = (self.rank // self.tp_size) * self.tp_size
+        local = stamps[offset : offset + self.tp_size]
         target = max(s["ns"] for s in local) + 100_000_000
         if time.monotonic_ns() >= target:
             raise RuntimeError("coordination exceeded 100ms launch window")

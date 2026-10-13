@@ -1,4 +1,4 @@
-"""Autonomous two-host/two-NPU independent versus shared BM experiment."""
+"""Autonomous two-host TP2/TP4 independent versus shared BM experiment."""
 
 from __future__ import annotations
 
@@ -35,9 +35,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--prefill-host", required=True)
     parser.add_argument("--decode-host", required=True)
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--devices", type=int, nargs=2, default=[0, 1])
+    parser.add_argument("--devices", type=int, nargs="+", default=[0, 1])
     parser.add_argument("--numa-node", type=int, required=True)
-    parser.add_argument("--prompt-tokens", type=int, default=8192)
+    parser.add_argument(
+        "--prompt-tokens", type=int, help="Default: 8192 for TP2, 16384 for TP4"
+    )
     parser.add_argument("--decode-tokens", type=int, default=16384)
     parser.add_argument("--topk", type=int, default=2048)
     parser.add_argument("--block-dims", type=int, nargs="+", default=[24, 48])
@@ -106,12 +108,19 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         parser.error("resume-round requires resume-from")
     if args.prefill_host == args.decode_host:
         parser.error("two different P/D hosts are required")
-    if min(args.devices) < 0 or len(set(args.devices)) != 2:
-        parser.error("--devices must name two different local NPU IDs")
+    if (
+        len(args.devices) not in (2, 4)
+        or min(args.devices) < 0
+        or len(set(args.devices)) != len(args.devices)
+    ):
+        parser.error("--devices must name two or four different local NPU IDs")
+    args.tp_size = len(args.devices)
+    if args.prompt_tokens is None:
+        args.prompt_tokens = 8192 if args.tp_size == 2 else 16384
     if not 0 <= args.numa_node <= 126:
         parser.error("--numa-node must be in [0, 126]")
     try:
-        port_plan(args.control_port, "shared", 1, 1)
+        port_plan(args.control_port, "shared", 1, args.tp_size - 1, args.tp_size)
     except ValueError as error:
         parser.error(str(error))
     if not math.isfinite(args.timeout) or args.timeout <= 0:
@@ -125,8 +134,14 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         )
     if not (args.smoke or args.diagnostic) and (args.rounds < 3 or args.samples < 3):
         parser.error("full comparison needs at least three rounds and three samples")
-    if args.topk != 2048 or min(args.prompt_tokens, args.decode_tokens) < 8192:
-        parser.error("this matrix requires topk=2048 and P/D capacities >=8192")
+    minimum_tokens = max(8192, 2049 * args.tp_size + 2)
+    if (
+        args.topk != 2048
+        or min(args.prompt_tokens, args.decode_tokens) < minimum_tokens
+    ):
+        parser.error(
+            f"this matrix requires topk=2048 and P/D capacities >={minimum_tokens} (equal-byte writes plus guards)"
+        )
     if (
         not args.block_dims
         or any(b <= 0 for b in args.block_dims)
@@ -134,14 +149,26 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     ):
         parser.error("block-dims must contain distinct positive core counts")
     try:
-        SharingPlan(args.prompt_tokens, args.decode_tokens, slots=16).layout()
+        SharingPlan(
+            args.prompt_tokens,
+            args.decode_tokens,
+            slots=16,
+            layers=args.tp_size,
+            tp_size=args.tp_size,
+        ).layout()
     except ValueError as error:
         parser.error(str(error))
     return args
 
 
 def describe(args: argparse.Namespace) -> dict[str, Any]:
-    plan = SharingPlan(args.prompt_tokens, args.decode_tokens, slots=16)
+    plan = SharingPlan(
+        args.prompt_tokens,
+        args.decode_tokens,
+        slots=16,
+        layers=args.tp_size,
+        tp_size=args.tp_size,
+    )
     return dict(
         scope="publication_diagnostic"
         if args.diagnose_publication
@@ -171,7 +198,10 @@ def describe(args: argparse.Namespace) -> dict[str, Any]:
         rank_stride_bytes=plan.layout().rank_stride_bytes,
         cases=[]
         if args.diagnose_publication
-        else [case.signature() for case in cases(args.smoke, args.diagnose_write_read)],
+        else [
+            case.signature()
+            for case in cases(args.smoke, args.diagnose_write_read, args.tp_size)
+        ],
         samples=args.samples,
         repeats=args.repeats,
         warmup=args.warmup,
@@ -199,28 +229,43 @@ def code_identity() -> dict[str, str]:
 
 
 def local_groups(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    if len(reports) != 2 or any(
-        r.get("status")
-        not in ("checks_passed", "checks_passed_numa_unverified", "smoke_passed")
-        or not r.get("closed")
-        for r in reports
+    tp_size = reports[0]["config"].get("plan", {}).get("tp_size", 2) if reports else 2
+    if (
+        tp_size not in (2, 4)
+        or len(reports) != tp_size
+        or any(
+            r.get("status")
+            not in ("checks_passed", "checks_passed_numa_unverified", "smoke_passed")
+            or not r.get("closed")
+            for r in reports
+        )
     ):
         raise RuntimeError(
-            "both local workers must complete checks and close their pools"
+            "all local TP workers must complete checks and close their pools"
         )
     config = reports[0]["config"]
-    contract = ("mode", "round", "side", "smoke", "block_dims", "samples", "repeats")
+    contract = (
+        "mode",
+        "round",
+        "side",
+        "smoke",
+        "block_dims",
+        "samples",
+        "repeats",
+        "plan",
+    )
     if any(
         r["config"].get(field, False) != config.get(field, False)
         for r in reports
         for field in ("diagnostic", "diagnose_write_read", "diagnose_publication")
     ):
         raise RuntimeError("local workers disagree on diagnostic scope")
-    if {r["config"]["member"] for r in reports} != {0, 1} or any(
-        any(r["config"][name] != config[name] for name in contract) for r in reports
+    if {r["config"]["member"] for r in reports} != set(range(tp_size)) or any(
+        any(r["config"].get(name) != config.get(name) for name in contract)
+        for r in reports
     ):
         raise RuntimeError(
-            "local worker configurations do not describe one matched pair"
+            "local worker configurations do not describe one matched TP group"
         )
     if config.get("diagnose_publication", False):
         for report in reports:
@@ -247,7 +292,7 @@ def local_groups(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     or min(selected, writer) < 0
                     or not math.isclose(gap, writer - selected)
                     or (
-                        report["config"]["member"] == 1
+                        report["config"]["member"] == tp_size - 1
                         and (gap <= 0 or row["selected_before_writer_done"] is not True)
                     )
                 ):
@@ -255,7 +300,9 @@ def local_groups(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return []
     expected = {
         json.dumps([case.signature(), engine, blocks, sample], sort_keys=True)
-        for case in cases(config["smoke"], config.get("diagnose_write_read", False))
+        for case in cases(
+            config["smoke"], config.get("diagnose_write_read", False), tp_size
+        )
         for engine in (["eager"] if config["smoke"] else ["eager", "graph"])
         for blocks in config["block_dims"]
         for sample in range(config["samples"])
@@ -281,7 +328,7 @@ def local_groups(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 or row.get("opposite_side_idle") is not True
             ):
                 raise RuntimeError(
-                    "sample does not isolate the requested consumer pair"
+                    "sample does not isolate the requested consumer group"
                 )
             for field in ("device_calls_ms", "selected_calls_ms"):
                 if len(row[field]) != config["repeats"] or any(
@@ -300,7 +347,7 @@ def local_groups(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
     result = []
     for rows in groups.values():
         rows.sort(key=lambda row: row["member"])
-        sample = group_sample(rows)
+        sample = group_sample(rows, tp_size)
         first = rows[0]
         result.append(
             dict(
@@ -313,6 +360,7 @@ def local_groups(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 sample=first["sample"],
                 repeats=first["repeats"],
                 concurrent_accessors=sum(r["copy_bytes"] > 0 for r in rows),
+                tp_size=tp_size,
                 per_rank=rows,
                 **sample,
             )
@@ -331,12 +379,21 @@ def summarize(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
     buckets: dict[str, list[dict[str, Any]]] = {}
     for row in groups:
         key = json.dumps(
-            [row["side"], row["case"], row["engine"], row["block_dim"]], sort_keys=True
+            [
+                row.get("tp_size", 2),
+                row["side"],
+                row["case"],
+                row["engine"],
+                row["block_dim"],
+            ],
+            sort_keys=True,
         )
         buckets.setdefault(key, []).append(row)
     output = []
     for rows in buckets.values():
         item = {name: rows[0][name] for name in ("side", "case", "engine", "block_dim")}
+        tp_size = rows[0].get("tp_size", 2)
+        item["tp_size"] = tp_size
         for mode in ("independent", "shared"):
             selected = [r for r in rows if r["mode"] == mode]
             valid = [
@@ -368,7 +425,7 @@ def summarize(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
                             [r["device_ms"][m] / r["repeats"] for r in valid], 0.95
                         ),
                     )
-                    for m in (0, 1)
+                    for m in range(tp_size)
                 ],
                 per_rank_selected_ms=[
                     dict(
@@ -389,7 +446,7 @@ def summarize(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
                             0.95,
                         ),
                     )
-                    for m in (0, 1)
+                    for m in range(tp_size)
                 ],
                 copy_payload_gbps_p50=percentile(
                     [r["copy_payload_gbps"] for r in valid], 0.5
@@ -414,7 +471,7 @@ def summarize(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def add_reader_efficiency(comparison: list[dict[str, Any]]) -> None:
-    """Compare measured dual throughput to two separately measured single readers."""
+    """Compare concurrent throughput to all separately measured single readers."""
     matched: dict[str, dict[int, dict[str, Any]]] = {}
     for item in comparison:
         case = item["case"]
@@ -424,23 +481,42 @@ def add_reader_efficiency(comparison: list[dict[str, Any]]) -> None:
             key: value for key, value in case.items() if key not in ("name", "accessor")
         }
         key = json.dumps(
-            [item["side"], item["engine"], item["block_dim"], workload], sort_keys=True
+            [
+                item.get("tp_size", 2),
+                item["side"],
+                item["engine"],
+                item["block_dim"],
+                workload,
+            ],
+            sort_keys=True,
         )
         matched.setdefault(key, {})[case["accessor"]] = item
     for members in matched.values():
-        if set(members) != {-1, 0, 1}:
+        if -1 not in members:
+            continue
+        tp_size = members[-1].get("tp_size", 2)
+        if set(members) != {-1, *range(tp_size)}:
             continue
         for mode in ("independent", "shared"):
-            dual = members[-1][mode]["bm_payload_gbps_p50"]
+            concurrent = members[-1][mode]["bm_payload_gbps_p50"]
             singles = [
-                members[member][mode]["bm_payload_gbps_p50"] for member in (0, 1)
+                members[member][mode]["bm_payload_gbps_p50"]
+                for member in range(tp_size)
             ]
-            members[-1][mode]["dual_reader_efficiency"] = dict(
-                fraction=dual / sum(singles),
-                dual_measured_bm_gbps=dual,
+            members[-1][mode]["reader_efficiency"] = dict(
+                tp_size=tp_size,
+                fraction=concurrent / sum(singles),
+                concurrent_measured_bm_gbps=concurrent,
                 single_measured_bm_gbps=singles,
-                formula="dual measured throughput / (single owner + single follower measured throughput)",
+                formula="concurrent measured throughput / sum of all separately measured single-reader throughputs",
             )
+            if tp_size == 2:
+                members[-1][mode]["dual_reader_efficiency"] = dict(
+                    fraction=concurrent / sum(singles),
+                    dual_measured_bm_gbps=concurrent,
+                    single_measured_bm_gbps=singles,
+                    formula="dual measured throughput / (single owner + single follower measured throughput)",
+                )
 
 
 def completion_outcome(
@@ -468,6 +544,7 @@ def completion_outcome(
 
 def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
     plan = describe(args)
+    tp_size = args.tp_size
     identity = dict(
         run_id=args.run_id,
         plan=plan,
@@ -479,7 +556,7 @@ def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
         raise RuntimeError("P/D plan, code fingerprint or run ID differs")
     write_json(root / "identity.json", identity)
     reused, provenance = load_completed_rounds(args, plan, identity["code"])
-    # Validate all reused sample pairs before either host starts more hardware work.
+    # Validate all reused sample groups before either host starts more hardware work.
     for reports in reused.values():
         local_groups(reports)
     peer.send(
@@ -496,7 +573,7 @@ def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
     total_cases = len(plan["cases"]) * len(args.block_dims) * 2 * len(plan["engines"])
     if not args.smoke and (not args.diagnostic or args.diagnose_publication):
         total_cases += 6  # Four publication variants and two separate profiles.
-    progress = Progress(sum(map(len, plan["mode_order"])), total_cases)
+    progress = Progress(sum(map(len, plan["mode_order"])), total_cases, tp_size)
     all_groups: list[dict[str, Any]] = []
     allocations: list[dict[str, Any]] = []
     publication_reports: list[dict[str, Any]] = []
@@ -525,6 +602,7 @@ def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
                             args.control_port + 1,
                             f"{args.run_id}/{phase}",
                             args.timeout,
+                            tp_size,
                         )
                     peer.barrier(phase + "/coordinator")
                     with Processes(stage) as processes:
@@ -532,7 +610,7 @@ def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
                         for member, device in enumerate(args.devices):
                             config = dict(
                                 resume_environment=provenance.get(
-                                    "environments", [None, None]
+                                    "environments", [None] * tp_size
                                 )[member],
                                 plan=plan["plan"],
                                 mode=mode,
@@ -592,7 +670,7 @@ def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
                             )
                     reports = [
                         json.loads((stage / f"member-{m}/report.json").read_text())
-                        for m in (0, 1)
+                        for m in range(tp_size)
                     ]
                 groups = local_groups(reports)
                 all_groups.extend(groups)

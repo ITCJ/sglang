@@ -292,8 +292,8 @@ class Pipeline:
         else:
             work.write()
             if op == "write_then_read":
-                # A complete current row can span both writers. Use the same
-                # pair collective in BOTH pool modes before reading it from BM.
+                # A complete current row can span multiple writers. Use the same
+                # TP collective in BOTH pool modes before reading it from BM.
                 torch.distributed.all_reduce(self.collective_value)
         if op == "current_parallel":
             with torch.npu.stream(self.history):
@@ -340,7 +340,7 @@ class Pipeline:
         torch, work = self.torch, self.work
         with torch.npu.stream(self.writer):
             self.writer.wait_event(self.ready)
-            if work.pool.member == 1:
+            if work.pool.member == work.pool.tp_size - 1:
                 for _ in range(self.delay_matmuls):
                     torch.mm(
                         self.delay_source, self.delay_source, out=self.delay_target

@@ -18,6 +18,28 @@ class TestSharingPlan(unittest.TestCase):
         with self.assertRaises(ValueError):
             port_plan(65524, "shared", 1, 1)
 
+    def test_tp4_ports_and_odd_row_partitions_cover_all_members(self):
+        for mode in ("independent", "shared"):
+            ports = [
+                port_plan(19400, mode, side, m, 4) for side in (0, 1) for m in range(4)
+            ]
+            self.assertEqual({p["collective"] for p in ports}, {19438})
+            reserved = {19400, 19401, 19402, 19403, 19404, 19405, 19438}
+            actual = [p["nic_actual"] for p in ports]
+            self.assertEqual(len(set(actual)), 8)
+            self.assertFalse(set(actual) & reserved)
+        with self.assertRaises(ValueError):
+            port_plan(65498, "shared", 1, 3, 4)
+        for count in (1, 17, 2049):
+            partitions = [
+                writer_rows("shared", "logical", count, m, 4) for m in range(4)
+            ]
+            self.assertEqual(sorted(sum(partitions, [])), list(range(count)))
+            self.assertEqual(sum(map(len, partitions)), count)
+        self.assertEqual(
+            writer_rows("shared", "equal_bytes", 2049, 3, 4), list(range(6147, 8196))
+        )
+
     def test_independent_and_shared_contributions_do_not_count_reserved_va(self):
         plan = SharingPlan(prompt_tokens=8192, decode_tokens=4096)
         self.assertEqual(plan.participants("shared"), [0, 1, 2, 3])

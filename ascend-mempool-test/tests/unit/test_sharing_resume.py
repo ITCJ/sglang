@@ -22,6 +22,8 @@ from sharing_resume import (
 
 
 class TestResume(unittest.TestCase):
+    tp_size = 2
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -36,6 +38,8 @@ class TestResume(unittest.TestCase):
                 "d",
                 "--run-id",
                 "new",
+                "--devices",
+                *map(str, range(self.tp_size)),
                 "--numa-node",
                 "0",
                 "--resume-from",
@@ -51,12 +55,16 @@ class TestResume(unittest.TestCase):
         self.source.mkdir(parents=True)
         self.write(
             self.source / "identity.json",
-            dict(run_id="old", plan=self.plan, code=COMPATIBLE_SOURCE),
+            dict(
+                run_id="old",
+                plan=self.plan,
+                code=dict(git_sha="new", source_sha256="new"),
+            ),
         )
         self.paths = []
         for rid, order in enumerate(self.plan["mode_order"][:2]):
             for mode in order:
-                for member in (0, 1):
+                for member in range(self.tp_size):
                     config = dict(
                         plan=self.plan["plan"],
                         mode=mode,
@@ -147,7 +155,7 @@ class TestResume(unittest.TestCase):
                 "round-1/independent",
             ],
         )
-        self.assertEqual(provenance["source_identity"]["code"], COMPATIBLE_SOURCE)
+        self.assertEqual(provenance["measurement_compatibility"], "identical source")
         self.assertEqual(
             reports["round-0/independent"][0]["status"], "checks_passed_numa_unverified"
         )
@@ -165,7 +173,7 @@ class TestResume(unittest.TestCase):
             elif field == "closed":
                 data["closed"] = False
             elif field == "device":
-                data["config"]["device_id"] = 3
+                data["config"]["device_id"] = 99
             elif field == "publication":
                 data["delayed_publication"].pop()
             else:
@@ -176,6 +184,14 @@ class TestResume(unittest.TestCase):
         self.write(path, original)
         path.unlink()
         with self.assertRaises(FileNotFoundError):
+            self.load()
+
+    def test_tp2_and_tp4_reports_cannot_be_mixed(self):
+        path = self.source / "identity.json"
+        identity = json.loads(path.read_text())
+        identity["plan"]["plan"]["tp_size"] = 4 if self.tp_size == 2 else 2
+        self.write(path, identity)
+        with self.assertRaisesRegex(ValueError, "plan differs"):
             self.load()
 
     def test_unknown_code_or_changed_plan_is_not_reused(self):
@@ -189,6 +205,10 @@ class TestResume(unittest.TestCase):
                 self.load()
 
     def test_changed_destination_implementation_cannot_claim_legacy_compatibility(self):
+        path = self.source / "identity.json"
+        identity = json.loads(path.read_text())
+        identity["code"] = COMPATIBLE_SOURCE
+        self.write(path, identity)
         with patch("sharing_resume.implementation_fingerprint", return_value="changed"):
             with self.assertRaisesRegex(ValueError, "audited resume target"):
                 self.load()
@@ -259,10 +279,9 @@ class TestResume(unittest.TestCase):
         self.assertEqual(
             starts,
             [
-                (2, "independent", 0),
-                (2, "independent", 1),
-                (2, "shared", 0),
-                (2, "shared", 1),
+                (2, mode, member)
+                for mode in ("independent", "shared")
+                for member in range(self.tp_size)
             ],
         )
         self.assertEqual(len(result["comparison"]), 6)
@@ -298,6 +317,22 @@ class TestResume(unittest.TestCase):
         self.assertIn("REUSED", output.getvalue())
         self.assertIn("cases 1/4", output.getvalue())
         self.assertNotIn("100.0%", output.getvalue())
+
+
+class TestTP4Resume(TestResume):
+    tp_size = 4
+
+    def test_tp4_progress_waits_for_last_member(self):
+        for member in range(4):
+            (self.root / f"member-{member}.log").write_text(
+                "BEGIN shared/read\n" + "PASS shared/read\n" * (3 if member < 3 else 1)
+            )
+        with redirect_stdout(io.StringIO()) as output:
+            progress = Progress(6, 4, tp_size=4)
+            progress.begin("round-0/shared", self.root)
+        self.assertEqual(progress.counts, [3, 3, 3, 1])
+        self.assertIn("cases 1/4", output.getvalue())
+        self.assertIn("m3: shared/read", output.getvalue())
 
 
 if __name__ == "__main__":

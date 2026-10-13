@@ -23,7 +23,11 @@ class Case:
         return asdict(self)
 
 
-def cases(smoke: bool = False, diagnostic: bool = False) -> list[Case]:
+def cases(
+    smoke: bool = False, diagnostic: bool = False, tp_size: int = 2
+) -> list[Case]:
+    if tp_size not in (2, 4):
+        raise ValueError("tp_size must be 2 or 4")
     if diagnostic:
         if smoke:
             raise ValueError("write/read diagnostic requires eager and Graph")
@@ -42,7 +46,14 @@ def cases(smoke: bool = False, diagnostic: bool = False) -> list[Case]:
         )
     ]
     result += [
-        Case(f"logical-{rows}-layer1", "logical", rows=rows, partition="layer", layer=1)
+        Case(
+            f"logical-{rows}-layer{layer}",
+            "logical",
+            rows=rows,
+            partition="layer",
+            layer=layer,
+        )
+        for layer in range(1, tp_size)
         for rows in (1, 17, 2049)
     ]
     result += [
@@ -65,7 +76,7 @@ def cases(smoke: bool = False, diagnostic: bool = False) -> list[Case]:
             accessor=member,
         )
         for op in ("logical", "read")
-        for member in (0, 1)
+        for member in range(tp_size)
     ]
     result += [
         Case(f"{op}-{active}", op, active=active)

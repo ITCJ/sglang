@@ -96,7 +96,10 @@ def benchmark(
     engines = ["eager"] if config["smoke"] else ["eager", "graph"]
     for blocks in config["block_dims"]:
         for case, consumer_side in product(
-            cases(config["smoke"], config.get("diagnose_write_read", False)), (0, 1)
+            cases(
+                config["smoke"], config.get("diagnose_write_read", False), pool.tp_size
+            ),
+            (0, 1),
         ):
             for engine in engines:
                 label = f"{blocks}/{case.name}/consumer-{consumer_side}/{engine}"
@@ -240,7 +243,9 @@ def delayed_publication(
     """Read current locally; after local writer->HCCL, read the shared full rows."""
     results = []
     for engine in ("eager", "graph"):
-        case = Case("delayed-writer-publication", "current_parallel", active=2)
+        case = Case(
+            "delayed-writer-publication", "current_parallel", active=pool.tp_size
+        )
         work = CopyWorkload(
             pool, case, topk=config["topk"], block_dim=config["block_dims"][0]
         )
@@ -334,7 +339,7 @@ def delayed_publication(
                 )
             )
             save(output / "delayed-publication.json", results)
-            if engine == "eager" and pool.member == 1 and not early:
+            if engine == "eager" and pool.member == pool.tp_size - 1 and not early:
                 raise AssertionError(
                     "delay fixture has no positive device overlap window: "
                     f"{timing}; inspect stream ordering or increase --delay-matmuls"
@@ -401,9 +406,14 @@ def run(config: dict[str, Any], output: Path) -> int:
         check_resume_environment(
             report["environment"], config.get("resume_environment")
         )
-        rank = config["side"] * 2 + config["member"]
+        plan = SharingPlan(**config["plan"])
+        rank = config["side"] * plan.tp_size + config["member"]
         ports = port_plan(
-            config["control_port"], config["mode"], config["side"], config["member"]
+            config["control_port"],
+            config["mode"],
+            config["side"],
+            config["member"],
+            plan.tp_size,
         )
         report["ports"] = ports
         cohort = Cohort(
@@ -412,6 +422,7 @@ def run(config: dict[str, Any], output: Path) -> int:
             rank,
             config["identity"],
             config["timeout"],
+            plan.tp_size,
         )
         versions = {
             name: environment[name]
@@ -443,7 +454,7 @@ def run(config: dict[str, Any], output: Path) -> int:
         SharingPool.check(
             bm.initialize(
                 f"tcp://{config['prefill_host']}:{store_port}",
-                4 if config["mode"] == "shared" else 2,
+                2 * plan.tp_size if config["mode"] == "shared" else 2,
                 config["device_id"],
                 bm_config,
             ),
@@ -453,7 +464,7 @@ def run(config: dict[str, Any], output: Path) -> int:
         if bm.bm_rank_id() != bm_config.rank_id:
             raise RuntimeError("SDK assigned the wrong participant")
         pool = SharingPool(
-            SharingPlan(**config["plan"]),
+            plan,
             config["mode"],
             config["side"],
             config["member"],
@@ -466,7 +477,9 @@ def run(config: dict[str, Any], output: Path) -> int:
         cohort.exchange("probed")
         pool.verify_probe(torch)
         if config["mode"] == "shared":
-            for follower in (1, 3):
+            for follower in range(2 * plan.tp_size):
+                if follower % plan.tp_size == 0:
+                    continue
                 torch.npu.synchronize()
                 event_offset = len(pool.events)
                 cohort.exchange(f"rejoin-{follower}/drained")
@@ -500,7 +513,7 @@ def run(config: dict[str, Any], output: Path) -> int:
             torch.distributed.init_process_group(
                 backend="hccl",
                 init_method=f"tcp://{local_host}:{ports['collective']}",
-                world_size=2,
+                world_size=plan.tp_size,
                 rank=config["member"],
                 timeout=datetime.timedelta(seconds=config["timeout"]),
             )
@@ -531,7 +544,7 @@ def run(config: dict[str, Any], output: Path) -> int:
                 drained = True
             if cohort is not None:
                 # On any worker failure the coordinator aborts outstanding phases,
-                # then accepts only this final four-worker drain handshake.
+                # then accepts only this final all-worker drain handshake.
                 outcomes = cohort.exchange("drained", drained=drained, success=success)
                 success = success and all(outcome["success"] for outcome in outcomes)
             if distributed_ready:
