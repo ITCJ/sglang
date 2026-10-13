@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from cd_progress import CDProgress
 from cd_results import admit, local_groups, save, unit
+from cd_resume import compatible_code
 from run_numa_sharing import code_identity, completion_outcome, percentile
 from run_ticket10 import connect, receive_log, send_log
 from ticket10_processes import Peer, Processes
@@ -444,9 +445,11 @@ def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
     )
     if source_root is not None:
         previous = json.loads((source_root / "identity.json").read_text())
-        if previous["plan"] != plan or previous["code"] != identity["code"]:
+        if previous["plan"] != plan or not compatible_code(
+            previous["code"], identity["code"]
+        ):
             raise ValueError(
-                "resume requires identical C/D code and measurement configuration"
+                "resume requires identical or audited-compatible C/D code and identical measurement configuration"
             )
     progress = CDProgress(
         root, plan["preflight_groups"] + plan["measured_cases_both_sides"]

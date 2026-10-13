@@ -149,7 +149,11 @@ class Cohort:
         local = stamps[offset : offset + self.tp_size]
         target = max(s["ns"] for s in local) + 100_000_000
         if time.monotonic_ns() >= target:
-            raise RuntimeError("coordination exceeded 100ms launch window")
+            # This deadline is a launch hint, not a validity check. Inactive
+            # peers must still reach /done after a delayed control reply.
+            # Active peers launch now; measured start skew and overlap decide
+            # sample admission (and the C/D caller retries invalid batches).
+            return
         remaining = (target - time.monotonic_ns()) / 1e9
         if remaining > 0.002:
             time.sleep(remaining - 0.001)

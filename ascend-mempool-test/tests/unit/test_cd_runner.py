@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+import cd_resume
 import run_numa_cd as runner
 from cd_progress import CDProgress
 from cd_results import admit, load_reused, local_groups, save, unit
@@ -162,6 +163,35 @@ class TestCDRunner(unittest.TestCase):
                 admit(record, changed, self.case, 0, 0)
         with self.assertRaisesRegex(ValueError, "environment"):
             load_reused(path, self.contracts[0], self.case, 0, 0, dict(driver="v2"))
+
+    def test_audited_resume_keeps_original_code_and_all_other_checks(self):
+        records = deepcopy(self.records)
+        old_contracts = [dict(c, code=cd_resume.BASELINE) for c in self.contracts]
+        for member, record in enumerate(records):
+            record["contract"] = old_contracts[member]
+            save(self.root / f"member-{member}/cases/{unit(self.case, 0)}.json", record)
+        with patch.object(cd_resume, "_audited_current", return_value=True):
+            self.assertEqual(
+                runner.resume_units(self.root, self.contracts, self.args, 2),
+                [unit(self.case, 0)],
+            )
+            path = self.root / f"member-0/cases/{unit(self.case, 0)}.json"
+            reused = load_reused(
+                path, self.contracts[0], self.case, 0, 0, records[0]["environment"]
+            )
+            self.assertEqual(reused["contract"]["code"], cd_resume.BASELINE)
+            self.assertEqual(reused["samples"], records[0]["samples"])
+            changed = dict(self.contracts[0], numa_node=2)
+            with self.assertRaises(ValueError):
+                admit(records[0], changed, self.case, 0, 0)
+            with self.assertRaisesRegex(ValueError, "environment"):
+                load_reused(
+                    path, self.contracts[0], self.case, 0, 0, dict(driver="changed")
+                )
+        # Valid source identity cannot bypass the destination runtime audit.
+        with patch.object(cd_resume, "_audited_current", return_value=False):
+            with self.assertRaises(ValueError):
+                runner.resume_units(self.root, self.contracts, self.args, 2)
 
     def test_partial_checkpoint_reuse_requires_every_local_rank_and_valid_idle_records(
         self,

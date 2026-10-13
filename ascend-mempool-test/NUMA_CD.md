@@ -151,7 +151,12 @@ P50/P95 是**批次均摊时间**的分位数，不是单次 replay 或模型请
 ```
 
 两侧都这样操作，保留原代码、设备、NUMA、CPU 绑定、负载、随机种子、轮次和采样参数。
-代码 hash / commit、配置或运行环境改变时拒绝复用；不能复用旧 `run_numa_sharing.sh`
+通常代码 hash / commit、配置或运行环境改变时拒绝复用。本次启动窗口修复有唯一例外：
+允许原始提交 `61e22c8603` 的精确 source hash 续跑到经过 runtime hash 锁定的修复版。
+修复只让错过 100ms 目标时间的 worker 继续汇合，计时、数据路径和采样验收条件未改。
+活跃侧启动过晚仍由原有重叠 / 10% 启动偏差检查拒收并重试，闲置侧晚到不再终止整组。
+复用记录保留原 `contract.code` 和来源路径；任何其他运行时代码修改都禁用跨版本例外。
+配置、运行环境、全 rank 完整性及 NUMA 证据仍逐项检查。不能复用旧 `run_numa_sharing.sh`
 结果，也不能把不同 NUMA 配置的数据混在同一组。超时和日志输出位置不是性能负载。
 失败后回传两侧 `failure.json`、最后失败 worker 的日志和 `report.json`；
 完成后回传 P 侧 `summary.json`、`decode-summary.json` 和 `combined-results.csv`。

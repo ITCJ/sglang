@@ -61,6 +61,55 @@ class TestSharingControl(unittest.TestCase):
 class TestTP4Control(TestSharingControl):
     tp_size = 4
 
+    def test_late_clock_reply_still_reaches_sample_admission(self):
+        # Inactive D ranks can receive their clock reply after the deadline.
+        # They must still join /done; the active ranks' measured launch skew
+        # decides whether the sample is accepted or retried.
+        for rank in range(8):
+            with self.subTest(rank=rank):
+                client = Cohort.__new__(Cohort)
+                client.rank, client.tp_size = rank, 4
+                client.exchange = Mock(side_effect=[[], [dict(ns=0)] * 8, []])
+                with patch(
+                    "ascend_mempool.sharing_control.time.monotonic_ns",
+                    return_value=150_000_000,
+                ):
+                    client.aligned_start("sample")
+                client.exchange("sample/done", row=None)
+                self.assertEqual(client.exchange.call_count, 3)
+
+    def test_late_idle_member_does_not_abort_eight_worker_cohort(self):
+        server = CohortServer("127.0.0.1", 0, "late", 3, 4)
+        self.addCleanup(server.close)
+        port = server.server.server_address[1]
+
+        def worker(rank):
+            client = Cohort("127.0.0.1", port, rank, "late", 3, 4)
+            exchange = client.exchange
+
+            def delayed_clock(phase, **payload):
+                values = exchange(phase, **payload)
+                if phase.endswith("/clock") and rank == 4:
+                    # Replay an expired reply on one inactive D rank only.
+                    # Relative time is local to D; P has unrelated timestamps.
+                    return [dict(ns=s["ns"] - 1_000_000_000) for s in values]
+                return values
+
+            client.exchange = delayed_clock
+            try:
+                client.aligned_start("sample")
+                rows = client.exchange("sample/done", active=rank < 4)
+                client.exchange("drained", success=True, drained=True)
+                return rows
+            finally:
+                client.close()
+
+        with concurrent.futures.ThreadPoolExecutor(8) as threads:
+            results = list(threads.map(worker, range(8)))
+        self.assertTrue(all(r == results[0] for r in results))
+        self.assertEqual(sum(r["active"] for r in results[0]), 4)
+        self.assertIsNone(server.error)
+
     def test_launch_uses_all_four_local_clocks_and_no_remote_clock(self):
         client = Cohort.__new__(Cohort)
         client.rank, client.tp_size = 4, 4

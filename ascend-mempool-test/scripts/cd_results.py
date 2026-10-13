@@ -7,6 +7,8 @@ import math
 from pathlib import Path
 from typing import Any
 
+from cd_resume import compatible_code
+
 from ascend_mempool.cd_plan import CDCase, expected_bytes
 from ascend_mempool.sharing import group_sample
 
@@ -45,8 +47,11 @@ def admit(
     side: int,
     member: int,
 ) -> None:
+    saved_contract = record.get("contract", {})
     if (
-        record.get("contract") != contract
+        not compatible_code(saved_contract.get("code"), contract.get("code"))
+        or {k: v for k, v in saved_contract.items() if k != "code"}
+        != {k: v for k, v in contract.items() if k != "code"}
         or record.get("status") != "checked"
         or record.get("case") != case.signature()
         or record.get("consumer_side") != side
