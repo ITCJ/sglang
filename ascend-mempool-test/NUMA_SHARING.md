@@ -62,16 +62,16 @@ Mac 使用已安装CPU torch的Python环境，可在同一完整命令上添加 
 # P: 10.120.72.31，/home/cryang/sglang
 bash ascend-mempool-test/scripts/run_numa_sharing.sh \
   --role prefill --prefill-host 10.120.72.31 --decode-host 10.120.72.32 \
-  --devices 0 1 2 3 --numa-node 0 --run-id run-10-tp4 \
-  --block-dims 24 48 --rounds 3 --timeout 7200
+  --devices 0 1 2 3 --numa-node 0 --run-id run-10-tp4-graph48 \
+  --engines graph --block-dims 48 --rounds 3 --timeout 7200
 ```
 
 ```bash
 # D: 10.120.72.32，/home/cryang/sglang
 bash ascend-mempool-test/scripts/run_numa_sharing.sh \
   --role decode --prefill-host 10.120.72.31 --decode-host 10.120.72.32 \
-  --devices 0 1 2 3 --numa-node 0 --run-id run-10-tp4 \
-  --block-dims 24 48 --rounds 3 --timeout 7200
+  --devices 0 1 2 3 --numa-node 0 --run-id run-10-tp4-graph48 \
+  --engines graph --block-dims 48 --rounds 3 --timeout 7200
 ```
 
 TP4 的 independent 是四个 P_i/D_i session；shared 是一个八 participant
@@ -95,7 +95,11 @@ layer用layer编号模4分配。单token仍只有一个writer。
 
 并发读取时四rank使用相同slot、索引和top-k，各自把同一份完整selected KV
 读到本卡；增加member 2/3单reader对照。仍先测P侧四rank、再测D侧四rank，
-另一侧保持加入且不提交copy。53个case覆盖eager/Graph、24/48 cores及三轮交替。
+另一侧保持加入且不提交copy。本次按用户要求仅测Graph、48 cores，53个case及三轮交替；命令使用
+`--engines graph --block-dims 48`。省略engines时仍默认eager/Graph。
+Graph本身仍需capture前的正常预热；不采集eager用例或eager发布trace。
+报告scope为`selected_component`，identity记录所选引擎与block_dim，不声称覆盖完整矩阵。
+发布检查仅保留Graph读回和独立trace，设备重叠仍需审阅trace。
 发布诊断延迟member 3，并使用四个有效请求，保证延迟成员确有待写数据。
 进度条取四成员最慢进度；完成报告必须包含全部四成员。
 `reader_efficiency` 使用实测四reader吞吐除以四次单reader吞吐之和；不把单测相加

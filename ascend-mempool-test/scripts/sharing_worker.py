@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from sharing_resume import check_resume_environment
 from verify_graph import load_runtime, stage_local_kv
 
-from ascend_mempool.sharing import SharingPlan, port_plan
+from ascend_mempool.sharing import SharingPlan, configured_engines, port_plan
 from ascend_mempool.sharing_cases import Case, cases
 from ascend_mempool.sharing_control import Cohort
 from ascend_mempool.sharing_copy import CopyWorkload
@@ -93,7 +93,7 @@ def benchmark(
     progress: Callable[[str], None] = (
         partial(checkpoint, output) if diagnostic else lambda label: None
     )
-    engines = ["eager"] if config["smoke"] else ["eager", "graph"]
+    engines = configured_engines(config)
     for blocks in config["block_dims"]:
         for case, consumer_side in product(
             cases(
@@ -242,7 +242,7 @@ def delayed_publication(
 ) -> list[dict[str, Any]]:
     """Read current locally; after local writer->HCCL, read the shared full rows."""
     results = []
-    for engine in ("eager", "graph"):
+    for engine in configured_engines(config):
         case = Case(
             "delayed-writer-publication", "current_parallel", active=pool.tp_size
         )

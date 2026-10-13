@@ -73,6 +73,23 @@ class TestSharingRunner(unittest.TestCase):
             with self.subTest(extra=extra), self.assertRaises(SystemExit):
                 self.args(*extra)
 
+    def test_graph48_selection_is_explicit_and_rejects_invalid_engines(self):
+        args = self.args(
+            "--devices", "0", "1", "2", "3", "--engines", "graph", "--block-dims", "48"
+        )
+        plan = runner.describe(args)
+        self.assertEqual(plan["engines"], ["graph"])
+        self.assertEqual(plan["block_dims"], [48])
+        self.assertEqual(plan["scope"], "selected_component")
+        self.assertEqual(len(plan["cases"]), 53)
+        self.assertEqual(len(plan["mode_order"]), 3)
+        for extra in (
+            ("--engines", "graph", "graph"),
+            ("--smoke", "--engines", "graph"),
+        ):
+            with self.subTest(extra=extra), self.assertRaises(SystemExit):
+                self.args(*extra)
+
     def test_smoke_does_not_claim_graph_or_full_acceptance(self):
         plan = runner.describe(self.args("--smoke", "--describe"))
         self.assertEqual(plan["scope"], "eager_smoke")
@@ -184,6 +201,16 @@ class TestSharingRunner(unittest.TestCase):
                 )
             )
         self.assertEqual(runner.local_groups(reports), [])
+        graph_reports = deepcopy(reports)
+        for report in graph_reports:
+            report["config"]["engines"] = ["graph"]
+            report["delayed_publication"] = [
+                row for row in report["delayed_publication"] if row["engine"] == "graph"
+            ]
+        self.assertEqual(runner.local_groups(graph_reports), [])
+        graph_reports[-1]["delayed_publication"].pop()
+        with self.assertRaises(RuntimeError):
+            runner.local_groups(graph_reports)
         for mutation in ("missing", "duplicate", "readback", "overlap"):
             changed = deepcopy(reports)
             rows = changed[1]["delayed_publication"]
@@ -238,6 +265,28 @@ class TestSharingRunner(unittest.TestCase):
             reports.append(
                 dict(status="smoke_passed", closed=True, config=config, samples=rows)
             )
+        graph_reports = deepcopy(reports)
+        for report in graph_reports:
+            report["config"].update(
+                smoke=False,
+                engines=["graph"],
+                diagnose_write_read=True,
+                diagnostic=True,
+                block_dims=[48],
+            )
+            report["samples"] = [
+                dict(
+                    report["samples"][0],
+                    case=case.signature(),
+                    engine="graph",
+                    block_dim=48,
+                )
+                for case in runner.cases(diagnostic=True)
+            ]
+        self.assertEqual(len(runner.local_groups(graph_reports)), 2)
+        graph_reports[-1]["samples"][0]["engine"] = "eager"
+        with self.assertRaises(RuntimeError):
+            runner.local_groups(graph_reports)
         groups = runner.local_groups(list(reversed(reports)))
         self.assertEqual(len(groups), 2)
         independent = deepcopy(groups)

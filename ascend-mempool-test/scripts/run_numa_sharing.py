@@ -21,7 +21,12 @@ from sharing_progress import Progress
 from sharing_resume import load_completed_rounds
 from ticket10_processes import Peer, Processes
 
-from ascend_mempool.sharing import SharingPlan, group_sample, port_plan
+from ascend_mempool.sharing import (
+    SharingPlan,
+    configured_engines,
+    group_sample,
+    port_plan,
+)
 from ascend_mempool.sharing_cases import cases
 from ascend_mempool.sharing_control import CohortServer
 
@@ -43,6 +48,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--decode-tokens", type=int, default=16384)
     parser.add_argument("--topk", type=int, default=2048)
     parser.add_argument("--block-dims", type=int, nargs="+", default=[24, 48])
+    parser.add_argument(
+        "--engines",
+        choices=("eager", "graph"),
+        nargs="+",
+        help="Default: eager graph; smoke: eager",
+    )
     parser.add_argument("--rounds", type=int, default=3)
     parser.add_argument("--resume-from", help="Reuse completed rounds from this run ID")
     parser.add_argument(
@@ -87,6 +98,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Print configuration without NPU imports or network",
     )
     args = parser.parse_args(argv)
+    if args.engines is None:
+        args.engines = ["eager"] if args.smoke else ["eager", "graph"]
+    try:
+        args.engines = configured_engines(vars(args))
+    except ValueError as error:
+        parser.error(str(error))
     args.diagnostic = (
         args.diagnose_write_read
         or args.diagnose_independent
@@ -178,11 +195,13 @@ def describe(args: argparse.Namespace) -> dict[str, Any]:
         if args.diagnose_independent
         else "eager_smoke"
         if args.smoke
-        else "full_component",
+        else "full_component"
+        if set(args.engines) == {"eager", "graph"} and set(args.block_dims) == {24, 48}
+        else "selected_component",
         plan=asdict(plan),
         topk=args.topk,
         block_dims=args.block_dims,
-        engines=["eager"] if args.smoke else ["eager", "graph"],
+        engines=args.engines,
         consumer_sides=[0, 1],
         consumer_schedule="one side at a time; opposite side joined and idle",
         mode_order=[["independent", "shared"]]
@@ -244,6 +263,9 @@ def local_groups(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "all local TP workers must complete checks and close their pools"
         )
     config = reports[0]["config"]
+    engines = configured_engines(config)
+    if any(configured_engines(r["config"]) != engines for r in reports):
+        raise RuntimeError("local workers disagree on requested engines")
     contract = (
         "mode",
         "round",
@@ -271,11 +293,11 @@ def local_groups(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for report in reports:
             rows = report.get("delayed_publication", [])
             expected_rows = {
-                (engine, variant) for engine in ("eager", "graph") for variant in (0, 1)
+                (engine, variant) for engine in engines for variant in (0, 1)
             }
             if (
                 report.get("samples") != []
-                or len(rows) != 4
+                or len(rows) != len(expected_rows)
                 or {(r["engine"], r["variant"]) for r in rows} != expected_rows
                 or any(r.get("publication_readback_passed") is not True for r in rows)
             ):
@@ -303,7 +325,7 @@ def local_groups(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for case in cases(
             config["smoke"], config.get("diagnose_write_read", False), tp_size
         )
-        for engine in (["eager"] if config["smoke"] else ["eager", "graph"])
+        for engine in engines
         for blocks in config["block_dims"]
         for sample in range(config["samples"])
     }
@@ -572,7 +594,9 @@ def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
     write_json(root / "resume.json", provenance)
     total_cases = len(plan["cases"]) * len(args.block_dims) * 2 * len(plan["engines"])
     if not args.smoke and (not args.diagnostic or args.diagnose_publication):
-        total_cases += 6  # Four publication variants and two separate profiles.
+        total_cases += 3 * len(
+            plan["engines"]
+        )  # Two variants and one profile per engine.
     progress = Progress(sum(map(len, plan["mode_order"])), total_cases, tp_size)
     all_groups: list[dict[str, Any]] = []
     allocations: list[dict[str, Any]] = []
@@ -626,6 +650,7 @@ def execute(args: argparse.Namespace, peer: Peer, root: Path) -> dict[str, Any]:
                                 round=round_id,
                                 topk=args.topk,
                                 block_dims=args.block_dims,
+                                engines=args.engines,
                                 smoke=args.smoke,
                                 diagnose_write_read=args.diagnose_write_read,
                                 diagnostic=args.diagnostic,

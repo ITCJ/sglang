@@ -8,6 +8,8 @@ import math
 from pathlib import Path
 from typing import Any
 
+from ascend_mempool.sharing import configured_engines
+
 # Audited migration: the new pipeline order changes only publication=True with
 # synthetic delay. Timed benchmark calls use publication=False; no sample path
 # changes. Do not extend this list without reviewing measurement compatibility.
@@ -68,6 +70,11 @@ def load_completed_rounds(
                     (source / phase / f"member-{member}/report.json").read_text()
                 )
                 config = report["config"]
+                engines = configured_engines(config)
+                if engines != plan["engines"]:
+                    raise ValueError(
+                        f"resume engines mismatch: {phase}/member-{member}"
+                    )
                 expected = dict(
                     plan=plan["plan"],
                     mode=mode,
@@ -102,9 +109,9 @@ def load_completed_rounds(
                     )
                 rows = report.get("delayed_publication", [])
                 if (
-                    len(rows) != 4
+                    len(rows) != 2 * len(engines)
                     or {(r["engine"], r["variant"]) for r in rows}
-                    != {(e, v) for e in ("eager", "graph") for v in (0, 1)}
+                    != {(e, v) for e in engines for v in (0, 1)}
                     or any(
                         r.get("publication_readback_passed") is not True for r in rows
                     )
@@ -139,7 +146,7 @@ def load_completed_rounds(
                             raise ValueError(
                                 f"invalid resume timing: {phase}/member-{member}"
                             )
-                for engine in ("eager", "graph"):
+                for engine in engines:
                     trace = (
                         source / phase / f"member-{member}/delayed-{engine}-trace.json"
                     )

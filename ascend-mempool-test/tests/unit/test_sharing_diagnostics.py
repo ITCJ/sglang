@@ -26,7 +26,7 @@ class StreamContext:
 
 
 class TestSharingDiagnostics(unittest.TestCase):
-    def publication(self, selected_ms, writer_ms, tp_size=2):
+    def publication(self, selected_ms, writer_ms, tp_size=2, engines=None):
         work, pipeline, cohort = Mock(), Mock(), Mock()
         # Both events completed before the host got scheduled to inspect them.
         pipeline.writer_done.query.return_value = True
@@ -54,7 +54,12 @@ class TestSharingDiagnostics(unittest.TestCase):
             return delayed_publication(
                 SimpleNamespace(member=tp_size - 1, tp_size=tp_size),
                 cohort,
-                dict(topk=2048, block_dims=[24], delay_matmuls=512),
+                dict(
+                    topk=2048,
+                    block_dims=[48],
+                    delay_matmuls=512,
+                    engines=engines or ["eager", "graph"],
+                ),
                 SimpleNamespace(npu=npu),
                 Path(directory),
             )
@@ -70,6 +75,12 @@ class TestSharingDiagnostics(unittest.TestCase):
             with self.subTest(selected=selected, writer=writer):
                 with self.assertRaises(AssertionError):
                     self.publication(selected, writer)
+
+    def test_graph_only_publication_does_not_read_eager_timestamps(self):
+        rows = self.publication(float("nan"), 0, tp_size=4, engines=["graph"])
+        self.assertEqual([row["engine"] for row in rows], ["graph", "graph"])
+        self.assertTrue(all(row["publication_readback_passed"] for row in rows))
+        self.assertTrue(all(row["selected_before_writer_done"] is None for row in rows))
 
     def test_tp4_last_writer_overlap_is_checked(self):
         self.assertEqual(len(self.publication(2.0, 5.0, tp_size=4)), 4)

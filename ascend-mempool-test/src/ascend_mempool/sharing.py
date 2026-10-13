@@ -130,3 +130,20 @@ def group_sample(samples: list[dict[str, Any]], tp_size: int = 2) -> dict[str, A
         logical_gbps=logical / (elapsed_ms * 1e6) if logical else None,
         bus_traffic_bytes=None,
     )
+
+
+def configured_engines(config: dict[str, Any]) -> list[str]:
+    """The requested engines also govern publication checks and resume evidence."""
+    engines = config.get(
+        "engines", ["eager"] if config.get("smoke") else ["eager", "graph"]
+    )
+    if (
+        not isinstance(engines, list)
+        or not engines
+        or any(e not in ("eager", "graph") for e in engines)
+        or len(set(engines)) != len(engines)
+    ):
+        raise ValueError("engines must be a nonempty, distinct list of eager/graph")
+    if config.get("smoke") and engines != ["eager"]:
+        raise ValueError("smoke only supports eager")
+    return list(engines)

@@ -186,6 +186,36 @@ class TestResume(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             self.load()
 
+    def test_graph_only_resume_requires_graph_evidence_and_matching_engines(self):
+        self.args.engines = ["graph"]
+        self.args.block_dims = [48]
+        self.plan = runner.describe(self.args)
+        identity_path = self.source / "identity.json"
+        identity = json.loads(identity_path.read_text())
+        identity["plan"] = self.plan
+        self.write(identity_path, identity)
+        for path in self.paths:
+            report = json.loads(path.read_text())
+            report["config"].update(engines=["graph"], block_dims=[48])
+            report["delayed_publication"] = [
+                row for row in report["delayed_publication"] if row["engine"] == "graph"
+            ]
+            self.write(path, report)
+            (path.parent / "delayed-eager-trace.json").unlink()
+        reports, _ = self.load()
+        self.assertEqual(len(reports), 4)
+        path = self.paths[-1]
+        report = json.loads(path.read_text())
+        report["config"]["engines"] = ["eager", "graph"]
+        self.write(path, report)
+        with self.assertRaisesRegex(ValueError, "engines mismatch"):
+            self.load()
+        report["config"]["engines"] = ["graph"]
+        self.write(path, report)
+        (path.parent / "delayed-graph-trace.json").unlink()
+        with self.assertRaisesRegex(ValueError, "trace missing"):
+            self.load()
+
     def test_tp2_and_tp4_reports_cannot_be_mixed(self):
         path = self.source / "identity.json"
         identity = json.loads(path.read_text())
