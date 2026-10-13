@@ -1,5 +1,8 @@
 # Ascend mempool 功能与服务测试
 
+TP1/2/4 大块写入、sparse top-k=2048 同时读取及跨 NUMA 布局实验：
+[C/D 自运行矩阵](NUMA_CD.md)（Graph / block_dim 48，含进度和逐用例续跑）。
+
 Ticket01–03独立硬件验证及真实SGLang服务gate。当前正式服务入口见
 [S5服务验收](FORMAL_SERVICE.md)。
 

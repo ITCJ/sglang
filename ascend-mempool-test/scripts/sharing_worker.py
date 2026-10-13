@@ -17,7 +17,6 @@ import traceback
 from functools import partial
 from itertools import product
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -379,22 +378,39 @@ def run(config: dict[str, Any], output: Path) -> int:
     mf_ready = bm_ready = distributed_ready = False
     success = False
     try:
-        affinity = cpu_list(
-            Path(
-                f"/sys/devices/system/node/node{config['numa_node']}/cpulist"
-            ).read_text()
-        )
-        affinity &= os.sched_getaffinity(0)
+        if config.get("cd_matrix"):
+            affinity = set(config["cd_contract"]["cpu_affinity"])
+            if not affinity <= os.sched_getaffinity(0):
+                raise RuntimeError("fixed C/D CPU affinity is unavailable")
+        else:
+            affinity = cpu_list(
+                Path(
+                    f"/sys/devices/system/node/node{config['numa_node']}/cpulist"
+                ).read_text()
+            )
+            affinity &= os.sched_getaffinity(0)
         if not affinity:
             raise RuntimeError(
                 "container CPU set has no CPUs on the requested NUMA node"
             )
         os.sched_setaffinity(0, affinity)
-        runtime_args = SimpleNamespace(device_id=config["device_id"])
+        runtime_args = argparse.Namespace(device_id=config["device_id"])
         torch, mf, environment = load_runtime(runtime_args)
         report["environment"] = dict(
             environment, kernel=platform.release(), cpu_affinity=sorted(affinity)
         )
+        if config.get("cd_matrix"):
+            torch.set_num_threads(min(4, len(affinity)))
+            report["environment"].update(
+                torch_cpu_threads=torch.get_num_threads(),
+                device_visibility={
+                    name: os.environ.get(name)
+                    for name in (
+                        "ASCEND_RT_VISIBLE_DEVICES",
+                        "ASCEND_VISIBLE_DEVICES",
+                    )
+                },
+            )
         for path in (
             "/usr/local/Ascend/driver/version.info",
             "/usr/local/Ascend/ascend-toolkit/latest/version.cfg",
@@ -476,7 +492,9 @@ def run(config: dict[str, Any], output: Path) -> int:
         pool.probe(torch, rank)
         cohort.exchange("probed")
         pool.verify_probe(torch)
-        if config["mode"] == "shared":
+        if config["mode"] == "shared" and (
+            not config.get("cd_matrix") or config.get("cd_preflight")
+        ):
             for follower in range(2 * plan.tp_size):
                 if follower % plan.tp_size == 0:
                     continue
@@ -490,26 +508,35 @@ def run(config: dict[str, Any], output: Path) -> int:
                 pool.probe(torch, rank)
                 cohort.exchange(f"rejoin-{follower}/probed")
                 pool.verify_probe(torch)
-        if pool.mode == "independent" or pool.member == 0:
-            stage_local_kv(pool, SimpleNamespace(stage_tokens=1024))
+        if config.get("cd_matrix"):
+            # Fail incorrect placement before staging the large fixed KV pool.
+            report["mapping"] = pool.report()
+            save(output / "report.json", report)
+            check_numa_placement(report["mapping"]["numa"])
+        if not config.get("cd_preflight") and (
+            pool.mode == "independent" or pool.member == 0
+        ):
+            stage_local_kv(pool, argparse.Namespace(stage_tokens=1024))
         cohort.exchange("staged")
         report["mapping"] = pool.report()
         allocations = cohort.exchange(
-            "allocations", bytes=report["mapping"]["local_dram_bytes"]
+            "allocations",
+            bytes=report["mapping"]["local_dram_bytes"],
+            numa_verified=report["mapping"]["numa"]["placement_verified"],
         )
         if [r["bytes"] for r in allocations] != pool.plan.contributions(pool.mode):
             raise RuntimeError(
                 "actual participant contributions do not match the experiment"
             )
         save(output / "report.json", report)
-        if not config["smoke"]:
+        if not config["smoke"] or config.get("cd_matrix"):
             if not check_numa_placement(report["mapping"]["numa"]):
                 print(
                     "NUMA_UNVERIFIED: davinci_manager mapping exposes no per-node "
                     "page counts; collecting measurements with NUMA acceptance pending",
                     flush=True,
                 )
-        if not config["smoke"]:
+        if not config["smoke"] and not config.get("cd_matrix"):
             torch.distributed.init_process_group(
                 backend="hccl",
                 init_method=f"tcp://{local_host}:{ports['collective']}",
@@ -518,14 +545,28 @@ def run(config: dict[str, Any], output: Path) -> int:
                 timeout=datetime.timedelta(seconds=config["timeout"]),
             )
             distributed_ready = True
-        report["samples"] = (
-            []
-            if config.get("diagnose_publication", False)
-            else benchmark(pool, cohort, config, torch, output)
-        )
-        if not config["smoke"] and (
-            not config.get("diagnostic", False)
-            or config.get("diagnose_publication", False)
+        if config.get("cd_matrix"):
+            from cd_benchmark import benchmark as cd_benchmark
+
+            config["cd_environment"] = report["environment"]
+            config["cd_numa_verified"] = all(r["numa_verified"] for r in allocations)
+            report["samples"] = cd_benchmark(pool, cohort, config, torch, output)
+            report["cases_numa_verified"] = config.get(
+                "cd_cases_numa_verified", config["cd_numa_verified"]
+            )
+        else:
+            report["samples"] = (
+                []
+                if config.get("diagnose_publication", False)
+                else benchmark(pool, cohort, config, torch, output)
+            )
+        if (
+            not config["smoke"]
+            and not config.get("cd_matrix")
+            and (
+                not config.get("diagnostic", False)
+                or config.get("diagnose_publication", False)
+            )
         ):
             report["delayed_publication"] = delayed_publication(
                 pool, cohort, config, torch, output

@@ -1,4 +1,4 @@
-"""CPU-readable contract for the TP2/TP4 NUMA sharing experiment."""
+"""CPU-readable contract for the TP1/TP2/TP4 NUMA sharing experiment."""
 
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ class SharingPlan:
     tp_size: int = 2
 
     def __post_init__(self) -> None:
-        if self.tp_size not in (2, 4):
-            raise ValueError("tp_size must be 2 or 4")
+        if self.tp_size not in (1, 2, 4):
+            raise ValueError("tp_size must be 1, 2 or 4")
         if self.dim % self.tp_size:
             raise ValueError(
                 "KV feature dimension must divide evenly across TP members"

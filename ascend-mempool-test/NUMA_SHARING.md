@@ -1,5 +1,8 @@
 # NUMA 共享 ticket01：TP2 / TP4 组件对照
 
+2026-10-14 重设计的 TP1/2/4、集中/分散 NUMA、C 大块写入和 D top-k=2048 读取
+请使用 [NUMA_CD.md](NUMA_CD.md) 的 `run_numa_cd.sh`。本页保留旧矩阵及历史运行方式。
+
 入口：`scripts/run_numa_sharing.sh`。P/D 各运行一次，入口按 `--devices` 自动启动本机两个或四个
 worker、协调四个或八个 participant、检查内容、交替运行 independent/shared、收集
 报告并清理自己启动的进程。无需启动 SGLang 服务或加载模型。
