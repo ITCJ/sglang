@@ -47,6 +47,7 @@ class TestCodeCompatibility(unittest.TestCase):
 
     def test_checked_in_exception_matches_actual_audited_runtime(self):
         self.assertEqual(cd_resume.runtime_digest(), cd_resume.REVIEWED_RUNTIME_SHA256)
-        self.assertTrue(
-            cd_resume.compatible_code(cd_resume.BASELINE, cd_resume.code_identity())
-        )
+        for source in (cd_resume.BASELINE, cd_resume.LAUNCH_FIX):
+            self.assertTrue(
+                cd_resume.compatible_code(source, cd_resume.code_identity())
+            )

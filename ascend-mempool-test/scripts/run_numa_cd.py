@@ -40,6 +40,7 @@ from ascend_mempool.sharing_control import CohortServer
 from ascend_mempool.sharing_pool import cpu_list
 
 SCRIPTS = Path(__file__).resolve().parent
+CLEANUP_TIMEOUT = 120.0
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -382,6 +383,13 @@ def run_group(
             def check() -> None:
                 progress.update()
                 peer.check()
+                if (
+                    progress.cleanup_started is not None
+                    and time.monotonic() - progress.cleanup_started > CLEANUP_TIMEOUT
+                ):
+                    raise TimeoutError(
+                        f"{phase} cleanup exceeded {CLEANUP_TIMEOUT:g}s; inspect worker cleanup_phase"
+                    )
                 if time.monotonic() - started > args.timeout:
                     raise TimeoutError(f"{phase} exceeded {args.timeout}s")
                 for child in children:
@@ -409,7 +417,10 @@ def run_group(
                 )
             if report["config"]["cd_contract"] != contracts[member]:
                 raise ValueError("worker returned a different C/D contract")
-        peer.barrier(phase + "/closed")
+        progress.update(status="waiting-peer-close")
+        peer.send("barrier", phase=phase + "/closed")
+        if peer.expect("barrier", check=check) != dict(phase=phase + "/closed"):
+            raise RuntimeError("peer close phase differs")
         progress.update(finished=True)
         print(f"PASS {phase} (reused {len(reuse)} cases)", flush=True)
         return reports

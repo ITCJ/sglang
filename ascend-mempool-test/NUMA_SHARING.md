@@ -242,6 +242,8 @@ writer_minus_selected_ms（eager）；后者不大于0时仍失败，失败前�
 summary.json包含成功的delayed_publication记录，Graph先后关系仍需trace核对。
 
 全部worker停止提交、完成所有相关streams后才共同确认drained，再leave/destroy。
+随后确认所有pool均关闭、非Store客户端均已反初始化，最后由Store所在rank反初始化。
+日志和report的cleanup_phase记录各阶段，避免提前关闭Store导致其他rank无法退出。
 异常会中止其他worker的阶段；只有四方确认drain才正常释放。超时、设备错误或
 强制停止均返回非零并保存失败／cleanup信息，不作为安全释放成功证据。
 父进程仅清理本次拥有的process groups。

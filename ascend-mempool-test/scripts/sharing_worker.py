@@ -579,25 +579,46 @@ def run(config: dict[str, Any], output: Path) -> int:
             report["sdk_error"] = str(mf.get_last_err_msg())
     finally:
         try:
-            drained = False
-            if torch is not None:
-                torch.npu.synchronize()
-                drained = True
+
+            def cleanup_progress(phase: str) -> None:
+                report["cleanup_phase"] = phase
+                save(output / "report.json", report)
+                print(f"CLEANUP {phase}", flush=True)
+
+            def drain() -> None:
+                if torch is not None:
+                    torch.npu.synchronize()
+
+            def close_pool() -> None:
+                if distributed_ready:
+                    torch.distributed.destroy_process_group()
+                if pool is not None:
+                    pool.close(drain=drain)
+                    report["closed"] = True
+                    report["group_events"] = pool.events
+
+            def uninitialize() -> None:
+                if bm_ready:
+                    mf.bm.uninitialize()
+                if mf_ready:
+                    mf.uninitialize()
+
             if cohort is not None:
-                # On any worker failure the coordinator aborts outstanding phases,
-                # then accepts only this final all-worker drain handshake.
-                outcomes = cohort.exchange("drained", drained=drained, success=success)
-                success = success and all(outcome["success"] for outcome in outcomes)
-            if distributed_ready:
-                torch.distributed.destroy_process_group()
-            if pool is not None:
-                pool.close(drain=torch.npu.synchronize)
-                report["closed"] = True
-                report["group_events"] = pool.events
-            if bm_ready:
-                mf.bm.uninitialize()
-            if mf_ready:
-                mf.uninitialize()
+                success = cohort.shutdown(
+                    drain=drain,
+                    close_pool=close_pool,
+                    uninitialize=uninitialize,
+                    # Independent pools each have a P-side Store. Shared mode
+                    # has only the global rank-0 Store on prefill member 0.
+                    store_owner=config["side"] == 0
+                    and (config["mode"] == "independent" or config["member"] == 0),
+                    success=success,
+                    progress=cleanup_progress,
+                )
+            else:
+                drain()
+                close_pool()
+                uninitialize()
         except BaseException as exc:
             success = False
             report["cleanup_error"] = f"{type(exc).__name__}: {exc}"

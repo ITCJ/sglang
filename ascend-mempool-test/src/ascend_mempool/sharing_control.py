@@ -6,13 +6,19 @@ import socket
 import socketserver
 import threading
 import time
-from typing import Any
+from typing import Any, Callable
 
 from .control import TestChannel
 
+CLEANUP_PHASES = {
+    "drained": "drained",
+    "pools-closed": "closed",
+    "clients-uninitialized": "uninitialized",
+}
+
 
 class CohortServer:
-    """Collect identical phases; on failure allow a final all-worker drain only."""
+    """Collect phases; after failure permit only coordinated resource teardown."""
 
     def __init__(
         self, host: str, port: int, identity: str, timeout: float, tp_size: int = 2
@@ -53,7 +59,10 @@ class CohortServer:
                             channel.send("abort", error=result)
                         else:
                             channel.send("result", values=result)
-                        if message["phase"] == "drained":
+                        if message["phase"] == "clients-uninitialized" or (
+                            message["phase"] == "drained"
+                            and not message["payload"].get("keep_open", False)
+                        ):
                             break
                 except Exception as exc:
                     with owner.condition:
@@ -72,7 +81,8 @@ class CohortServer:
 
     def collect(self, rank: int, message: dict[str, Any]) -> list[Any] | str:
         phase, seq = message["phase"], message["seq"]
-        key = "drained" if phase == "drained" else str(seq)
+        cleanup = phase in CLEANUP_PHASES
+        key = phase if cleanup else str(seq)
         deadline = time.monotonic() + self.timeout
         with self.condition:
             entries = self.phases.setdefault(key, {})
@@ -85,7 +95,7 @@ class CohortServer:
                 self.error = f"workers disagree at phase {seq}"
             self.condition.notify_all()
             while len(entries) < self.world_size:
-                if self.error and phase != "drained":
+                if self.error and not cleanup:
                     return self.error
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -93,9 +103,15 @@ class CohortServer:
                     self.condition.notify_all()
                     return self.error
                 self.condition.wait(min(1.0, remaining))
-            if phase == "drained":
-                if not all(m["payload"].get("drained") for m in entries.values()):
-                    return "one or more devices did not drain"
+            if cleanup:
+                field = CLEANUP_PHASES[phase]
+                failed = {
+                    rank: m["payload"].get("error", f"{field}=false")
+                    for rank, m in entries.items()
+                    if not m["payload"].get(field)
+                }
+                if failed:
+                    return f"cleanup {phase} failed: {failed}"
             elif self.error:
                 return self.error
             return [entries[i]["payload"] for i in range(self.world_size)]
@@ -141,6 +157,49 @@ class Cohort:
         self.channel.send("exchange", seq=self.seq, phase=phase, payload=payload)
         self.seq += 1
         return list(self.channel.expect("result")["values"])
+
+    def shutdown(
+        self,
+        *,
+        drain: Callable[[], None],
+        close_pool: Callable[[], None],
+        uninitialize: Callable[[], None],
+        store_owner: bool,
+        success: bool,
+        progress: Callable[[str], None] = lambda phase: None,
+    ) -> bool:
+        """Finish the worker's device and SDK resources as one cohort."""
+
+        def perform(phase: str, action: Callable[[], None]) -> str | None:
+            progress(phase)
+            try:
+                action()
+            except BaseException as exc:
+                return f"{type(exc).__name__}: {exc}"
+            return None
+
+        error = perform("device-drain", drain)
+        outcomes = self.exchange(
+            "drained",
+            drained=error is None,
+            error=error,
+            success=success and error is None,
+            keep_open=True,
+        )
+        success = success and all(outcome["success"] for outcome in outcomes)
+        error = perform("pool-close", close_pool)
+        progress("waiting-all-pools-closed")
+        self.exchange("pools-closed", closed=error is None, error=error)
+        # A BM Store is part of its rank's SDK context. Keep it alive through
+        # every leave/destroy AND every non-Store client's uninitialization.
+        error = None if store_owner else perform("client-uninitialize", uninitialize)
+        progress("waiting-all-clients-uninitialized")
+        self.exchange("clients-uninitialized", uninitialized=error is None, error=error)
+        if store_owner:
+            progress("store-uninitialize")
+            uninitialize()
+        progress("closed")
+        return success
 
     def aligned_start(self, phase: str) -> None:
         self.exchange(phase + "/ready")

@@ -138,6 +138,18 @@ P50/P95 是**批次均摊时间**的分位数，不是单次 replay 或模型请
 | `SMOKE_PASSED` | 0 | 仅 smoke 通过，查看单独的 NUMA 状态 |
 | `FAILED` | 1 | 原因见 `failure.json` 与对应 worker 日志 |
 
+## 收尾与进度
+
+每组最后按全员设备 drain → 全员 pool leave/destroy → 非 Store SDK 客户端
+uninitialize → Store 所在 worker 最后 uninitialize 的顺序收尾。共享模式的
+Store 在 P member-0；独立模式各 P member 各自承载对应的 Store。
+SDK Store 不能在其他成员仍需 CAS/QueryAlive 完成退出时先关闭。
+
+worker 日志用 `CLEANUP` 标记收尾阶段，`report.json` 的 `cleanup_phase` 同步记录；
+父进程显示 `cleanup/...` 或 `waiting-peer-close` 并持续刷新已完成数和 elapsed。
+收尾不显示测量 ETA。从本机首次观察到收尾开始，超过 120 秒仍未完成则明确失败，
+随后终止并清理本次进程组（最多额外等待约 30 秒）。收尾超时不会算成成功验收。
+
 ## 失败后续跑
 
 每个用例通过前后校验后原子保存。两侧所有 rank 都有完整 checkpoint 的用例才复用；
@@ -151,9 +163,10 @@ P50/P95 是**批次均摊时间**的分位数，不是单次 replay 或模型请
 ```
 
 两侧都这样操作，保留原代码、设备、NUMA、CPU 绑定、负载、随机种子、轮次和采样参数。
-通常代码 hash / commit、配置或运行环境改变时拒绝复用。本次启动窗口修复有唯一例外：
-允许原始提交 `61e22c8603` 的精确 source hash 续跑到经过 runtime hash 锁定的修复版。
-修复只让错过 100ms 目标时间的 worker 继续汇合，计时、数据路径和采样验收条件未改。
+通常代码 hash / commit、配置或运行环境改变时拒绝复用。本次启动窗口及收尾修复有受限例外：
+允许原始提交 `61e22c8603` 和启动窗口修复 `0d000b262a` 的精确 source hash 续跑到
+经过 runtime hash 锁定的修复版。修复涉及启动目标过期、计时结束后的 SDK 收尾顺序
+和进度刷新；计时、数据路径和采样验收条件未改。
 活跃侧启动过晚仍由原有重叠 / 10% 启动偏差检查拒收并重试，闲置侧晚到不再终止整组。
 复用记录保留原 `contract.code` 和来源路径；任何其他运行时代码修改都禁用跨版本例外。
 配置、运行环境、全 rank 完整性及 NUMA 证据仍逐项检查。不能复用旧 `run_numa_sharing.sh`
@@ -165,3 +178,7 @@ P50/P95 是**批次均摊时间**的分位数，不是单次 replay 或模型请
 `cd_results.py`、`cd_progress.py` 和运行入口；复用既有池映射、cohort 和进程清理。
 每个用例在所有 rank 完成后校验、恢复规范数据；全组 drain 后才关闭池。
 Mac CPU 检查不等于 NPU Graph、跨机 copy 或 NUMA 硬件验收。
+
+`cd-v1-resume` 若卡在旧版 SDK 退出中，先在两侧原启动终端按 Ctrl+C，等待本次
+进程清理退出，再拉取修复。保留两个旧目录，以覆盖更完整的 `cd-v1-full` 为来源，
+用新 `--run-id cd-v1-resume2 --resume-from cd-v1-full` 续跑，其余参数保持一致。

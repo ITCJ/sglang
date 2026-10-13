@@ -9,7 +9,7 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 import cd_resume
@@ -214,6 +214,78 @@ class TestCDRunner(unittest.TestCase):
         idle[1]["status"] = "failed"
         with self.assertRaises(ValueError):
             local_groups(idle)
+
+    def test_waiting_for_peer_close_keeps_progress_and_enforces_cleanup_deadline(self):
+        config = args(role="decode")
+        topology = topologies(config.numa_nodes)[0]
+        phase = "round-0/" + topology.name
+        progress = CDProgress(self.root, 100)
+        peer = Mock()
+
+        def expect(kind, check=None):
+            if kind == "reuse":
+                return dict(phase=phase, units=[])
+            self.assertEqual(kind, "barrier")
+            self.assertEqual(progress.snapshot()["current"], "waiting-peer-close")
+            self.assertIsNotNone(check)
+            # The worker has finished but D never acknowledges closing.
+            progress.cleanup_started = runner.time.monotonic() - 121
+            check()
+            self.fail("cleanup deadline was not enforced while waiting for peer")
+
+        peer.expect.side_effect = expect
+        with patch.object(runner, "Processes", FakeProcesses):
+            with self.assertRaisesRegex(TimeoutError, "cleanup exceeded 120s"):
+                runner.run_group(
+                    config,
+                    peer,
+                    self.root,
+                    topology,
+                    0,
+                    dict(code=CODE),
+                    CPUS,
+                    progress,
+                    None,
+                    preflight=False,
+                )
+
+    def test_progress_refreshes_fast_reuse_before_waiting_for_peer_close(self):
+        with patch("cd_progress.time.monotonic", return_value=100):
+            progress = CDProgress(self.root, 10)
+            progress.begin("tp4", self.root, 4, 2)
+            for member in range(4):
+                (self.root / f"member-{member}.log").write_text(
+                    "PASS one REUSED\nPASS two REUSED\nCLEANUP closed\n"
+                )
+            # Force a read even within the 1s polling interval, before blocking
+            # on the peer. This used to leave P showing stale setup and counts.
+            progress.update(status="waiting-peer-close")
+        state = json.loads((self.root / "progress.json").read_text())
+        self.assertEqual(state["completed"], 2)
+        self.assertEqual(state["current"], "waiting-peer-close")
+        self.assertIsNone(state["eta_s"])
+        with patch("cd_progress.time.monotonic", return_value=112):
+            progress.update()
+        state = json.loads((self.root / "progress.json").read_text())
+        self.assertEqual(state["cleanup_elapsed_s"], 12)
+        progress.update(finished=True)
+        self.assertEqual(progress.snapshot()["completed"], 2)
+
+    def test_progress_reports_a_pending_cleanup_member_without_counting_it_as_work(
+        self,
+    ):
+        progress = CDProgress(self.root, 10)
+        progress.begin("tp4", self.root, 4, 2)
+        for member in range(4):
+            phase = "pool-close" if member == 2 else "closed"
+            (self.root / f"member-{member}.log").write_text(
+                f"PASS one REUSED\nPASS two REUSED\nCLEANUP {phase}\n"
+            )
+        progress.last_poll = progress.last_print = 0
+        progress.update()
+        self.assertEqual(progress.snapshot()["current"], "cleanup/pool-close")
+        self.assertEqual(progress.snapshot()["completed"], 2)
+        self.assertIsNotNone(progress.cleanup_started)
 
     def test_progress_tracks_slowest_rank_then_accepts_a_different_width(self):
         progress = CDProgress(self.root, 6)

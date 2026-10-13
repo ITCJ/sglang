@@ -1,6 +1,6 @@
-"""Narrow checkpoint compatibility for the reviewed launch-deadline fix.
+"""Narrow checkpoint compatibility for reviewed launch and teardown fixes.
 
-Only the original C/D release is admitted across versions. Its exact source
+Only the original C/D release and launch fix are admitted across versions. Its exact source
 identity and this release's runtime digest must match. Tests are excluded from
 that runtime digest; this module is the compatibility policy itself. Any other
 runtime edit disables the exception until separately reviewed. Saved checkpoint
@@ -19,8 +19,14 @@ BASELINE = dict(
     git_sha="61e22c86039fd9155ca25fdf3b105249b4e16a96",
     source_sha256="dc8ccf18169d3ef8d7d592583a901388bbda31d11a24628b4bbb584e0bb92314",
 )
-# Updated only after auditing the complete runtime diff against BASELINE.
-REVIEWED_RUNTIME_SHA256 = "e9414930a7eabe259bd2d6f580974ce72842bf94a71454e0ba93497a8875b17c"
+LAUNCH_FIX = dict(
+    git_sha="0d000b262a0d62819a49367bb236d040606b804d",
+    source_sha256="c762336bf3c9fec4a7b720cfaae3785fac214dd7a88fba7293a090c07c07121d",
+)
+# Updated only after auditing the complete runtime diff against both sources.
+REVIEWED_RUNTIME_SHA256 = (
+    "fc22a2dcd8a1c15cf1fe1194cc079aefa1643f046bf48cbcd3d6e918d1a53beb"
+)
 
 
 def runtime_digest() -> str:
@@ -51,7 +57,7 @@ def _audited_current(git_sha: str, source_sha256: str) -> bool:
 def compatible_code(previous: Any, current: Any) -> bool:
     if previous == current:
         return True
-    if previous != BASELINE or not isinstance(current, dict):
+    if previous not in (BASELINE, LAUNCH_FIX) or not isinstance(current, dict):
         return False
     if set(current) != {"git_sha", "source_sha256"} or not all(
         isinstance(value, str) for value in current.values()
