@@ -3,6 +3,9 @@
 TP1/2/4 大块写入、sparse top-k=2048 同时读取及跨 NUMA 布局实验：
 [C/D 自运行矩阵](NUMA_CD.md)（Graph / block_dim 48，含进度和逐用例续跑）。
 
+共享 ticket02-1 的配置、分组及端口预览见 [NUMA 计划 CPU gate](NUMA_PLAN.md)。
+该切片仅交付规划合同，真实共享分配与服务验收尚待后续实现。
+
 Ticket01–03独立硬件验证及真实SGLang服务gate。当前正式服务入口见
 [S5服务验收](FORMAL_SERVICE.md)。
 

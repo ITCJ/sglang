@@ -45,9 +45,9 @@ class TestCodeCompatibility(unittest.TestCase):
         self.assertFalse(cd_resume.compatible_code(cd_resume.BASELINE, {}))
         self.assertTrue(cd_resume.compatible_code(current, current))
 
-    def test_checked_in_exception_matches_actual_audited_runtime(self):
-        self.assertEqual(cd_resume.runtime_digest(), cd_resume.REVIEWED_RUNTIME_SHA256)
+    def test_new_planning_release_does_not_reuse_legacy_measurements(self):
+        """Ticket02 runtime changes have not been audited for old C/D checkpoints."""
         for source in (cd_resume.BASELINE, cd_resume.LAUNCH_FIX):
-            self.assertTrue(
+            self.assertFalse(
                 cd_resume.compatible_code(source, cd_resume.code_identity())
             )

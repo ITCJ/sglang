@@ -965,6 +965,9 @@ class Envs:
     # Comma-separated local NUMA IDs, e.g. 0,2,4,6; cycle by TP rank.
     # Unset or invalid: warn for invalid values and use default BM allocation.
     SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE = EnvStr(None)
+    # Strict 0/1 parsing belongs to the NPU mempool configuration.
+    # Group allocation is staged separately; unset preserves independent pools.
+    SGLANG_NPU_MEMPOOL_SHARE = EnvStr("0")
     # Startup-only MF INFO, procfs snapshots and 15s wait diagnostics (0/1).
     SGLANG_NPU_MEMPOOL_DIAGNOSTICS = EnvBool(False)
     # Use FIAS V2 for DSpark MLA target verify and MHA draft paths. Graph

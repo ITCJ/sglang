@@ -92,6 +92,12 @@ class Disagg(msgspec.Struct):
     mempool_timeout: A[
         float, "Seconds allowed for mapping, control startup and peer liveness."
     ] = 120.0
+    mempool_rank_numa_map: A[
+        Optional[str],
+        "Path to a JSON array of host/rank/node assignments for Ascend mempool. "
+        "Conflicts with SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE. "
+        "Planning only until group startup is available.",
+    ] = None
     disaggregation_enable_kv_checksum: A[
         bool,
         "Compute an Adler-32 checksum over each request's KV pages on prefill "

@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 import msgspec
 
 from .layout import KVLayout, PoolLayout, positive_int
+from .sharing_plan import MempoolNumaConfig
 
 MEMPOOL_SLOTS = 16
 
@@ -24,6 +25,7 @@ class MempoolConfig(msgspec.Struct, frozen=True):
     bootstrap_port: int = 8998
     pool_id: int = 104
     timeout: float = 120.0
+    numa: MempoolNumaConfig = msgspec.field(default_factory=MempoolNumaConfig)
 
     def __post_init__(self) -> None:
         """Reject unusable token capacities before allocating device or BM memory."""
@@ -87,7 +89,11 @@ class MempoolConfig(msgspec.Struct, frozen=True):
             bootstrap_port=getattr(args, "mempool_bootstrap_port", 8998),
             pool_id=getattr(args, "mempool_pool_id", 104),
             timeout=getattr(args, "mempool_timeout", 120.0),
+            numa=MempoolNumaConfig.from_environment(
+                rank_numa_map=getattr(args, "mempool_rank_numa_map", None)
+            ),
         )
+        config.numa.require_rank_pair_startup()
         if not config.prefill_host.strip() or not config.nic.startswith("tcp://"):
             raise ValueError(
                 "mempool requires --mempool-prefill-host and --mempool-nic tcp://IP:PORT"

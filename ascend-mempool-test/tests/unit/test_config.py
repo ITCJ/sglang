@@ -1,6 +1,10 @@
 """Check model-derived MLA capacity without importing an SGLang server."""
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from ascend_mempool.config import MempoolConfig
 
@@ -24,8 +28,6 @@ class TestMempoolConfig(unittest.TestCase):
 
     def test_service_config_rejects_unsupported_launch_before_bm(self):
         """P native mode is supported; incompatible serving modes are rejected."""
-        from types import SimpleNamespace
-
         args = SimpleNamespace(
             device="npu",
             tp_size=16,
@@ -103,6 +105,36 @@ class TestMempoolConfig(unittest.TestCase):
             MempoolConfig(decode_capacity=1 << 31).make_mla_layout(
                 num_layers=2, kv_lora_rank=512, qk_rope_head_dim=64
             )
+
+    def test_new_placement_options_cannot_silently_use_rank_pair_storage(self):
+        """Planning is available in 02-1; group allocation belongs to 02-2."""
+        args = SimpleNamespace(
+            disaggregation_mode="decode",
+            disable_cuda_graph=False,
+            mempool_prefill_host="10.0.0.1",
+            mempool_nic="tcp://10.0.0.1:24670",
+        )
+
+        def configure():
+            return MempoolConfig.from_server_args(
+                args, sparse_enabled=True, mla=True, dtype="bfloat16", mlapo=False
+            )
+
+        with patch.dict("os.environ", {"SGLANG_NPU_MEMPOOL_SHARE": "0"}, clear=True):
+            self.assertFalse(configure().numa.mempool_share)
+        with patch.dict("os.environ", {"SGLANG_NPU_MEMPOOL_SHARE": "yes"}, clear=True):
+            with self.assertRaisesRegex(ValueError, "SHARE"):
+                configure()
+        with patch.dict("os.environ", {"SGLANG_NPU_MEMPOOL_SHARE": "1"}, clear=True):
+            with self.assertRaisesRegex(ValueError, "group startup.*02-2"):
+                configure()
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "rank-map.json"
+            path.write_text('[{"host": "host-p", "rank": 0, "node": 0}]')
+            args.mempool_rank_numa_map = str(path)
+            with patch.dict("os.environ", {}, clear=True):
+                with self.assertRaisesRegex(ValueError, "group startup.*02-2"):
+                    configure()
 
 
 if __name__ == "__main__":

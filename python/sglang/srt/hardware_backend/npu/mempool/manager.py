@@ -6,7 +6,6 @@ import importlib
 import logging
 import math
 import os
-import re
 import socket
 import threading
 import time
@@ -18,9 +17,10 @@ import msgspec
 
 from .diagnostics import startup_stage
 from .layout import KVLayout, PoolLayout, check_index
+from .sharing_plan import NUMA_ENV, MempoolNumaConfig, parse_numa_nodes
 
 logger = logging.getLogger(__name__)
-_NUMA_NODE_ENV = "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE"
+_NUMA_NODE_ENV = NUMA_ENV
 
 
 def _configured_numa_nodes() -> tuple[int, ...]:
@@ -29,33 +29,8 @@ def _configured_numa_nodes() -> tuple[int, ...]:
     if value is None:
         return ()
     try:
-        parts = [part.strip() for part in value.split(",")]
-        if any(not part.isascii() or not part.isdecimal() for part in parts):
-            raise ValueError("expected a comma-separated list of NUMA node IDs")
-        nodes = tuple(int(part) for part in parts)
-        # MF reserves the low-seven-bit value 127 for automatic affinity.
-        if any(node > 126 for node in nodes):
-            raise ValueError("NUMA node IDs must be in [0, 126]")
-        if len(nodes) != len(set(nodes)):
-            raise ValueError("NUMA node IDs must not repeat")
-
         online = Path("/sys/devices/system/node/online").read_text().strip()
-        online_nodes: set[int] = set()
-        for part in online.split(","):
-            match = re.fullmatch(r"([0-9]+)(?:-([0-9]+))?", part)
-            if match is None:
-                raise ValueError(f"invalid local NUMA topology: {online!r}")
-            first = int(match[1])
-            last = int(match[2]) if match[2] is not None else first
-            if first > last:
-                raise ValueError(f"invalid local NUMA topology: {online!r}")
-            online_nodes.update(range(first, last + 1))
-        missing = [node for node in nodes if node not in online_nodes]
-        if missing:
-            raise ValueError(
-                f"nodes {missing} are not online on this host (online nodes: {online})"
-            )
-        return nodes
+        return parse_numa_nodes(value, online)
     except (OSError, ValueError) as error:
         logger.warning(
             "Cannot apply %s=%r: %s; falling back to default BM allocation (flags=0)",
@@ -132,6 +107,7 @@ class MempoolKVManager:
         tp_rank: int | None = None,
     ) -> MempoolKVManager:
         """Allocate local DRAM, optionally cycling TP ranks over configured nodes."""
+        MempoolNumaConfig.from_environment().require_rank_pair_startup()
         layout.layout_for_rank(rank)
         numa_nodes = _configured_numa_nodes()
         numa_node = -1
@@ -211,6 +187,7 @@ class MempoolKVManager:
         alive for any TransferEngine users. One TP worker process owns only
         one BM rank-pair context in this demo.
         """
+        MempoolNumaConfig.from_environment().require_rank_pair_startup()
         if type(tp_rank) is not int or not 0 <= tp_rank < 16:
             raise ValueError("tp_rank must be an integer in [0, 16)")
         if role not in ("prefill", "decode"):

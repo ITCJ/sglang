@@ -94,6 +94,7 @@ class TestPairStartup(unittest.TestCase):
         self.addCleanup(environment_patch.stop)
         os.environ.pop(NUMA_NODE_ENV, None)
         os.environ.pop("SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE_COUNT", None)
+        os.environ.pop("SGLANG_NPU_MEMPOOL_SHARE", None)
         topology_patch = patch("pathlib.Path.read_text", return_value="0-7\n")
         self.read_topology = topology_patch.start()
         self.addCleanup(topology_patch.stop)
@@ -389,6 +390,20 @@ class TestPairStartup(unittest.TestCase):
                 sdk = FakePairBM()
                 manager = self.start(sdk, pool_id=pool_id)
                 manager.close(drain=lambda: None)
+
+    def test_rank_pair_entry_rejects_sharing_before_sdk_initialization(self):
+        """A component caller cannot silently allocate full replicas for share=1."""
+        for value in ("1", "invalid"):
+            with self.subTest(value=value):
+                os.environ["SGLANG_NPU_MEMPOOL_SHARE"] = value
+                sdk = FakePairBM()
+                with self.assertRaises(ValueError):
+                    manager = self.start(sdk)
+                    manager.close(drain=lambda: None)
+                self.assertEqual(sdk.init_calls, [])
+                with self.assertRaises(ValueError):
+                    manager = MempoolKVManager.create(self.layout, 0, bm_module=sdk)
+                    manager.close(drain=lambda: None)
 
     def test_failed_startup_releases_only_resources_it_initialized(self):
         """Do not retain BM state after init, create, or join errors."""
