@@ -67,7 +67,7 @@ syncfile 目前仍按 K3 写。保留其机制设计，但必须重新核实 Kim
 
 因此，早期“只有偶数 NUMA 与窗口相交、总交集约 680 GiB”的快照不能继续当作当前机器约束。后续按最新拓扑和报告配置全部可用 NUMA。地址覆盖、实际空闲/可分配容量、共享读写正确性与性能是不同证据，不能把本次反馈写成新共享服务或满容量读写已验收。
 
-NPU 机器预计几天内不能使用，硬件测试后补。现在可以推进读代码、规格、拆票、CPU 可验证部分和测试入口准备；硬件依赖项明确列出。按仓库流程保留硬件验收门槛，不用 CPU 通过代替关闭硬件验收项。
+最初NPU机器预计几天内不能使用，因此先推进CPU可验证部分；2026-10-23已收到下述共享启动测试的硬件终端反馈。其他硬件依赖项仍需各自验收，不用CPU通过或单项smoke代替关闭。
 
 后续测试安排（2026-10-23）：用户指定P `10.120.72.23`、D `10.120.72.25`，NUMA 0–7，每节点96 GiB。新增 `run_bm_startup_gate.sh --all-numa`：16个rank连续分配，每rank48 GiB、每机768 GiB；只检查创建、映射、probe、共同持池和正常释放。命令见 `ascend-mempool-test/BM_NUMA_DIAGNOSTIC.md`，报告在 `/home/cryang/log/`。新增检查器是 `scripts/check_bm_numa.py`；原 `check_bm_even_numa.py` 保留兼容入口。该硬件测试尚未执行。
 
@@ -76,8 +76,12 @@ NPU 机器预计几天内不能使用，硬件测试后补。现在可以推进�
 同日用户追加真正的共享容量测试：`ascend-mempool-test/scripts/run_bm_shared_startup.sh`。
 默认八个NUMA组，每组P两个rank+D两个rank，贡献`[96 GiB, 0, 96 GiB, 0]`，每机768 GiB；
 可用`--numa-nodes 0`缩到一组。它复用已验收过的`SharingPool`组件路径，增加全节点同时
-持池检查，不代表生产`share=1`已经接通。硬件结果同样等待用户回传，命令和报告口径见
-`BM_NUMA_DIAGNOSTIC.md`共享版一节；不得把CPU检查写成NPU验收通过。
+持池检查，不代表生产`share=1`已经接通。用户已回传`shared96g-01`的P侧
+`ALL_SHARED_POOLS_LIVE ... local_GiB=768`及`ALL_SHARED_BM_STARTUP_CHECKS_PASSED`。
+按脚本成功路径，双侧已完成共享启动检查与退出，P也已收集D报告；这是用户硬件
+终端结果，原始JSON尚未核对。`numa_placement_verified=False`保留，不能视作物理
+NUMA页落点已验证。记录与待核对文件见`numa-startup-verification.md`末尾。
+命令和报告口径见`BM_NUMA_DIAGNOSTIC.md`共享版一节。
 
 ## 核心设计提醒
 

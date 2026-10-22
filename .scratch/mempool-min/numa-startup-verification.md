@@ -88,6 +88,30 @@ PYTHONPATH=/tmp/mempool-numa-test-deps-20261023 \
 运行本地测试后全通过，未访问NPU或远端服务。`--describe`确认每owner96 GiB及每机
 768 GiB；Ruff lint/format、shell语法和diff检查通过。
 
-硬件状态：**等待用户NPU测试**。两机退出0并打印
+交付时硬件状态：**等待用户NPU测试**。两机退出0并打印
 `ALL_SHARED_BM_STARTUP_CHECKS_PASSED`才算该启动smoke通过，不能替代Graph、模型、
 吞吐或生产共享服务验收。本次不关闭任何未验收ticket。
+
+### 用户硬件结果：shared96g-01（2026-10-23）
+
+用户回传P侧终端输出：
+
+```text
+ALL_SHARED_POOLS_LIVE nodes=[0, 1, 2, 3, 4, 5, 6, 7] local_GiB=768
+ALL_SHARED_BM_STARTUP_CHECKS_PASSED numa_placement_verified=False report=/home/cryang/log/mempool-shared-startup/shared96g-01/prefill/summary.json
+```
+
+**当前结论：用户回传的终端结果表明双侧共享启动smoke通过；原始JSON尚未核对。**
+按交付脚本的成功路径，P打印最后一行前，两侧都已核对实际贡献、共享probe、
+全部worker正常退出，并完成`workers-closed`和`reports-collected`屏障。
+P同时已收集D的`decode-summary.json`。因此这不只是P单侧分配成功：八个共享组
+已通过双侧检查，预期为每侧每组owner 96 GiB、follower 0，每机合计768 GiB。
+
+`numa_placement_verified=False`是两侧落点验证结果的合取。成功路径仅允许
+driver mapping没有可观测页计数的情况保留此false；可观测但节点错误会失败。
+不能据此声称物理页落点已验证，也不能确定哪些节点不可观测，需看原始JSON。
+
+交付版本为`4d305b95d3`；实际运行的git SHA、SDK版本、逐节点证据及退出记录待
+核对P目录中的`summary.json`和`decode-summary.json`。不将本次结果外推到全量
+96 GiB逐字节读写、Graph、吞吐、真实模型或生产服务共享接入；独立池配置的硬件
+状态也不由共享测试替代。本次不关闭其他ticket。
