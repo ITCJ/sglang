@@ -52,3 +52,42 @@ Ruff lint、8 个相关 Python 文件的格式检查、`bash -n`、`git diff --c
 
 2026-10-23：按用户最新部署及容量要求交付脚本、检查器、CPU 检查和双机命令。
 用户已要求完成后推送 `cryang/dev/mempool-min`。硬件结果等待回传。
+
+### 追加：两个本侧rank共享96 GiB（2026-10-23）
+
+用户进一步要求两个TP rank共享一份96 GiB，一个BM组连接P两个与D两个NPU。
+新增 `run_bm_shared_startup.sh` / `.py`，直接复用组件 `SharingPool` 和四方
+`Cohort` 的建池、probe及退出协议。生产 manager 的共享启动限制未修改。
+
+- 默认NUMA 0–7，node n绑定两侧各自的device `2*n` / `2*n+1`，八组同时分配。
+  每组贡献 `[96 GiB, 0, 96 GiB, 0]`；每侧只有owner分配，follower无重复物理分配。
+  每机总量768 GiB。支持 `--numa-nodes 0` 单组及任意0–7子集。
+- 固定布局78层、16 slots、71680 tokens、BF16 dim576，加256-byte probe向上
+  对齐到96 GiB。只做四方身份probe，不stage整个KV、不分配同等容量HBM tensor。
+- 两侧检查run-id、代码指纹和配置；全部worker写完并核对probe后，父进程执行
+  双机共同持池屏障，随后才释放worker进入Cohort drain/close。
+- 复用“所有参与者drain → 所有池关闭 → 非store客户端退出 → store退出”。
+  父进程自动启动、检查、收集报告并清理自己创建的进程；失败返回非零。
+- `summary.json`保留实际贡献、owner/follower信息、逐节点容量和NUMA证据。
+  driver mapping不可观测时仍明确标记physical placement未验证。P自动收集D汇总。
+  命令、端口和日志位置见 `BM_NUMA_DIAGNOSTIC.md` 的共享版一节。
+
+Agent在Mac实际执行：
+
+```bash
+PYTHONPATH=/tmp/mempool-numa-test-deps-20261023 \
+/private/tmp/sglang-merge-venv/bin/python \
+  ascend-mempool-test/scripts/verify_numa_plan.py \
+  --self-test --output-dir /tmp/sglang-numa-shared-96g-20261023-loopback
+```
+
+**72项通过，0 failures、0 errors**。包括原51项、新共享容量与SDK参数、无重叠端口、
+单组设备选择、拒绝独立池/错误容量/不完整释放报告、持池屏障、只跑probe的worker路径，
+以及既有NUMA证据和真实本地socket的多人退出顺序测试。
+首次沙箱内运行因不允许监听127.0.0.1，退出协议测试报PermissionError；获准在沙箱外
+运行本地测试后全通过，未访问NPU或远端服务。`--describe`确认每owner96 GiB及每机
+768 GiB；Ruff lint/format、shell语法和diff检查通过。
+
+硬件状态：**等待用户NPU测试**。两机退出0并打印
+`ALL_SHARED_BM_STARTUP_CHECKS_PASSED`才算该启动smoke通过，不能替代Graph、模型、
+吞吐或生产共享服务验收。本次不关闭任何未验收ticket。

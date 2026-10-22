@@ -70,6 +70,79 @@ ALL_BM_STARTUP_CHECKS_PASSED rank=... devices=[0 1 2 3 4 5 6 7 8 9 10 11 12 13 1
 沿用既有gate的失败保留策略：无法确认peer drain时可能保留池，按本轮PID表定位；
 没有最终汇总或进程未退出不算通过。旧`--even-numa`仍是每节点4 GiB的小容量配置。
 
+## 共享版：两个本侧rank共享96 GiB，四个NPU参与同一BM组
+
+`run_bm_shared_startup.sh`复用已经存在的`SharingPool`组件实现，不启动模型服务。
+默认也覆盖NUMA 0–7；node n使用两机各自的device `2*n`、`2*n+1`。
+每组包含P的两个rank和D的两个rank，BM rank依次为0/1/2/3：
+
+| BM rank | 参与者 | 本地物理分配 | 可访问区域 |
+|---|---|---|---|
+| 0 | P device 2*n，owner | P node n上96 GiB | P、D两个owner区域 |
+| 1 | P device 2*n+1，follower | 0 | P、D两个owner区域 |
+| 2 | D device 2*n，owner | D node n上96 GiB | P、D两个owner区域 |
+| 3 | D device 2*n+1，follower | 0 | P、D两个owner区域 |
+
+因此每个节点每侧只创建一份96 GiB物理存储，由本侧两个rank共享；同一BM组中
+P、D合计192 GiB。八组并发时每机768 GiB，16个NPU进程参与。
+GB沿用上一个测试的GiB口径（2^30 bytes）。需要每节点至少96 GiB可分配余量。
+
+两机先同步当前`cryang/dev/mempool-min`，使用原Python/CANN/MF环境并保持16张卡空闲。
+这条入口直接使用组件共享路径，**不用设置`SGLANG_NPU_MEMPOOL_SHARE=1`**；
+生产服务的共享启动尚未因此接入。不要和前面的独立池测试同时运行。
+
+先在P（.23）运行，然后立即在D（.25）启动。两侧`run-id`须相同，重跑换新名字；
+已有结果目录会被拒绝覆盖。默认timeout为1800秒。
+
+```bash
+cd /home/cryang/sglang
+bash ascend-mempool-test/scripts/run_bm_shared_startup.sh \
+  --role prefill --prefill-host 10.120.72.23 --decode-host 10.120.72.25 \
+  --run-id shared96g-01
+```
+
+```bash
+cd /home/cryang/sglang
+bash ascend-mempool-test/scripts/run_bm_shared_startup.sh \
+  --role decode --prefill-host 10.120.72.23 --decode-host 10.120.72.25 \
+  --run-id shared96g-01
+```
+
+只测一个NUMA时，两侧同时加`--numa-nodes 0`（仅用device0/1，每机96 GiB）；
+也可指定多个节点，如`--numa-nodes 0 3`。节点到device的对应关系不随子集重新编号。
+两侧加`--describe`可只预览布局，不加载NPU库、不开端口、不分配内存。
+
+控制端口默认20000，node n的端口基数`b=20000+32*(n+1)`，
+coordinator为`b+1`，P store为`b+2`；P两个rank的NIC实际端口为`b+4/b+9`，
+D两个rank为`b+6/b+11`。可通过两侧相同的`--control-port`整体平移。
+
+固定布局为78层、16 slots、每槽71680 tokens、dim576 BF16。payload加四个64-byte
+身份probe再按GiB对齐，贡献恰好为`[96 GiB, 0, 96 GiB, 0]`。不填充整个96 GiB，
+每个参与者在P、D两个区域写入自己的64-byte marker，再读回全部四个marker。
+这样同时检查owner/follower的共享可见性和远端访问。映射检查覆盖每层起止及分配末端；
+并不等于全量96 GiB内容已经读写验收。
+
+父进程对两机代码指纹、配置和run-id做配对检查；四方核对SDK版本及实际贡献。
+每个worker保持池存活，直到两机所选节点全部ready，随后才允许各组drain/close。
+组内沿用“所有NPU drain → 所有pool销毁 → 非store客户端退出 → store退出”的顺序。
+父进程自动检查退出码、汇总报告，异常时只清理自己启动的进程。超时或强制终止不能算通过。
+
+每侧正常退出0并打印下面这行才算启动smoke通过：
+
+```text
+ALL_SHARED_BM_STARTUP_CHECKS_PASSED numa_placement_verified=... report=...
+```
+
+日志位于`/home/cryang/log/mempool-shared-startup/shared96g-01/{prefill,decode}/`：
+`summary.json`包含每节点容量和全部worker报告；P还自动收集`decode-summary.json`。
+保留`device-N.log`、`device-N/report.json`、`pids.json`和`exits.json`。
+失败时保留整个目录（包括`failure.json`）；中途失败的退出记录可能未齐。
+回传两侧终端汇总和`summary.json`，失败时附逐卡完整日志。
+
+报告沿用组件测试的`/proc` NUMA证据：可观测但节点错误会失败；driver mapping无法
+显示页计数时允许完成启动测试，但明确写`numa_placement_verified=false`，不能声称物理
+页落点已验证。这个入口不验证吞吐、Graph、模型结果或生产服务共享接入。
+
 ## 只读检查：每个NUMA与Fabric窗口的交集
 
 `scripts/probe_numa_fabric_overlap.py`可单文件复制，只需Python 3.9+标准库。

@@ -69,6 +69,9 @@ def main() -> int:
                 "test_config.py",
                 "test_pair_startup.py",
                 "test_bm_startup_gate.py",
+                "test_bm_shared_startup.py",
+                "test_sharing_pool.py",
+                "test_sharing_shutdown.py",
             ):
                 suite.addTests(
                     unittest.defaultTestLoader.discover(

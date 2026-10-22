@@ -22,6 +22,7 @@ from typing import Any, Callable
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from sharing_resume import check_resume_environment
+from sharing_startup import wait_for_release
 from verify_graph import load_runtime, stage_local_kv
 
 from ascend_mempool.sharing import SharingPlan, configured_engines, port_plan
@@ -492,8 +493,10 @@ def run(config: dict[str, Any], output: Path) -> int:
         pool.probe(torch, rank)
         cohort.exchange("probed")
         pool.verify_probe(torch)
-        if config["mode"] == "shared" and (
-            not config.get("cd_matrix") or config.get("cd_preflight")
+        if (
+            config["mode"] == "shared"
+            and not config.get("startup_only")
+            and (not config.get("cd_matrix") or config.get("cd_preflight"))
         ):
             for follower in range(2 * plan.tp_size):
                 if follower % plan.tp_size == 0:
@@ -513,8 +516,10 @@ def run(config: dict[str, Any], output: Path) -> int:
             report["mapping"] = pool.report()
             save(output / "report.json", report)
             check_numa_placement(report["mapping"]["numa"])
-        if not config.get("cd_preflight") and (
-            pool.mode == "independent" or pool.member == 0
+        if (
+            not config.get("cd_preflight")
+            and not config.get("startup_only")
+            and (pool.mode == "independent" or pool.member == 0)
         ):
             stage_local_kv(pool, argparse.Namespace(stage_tokens=1024))
         cohort.exchange("staged")
@@ -529,7 +534,7 @@ def run(config: dict[str, Any], output: Path) -> int:
                 "actual participant contributions do not match the experiment"
             )
         save(output / "report.json", report)
-        if not config["smoke"] or config.get("cd_matrix"):
+        if not config["smoke"] or config.get("cd_matrix") or config.get("startup_only"):
             if not check_numa_placement(report["mapping"]["numa"]):
                 print(
                     "NUMA_UNVERIFIED: davinci_manager mapping exposes no per-node "
@@ -545,7 +550,14 @@ def run(config: dict[str, Any], output: Path) -> int:
                 timeout=datetime.timedelta(seconds=config["timeout"]),
             )
             distributed_ready = True
-        if config.get("cd_matrix"):
+        if config.get("startup_only"):
+            torch.npu.synchronize()
+            wait_for_release(output, Path(config["startup_release"]), config["timeout"])
+            cohort.exchange("all-pools-live")
+            report["startup"] = dict(
+                probes_verified=True, all_pools_live=True, participants=pool.world_size
+            )
+        elif config.get("cd_matrix"):
             from cd_benchmark import benchmark as cd_benchmark
 
             config["cd_environment"] = report["environment"]
@@ -627,7 +639,9 @@ def run(config: dict[str, Any], output: Path) -> int:
             if cohort is not None:
                 cohort.close()
             report["status"] = (
-                "smoke_passed"
+                "startup_passed"
+                if success and config.get("startup_only")
+                else "smoke_passed"
                 if success and config["smoke"]
                 else "checks_passed_numa_unverified"
                 if success and not report["mapping"]["numa"]["placement_verified"]

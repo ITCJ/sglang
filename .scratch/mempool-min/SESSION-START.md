@@ -73,6 +73,12 @@ NPU 机器预计几天内不能使用，硬件测试后补。现在可以推进�
 
 全节点配置加入后，CPU gate 51项通过；本次改动与检查记录见同目录 `numa-startup-verification.md`。
 
+同日用户追加真正的共享容量测试：`ascend-mempool-test/scripts/run_bm_shared_startup.sh`。
+默认八个NUMA组，每组P两个rank+D两个rank，贡献`[96 GiB, 0, 96 GiB, 0]`，每机768 GiB；
+可用`--numa-nodes 0`缩到一组。它复用已验收过的`SharingPool`组件路径，增加全节点同时
+持池检查，不代表生产`share=1`已经接通。硬件结果同样等待用户回传，命令和报告口径见
+`BM_NUMA_DIAGNOSTIC.md`共享版一节；不得把CPU检查写成NPU验收通过。
+
 ## 核心设计提醒
 
 - main router 管请求调度、页哈希目录、容量与操作编排；SR 管具体存储分配和传输；推理进程管计算、HBM 页与恢复。地址由拥有映射的 worker 解析，router 不持有可直接解引用的设备指针。
