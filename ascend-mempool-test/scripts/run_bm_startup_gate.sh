@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MEMPOOL_TEST_EVEN_NUMA=0
-if [[ "${1:-}" == --even-numa ]]; then
-    MEMPOOL_TEST_EVEN_NUMA=1
-    shift
-fi
+MEMPOOL_TEST_NUMA_PROFILE=''
+case "${1:-}" in
+    --even-numa) MEMPOOL_TEST_NUMA_PROFILE=even; shift ;;
+    --all-numa) MEMPOOL_TEST_NUMA_PROFILE=all; shift ;;
+esac
 if [[ $# -lt 3 || $# -gt 4 || ! "$1" =~ ^[01]$ ]]; then
-    printf 'Usage: bash run_bm_startup_gate.sh [--even-numa] RANK P_IP LOCAL_IP [REPORT_DIR]\n' >&2
+    printf 'Usage: bash run_bm_startup_gate.sh [--even-numa|--all-numa] RANK P_IP LOCAL_IP [REPORT_DIR]\n' >&2
+    printf '  --even-numa: nodes 0,2,4,6; 1 GiB/rank, 4 GiB/node\n  --all-numa: nodes 0..7; 48 GiB/rank, 96 GiB/node\n' >&2
     exit 2
 fi
 
@@ -15,21 +16,28 @@ MEMPOOL_TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MEMPOOL_TEST_RANK="$1"
 MEMPOOL_TEST_HEAD_IP="$2"
 MEMPOOL_TEST_LOCAL_IP="$3"
-MEMPOOL_TEST_REPORT_ROOT="${4:-${MEMPOOL_TEST_ROOT}/reports/bm-startup}"
+MEMPOOL_TEST_REPORT_ROOT="${4:-/home/cryang/log/mempool-bm-startup}"
 MEMPOOL_TEST_PYTHON="${MEMPOOL_TEST_PYTHON:-python3}"
 MEMPOOL_TEST_TIMEOUT="${MEMPOOL_TEST_TIMEOUT:-600}"
 MEMPOOL_TEST_LAYERS=72
 MEMPOOL_TEST_TOKENS=8192
 MEMPOOL_TEST_GIB=11
-if [[ "$MEMPOOL_TEST_EVEN_NUMA" == 1 ]]; then
-    # Fixed reproduction profile for the two hosts with local NUMA IDs 0..7.
-    export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6
+if [[ -n "$MEMPOOL_TEST_NUMA_PROFILE" ]]; then
     export SGLANG_NPU_MEMPOOL_DIAGNOSTICS=1
     MEMPOOL_TEST_DEVICES='0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15'
     MEMPOOL_TEST_LAYERS=78
-    MEMPOOL_TEST_TOKENS=512
-    MEMPOOL_TEST_GIB=1
-    printf 'EVEN_NUMA: nodes=[0 2 4 6] pools-per-node=4 GiB-per-node=4 total-local-GiB=16\n'
+    if [[ "$MEMPOOL_TEST_NUMA_PROFILE" == even ]]; then
+        export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6
+        MEMPOOL_TEST_TOKENS=512
+        MEMPOOL_TEST_GIB=1
+        printf 'EVEN_NUMA: nodes=[0 2 4 6] pools-per-node=4 GiB-per-node=4 total-local-GiB=16\n'
+    else
+        export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,1,2,3,4,5,6,7
+        # 78 * 16 * 35840 * 576 * 2 bytes + 64-byte probe rounds to 48 GiB.
+        MEMPOOL_TEST_TOKENS=35840
+        MEMPOOL_TEST_GIB=48
+        printf 'ALL_NUMA: nodes=[0 1 2 3 4 5 6 7] pools-per-node=2 GiB-per-node=96 total-local-GiB=768\n'
+    fi
 fi
 read -r -a MEMPOOL_TEST_DEVICE_IDS <<< "${MEMPOOL_TEST_DEVICES:-0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15}"
 MEMPOOL_TEST_SEEN=" "
@@ -95,8 +103,9 @@ for MEMPOOL_TEST_INDEX in "${!MEMPOOL_TEST_PIDS[@]}"; do
     fi
     printf '%s\t%s\n' "${MEMPOOL_TEST_DEVICE_IDS[$MEMPOOL_TEST_INDEX]}" "$MEMPOOL_TEST_EXIT_CODE" >> "$MEMPOOL_TEST_RUN_DIR/exits.tsv"
 done
-if [[ "$MEMPOOL_TEST_EVEN_NUMA" == 1 ]]; then
-    if ! "$MEMPOOL_TEST_PYTHON" "$MEMPOOL_TEST_ROOT/scripts/check_bm_even_numa.py" \
+if [[ -n "$MEMPOOL_TEST_NUMA_PROFILE" ]]; then
+    if ! "$MEMPOOL_TEST_PYTHON" "$MEMPOOL_TEST_ROOT/scripts/check_bm_numa.py" \
+        --profile "$MEMPOOL_TEST_NUMA_PROFILE" \
         --rank "$MEMPOOL_TEST_RANK" --report-dir "$MEMPOOL_TEST_RUN_DIR"; then
         MEMPOOL_TEST_RESULT=1
     fi

@@ -250,6 +250,12 @@ runner为每次调用新建`REPORT_DIR/run.XXXXXX`，打印完整路径，保存
 
 ## 真实服务BM启动重测：增加诊断输出
 
+2026-10-23新增独立的全节点容量配置：`run_bm_startup_gate.sh --all-numa`，
+NUMA 0–7连续各分两个rank，每rank48 GiB、每节点96 GiB、每机768 GiB。
+使用P `10.120.72.23`、D `10.120.72.25`的双机命令与判据见
+[NUMA诊断说明](BM_NUMA_DIAGNOSTIC.md)。默认报告根目录为`/home/cryang/log/mempool-bm-startup`；
+该配置只验证BM启动、映射、probe及释放，不加载模型。
+
 更新两端相同版本的SGLang后，在原Docker中重跑P/D服务。复现此前卡住条件时，保留
 该轮模型、容量、context和CPU绑定参数；小容量对照见下节。开启以下诊断变量：
 
@@ -304,9 +310,10 @@ export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6
 bash pd-disaggregation/glm51mempool.sh
 ```
 
-服务使用`numa_node = nodes[tp_rank % len(nodes)]`按列表顺序轮转。
-上述配置中TP0/4/8/12→NUMA0，TP1/5/9/13→NUMA2，TP2/6/10/14→NUMA4，
-TP3/7/11/15→NUMA6。支持单节点、不连续ID及逗号两侧空白，P/D可使用不同列表。
+服务按本机rank升序连续均分到节点列表（2026-10-22替代旧轮转规则）。
+上述TP16配置中TP0–3→NUMA0，TP4–7→NUMA2，TP8–11→NUMA4，
+TP12–15→NUMA6。不能整除时前面的节点多分一个rank；节点多于ranks时只用前若干节点。
+支持单节点、不连续ID及逗号两侧空白，P/D可使用不同列表。
 创建前用本机`/sys/devices/system/node/online`校验整份列表；若任一节点不存在或
 未在线，会打印WARNING并整体回退默认分配`flags=0`，不会只保留有效节点。
 空值、重复ID、非法格式、ID不在0..126内、拓扑读取/解析失败也提示后回退。
@@ -319,7 +326,7 @@ TP3/7/11/15→NUMA6。支持单节点、不连续ID及逗号两侧空白，P/D�
 真实服务仍可保留下一节的1GiB/rank小容量，先检查NUMA选择再扩大容量。
 
 核对每个rank的`Creating mempool BM pool`日志：`local_numa_nodes=0,2,4,6`，
-`numa_node=2*(tp_rank % 4)`，`bm_flags=128+numa_node`；对应字段也会出现在
+`numa_node=2*(tp_rank // 4)`，`bm_flags=128+numa_node`；对应字段也会出现在
 `BEGIN stage=bm.create2`中。
 这些字段记录请求的策略；开启上述启动诊断后，还应核对MF的`Try HalMemCreate`节点、
 返回值和分配前后NUMA内存快照。P/D全部rank须完成BM/runtime ready，独立gate须两侧

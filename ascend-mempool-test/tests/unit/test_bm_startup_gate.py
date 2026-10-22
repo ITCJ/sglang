@@ -14,6 +14,7 @@ from unittest.mock import Mock, patch
 SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 import check_bm_even_numa as even_numa
+import check_bm_numa as numa
 import verify_bm_startup as startup
 
 
@@ -172,22 +173,83 @@ class TestStartupLauncher(unittest.TestCase):
                     )
                 self.assertNotIn("ALL_EVEN_NUMA_CHECKS_PASSED", result.stdout)
 
+    def test_all_numa_profile_launches_48_gib_per_rank_on_each_side(self):
+        """The requested 96 GiB per node is split across two adjacent ranks."""
+        with tempfile.TemporaryDirectory() as directory:
+            for rank, local_ip in ((0, "10.120.72.23"), (1, "10.120.72.25")):
+                result = subprocess.run(
+                    [
+                        "bash",
+                        str(SCRIPTS / "run_bm_startup_gate.sh"),
+                        "--all-numa",
+                        str(rank),
+                        "10.120.72.23",
+                        local_ip,
+                        directory,
+                    ],
+                    env={
+                        **os.environ,
+                        "MEMPOOL_TEST_PYTHON": sys.executable,
+                        "MEMPOOL_TEST_DRY_RUN": "1",
+                        "MEMPOOL_TEST_DEVICES": "0",
+                        "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE": "0,2,4,6",
+                    },
+                    text=True,
+                    capture_output=True,
+                    check=True,
+                )
+                commands = [
+                    shlex.split(line)
+                    for line in result.stdout.splitlines()
+                    if "--store-port" in line
+                ]
+                self.assertEqual(len(commands), 16)
+                for expected in (
+                    "nodes=[0 1 2 3 4 5 6 7]",
+                    "pools-per-node=2",
+                    "GiB-per-node=96",
+                    "total-local-GiB=768",
+                    "per-device=48 GiB",
+                ):
+                    self.assertIn(expected, result.stdout)
+                for device, command in enumerate(commands):
+                    args = startup.parse_args(
+                        command[3 : command.index("--local-ready-dir")]
+                    )
+                    self.assertEqual((args.rank, args.device_id), (rank, device))
+                    self.assertEqual(args.head_ip, "10.120.72.23")
+                    self.assertEqual(
+                        args.nic_url, f"tcp://{local_ip}:{25670 + 2 * device}"
+                    )
+                    self.assertEqual(
+                        startup.make_layout(args).signature()["contributions"],
+                        [48 << 30, 48 << 30],
+                    )
+                self.assertNotIn("ALL_NUMA_CHECKS_PASSED", result.stdout)
 
-class TestEvenNumaReports(unittest.TestCase):
+
+class TestNumaReports(unittest.TestCase):
     """Native allocation evidence and clean exits must agree with the pool plan."""
 
-    def write_reports(self, directory, rank=0):
+    def write_reports(self, directory, rank=0, *, all_numa=False):
         """Build a synthetic completed run with the same log/report boundary."""
+        nodes = (
+            (0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7)
+            if all_numa
+            else (0,) * 4 + (2,) * 4 + (4,) * 4 + (6,) * 4
+        )
+        node_list = "0,1,2,3,4,5,6,7" if all_numa else "0,2,4,6"
+        contribution = (48 if all_numa else 1) << 30
         (directory / "ready").mkdir()
         (directory / "exits.tsv").write_text(
             "".join(f"{device}\t0\n" for device in range(16))
         )
-        for device, node in enumerate((0, 2, 4, 6) * 4):
+        for device, node in enumerate(nodes):
             (directory / "ready" / f"device-{device}.ready").touch()
             report = dict(
                 rank=rank,
                 status="passed",
-                layout=dict(contributions=[1 << 30, 1 << 30]),
+                layout=dict(contributions=[contribution, contribution]),
                 checks=[
                     dict(
                         check="bm_peer_probe",
@@ -200,8 +262,8 @@ class TestEvenNumaReports(unittest.TestCase):
             (directory / f"device-{device}.json").write_text(json.dumps(report))
             (directory / f"device-{device}.log").write_text(
                 f"Creating mempool BM pool: tp_rank={device} "
-                f"local_numa_nodes=0,2,4,6 numa_node={node} bm_flags={128 + node}\n"
-                f"Try HalMemCreate ret:0 numa:{node} spend time:100 size:1073741824\n"
+                f"local_numa_nodes={node_list} numa_node={node} bm_flags={128 + node}\n"
+                f"Try HalMemCreate ret:0 numa:{node} spend time:100 size:{contribution}\n"
                 f"[BM_STARTUP] LOCAL_POOLS_READY rank={rank} device={device} "
                 f"devices={list(range(16))}\n"
                 f"[BM_STARTUP] PASSED rank={rank} device={device}\n"
@@ -223,6 +285,68 @@ class TestEvenNumaReports(unittest.TestCase):
                 self.assertEqual(
                     result["successful_pools_by_numa"], {0: 4, 2: 4, 4: 4, 6: 4}
                 )
+
+    def test_all_numa_checker_reports_96_gib_per_node_on_both_sides(self):
+        """The real CLI reports all eight nodes and the full 768 GiB per host."""
+        for rank in (0, 1):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.write_reports(root, rank, all_numa=True)
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(SCRIPTS / "check_bm_numa.py"),
+                        "--profile",
+                        "all",
+                        "--rank",
+                        str(rank),
+                        "--report-dir",
+                        directory,
+                    ],
+                    text=True,
+                    capture_output=True,
+                    check=True,
+                )
+                self.assertIn("ALL_NUMA_CHECKS_PASSED", result.stdout)
+                report = json.loads((root / "numa-summary.json").read_text())
+                self.assertEqual(report["status"], "passed")
+                self.assertEqual(report["local_dram_bytes_per_pool"], 48 << 30)
+                self.assertEqual(report["expected_local_dram_bytes"], 768 << 30)
+                self.assertEqual(
+                    report["successful_pools_by_numa"],
+                    {str(node): 2 for node in range(8)},
+                )
+                self.assertEqual(
+                    report["successful_dram_bytes_by_numa"],
+                    {str(node): 96 << 30 for node in range(8)},
+                )
+
+    def test_all_numa_checker_rejects_wrong_mapping_or_capacity(self):
+        """Reject old profiles, round-robin requests, and per-rank size mistakes."""
+        for defect in ("old_profile", "round_robin", "wrong_hal_size", "wrong_report"):
+            with (
+                self.subTest(defect=defect),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                root = Path(directory)
+                self.write_reports(root, all_numa=defect != "old_profile")
+                if defect == "round_robin":
+                    log = root / "device-1.log"
+                    log.write_text(
+                        log.read_text().replace("numa_node=0", "numa_node=1")
+                    )
+                elif defect == "wrong_hal_size":
+                    log = root / "device-0.log"
+                    log.write_text(
+                        log.read_text().replace(f"size:{48 << 30}", f"size:{96 << 30}")
+                    )
+                elif defect == "wrong_report":
+                    path = root / "device-0.json"
+                    report = json.loads(path.read_text())
+                    report["layout"]["contributions"] = [96 << 30, 96 << 30]
+                    path.write_text(json.dumps(report))
+                result = numa.check_reports(root, 0, "all")
+                self.assertEqual(result["status"], "failed", result)
 
     def test_wrong_hal_node_size_or_failed_allocation_cannot_pass(self):
         """A successful Python report cannot hide wrong or missing HAL allocation."""

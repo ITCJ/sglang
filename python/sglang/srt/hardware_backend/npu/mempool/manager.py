@@ -17,7 +17,12 @@ import msgspec
 
 from .diagnostics import startup_stage
 from .layout import KVLayout, PoolLayout, check_index
-from .sharing_plan import NUMA_ENV, MempoolNumaConfig, parse_numa_nodes
+from .sharing_plan import (
+    NUMA_ENV,
+    MempoolNumaConfig,
+    contiguous_numa_node,
+    parse_numa_nodes,
+)
 
 logger = logging.getLogger(__name__)
 _NUMA_NODE_ENV = NUMA_ENV
@@ -105,8 +110,13 @@ class MempoolKVManager:
         bm_module: Any = None,
         *,
         tp_rank: int | None = None,
+        tp_size: int = 16,
     ) -> MempoolKVManager:
-        """Allocate local DRAM, optionally cycling TP ranks over configured nodes."""
+        """Allocate DRAM using contiguous NUMA blocks for this host's TP ranks.
+
+        The current rank-pair service has all 16 ranks on each host. Component
+        callers with a different local rank count must supply tp_size explicitly.
+        """
         MempoolNumaConfig.from_environment().require_rank_pair_startup()
         layout.layout_for_rank(rank)
         numa_nodes = _configured_numa_nodes()
@@ -116,7 +126,7 @@ class MempoolKVManager:
                 raise ValueError(
                     f"{_NUMA_NODE_ENV} requires a nonnegative integer tp_rank"
                 )
-            numa_node = numa_nodes[tp_rank % len(numa_nodes)]
+            numa_node = contiguous_numa_node(numa_nodes, tp_rank, tp_size)
         # MF's performance bit enables the NUMA ID in the low seven bits.
         bm_flags = 0 if numa_node == -1 else (1 << 7) | numa_node
         if bm_module is None:

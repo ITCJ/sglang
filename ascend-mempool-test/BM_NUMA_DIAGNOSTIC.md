@@ -1,9 +1,74 @@
 # BM 本地 NUMA 分配交叉诊断
 
-2026-10-06用户决定：本轮NUMA/Fabric窗口排查再次封存，全部证据与后续事项集中在
+2026-10-23：用户要求在P `.23`、D `.25` 上使用NUMA 0–7，每节点96 GiB，
+新增下面的全节点启动测试。此前用户反馈地址覆盖已完整；本次大容量硬件结果待回传。
+
+历史安排（2026-10-06）：当时NUMA/Fabric窗口排查再次封存，全部证据与后续事项集中在
 [ticket09](../.scratch/ascend-mempool/issues/09-numa-allocation-followup.md)。
-本文新增只读地址交集工具，其余分配复现命令保留供恢复排查时使用，不要求继续
-分配压力实验或重复已通过的BM gate。
+当时新增只读地址交集工具，其余分配复现命令保留；下方旧机器的地址快照不是新机器的上限。
+
+## 现行双机测试：NUMA 0–7，每节点96 GiB
+
+`run_bm_startup_gate.sh --all-numa`固定启动device0–15，连续分配到NUMA 0–7。
+每个rank分配48 GiB，每节点两个rank，总计每机768 GiB，两机1.5 TiB。
+这里的容量按GiB（2^30 bytes）计。每个节点需要至少96 GiB可分配余量。
+
+| NUMA | device / 模拟TP rank | 本地BM DRAM |
+|---|---|---|
+| 0 | 0、1 | 96 GiB |
+| 1 | 2、3 | 96 GiB |
+| 2 | 4、5 | 96 GiB |
+| 3 | 6、7 | 96 GiB |
+| 4 | 8、9 | 96 GiB |
+| 5 | 10、11 | 96 GiB |
+| 6 | 12、13 | 96 GiB |
+| 7 | 14、15 | 96 GiB |
+
+两侧使用同一版本仓库（包括新增的`check_bm_numa.py`），在原Python/CANN容器中执行。
+依赖torch、torch_npu、MF、sgl-kernel-npu；保持device0–15及测试端口空闲。
+端口仍为每对device i的P store `18773+2*i`、control `18774+2*i`，
+本机NIC `25670+2*i`（相邻端口预留给SDK），pool ID103。
+
+先在P（10.120.72.23）启动，再立即在D启动，不等P结束。大容量配置的示例timeout为
+1800秒；SDK内部阻塞不保证受此超时约束。
+
+```bash
+cd /home/cryang/sglang
+SGLANG_NPU_MEMPOOL_SHARE=0 MEMPOOL_TEST_DRY_RUN=0 MEMPOOL_TEST_TIMEOUT=1800 \
+bash ascend-mempool-test/scripts/run_bm_startup_gate.sh --all-numa \
+  0 10.120.72.23 10.120.72.23 \
+  /home/cryang/log/mempool-all-numa-96g-p
+```
+
+在D（10.120.72.25）的另一终端：
+
+```bash
+cd /home/cryang/sglang
+SGLANG_NPU_MEMPOOL_SHARE=0 MEMPOOL_TEST_DRY_RUN=0 MEMPOOL_TEST_TIMEOUT=1800 \
+bash ascend-mempool-test/scripts/run_bm_startup_gate.sh --all-numa \
+  1 10.120.72.23 10.120.72.25 \
+  /home/cryang/log/mempool-all-numa-96g-d
+```
+
+这个选项覆盖调用环境中的节点列表和device子集。固定逻辑布局为78层、16slots、
+S_P=S_D=35840、dim576 BF16，加64字节probe再按1 GiB对齐后每rank恰好48 GiB。
+不通过放大HBM tensor制造容量：实际只执行64字节peer probe，所有本地池共同ready
+之后再双侧drain/close。覆盖大容量创建、映射、探针和正常释放，不验证全部KV内容、
+Graph、共享服务或性能。
+
+每轮输出独立的`run.XXXXXX`目录，含逐卡`.log/.json`、`pids.tsv`、`exits.tsv`和
+`numa-summary.json`。检查器同时要求两侧报告中的贡献均为48 GiB、HAL成功分配的节点
+和大小正确、连续映射正确、16池共同ready、probe通过、正常退出；任何缺项或非零退出
+均判失败。两侧须各自退出0，并打印：
+
+```text
+ALL_NUMA_CHECKS_PASSED rank=... pools=16 counts={0: 2, 1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 6: 2, 7: 2} ...
+ALL_BM_STARTUP_CHECKS_PASSED rank=... devices=[0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15]
+```
+
+回传两侧最终输出、`numa-summary.json`、`exits.tsv`；失败时加对应逐卡完整日志。
+沿用既有gate的失败保留策略：无法确认peer drain时可能保留池，按本轮PID表定位；
+没有最终汇总或进程未退出不算通过。旧`--even-numa`仍是每节点4 GiB的小容量配置。
 
 ## 只读检查：每个NUMA与Fabric窗口的交集
 
@@ -73,15 +138,15 @@ python3 -m unittest discover -s ascend-mempool-test/tests/unit \
 ## 双机16池：临时只使用偶数NUMA节点
 
 当前代码通过`SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6`选择节点，
-实际服务和独立测试均按`nodes[tp_rank % len(nodes)]`轮转。
+实际服务和独立测试均按本机rank升序连续均分（2026-10-22起替代轮转）。
 16个TP worker平均分到四个偶数节点；每侧布局如下：
 
 | NUMA节点 | device / 模拟TP rank | 池数 | 本地BM DRAM |
 | --- | --- | --- | --- |
-| 0 | 0、4、8、12 | 4 | 4 GiB |
-| 2 | 1、5、9、13 | 4 | 4 GiB |
-| 4 | 2、6、10、14 | 4 | 4 GiB |
-| 6 | 3、7、11、15 | 4 | 4 GiB |
+| 0 | 0–3 | 4 | 4 GiB |
+| 2 | 4–7 | 4 | 4 GiB |
+| 4 | 8–11 | 4 | 4 GiB |
+| 6 | 12–15 | 4 | 4 GiB |
 
 `run_bm_startup_gate.sh --even-numa`固定使用此配置：两侧各16个worker，
 每个worker一个两rank BM pool的本地贡献，1GiB/rank，16GiB/host。

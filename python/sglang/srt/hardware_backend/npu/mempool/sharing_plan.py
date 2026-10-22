@@ -18,7 +18,7 @@ NUMA_ENV = "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE"
 
 
 def parse_numa_nodes(value: str, online: str) -> tuple[int, ...]:
-    """Validate the complete legacy list while preserving its rotation order."""
+    """Validate the complete node list while preserving its configured order."""
     parts = [part.strip() for part in value.split(",")]
     if any(not part.isascii() or not part.isdecimal() for part in parts):
         raise ValueError("expected a comma-separated list of NUMA node IDs")
@@ -43,6 +43,24 @@ def parse_numa_nodes(value: str, online: str) -> tuple[int, ...]:
             f"nodes {missing} are not online on this host (online nodes: {online})"
         )
     return nodes
+
+
+def contiguous_numa_node(nodes: tuple[int, ...], rank: int, rank_count: int) -> int:
+    """Assign a host-local rank ordinal to a balanced contiguous node block.
+
+    Earlier nodes receive one extra rank when the division has a remainder.
+    If there are more nodes than ranks, only the first rank_count nodes are used.
+    """
+    positive_int("rank_count", rank_count)
+    if type(rank) is not int or not 0 <= rank < rank_count:
+        raise ValueError("NUMA assignment requires rank in [0, rank_count)")
+    if not nodes:
+        raise ValueError("NUMA assignment requires at least one node")
+    block_size, extra = divmod(rank_count, len(nodes))
+    larger_blocks_end = (block_size + 1) * extra
+    if rank < larger_blocks_end:
+        return nodes[rank // (block_size + 1)]
+    return nodes[extra + (rank - larger_blocks_end) // block_size]
 
 
 @dataclass(frozen=True)
@@ -384,8 +402,14 @@ class MempoolNumaConfig:
                     f"host {host.host!r}: sharing requires an explicit NUMA assignment"
                 )
             assignments.extend(
-                RankNuma(host.host, rank, nodes[rank % len(nodes)] if nodes else -1)
-                for rank in host.ranks
+                RankNuma(
+                    host.host,
+                    rank,
+                    contiguous_numa_node(nodes, local_rank, len(host.ranks))
+                    if nodes
+                    else -1,
+                )
+                for local_rank, rank in enumerate(sorted(host.ranks))
             )
         assignments.sort(key=lambda assignment: assignment.rank)
         members: dict[tuple[str, int, int], list[int]] = {}

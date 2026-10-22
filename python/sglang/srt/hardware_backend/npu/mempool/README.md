@@ -98,19 +98,21 @@ P端缺少rank1映射时应结合D日志判断：D未返回`create2()`时，该�
 export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2,4,6
 ```
 
-worker按列表顺序轮转，`numa_node = nodes[tp_rank % len(nodes)]`，
-传给`bm.create2()`的`flags = 0x80 | numa_node`。这里使用真实TP rank，
+worker按本机TP rank升序连续均分到节点列表，余数优先分给列表靠前的节点。
+传给`bm.create2()`的`flags = 0x80 | numa_node`。当前服务每侧单机TP16，
 与P/D的BM rank、NPU device ID无关。选择`0,2,4,6`时：
 
 | TP ranks | 请求 NUMA 节点 | BM flags |
 | --- | --- | --- |
-| 0、4、8、12 | 0 | 128 |
-| 1、5、9、13 | 2 | 130 |
-| 2、6、10、14 | 4 | 132 |
-| 3、7、11、15 | 6 | 134 |
+| 0–3 | 0 | 128 |
+| 4–7 | 2 | 130 |
+| 8–11 | 4 | 132 |
+| 12–15 | 6 | 134 |
 
-节点ID可不连续，顺序保留，允许逗号两侧有空白；例如`6,0`让TP0/2/4/...选6、
-TP1/3/5/...选0。TP数量不能整除节点数时，各节点池数最多相差1。P/D可配置不同列表。
+节点ID可不连续，顺序保留，允许逗号两侧有空白；例如`6,0`让TP0–7选6、
+TP8–15选0。TP数量不能整除节点数时，各节点池数最多相差1；节点多于ranks时只用
+前若干节点。P/D可配置不同列表。TP16配8个节点时每个节点对应连续两个ranks。
+2026-10-22起，此规则替代原列表轮转；已有pool不会因代码或配置变化而迁移。
 `0,2,4,6`用于规避当前机器奇数节点的`HalMemCreate ret:6`，不代表SDK问题已修复。
 节点存在性检查也不能证明HAL支持在该节点分配。实际物理落点仍需通过MF日志和
 各节点内存增量核对。双机16池测试见
@@ -131,7 +133,9 @@ ID127被MF保留为自动亲和模式。回退发生在调用BM分配之前，�
 `Creating mempool BM pool`和`BEGIN stage=bm.create2`会记录`tp_rank`、
 `local_numa_nodes`、`numa_node`和`bm_flags`；未启用或回退时节点为`-1`、flags为`0`。
 `local_dram_bytes`仍为该rank的完整贡献，按同一NUMA上的rank数累计预算。
-直接调用`MempoolKVManager.create()`时，有效的显式绑定须同时提供非负整数`tp_rank`。
+直接调用`MempoolKVManager.create()`时，显式绑定须提供本机rank序号`tp_rank`；
+本机rank数不是16的组件调用须同时传`tp_size`。规划器按每台物理主机分别均分；
+当前rank-pair服务仍只支持每侧单机TP16。
 
 ## 启动卡住时的诊断输出
 

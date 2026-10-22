@@ -54,9 +54,9 @@ class TestMempoolNumaPlan(unittest.TestCase):
                     environ={"SGLANG_NPU_MEMPOOL_SHARE": value}
                 )
 
-    def test_legacy_rotation_and_sharing_are_independent(self):
-        """The old 0,2 list groups nonadjacent ranks without changing placement."""
-        for share, groups in (("0", [(0,), (1,), (2,), (3,)]), ("1", [(0, 2), (1, 3)])):
+    def test_contiguous_assignment_and_sharing_are_independent(self):
+        """The 0,2 list assigns adjacent ranks regardless of the sharing switch."""
+        for share, groups in (("0", [(0,), (1,), (2,), (3,)]), ("1", [(0, 1), (2, 3)])):
             with self.subTest(share=share):
                 config = MempoolNumaConfig.from_environment(
                     environ={
@@ -65,7 +65,7 @@ class TestMempoolNumaPlan(unittest.TestCase):
                     }
                 )
                 plan = self.plan(config)
-                self.assertEqual([a.numa_node for a in plan.assignments], [0, 2, 0, 2])
+                self.assertEqual([a.numa_node for a in plan.assignments], [0, 0, 2, 2])
                 self.assertEqual([g.members for g in plan.groups], groups)
                 self.assertEqual(
                     [g.owner_tp_rank for g in plan.groups], [g[0] for g in groups]
@@ -219,12 +219,7 @@ class TestMempoolNumaPlan(unittest.TestCase):
 
     def test_ports_remain_disjoint_for_nonadjacent_groups_and_independent_mode(self):
         """MF adds participant to NIC base; separate member ranges avoid collisions."""
-        config = MempoolNumaConfig.from_environment(
-            environ={
-                "SGLANG_NPU_MEMPOOL_SHARE": "1",
-                "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE": "0,2",
-            }
-        )
+        config = self.config([0, 2, 0, 2])
         p = self.plan(config).report()["ranks"]
         d = self.plan(config, role="decode").report()["ranks"]
         self.assertEqual([r["store_port"] for r in p], [19000, 19001, 19000, 19001])
@@ -330,18 +325,68 @@ class TestMempoolNumaPlan(unittest.TestCase):
         self.assertEqual(shared.report()["planned_contribution_bytes"], 8 * 1024**3)
         self.assertEqual(independent.layout, shared.layout)
 
-    def test_global_rank_rotation_does_not_restart_on_the_next_host(self):
+    def test_contiguous_assignment_balances_remainders_and_preserves_node_order(self):
+        for count, expected in (
+            (1, [6]),
+            (2, [6, 0]),
+            (3, [6, 0, 2]),
+            (4, [6, 6, 0, 2]),
+            (5, [6, 6, 0, 0, 2]),
+            (7, [6, 6, 6, 0, 0, 2, 2]),
+        ):
+            for share in ("0", "1"):
+                with self.subTest(count=count, share=share):
+                    config = MempoolNumaConfig.from_environment(
+                        environ={
+                            "SGLANG_NPU_MEMPOOL_SHARE": share,
+                            "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE": "6,0,2",
+                        }
+                    )
+                    plan = self.plan(
+                        config,
+                        tp_size=count,
+                        hosts=(
+                            HostTopology("a", tuple(reversed(range(count))), "0-7"),
+                        ),
+                    )
+                    self.assertEqual([a.numa_node for a in plan.assignments], expected)
+
+    def test_contiguous_assignment_is_local_to_each_host(self):
         config = MempoolNumaConfig.from_environment(
             environ={
                 "SGLANG_NPU_MEMPOOL_SHARE": "1",
-                "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE": "6,0,2",
+                "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE": "0,2",
             }
         )
-        hosts = (HostTopology("a", (0, 1), "0-7"), HostTopology("b", (2, 3), "0-7"))
-        self.assertEqual(
-            [a.numa_node for a in self.plan(config, hosts=hosts).assignments],
-            [6, 0, 2, 6],
+        hosts = (
+            HostTopology("b", (7, 6, 5, 4), "0-7"),
+            HostTopology("a", (3, 2, 1, 0), "0-7"),
         )
+        plan = self.plan(config, hosts=hosts, tp_size=8)
+        self.assertEqual(
+            [a.numa_node for a in plan.assignments], [0, 0, 2, 2, 0, 0, 2, 2]
+        )
+        self.assertEqual(
+            [g.members for g in plan.groups], [(0, 1), (2, 3), (4, 5), (6, 7)]
+        )
+
+    def test_contiguous_tp16_plan_matches_default_two_ranks_per_node(self):
+        config = MempoolNumaConfig.from_environment(
+            environ={
+                "SGLANG_NPU_MEMPOOL_SHARE": "1",
+                "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE": "0,2,4,6,8,10,12,14",
+            }
+        )
+        plan = self.plan(
+            config,
+            tp_size=16,
+            hosts=(HostTopology("a", tuple(range(16)), "0-15"),),
+        )
+        self.assertEqual(
+            [g.members for g in plan.groups],
+            [(0, 1), (2, 3), (4, 5), (6, 7), (8, 9), (10, 11), (12, 13), (14, 15)],
+        )
+        self.assertEqual([g.numa_node for g in plan.groups], list(range(0, 16, 2)))
 
 
 if __name__ == "__main__":

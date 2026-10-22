@@ -68,6 +68,7 @@ def main() -> int:
                 "test_numa_plan.py",
                 "test_config.py",
                 "test_pair_startup.py",
+                "test_bm_startup_gate.py",
             ):
                 suite.addTests(
                     unittest.defaultTestLoader.discover(

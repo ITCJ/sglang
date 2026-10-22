@@ -235,11 +235,12 @@ class TestPairStartup(unittest.TestCase):
                     self.assertTrue(sdk.handle.destroyed)
                     self.assertEqual(sdk.uninit_calls, 1)
 
-    def test_numa_binding_cycles_selected_nodes_on_each_side(self):
+    def test_numa_binding_uses_contiguous_blocks_on_each_side(self):
         """Use the ordered list and TP rank, independent of the NPU ID and BM rank."""
         for nodes, online, expected_flags in (
-            ("0,2,4,6", "0-7\n", [128, 130, 132, 134] * 4),
-            (" 6, 0 ,4 ", "0,2,4,6\n", [134, 128, 132] * 5 + [134]),
+            ("0,2,4,6", "0-7\n", [128] * 4 + [130] * 4 + [132] * 4 + [134] * 4),
+            (" 6, 0 ,4 ", "0,2,4,6\n", [134] * 6 + [128] * 5 + [132] * 5),
+            ("0,2,4,6,8,10,12,14", "0-15\n", [128 + 2 * (r // 2) for r in range(16)]),
             ("3", "0-3,6-7\n", [131] * 16),
             ("126", "0-7,126\n", [254] * 16),
         ):
@@ -262,6 +263,30 @@ class TestPairStartup(unittest.TestCase):
                             )
                         finally:
                             manager.close(drain=lambda: None)
+
+    def test_direct_create_uses_explicit_host_rank_count(self):
+        """Component runs must use their own rank count, not the service's TP16."""
+        os.environ[NUMA_NODE_ENV] = "0,2"
+        for tp_rank, expected_node in enumerate((0, 0, 2, 2)):
+            sdk = FakeBM(0)
+            manager = MempoolKVManager.create(
+                self.layout, 0, bm_module=sdk, tp_rank=tp_rank, tp_size=4
+            )
+            try:
+                self.assertEqual(sdk.handle.options["flags"], 0x80 | expected_node)
+            finally:
+                manager.close(drain=lambda: None)
+
+    def test_direct_create_rejects_invalid_rank_count_before_allocation(self):
+        os.environ[NUMA_NODE_ENV] = "0,2"
+        for tp_rank, tp_size in ((4, 4), (0, 0), (0, True), (0, 1.5)):
+            with self.subTest(tp_rank=tp_rank, tp_size=tp_size):
+                sdk = FakeBM(0)
+                with self.assertRaises(ValueError):
+                    MempoolKVManager.create(
+                        self.layout, 0, bm_module=sdk, tp_rank=tp_rank, tp_size=tp_size
+                    )
+                self.assertIsNone(sdk.handle)
 
     def test_invalid_numa_list_warns_and_allocates_with_default_flags(self):
         """A bad list falls back as a whole before attempting a native allocation."""

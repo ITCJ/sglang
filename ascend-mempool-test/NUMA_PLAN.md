@@ -12,8 +12,8 @@
 python3 ascend-mempool-test/scripts/verify_numa_plan.py --self-test
 ```
 
-入口自动设置源码路径，隔离已有 mempool 环境变量，运行配置、分组和旧启动入口
-回归测试，并保存1/2/4成员的计划示例。默认输出到
+入口自动设置源码路径，隔离已有 mempool 环境变量，运行配置、分组、旧启动入口和
+偶数节点报告检查的回归测试，并保存1/2/4成员的计划示例。默认输出到
 `/home/cryang/log/numa-plan/<时间戳>-<PID>/`，包含 `tests.log` 和 `report.json`。
 失败返回非零；报告必须为 `status: passed`，且测试 `failures` / `errors` 都为0。
 这是 CPU 配置 gate，不能替代 NPU smoke 或完整服务验收。
@@ -72,11 +72,16 @@ SGLANG_NPU_MEMPOOL_SHARE=1 SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=0,2 \
   --topology topology.json --tp-size 4 --role prefill
 ```
 
-旧列表沿全局 TP rank 轮转，以上得到 `{0,2}`、`{1,3}` 两个共享组。
+2026-10-22起，节点列表按每台主机的rank升序连续均分，替代原轮转规则。
+以上得到分配 `0,0,2,2` 和 `{0,1}`、`{2,3}` 两个共享组。
+TP16配8个节点时每个节点两个ranks，配4个节点时每个节点四个ranks。
+不能整除时，列表靠前的节点多分一个rank；节点多于ranks时只使用前若干节点。
+每台主机独立均分，使用该主机按全局rank排序后的本机序号，不按全局rank取模。
 改为 `SGLANG_NPU_MEMPOOL_SHARE=0` 时节点分配相同，计划变为每 rank 独立池。
 开关只接受字面值 `0` / `1`，未设置等于 `0`。
 旧列表无效时，独立模式保留告警后使用 `flags=0` 的行为；共享模式明确失败。
 显式映射无论开关值如何，都拒绝重复/缺失 rank、非法节点、未知主机及冲突配置。
+显式映射不被自动均分覆盖；例如仍可明确配置非相邻组 `{0,2}`、`{1,3}`。
 
 ## 计划合同与接入边界
 
