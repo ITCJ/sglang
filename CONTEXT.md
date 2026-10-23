@@ -8,6 +8,12 @@ baseline when reviewing its history and changes.
 
 ## Glossary
 
+- **Token page**: A group of `B = page_size` consecutive logical token
+  positions. DRAM logical pages and native HBM pages use the same configured
+  size in sparse and dense modes, across P/D and their storage pools; this is
+  distinct from OS memory pages, byte alignment, kernel tiles/chunks and graph
+  padding.
+
 - **Graph batch width**: The number of request rows in a captured decode graph,
   including padded rows. It does not determine how many requests have KV storage.
 - **Mempool KV slot**: A bounded physical region reserved for one request's KV

@@ -311,7 +311,7 @@ class MempoolTPTick:
             for key in self._messages
         ]
         free_slot = min(observation.available_slots, default=-1)
-        for state in observation.requests:
+        for state in () if self.control.router_owned else observation.requests:
             room, attempt = state.room, state.attempt
             fact = facts_by_room.get(room)
             if fact is not None and fact.attempt != attempt:
@@ -348,7 +348,8 @@ class MempoolTPTick:
                 # A different rank may be the first to report release=True.
                 candidates.append(_Action("release", room, attempt))
         if (
-            self.control.local.role == "decode"
+            not self.control.router_owned
+            and self.control.local.role == "decode"
             and observation.peer_ready
             and free_slot >= 0
         ):
@@ -529,6 +530,10 @@ class MempoolTPTick:
             if key[0] == "CANCEL":
                 plan.append(_Action("drain", room, attempt))
             busy.add((room, attempt))
+        if self.control.router_owned:
+            # Keep the native startup/heartbeat tick, but Main/SR owns every
+            # request transition, including cancellation and early/late DONE.
+            return plan
         free = sorted(first.available_slots)
         for request_key in sorted(records):
             record = records[request_key]

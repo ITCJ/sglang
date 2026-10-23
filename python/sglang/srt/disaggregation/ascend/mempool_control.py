@@ -174,11 +174,14 @@ class MempoolPDControl:
         self,
         local: PoolPeer,
         max_records: int = 4096,
+        *,
+        router_owned: bool = False,
     ) -> None:
         """Keep physical slots separate from SGLang request-pool indices."""
         if max_records <= 0:
             raise ValueError("mempool control limits must be positive")
         self.local = local
+        self.router_owned = router_owned
         self.peer: PoolPeer | None = None
         self._records: dict[RequestIdentity, _RequestRecord] = {}
         self._active_requests: set[RequestIdentity] = set()
@@ -499,7 +502,7 @@ class MempoolPDControl:
 
     def finish_drain(
         self, request: RequestIdentity, reason: str = "completed"
-    ) -> MempoolMessage:
+    ) -> MempoolMessage | None:
         """Release D storage only after the caller has drained all NPU accesses."""
         self._require_role("decode")
         record = self._record(request)
@@ -507,6 +510,9 @@ class MempoolPDControl:
             return record.done
         if record.phase != "DRAINING":
             raise ValueError("D request has not drained")
+        if self.router_owned:
+            record.phase = "ROUTER_FINISHED"
+            return None
         done = MempoolMessage(
             MessageType.DONE,
             request=request,
@@ -519,8 +525,58 @@ class MempoolPDControl:
         record.phase = "WAITING_RELEASE_ACK"
         return done
 
+    def router_acquire_prefill(
+        self, acquire: MempoolMessage, slot: int
+    ) -> MempoolMessage:
+        """Consume Main's per-rank D lease using the existing ownership checks."""
+        self._require_router()
+        self._validate_request(acquire.request)
+        if acquire.kind != MessageType.ACQUIRE:
+            raise ValueError("Router P allocation requires a D acquisition")
+        self._accept_acquire(acquire)
+        return self.acquire_prefill(self._required_request(acquire), slot)
+
+    def router_bind(self, message: MempoolMessage) -> MempoolMessage | None:
+        """Install the same signed binding as legacy PD, only on Main dispatch."""
+        self._require_router()
+        self._validate_request(message.request)
+        if self.local.role == "decode" and message.kind == MessageType.ACQUIRED:
+            return self._accept_acquired(message)
+        if self.local.role == "prefill" and message.kind == MessageType.BOUND_ACK:
+            self._accept_bound_ack(message)
+            return None
+        raise ValueError("Router dispatch has an invalid binding message")
+
+    def router_ready(self, message: MempoolMessage) -> None:
+        """Publish prompt readiness only after Main received every P rank."""
+        self._require_router()
+        self._validate_request(message.request)
+        if message.kind != MessageType.KV_READY:
+            raise ValueError("Router ready requires KV_READY")
+        self._accept_kv_ready(message)
+
+    def router_free(self, request: RequestIdentity) -> None:
+        """Return alive storage after SR verified native cleanup and dependencies."""
+        self._require_router()
+        record = self._record(request)
+        if record.phase == "RELEASED":
+            return
+        required = "WAITING_DONE" if self.local.role == "prefill" else "ROUTER_FINISHED"
+        if record.phase != required or record.writes_pending:
+            raise ValueError("Router free arrived before local completion")
+        self._release_slot(record)
+        record.phase = "RELEASED"
+        self._remember_terminal(record)
+
+    def _require_router(self) -> None:
+        self.assert_healthy()
+        if not self.router_owned:
+            raise RuntimeError("Main Router does not own this control")
+
     def cancel_local(self, request: RequestIdentity, reason: str) -> MempoolMessage:
         """Stop new work; roll back only a binding that has never been used."""
+        if self.router_owned:
+            raise RuntimeError("Router cancellation is fail-stop; retain allocations")
         record = self._record(request)
         message = MempoolMessage(
             MessageType.CANCEL,
@@ -561,6 +617,8 @@ class MempoolPDControl:
                 raise ValueError("mempool heartbeat uses a different pool session")
             return None
         self._validate_request(message.request)
+        if self.router_owned:
+            raise ValueError("legacy request message received in Router-owned mode")
         if message.kind == MessageType.ACQUIRE:
             return self._accept_acquire(message)
         if message.kind == MessageType.ACQUIRED:

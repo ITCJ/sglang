@@ -3232,6 +3232,9 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
         the retract loop converges on this same check, so allocator-side
         shortfalls retract gracefully instead of tripping fail-loud alloc
         errors."""
+        reservations = getattr(self.req_to_token_pool, "mempool_reservations", None)
+        if reservations is not None:
+            return reservations.can_decode(self.reqs)
         num_tokens = self.new_tokens_required_next_decode(selected_indices)
         requests = (
             self.reqs

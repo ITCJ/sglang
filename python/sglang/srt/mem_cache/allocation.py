@@ -592,6 +592,10 @@ def alloc_for_decode(batch: ScheduleBatch, token_per_req: int) -> torch.Tensor:
         out_cache_loc: allocated cache locations
     """
 
+    reservations = getattr(batch.req_to_token_pool, "mempool_reservations", None)
+    if reservations is not None:
+        return reservations.decode(batch, token_per_req)
+
     batch.maybe_evict_swa()
 
     seq_lens_gpu = batch.seq_lens

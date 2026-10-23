@@ -24,6 +24,9 @@ PREFILL_CAPACITY=${PREFILL_CAPACITY:-512}
 DECODE_CAPACITY=${DECODE_CAPACITY:-512}
 GRAPH_MODE=${GRAPH_MODE:-graph}
 MAX_TOTAL_TOKENS=${MAX_TOTAL_TOKENS:-}
+P_PORT=${P_PORT:-8000}
+D_PORT=${D_PORT:-8001}
+BOOTSTRAP_PORT=${BOOTSTRAP_PORT:-8995}
 if [[ "$GRAPH_MODE" != graph && "$GRAPH_MODE" != eager ]]; then
     echo "GRAPH_MODE must be graph or eager" >&2
     exit 2
@@ -68,15 +71,15 @@ if [[ "$role" == prefill ]]; then
     export DEEPEP_NORMAL_COMBINE_ENABLE_LONG_SEQ=1
     export DEEP_NORMAL_MODE_USE_INT8_QUANT=1
     export TASK_QUEUE_ENABLE=1
-    common+=(--host "$local_ip" --port 8000 --disable-cuda-graph
-        --disaggregation-bootstrap-port 8995 --deepep-mode normal)
+    common+=(--host "$local_ip" --port "$P_PORT" --disable-cuda-graph
+        --disaggregation-bootstrap-port "$BOOTSTRAP_PORT" --deepep-mode normal)
 else
     local_ip=$D_IP
     export SGLANG_ENABLE_OVERLAP_PLAN_STREAM=1
     export SGLANG_NPU_USE_MULTI_STREAM=1
     export SGLANG_DEEPEP_NUM_MAX_DISPATCH_TOKENS_PER_RANK=32
     export TASK_QUEUE_ENABLE=0
-    common+=(--host "$local_ip" --port 8001 --ep-size 16
+    common+=(--host "$local_ip" --port "$D_PORT" --ep-size 16
         --disaggregation-decode-extra-slots 0 --deepep-mode low_latency
         --cuda-graph-bs-decode 16)
 fi
@@ -86,12 +89,21 @@ fi
 if [[ -n "$MAX_TOTAL_TOKENS" ]]; then
     common+=(--max-total-tokens "$MAX_TOTAL_TOKENS")
 fi
+# PAGE_SIZE is the single token-page setting. Keep the old environment name
+# for existing component commands, but never silently choose between values.
+if [[ -n "${PAGE_SIZE:-}" && -n "${HBM_PAGE_SIZE:-}" && "$PAGE_SIZE" != "$HBM_PAGE_SIZE" ]]; then
+    echo "PAGE_SIZE and legacy HBM_PAGE_SIZE must match" >&2
+    exit 2
+fi
+token_page_size=${PAGE_SIZE:-${HBM_PAGE_SIZE:-}}
+if [[ -n "$token_page_size" ]]; then common+=(--page-size "$token_page_size"); fi
+if [[ "${SKIP_SERVER_WARMUP:-0}" == 1 ]]; then common+=(--skip-server-warmup); fi
 common+=(--dist-init-addr "$local_ip:10000")
 if [[ "$mode" == formal ]]; then
-    common+=(--mempool-prefill-host "$P_IP" --mempool-bootstrap-port 8995
+    common+=(--mempool-prefill-host "$P_IP" --mempool-bootstrap-port "$BOOTSTRAP_PORT"
         --mempool-base-port 19000 --mempool-pool-id 104
         --mempool-nic "tcp://$local_ip:25670" --mempool-prefill-capacity "$PREFILL_CAPACITY"
-        --mempool-decode-capacity "$DECODE_CAPACITY" --mempool-timeout 600)
+        --mempool-decode-capacity "$DECODE_CAPACITY" --mempool-timeout "${MEMPOOL_TIMEOUT:-600}")
 fi
 if [[ "$dry_run" == --dry-run ]]; then
     printf 'MEMPOOL=%s role=%s mode=%s\n' \

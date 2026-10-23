@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import secrets
 import time
 from collections.abc import Callable, Sequence
@@ -20,6 +21,7 @@ from sglang.srt.hardware_backend.npu.mempool.runtime import (
 
 from .mempool_control import MempoolPDControl, MempoolRequestSnapshot
 from .mempool_protocol import MempoolMessage, PoolDescriptor, PoolPeer, RequestIdentity
+from .mempool_router_protocol import CONFIG_ENV
 from .mempool_tick import MempoolTPTick, RequestObservation
 
 logger = logging.getLogger(__name__)
@@ -86,6 +88,7 @@ class MempoolPDService:
         self.kv_manager: Any = None
         self.timeout = timeout
         self._tick_started: float | None = None
+        self.subrouter: Any = None
         self.tick = MempoolTPTick(
             control,
             gather=gather,
@@ -149,7 +152,7 @@ class MempoolPDService:
             transport_session=manager.get_session_id(),
             transfer_layout=transfer_layout,
         )
-        control = MempoolPDControl(peer)
+        control = MempoolPDControl(peer, router_owned=bool(os.environ.get(CONFIG_ENV)))
         device = str(runtime.row_slot.device)
         runtime.manager.probe_peer(
             torch.tensor(
@@ -183,6 +186,10 @@ class MempoolPDService:
         )
         service.scheduler = scheduler
         service.kv_manager = manager
+        if control.router_owned:
+            from .mempool_router_transport import attach_subrouter
+
+            service.subrouter = attach_subrouter(service, gather)
         manager.attach_mempool_control(control)
         # A failed collective cannot report through that same collective. This
         # watchdog bounds a stuck tick without treating termination as drain.
@@ -262,6 +269,8 @@ class MempoolPDService:
 
     def track(self, req: Any) -> None:
         """Retain the original bootstrap deadline before any mempool wait."""
+        if self.subrouter is not None:
+            self.subrouter.track(req)
         if self.is_fake(req):
             return
         room = req.bootstrap_room
@@ -274,7 +283,11 @@ class MempoolPDService:
                     "bootstrap room already belongs to a different request"
                 )
             return
-        if self.control.local.role == "decode" and self.control.has_retained_room(room):
+        if (
+            not self.control.router_owned
+            and self.control.local.role == "decode"
+            and self.control.has_retained_room(room)
+        ):
             raise ValueError(
                 "mempool demo requires a fresh bootstrap room; rebootstrap is unsupported"
             )
@@ -398,7 +411,36 @@ class MempoolPDService:
             else:
                 start, rows = batch.prefix_lens[index], batch.extend_lens[index]
             writes.append(KVWriteExpectation(row, start, rows))
+        if self.subrouter is not None and self.control.local.role == "decode":
+            self._record_decode_step(batch, writes)
         self.runtime.prepare_forward(writes)
+
+    def _record_decode_step(self, batch: Any, writes: list[KVWriteExpectation]) -> None:
+        """Record real native residency and execution for every scheduled step."""
+        shard = self.subrouter.shard
+        resident = len(shard.native.reservations)
+        executing = len(writes)
+        if resident != 1 or executing != 1:
+            raise RuntimeError(
+                "Router D must have exactly one resident/executing request"
+            )
+        req = batch.reqs[0]
+        state = self.control.get_room_request(req.bootstrap_room)
+        if state is None or state.p_slot is None:
+            raise RuntimeError("decode step has no confirmed P/D binding")
+        logger.info(
+            "mempool decode_step role=decode rank=%s room=%s rid=%s op_id=%s "
+            "step=%s resident_requests=%s real_requests=%s p_slot=%s d_slot=%s",
+            self.control.local.tp_rank,
+            req.bootstrap_room,
+            req.rid,
+            shard.dispatch["op_id"],
+            writes[0].start_position - len(req.origin_input_ids) + 1,
+            resident,
+            executing,
+            state.p_slot.slot,
+            state.d_slot.slot,
+        )
 
     def defer_release(
         self, req: Any, is_insert: bool = True, *, handoff: bool = False
@@ -424,6 +466,11 @@ class MempoolPDService:
         """Queue client cancellation; the next TP plan authorizes transitions."""
         for record in self._requests.values():
             if abort_all or record.req.rid.startswith(rid):
+                if self.control.router_owned:
+                    self.fault = (
+                        "Router request aborted; retain allocations until process exit"
+                    )
+                    return
                 record.cancel = True
 
     def _observations(self) -> list[RequestObservation]:
@@ -530,6 +577,8 @@ class MempoolPDService:
             self.fault = str(exc)
         try:
             self.tick.advance(facts, fault=self.fault or self.runtime.fault)
+            if self.subrouter is not None:
+                self.subrouter.advance(facts, fault=self.fault or self.runtime.fault)
             self._retire_local_records()
         finally:
             self._tick_started = None
@@ -634,6 +683,9 @@ class MempoolPDService:
 
     def bootstrap_failed(self, req: Any) -> None:
         """Cancel an unallocated D request without inventing a remote drain."""
+        if self.control.router_owned:
+            self.fault = "Router native bootstrap failed"
+            return
         if self.is_fake(req):
             return
         record = self._record(req)
@@ -647,6 +699,9 @@ class MempoolPDService:
 
     def native_failure(self, req: Any, decode_request: Any = None) -> bool:
         """Hold failed native destinations until actual transfer drain, without a free timeout."""
+        if self.control.router_owned:
+            self.fault = "Router native transfer failed; retain allocations"
+            return True
         if self.is_fake(req):
             return False
         record = self._record(req)
@@ -675,7 +730,13 @@ class MempoolPDService:
             )
             if callable(prepare_release):
                 prepare_release(req)
-            release_kv_cache(req, scheduler.tree_cache, is_insert=is_insert)
+            reservations = getattr(
+                scheduler.req_to_token_pool, "mempool_reservations", None
+            )
+            if reservations is not None:
+                reservations.release(req)
+            else:
+                release_kv_cache(req, scheduler.tree_cache, is_insert=is_insert)
         if self.control.local.role == "prefill":
             maybe_release_metadata_buffer(
                 req, scheduler.req_to_metadata_buffer_idx_allocator
@@ -754,6 +815,8 @@ class MempoolPDService:
 
     def cancel_for_retraction(self, batch: Any) -> None:
         """Turn unsupported automatic rebootstrap into explicit cancellation."""
+        if self.control.router_owned:
+            raise RuntimeError("Router reservation exhausted; retraction is forbidden")
         for req in batch.reqs:
             if not self.is_fake(req):
                 self._record(req).cancel = True

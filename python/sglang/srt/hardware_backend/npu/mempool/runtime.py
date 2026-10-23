@@ -76,6 +76,8 @@ class _Binding(msgspec.Struct):
     completed: int = 0
     forwards: int = 0
     replay_forwards: int = 0
+    prompt_bm_rows: int = 0
+    decode_bm_rows: int = 0
 
 
 class _Forward(msgspec.Struct):
@@ -99,6 +101,7 @@ class _Completion(msgspec.Struct):
     slot_totals: tuple[int, ...]
     replay: bool
     fetch: Optional[Tensor]
+    sources: Optional[Tensor] = None
 
 
 class MempoolRuntime:
@@ -129,6 +132,7 @@ class MempoolRuntime:
         wait_event: Optional[Callable[[WriteEvent], None]] = None,
         fetch_enabled: bool = False,
         fetch_kernel: Any = None,
+        source_evidence: bool = False,
     ) -> None:
         """Allocate stable bindings/counters after BM mappings are ready."""
         if mlapo_enabled:
@@ -163,6 +167,13 @@ class MempoolRuntime:
                 (self.layout.layers, req_pool_rows, 3), dtype=torch.int64, device=device
             )
             if fetch_enabled
+            else None
+        )
+        self._fetch_sources = (
+            torch.zeros(
+                (self.layout.layers, req_pool_rows, 2), dtype=torch.int64, device=device
+            )
+            if fetch_enabled and source_evidence
             else None
         )
         self._write_counts = torch.zeros(
@@ -395,6 +406,8 @@ class MempoolRuntime:
             self._wait_event(self._binding_update)
         if self._fetch_checks is not None:
             self._fetch_checks.zero_()
+        if self._fetch_sources is not None:
+            self._fetch_sources.zero_()
         if self.manager.rank == 1:
             for write in writes:
                 if self._fetch is not None and write.rows != 1:
@@ -557,6 +570,22 @@ class MempoolRuntime:
             self.row_prompt_len,
             self.row_decode_len,
         )
+        if self._fetch_sources is not None:
+            # Captured alongside the two existing copies on the miss stream.
+            # Read only after miss_done and the forward completion event. These
+            # count submitted selected rows, not full logical/HBM pages.
+            row_valid = (req_rows > 0) & (req_rows < self.row_slot.numel())
+            safe_rows = torch.where(row_valid, req_rows, 0).long()
+            prompt = self.row_prompt_len[safe_rows, None]
+            valid = misses & row_valid[:, None] & (positions >= 0)
+            counts = torch.stack(
+                (
+                    (valid & (positions < prompt)).sum(1),
+                    (valid & (positions >= prompt)).sum(1),
+                ),
+                dim=1,
+            )
+            self._fetch_sources[layer].index_add_(0, safe_rows, counts)
         active.fetch_layers.add(layer)
 
     def completion_report(
@@ -586,6 +615,9 @@ class MempoolRuntime:
             "replay_forwards": progress.replay_forwards if progress else 0,
             "layers": self.layout.layers,
             "layer_checks": forwards * self.layout.layers,
+            "source_evidence": self._fetch_sources is not None,
+            "prompt_bm_rows": progress.prompt_bm_rows if progress else 0,
+            "decode_bm_rows": progress.decode_bm_rows if progress else 0,
         }
 
     def end_forward(self) -> None:
@@ -613,6 +645,9 @@ class MempoolRuntime:
         totals = tuple(self._bindings[row].submitted for row in rows)
         snapshot = self._write_counts.clone()
         fetch = self._fetch_checks.clone() if self._fetch_checks is not None else None
+        sources = (
+            self._fetch_sources.clone() if self._fetch_sources is not None else None
+        )
         event = self._event_factory()
         event.record()
         self._pending.append(
@@ -624,6 +659,7 @@ class MempoolRuntime:
                 tuple(self._slot_totals),
                 active.replay,
                 fetch,
+                sources,
             )
         )
         self._active = None
@@ -638,6 +674,9 @@ class MempoolRuntime:
                 self.fault = "mempool valid write counts differ from expected rows"
                 raise RuntimeError(self.fault)
             fetch_counts = item.fetch.cpu().tolist() if item.fetch is not None else None
+            source_counts = (
+                item.sources.cpu().sum(0).tolist() if item.sources is not None else None
+            )
             if fetch_counts is not None:
                 for layer, samples in enumerate(fetch_counts):
                     for row, sample in enumerate(samples):
@@ -654,6 +693,9 @@ class MempoolRuntime:
                 progress.completed = total
                 progress.forwards += 1
                 progress.replay_forwards += int(item.replay)
+                if source_counts is not None:
+                    progress.prompt_bm_rows += source_counts[row][0]
+                    progress.decode_bm_rows += source_counts[row][1]
                 completed.append(row)
             self._pending.popleft()
         return completed
@@ -793,6 +835,7 @@ def initialize_for_model_runner(model_runner: Any) -> None:
             max_context_len=model_runner.model_config.context_len,
             start_layer=model_runner.layer_info.start_layer,
             device=str(model_runner.req_to_token_pool.req_to_token.device),
+            source_evidence=bool(os.environ.get("SGLANG_NPU_MEMPOOL_ROUTER_CONFIG")),
             fetch_enabled=mode is SparseKVOffloadMode.PD_DECODE_MEMPOOL,
         )
     runtime.config = config

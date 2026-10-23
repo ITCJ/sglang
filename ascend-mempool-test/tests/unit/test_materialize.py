@@ -9,11 +9,11 @@ from unittest.mock import patch
 
 import test_fetch
 import torch
+from ascend_sparse.config import SparseKVOffloadMode
+from ascend_sparse.fixture import allocate_cache
 from test_runtime import prefill_batch
 
 from ascend_mempool.runtime import KVWriteExpectation
-from ascend_sparse.config import SparseKVOffloadMode
-from ascend_sparse.fixture import allocate_cache
 
 
 class CPUStream:
@@ -112,6 +112,39 @@ class TestMaterialize(unittest.TestCase):
             h.p[2] = -99
             h.d[3, 0] = -88
         self.assertEqual(h.copy_counts, [2, 1, 0, 0])
+
+    def test_reserved_native_row_reuse_clears_sparse_hits(self):
+        from test_mempool_native_reservation import Pages, Rows, request
+
+        from ascend_mempool_pd.mempool_native_reservation import NativeReservations
+
+        native = NativeReservations(
+            Rows(), Pages(), reset_rows=self.cache.reset_requests
+        )
+        h = self.helper
+        positions = torch.tensor([[0, 3, 4, -1], [0, 3, 4, -1]])
+        for room, base in ((1, 100), (2, 200)):
+            native.reserve(room, 4, 4)
+            req = request(room)
+            native.attach(req, 4)
+            binding = h.runtime.bind(1, slot=3, prompt_tokens=4, prompt_slot=2)
+            h.p[2, 0], h.p[2, 3] = base + 1, base + 3
+            batch = h.start(offset=0)
+            output = torch.zeros((2, 4, 1, 4), dtype=torch.bfloat16)
+            self.cache.materialize_selected_kv(
+                SimpleNamespace(layer_id=5),
+                batch,
+                positions,
+                output,
+                CPUStream(),
+                mempool_runtime=h.runtime,
+            )
+            self.assertEqual(output[0, :2, 0, 0].tolist(), [base + 1, base + 3])
+            h.runtime.end_forward()
+            h.events[-1].done = True
+            h.runtime.poll_completed()
+            h.runtime.detach_row(binding)
+            native.release(req)
 
     def test_attention_consumes_bm_values_with_short_topk_multiple_rows_and_padding(
         self,

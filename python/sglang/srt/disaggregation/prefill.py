@@ -352,6 +352,11 @@ class PrefillBootstrapQueue:
         if self._check_if_req_exceed_kv_capacity(req):
             return False
 
+        # Ascend Router dispatch must see the original generation limit before
+        # _process_req normalizes P's local estimate to one token.
+        if self.scheduler.mempool_service is not None:
+            self.scheduler.mempool_service.track(req)
+
         backend = (
             TransferBackend.FAKE
             if req.bootstrap_host == FAKE_BOOTSTRAP_HOST
@@ -419,8 +424,6 @@ class PrefillBootstrapQueue:
         if not self.create_sender(req, num_kv_heads):
             return
         self.queue.append(req)
-        if self.scheduler.mempool_service is not None:
-            self.scheduler.mempool_service.track(req)
 
     def extend(self, reqs: List[Req], num_kv_heads: int) -> None:
         for req in reqs:

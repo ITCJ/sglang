@@ -29,6 +29,7 @@ class TestMempoolConfig(unittest.TestCase):
     def test_service_config_rejects_unsupported_launch_before_bm(self):
         """P native mode is supported; incompatible serving modes are rejected."""
         args = SimpleNamespace(
+            page_size=128,
             device="npu",
             tp_size=16,
             dp_size=1,
@@ -109,6 +110,7 @@ class TestMempoolConfig(unittest.TestCase):
     def test_new_placement_options_cannot_silently_use_rank_pair_storage(self):
         """Planning is available in 02-1; group allocation belongs to 02-2."""
         args = SimpleNamespace(
+            page_size=128,
             disaggregation_mode="decode",
             disable_cuda_graph=False,
             mempool_prefill_host="10.0.0.1",

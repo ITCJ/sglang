@@ -1,0 +1,165 @@
+# 02: 请求结束后保存 prompt 到 prefix
+
+**Parent:** [GLM-5.2 双机 sparse mempool 最小 demo：阶段 0](../spec.md)
+
+**What to build:** 完成一个冷请求后，将该请求的 prompt 主 KV 和 Index K 保存为
+可跨请求保留的 prefix。P 原生 HBM 和请求 alive 都释放后，prefix 仍保持正确内容；
+重复保存与容量不足均按目录和账本处理。
+
+**Blocked by:** [01：真实冷请求与显式释放复用](01-cold-request-lifecycle.md)。
+该票完成实现 review、用户 NPU 验收并关闭后才可开始。
+
+**Status:** ready-for-agent
+
+**State:** open
+
+**本轮依据：** 2026-10-23 用户确认[四票详细回顾](../stage-0-ticket-review.md)，
+要求按该内容重新拆票。本票在已验收冷请求链上增加保存，不消费 prefix 命中。
+
+## 运行范围
+
+- Ascend NPU 双机 GLM-5.2，P／D 各 TP16、attention DP1、PP1、普通非投机 decode；
+  主 KV 为 78 个独立层、compact 576 维 BF16，Index K 为 21 个 producer 层、
+  128 维 BF16，无独立 scale。
+- 串行、单 chunk、各 rank 私有副本、足额 reserve、fail-stop；输入为 token IDs、
+  greedy，原生 radix cache 关闭。D 生成段 Index K 保留 HBM，sparse decode admit 关闭。
+- S_P = 8192、S_D = 128，每侧每 rank 16 个存储槽；DRAM 与原生 HBM 统一使用 page_size=B，
+  P/D 和相关池必须严格相同；当前部署默认且仅允许 B=128；生成上限 128。
+- P eager、D NPU Graph；测试关闭 match_prefix，始终从冷请求计算得到保存源。
+- 沿用当前 NUMA 连续均分规则与实际机器拓扑；硬件容量、映射和可见性须有对应证据。
+  dense baseline、sparse K1 和旧共享性能票不构成本票依赖。
+
+prefix 位于 P 机，每 rank 一份、每份 40 个逻辑页（5120/B），主 KV 和 Index K 均按实际完成保存。
+
+## 数据与角色合同
+
+| 数据或模块 | 本票新增行为 |
+|---|---|
+| P alive Index K DRAM | 每 rank 增加 21 层 × 16 槽 × S_P token × 256 B 的区域，随真实计算写回 |
+| prefix 池 | 每 rank 一份主 KV 与 Index K，layer-first，真正按 B-token 逻辑页分配 |
+| Main Router | token 页哈希、命名空间种子、父关系、位置状态、源锁、admit 决策和 publish |
+| SR_P 协调者 | 分配 prefix 页、向全部分片下发一致操作、汇总目标可读和实际归还 |
+| SR_P 分片 | 在本 rank 的映射内复制主 KV 与 Index K，并提供实际完成收据 |
+
+复用 01 的请求、账本、显式 free 和有序 scheduler tick。rank 0 同时持有协调者和
+本地分片；协调者必须收齐全部必要 rank 的结果。复制接口按 Ascend NPU 映射能力
+实现，只有合法 CPU 映射才可使用 CPU 复制；不能直接解引用 BM 设备地址。
+
+启用后按数据类型分别注册 R_am、R_ai、R_pm、R_pi，本阶段均为 16。
+它们是物理副本数量；每份 prefix 的 40 页不能合计为 640 页独立逻辑内容。
+同 NUMA 的 rank 仍各持私有副本。P／D alive 继续整槽分配，prefix 的页号、
+分配器与容量账本独立于 alive。命名空间包含 extra_key／cache_salt 的既定语义。
+
+## 正常保存路径
+
+1. 冷请求的主 KV 和新增 Index K DRAM 写回真实完成，原生传输完成后，P 释放
+   本请求 HBM／请求行。新增 Index K 写回必须纳入这个释放条件。
+2. D 完成最后读写与原生清理，SR_D 报 finished。Main 重新检查 prompt 页目录，
+   跳过已有 ready prefix 位置的页，按实际容量确定待保存范围。
+3. 先对待复制 alive 源及所需父路径建立保护，再解除请求 owner hold。
+   没有保存依赖的页可逻辑释放，整槽等待最后一项依赖结束。
+4. SR_P 分配 writing prefix 目标。每个分片复制自己那份 78 层主 KV 和
+   21 个 producer 层 Index K；设备提交成功不等于目标可读。
+5. 协调者收到全部必要 rank 的目标可读证据后回 admit ack。Main 先发布父页，
+   再发布子页；按 op_id 解除源和父路径保护，每个 ack 只处理一次。
+6. 满足回收条件的 alive 由 Main 显式 free。SR 实际归还后回 free_ack，恢复整槽
+   额度；prefix 独立保留。admit 完成且两侧 free_ack 收齐后才进入下一请求。
+
+源页只有 owner hold 时 lock_ref=1；计划 admit 后为 2；解除 owner hold 后仍为 1。
+只有复制完成、最后保护解除后才可归还源槽。目录位置保留 writing／ready／draining／
+freed 状态；完成收据按 rid／op_id 独立存活，不能依赖已释放的原生请求行。
+
+## 本票可独立演示的保存用例
+
+所有用例均关闭 match_prefix；以下数值是保存行为，不是命中验收。
+
+| 冷算用例 | 输入 | 新保存页数／份 | 结束时 prefix 页数／份 |
+|---|---|---|---|
+| A | 4096 token | 32 | 32 |
+| B | A 的 4096 token 加 1024 个新 token | 8，跳过已有 32 页 | 40 |
+| C | 与 A 相同 | 0 | 40 |
+| E | 不同内容的 4096 token | 0，容量已满 | 40 |
+
+容量只能保存部分缺失页时，从尾部缩短范围；零容量时跳过 admit，正常归还 alive。
+不引入 evict 或等待容量协议。admit 错误或超时进入 fail-stop；停止新操作与 free，
+不强行释放 writing 目标或受保护源，不在本轮复用可疑数据。
+
+## Acceptance criteria
+
+- [ ] 接入每 rank 的 P alive Index K DRAM 写回与 P 侧 prefix 页分配，覆盖主 KV
+  78 层、Index K 21 个 producer 层。D 生成 Index K 继续只留 HBM。
+- [ ] 将 Index K 写回真实完成纳入 P 原生资源释放条件；在 P HBM 释放之后，仍能
+  从请求 alive 保存完整 prompt。prefix 和 alive 的分配、位置与容量独立。
+- [ ] 通过 Main Router 计算 token 页哈希和命名空间种子，形成父哈希、位置与完成
+  状态。冷 A 结束并释放 alive 后，每份 prefix 保留 32 页，逐逻辑 token 核对
+  各必要层的主 KV 与 Index K。
+- [ ] finished 后重新检查目录，已存在的 ready prefix 页跳过。建立 admit 源锁与
+  所需父路径保护后才解除 owner hold；只有目标可读 ack 到达且父页已发布时
+  才 publish。重复 ack 不重复解锁或归还。
+- [ ] 复制尚未完成时，源槽不能收到 free_ack 或被复用；admit 失败进入 fail-stop，
+  不强行释放 writing 目标或仍受保护的源。设备完成收据不依赖已释放的原生请求行。
+- [ ] prefix 容量按真实页计算。容量不足时从尾部缩短或跳过保存；重复冷算相同
+  prompt 不增加已有页，缓存满时仍能正常结束并归还 alive，不引入 evict。
+- [ ] 此票的保存验证使用 match_prefix 关闭的冷算请求。可用 A／B／C／E 的冷算
+  变体验证 32 → 40 → 40 → 40、已有页跳过和满容量行为，但不宣称这些请求
+  已按完整 demo 的预期命中。
+- [ ] CPU 覆盖源保护、publish、重复 ack、容量和错误行为；NPU 核对实际复制内容、
+  P native 提前释放及 alive 归还后 prefix 的独立存活。扩展同一自运行入口
+  提供保存阶段的测试与独立报告。
+- [ ] 保持 01 的真实冷请求输出、D 三条件门控、显式释放、Graph 和真实串行约束；
+  直接复用同一启动入口，注册如实启用新增区域并检查实际容量。
+- [ ] 每次实现后立即更新目标页 D 的代码进度与验证状态，并同步 Markdown／HTML。
+- [ ] 完成本票适用的 CPU／静态检查和自运行测试入口，并记录实际结果与未执行项。
+- [ ] 用户完成本票要求的 NPU 验收，核对实现和证据并确认可以关闭。
+
+## 范围边界
+
+范围收束：计算仍走冷请求，命中消费留给 03；本票的目录与保存数据直接由 03 复用。
+
+## Verification
+
+- CPU 覆盖“先保护源、再解除 owner hold”、父页发布顺序、延迟一个 rank、重复 ack、
+  部分容量缩短、满容量跳过以及错误／超时。测试检查源仍受保护和账本的真实变化。
+- NPU 在 P native 已释放后执行保存，并在 alive 实际归还后核对 prefix 的逻辑内容。
+  每个必要 rank、每个必要层同时核对主 KV 与 Index K；保留源数据参考及完成证据。
+- 在 01 的常驻服务／自运行入口上增加保存验收模式：自动冷算 A／B／C／E、检查
+  32 → 40 → 40 → 40、收集两机报告并清理。报告明确尚未覆盖命中推理。
+- 优先复用 service／TP tick 的 CPU 行为测试、双机 GLM-5.2 自运行入口和必要的
+  NPU 复制适配器测试。观察外部行为、实际完成与资源账本，不仅核对内部调用。
+- 入口自动完成启动、健康检查及注册就绪、请求、断言、报告收集和自身进程清理；
+  双机允许每机一条命令，后续自动协调。失败返回非零，日志与报告保存到
+  `/home/cryang/log/` 下的独立运行目录。
+- 区分 agent 实际执行的 CPU／静态检查、用户 NPU 结果、smoke 与完整验收。
+  报告保留版本及工作区差异标识、部署与模型身份、实际输入／输出、rank 覆盖和
+  rid／op_id／槽位关联；任何未执行或缺失证据都明确标记。
+- 实施后向用户说明正常路径、所有权、同步和释放条件，交付可直接运行的硬件
+  命令、失败判据及回传材料。实际命令以交付时已实现的 CLI 为准。
+- 按[阶段交付与用户 NPU 验收流程](../../ascend-mempool/verification.md)，用户执行
+  硬件测试并确认后才勾选硬件项、设置 State 为 closed、解锁下游。代码和测试
+  入口就绪而硬件未验收时保持 open，并在 Comments 记录等待项目。
+- 同步[目标页 D](../target-alignment.md) 的进度与证据；01 的通过记录是前置基础，
+  不能替代本票新增 Index K 写回、保存与生命周期的 NPU 验收。
+
+## Comments
+
+### 2026-10-23：按已批准拆分发布
+
+- 用户确认四票粒度及依赖关系；本票作为独立实施任务发布。
+- 发布时尚未实施，尚无本票新增行为的 CPU／NPU 通过证据；全部验收项保持未勾选。
+- 当前代码参考基线为 `787d10a287`；原有未提交修改必须保留，实施前核对实际工作区。
+
+### 2026-10-23：按用户确认的详细回顾重新发布
+
+- 用户确认详细回顾后授权重新拆票；本票继续直接依赖 01，未新增外部 blocker。
+- 本次核对基线为 `3883624810` 加当前工作区；历史记录保留。
+- 补齐 Ascend NPU 数据区域、SR 分工、源锁与 publish 顺序、冷算保存矩阵及启动交付。
+- 本轮仅更新实施票并检查文档；未实现功能或执行新行为的 CPU／NPU 测试。
+  State 保持 open，验收项未勾选；等待 01 用户 NPU 验收并关闭。
+
+### 2026-10-24：统一页设计修正
+
+用户明确决定 DRAM/native HBM、sparse/dense、P/D 和相关池共用 `page_size=B`。
+现行正文已修正；此前 Comments 中的 64/128、4032 和半页接续仅为历史。
+本轮 B=128 示例保持请求长度与 5120-token prefix 容量；C 命中3968、重算128。
+统一公式与支持范围见 [讨论记录](../discussion.md)。本票保持 open；
+01 的 NPU 验收等待用户执行，02–04 的依赖门控保持不变。

@@ -1,0 +1,2519 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="blueprint" data-mode="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Answer me with HTML 0.4.3">
+<title>Ticket01：Main Router / Sub Router 实施方案</title>
+<style>
+html[data-theme="blueprint"], html[data-theme="blueprint"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 0px;
+  --shadow: none;
+  --bw: 1.5px;
+  --head-font: var(--font-sans);
+  --bg: #f6f6f3;
+  --paper: #ffffff;
+  --ink: #16181d;
+  --ink-2: #4b5260;
+  --ink-3: #8b929e;
+  --line: #1d2026;
+  --line-2: #d6dae1;
+  --fill: #f3f5f8;
+  --accent: #1d5fbf;
+  --accent-bg: #e4ecf8;
+  --ok: #1d5fbf;
+  --ok-bg: #e4ecf8;
+  --err: #c62828;
+  --err-bg: #fbeaea;
+  --warn: #a8620a;
+  --warn-bg: #fdf3e2;
+  --head-bg: #16181d;
+  --head-fg: #ffffff;
+}
+html[data-theme="blueprint"][data-mode="dark"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="blueprint"][data-mode="auto"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+}
+
+html[data-theme="shadcn"], html[data-theme="shadcn"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 8px;
+  --shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --bw: 1px;
+  --head-font: var(--font-sans);
+  --bg: #fafafa;
+  --paper: #ffffff;
+  --ink: #09090b;
+  --ink-2: #71717a;
+  --ink-3: #a1a1aa;
+  --line: #e4e4e7;
+  --line-2: #f0f0f2;
+  --fill: #f4f4f5;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --ok: #16a34a;
+  --ok-bg: #f0fdf4;
+  --err: #dc2626;
+  --err-bg: #fef2f2;
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --head-bg: #18181b;
+  --head-fg: #fafafa;
+}
+html[data-theme="shadcn"][data-mode="dark"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="shadcn"][data-mode="auto"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+}
+
+/* Answer me with HTML base — 只引用主题变量，禁止写死颜色（主题 token 见 themes/index.js） */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd { font-family: var(--font-mono); }
+
+/* ── 工具栏 ─────────────────────────────── */
+.am-toolbar {
+  position: fixed; top: 12px; right: 12px; z-index: 10; display: flex; gap: 6px;
+}
+.am-btn {
+  font: 12px/1 var(--font-sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding: 7px 10px; cursor: pointer;
+}
+.am-btn:hover { border-color: var(--ink-3); }
+.am-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── 页头 ───────────────────────────────── */
+.am-head { margin: 0 0 20px; padding-right: 260px; }
+.am-head h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; }
+.am-sub { margin: 4px 0 0; color: var(--ink-2); }
+.am-head-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 12px; color: var(--ink-2); }
+.am-head-meta b { font-family: var(--font-mono); font-weight: 400; color: var(--ink-3); margin-right: 6px; }
+.am-intro { margin-top: 12px; max-width: 80ch; }
+
+/* ── sheet 图纸板 ────────────────────────── */
+.am-sheet { max-width: 1680px; margin: 0 auto; padding: 32px 28px 40px; }
+.am-frame { position: relative; }
+.am-grid {
+  display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 20px; align-items: start;
+}
+.am-ruler { display: none; }
+html[data-theme="blueprint"] .am-frame { border: 1px solid var(--line); padding: 30px; }
+html[data-theme="blueprint"] .am-frame::before {
+  content: ""; position: absolute; inset: 18px; border: 1px solid var(--line); pointer-events: none;
+}
+html[data-theme="blueprint"] .am-ruler {
+  display: flex; position: absolute; font: 10px/1 var(--font-mono); color: var(--ink-3);
+}
+.am-ruler span { flex: 1; display: flex; align-items: center; justify-content: center; }
+.am-ruler--top, .am-ruler--bottom { left: 18px; right: 18px; height: 18px; }
+.am-ruler--top { top: 0; }
+.am-ruler--bottom { bottom: 0; }
+.am-ruler--left, .am-ruler--right { top: 18px; bottom: 18px; width: 18px; flex-direction: column; }
+.am-ruler--left { left: 0; }
+.am-ruler--right { right: 0; }
+.am-ruler--top span + span, .am-ruler--bottom span + span { border-left: 1px solid var(--line); }
+.am-ruler--left span + span, .am-ruler--right span + span { border-top: 1px solid var(--line); }
+
+/* ── 面板 ───────────────────────────────── */
+.am-panel {
+  background: var(--paper); border: var(--bw) solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); min-width: 0; overflow: hidden;
+}
+.am-panel-head {
+  display: flex; align-items: stretch; gap: 0; border-bottom: var(--bw) solid var(--line); min-height: 34px;
+}
+.am-panel-id {
+  display: flex; align-items: center; justify-content: center; min-width: 34px; padding: 0 8px;
+  background: var(--head-bg); color: var(--head-fg); font-weight: 600; font-size: 14px;
+}
+html[data-theme="shadcn"] .am-panel-id { border-radius: 6px; min-width: 24px; height: 24px; margin: 9px 0 9px 14px; font-size: 12px; }
+html[data-theme="shadcn"] .am-panel-head { border-bottom-width: 1px; }
+.am-panel-head h2 { margin: 0; padding: 7px 12px; font-size: 15px; font-weight: 600; flex: 1; display: flex; align-items: center; }
+.am-panel-meta { align-self: center; padding: 0 12px; font: 11px/1.3 var(--font-mono); color: var(--ink-2); text-align: right; }
+.am-panel-body { padding: 14px 16px 16px; }
+.am-panel-body > * + * { margin-top: 12px; }
+
+/* ── Markdown 正文 ───────────────────────── */
+.am-md > :first-child { margin-top: 0; }
+.am-md > :last-child { margin-bottom: 0; }
+.am-md p { margin: 0 0 8px; }
+.am-md ul, .am-md ol { margin: 0 0 8px; padding-left: 20px; }
+.am-md li + li { margin-top: 3px; }
+.am-md h3, .am-md h4 { margin: 14px 0 6px; font-size: 13px; }
+.am-md a { color: var(--accent); }
+.am-md blockquote { margin: 0 0 8px; padding: 2px 12px; border-left: 3px solid var(--line-2); color: var(--ink-2); }
+.am-md :not(pre) > code { font-size: 0.9em; background: var(--fill); padding: 1px 5px; border-radius: 4px; }
+.am-md hr { border: 0; border-top: 1px solid var(--line-2); margin: 12px 0; }
+.am-md table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.am-md th {
+  text-align: left; font: 11px/1.3 var(--font-mono); color: var(--ink-2); font-weight: 400;
+  padding: 6px 10px; border-bottom: 1px solid var(--line-2);
+}
+.am-md td { padding: 7px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.am-md tbody tr:nth-child(even) td { background: var(--fill); }
+.am-table-wrap { overflow-x: auto; }
+.am-code {
+  margin: 0; padding: 12px 14px; background: var(--fill); border: 1px solid var(--line-2);
+  border-radius: var(--radius); overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+}
+
+/* ── 状态徽章 ok / no / warn ──────────────── */
+.am-status { white-space: nowrap; font-weight: 500; }
+.am-status--ok { color: var(--ok); }
+.am-status--no { color: var(--err); }
+.am-status--warn { color: var(--warn); }
+.am-status-icon { display: inline-block; width: 1.1em; font-weight: 700; }
+
+/* ── callout ─────────────────────────────── */
+.am-callout {
+  border: 1px solid var(--line-2); border-left: 3px solid var(--accent); background: var(--accent-bg);
+  padding: 10px 14px; border-radius: var(--radius);
+}
+.am-callout--ok { border-left-color: var(--ok); background: var(--ok-bg); }
+.am-callout--warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.am-callout--err { border-left-color: var(--err); background: var(--err-bg); }
+.am-callout-title { font-weight: 600; margin-bottom: 4px; }
+
+/* ── kv 标题栏格 ─────────────────────────── */
+.am-kv {
+  display: grid; grid-template-columns: repeat(var(--kv-cols, 2), minmax(0, 1fr)); margin: 0;
+  border-top: var(--bw) solid var(--line); border-left: var(--bw) solid var(--line);
+}
+.am-kv-cell { border-right: var(--bw) solid var(--line); border-bottom: var(--bw) solid var(--line); padding: 6px 10px 8px; min-width: 0; }
+.am-kv-cell--wide { grid-column: 1 / -1; }
+.am-kv dt { font: 11px/1.4 var(--font-mono); color: var(--ink-2); }
+.am-kv dd { margin: 2px 0 0; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.am-kv-cell--wide dd { font-size: 17px; font-weight: 600; }
+html[data-theme="shadcn"] .am-kv { border-color: var(--line); border-radius: var(--radius); overflow: hidden; }
+
+/* ── timeline ────────────────────────────── */
+.am-timeline { list-style: none; margin: 0; padding: 0; }
+.am-timeline--h { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); padding-top: 4px; }
+.am-timeline--h li { position: relative; text-align: center; padding: 0 6px; }
+.am-timeline--h li::before {
+  content: ""; position: absolute; top: 31px; left: 0; right: 0; border-top: var(--bw) solid var(--line);
+}
+.am-timeline--h li:first-child::before { left: 50%; }
+.am-timeline--h li:last-child::before { right: 50%; }
+.am-tl-when { display: block; font-size: 15px; font-weight: 500; height: 24px; }
+.am-tl-dot {
+  position: relative; display: block; width: 11px; height: 11px; margin: 2px auto 8px;
+  border: var(--bw) solid var(--line); border-radius: 50%; background: var(--paper);
+}
+.am-tl-item--hi .am-tl-dot { background: var(--accent); border-color: var(--accent); }
+.am-tl-title { display: block; font-size: 12.5px; font-weight: 500; }
+.am-tl-text { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.45; }
+.am-timeline--v li { position: relative; padding: 0 0 14px 22px; }
+.am-timeline--v li::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: -6px; border-left: var(--bw) solid var(--line-2); }
+.am-timeline--v li:last-child::before { display: none; }
+.am-timeline--v .am-tl-dot { position: absolute; left: 0; top: 4px; margin: 0; }
+.am-timeline--v .am-tl-when { display: inline; height: auto; font: 12px var(--font-mono); color: var(--ink-2); margin-right: 8px; }
+.am-timeline--v .am-tl-title { display: inline; font-size: 14px; }
+.am-timeline--v .am-tl-text { margin-top: 2px; }
+
+/* ── annot 句子标注 ──────────────────────── */
+.am-annot + .am-annot { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.am-annot-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.am-annot-meta { font: 11px var(--font-mono); font-weight: 400; color: var(--ink-2); }
+.am-annot-scroll { overflow-x: auto; }
+.am-annot-line {
+  position: relative; display: inline-block; white-space: pre; font: 14px/1.6 var(--font-mono);
+  padding-bottom: calc(var(--rows, 0) * 17px + 14px);
+}
+.am-annot-line--wrap { display: block; white-space: normal; padding-bottom: 10px; }
+.am-annot-line--wrap .am-seg { white-space: nowrap; }
+.am-seg { position: relative; }
+.am-seg::after {
+  content: ""; position: absolute; left: 1px; right: 1px; top: calc(100% + 1px); height: 5px;
+  border: 1px solid var(--accent); border-top: 0;
+}
+.am-seg-n {
+  position: absolute; left: 0; top: calc(100% + 8px + var(--row, 0) * 17px);
+  font: 11px/16px var(--font-sans); color: var(--accent); white-space: nowrap;
+}
+.am-seg--err { color: var(--err); }
+.am-seg--err::after { border-color: var(--err); }
+.am-seg--err .am-seg-n { color: var(--err); }
+.am-annot-caption { font-size: 12px; color: var(--ink-2); }
+
+/* ── limits 限值条 ───────────────────────── */
+.am-lim + .am-lim { margin-top: 14px; }
+.am-lim-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; margin-bottom: 4px; }
+.am-lim-val { font: 12px var(--font-mono); color: var(--accent); white-space: nowrap; }
+.am-lim-track { position: relative; height: 12px; border: 1px solid var(--line-2); background: var(--fill); border-radius: calc(var(--radius) / 2); }
+.am-lim-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-bg); border-right: 1px solid var(--accent); }
+.am-lim-mark { position: absolute; top: -4px; bottom: -4px; border-left: 2px solid var(--accent); }
+.am-lim.is-over .am-lim-fill { background: var(--err-bg); border-right-color: var(--err); }
+.am-lim.is-over .am-lim-val { color: var(--err); }
+.am-lim-ticks { position: relative; height: 16px; font: 10px/16px var(--font-mono); color: var(--ink-3); }
+.am-lim-ticks span { position: absolute; transform: translateX(-50%); }
+.am-lim-ticks span:first-child { transform: none; }
+.am-lim-note { font-size: 11px; color: var(--ink-2); margin-left: 6px; }
+
+/* ── tree 结构树 ─────────────────────────── */
+.am-tree { font-size: 13px; }
+.am-tree-root { display: flex; justify-content: center; position: relative; padding-bottom: 18px; }
+.am-tree-root::after { content: ""; position: absolute; bottom: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-root--solo { padding-bottom: 12px; }
+.am-tree-root--solo::after { display: none; }
+.am-tree-box {
+  border: var(--bw) solid var(--line); background: var(--paper); padding: 6px 14px; text-align: center;
+  border-radius: var(--radius); font-weight: 600;
+}
+.am-tree-box small { display: block; font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.am-tree-box--root { background: var(--accent-bg); font-size: 15px; padding: 8px 28px; }
+.am-tree-cols { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
+.am-tree-col { position: relative; padding: 18px 8px 0; min-width: 0; }
+.am-tree-col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; border-top: var(--bw) solid var(--line); }
+.am-tree-col:first-child::before { left: 50%; }
+.am-tree-col:last-child::before { right: 50%; }
+.am-tree-col::after { content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-list, .am-tree-list ul { list-style: none; margin: 0; padding: 0; }
+.am-tree-col > .am-tree-list { margin: 8px 0 0 14px; }
+.am-tree-list ul { margin-left: 16px; }
+.am-tree-list li { position: relative; padding: 3px 0 3px 18px; }
+.am-tree-list li::before { content: ""; position: absolute; left: 0; top: 0.95em; width: 12px; border-top: 1px solid var(--ink-3); }
+.am-tree-list li::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--ink-3); }
+.am-tree-list li:last-child::after { bottom: auto; height: 0.95em; }
+.am-tree-tag { font: 11px var(--font-mono); color: var(--ink-3); margin-right: 4px; }
+.am-tree code { font: 12px var(--font-mono); }
+.am-tree-sub { display: block; font-size: 11.5px; color: var(--ink-2); }
+.am-tree-hi > .am-tree-label { color: var(--accent); font-weight: 600; }
+
+/* ── 图（flow / sequence）───────────────── */
+.am-diagram { margin: 0; overflow-x: auto; text-align: center; }
+.am-diagram svg { max-width: 100%; height: auto; font-family: var(--font-sans); }
+.am-diagram text { fill: var(--ink); font-size: 13px; }
+.am-node-shape { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-node--hi .am-node-shape { fill: var(--accent-bg); stroke: var(--accent); }
+.am-node--hi text { fill: var(--accent); font-weight: 600; }
+.am-edge { fill: none; stroke: var(--ink-2); stroke-width: 1.3; }
+.am-edge--dashed { stroke-dasharray: 5 4; }
+.am-arrow { fill: var(--ink-2); }
+.am-edge-label rect { fill: var(--paper); }
+.am-diagram .am-edge-label text { fill: var(--accent); font-size: 11.5px; }
+.am-cluster { fill: var(--fill); stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 4 3; }
+.am-diagram .am-cluster-label { fill: var(--ink-2); font: 11px var(--font-mono); }
+.am-lifeline { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 4 4; }
+.am-actor { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-note { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 1; }
+.am-diagram .am-step { fill: var(--ink-3); font: 10px var(--font-mono); }
+
+/* ── doc 线性讲解 ────────────────────────── */
+.am-doc { max-width: 1120px; margin: 0 auto; padding: 40px 28px 64px; }
+.am-doc-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
+.am-doc-layout--notoc { grid-template-columns: minmax(0, 1fr); max-width: 860px; }
+.am-toc { position: sticky; top: 24px; font-size: 13px; }
+.am-toc a { display: block; color: var(--ink-2); text-decoration: none; padding: 4px 0 4px 10px; border-left: 2px solid var(--line-2); }
+.am-toc a:hover { color: var(--ink); border-left-color: var(--accent); }
+.am-doc-body > .am-panel + .am-panel { margin-top: 20px; }
+
+/* ── 响应式与打印 ─────────────────────────── */
+@media (max-width: 1100px) {
+  .am-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .am-grid > .am-panel { grid-column: auto !important; }
+  .am-grid > .am-panel.am-span-wide { grid-column: 1 / -1 !important; }
+}
+@media (max-width: 760px) {
+  .am-sheet, .am-doc { padding: 56px 12px 24px; }
+  .am-head { padding-right: 0; }
+  .am-grid { grid-template-columns: minmax(0, 1fr); }
+  .am-grid > .am-panel.am-span-wide { grid-column: auto !important; }
+  html[data-theme="blueprint"] .am-frame { padding: 0; border: 0; }
+  html[data-theme="blueprint"] .am-frame::before, html[data-theme="blueprint"] .am-ruler { display: none; }
+  .am-doc-layout { grid-template-columns: minmax(0, 1fr); }
+  .am-toc { position: static; }
+  .am-timeline--h { grid-template-columns: minmax(0, 1fr); }
+  .am-tree-cols { grid-template-columns: minmax(0, 1fr); }
+}
+.am-colophon { text-align: center; padding: 0 0 28px; font: 11px var(--font-mono); color: var(--ink-3); }
+
+@media print {
+  .am-toolbar { display: none; }
+  body { background: var(--paper); }
+  .am-panel { break-inside: avoid; box-shadow: none; }
+}
+.am-panel--bare { border: 0; background: transparent; box-shadow: none; }
+.am-panel--bare > .am-panel-body { padding: 0; }
+.am-panel--bare .am-kv { background: var(--paper); }
+
+</style>
+</head>
+<body>
+<div class="am-toolbar">
+<button class="am-btn" type="button" data-am="theme" data-labels="{&quot;blueprint&quot;:&quot;主题：图纸&quot;,&quot;shadcn&quot;:&quot;主题：卡片&quot;}">主题：图纸</button>
+<button class="am-btn" type="button" data-am="mode" data-labels="{&quot;auto&quot;:&quot;明暗：跟随系统&quot;,&quot;light&quot;:&quot;明暗：亮&quot;,&quot;dark&quot;:&quot;明暗：暗&quot;}">明暗：跟随系统</button>
+<button class="am-btn" type="button" data-am="copy" data-done="已复制 ✓">复制源稿</button>
+</div>
+<main class="am-doc">
+<header class="am-head"><h1>Ticket01：Main Router / Sub Router 实施方案</h1><p class="am-sub">真实冷请求、统一分配、显式释放与双机启动</p><div class="am-head-meta"><span><b>date</b>2026-10-23</span><span><b>status</b>实施提案；尚未实现</span><span><b>baseline</b>3883624810 + 当前工作区</span></div><div class="am-intro am-md"><div class="am-md"><p>目标是让一个 Main Router 管请求全程，由两侧 Sub Router 执行真实资源操作。
+Main Router 是独立 Python 进程。SR_P、SR_D 随推理服务加载。
+每侧 TP rank 0 负责协调，每个 worker 保留自己的执行分片。</p>
+<p>本文细化 <a href="issues/01-cold-request-lifecycle.md">ticket01</a>。功能范围以 <a href="spec.md">spec</a> 为准。
+下文新增文件名、接口和命令均为拟定方案，当前不能按这些新命令启动。
+现有代码事实与新增设计分别标明；本轮只形成方案。</p>
+<p>本方案是 syncfile 所定义的 <strong>sparse 阶段 0 的首个切片</strong>。
+私有副本和 alive 整槽分配是阶段 0 的临时后端约束。
+整体目标继续包含 K1 共享及后续阶段，见<a href="target-alignment.md">目标对齐核对</a>。
+阶段 0 / L0 后接 K1，再推进阶段 1；四票结束不代表共享已完成。</p>
+</div></div></header>
+<div class="am-doc-layout">
+<nav class="am-toc" aria-label="目录"><a href="#panel-A">A · 进程如何部署</a><a href="#panel-B">B · Main Router 的实现</a><a href="#panel-C">C · Sub Router 的实现</a><a href="#panel-D">D · 一个冷请求如何走完</a><a href="#panel-E">E · 怎样接入现有代码</a><a href="#panel-F">F · 实现完成后如何启动</a><a href="#panel-G">G · 怎样证明方案实现正确</a><a href="#panel-H">H · 实施顺序与代码依据</a></nav><div class="am-doc-body">
+<section class="am-panel" id="panel-A">
+<header class="am-panel-head"><span class="am-panel-id">A</span><h2>进程如何部署</h2></header>
+<div class="am-panel-body"><figure class="am-diagram am-flow"><svg viewBox="0 0 1218 330" width="1218" height="330" role="img" aria-label="流程图：客户端、MainRouter、SR_P、SR_D、P_workers、D_workers" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am1-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><g><rect class="am-cluster" x="236.5" y="26" width="670.9" height="137.3" rx="4"/><text class="am-cluster-label" x="244.5" y="40">P机器</text><rect class="am-cluster" x="768.7" y="183.3" width="434.9" height="120.8" rx="4"/><text class="am-cluster-label" x="776.7" y="197.3">D机器</text></g><g><g data-step="0"><path class="am-edge" d="M81,98.8 L119.9,98.8 Q158.8,98.8 197.6,98.8 Q236.5,98.8 248,98.8 L259.5,98.8" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="105" y="89.8" width="107.5" height="18" rx="3"/><text x="158.8" y="98.8" text-anchor="middle" dominant-baseline="central">token IDs / HTTP</text></g></g><g data-step="1"><path class="am-edge" d="M356.4,88.1 L393.9,79.8 Q431.4,71.5 487.5,71.5 L543.7,71.5" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="380.4" y="62.5" width="102" height="18" rx="3"/><text x="431.4" y="71.5" text-anchor="middle" dominant-baseline="central">分配、绑定、释放</text></g></g><g data-step="2"><path class="am-edge" d="M356.4,109.4 L393.9,117.7 Q431.4,126 503.5,126 Q575.7,126 641.2,126 Q706.8,126 737.8,126 Q768.7,126 798.8,183.5 L828.9,241" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="507.4" y="117" width="136.5" height="18" rx="3"/><text x="575.7" y="126" text-anchor="middle" dominant-baseline="central">分配、绑定、就绪、释放</text></g></g><g data-step="3"><path class="am-edge" d="M607.7,71.5 L657.2,71.5 Q706.8,71.5 737.8,71.5 Q768.7,71.5 780.2,71.5 L791.7,71.5" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="668.9" y="62.5" width="75.8" height="18" rx="3"/><text x="706.8" y="71.5" text-anchor="middle" dominant-baseline="central">有序 TP tick</text></g></g><g data-step="4"><path class="am-edge" d="M870.1,258.5 L888.8,258.5 Q907.4,258.5 952,258.5 Q996.5,258.5 1041,252.3 L1085.5,246.1" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="958.6" y="249.5" width="75.8" height="18" rx="3"/><text x="996.5" y="258.5" text-anchor="middle" dominant-baseline="central">有序 TP tick</text></g></g><g data-step="5"><path class="am-edge" d="M884.4,71.5 L895.9,71.5 Q907.4,71.5 952,146 Q996.5,220.5 1041,226.7 L1085.5,232.9" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="931.4" y="211.5" width="130.1" height="18" rx="3"/><text x="996.5" y="220.5" text-anchor="middle" dominant-baseline="central">原生 Index K / handoff</text></g></g></g><g><g class="am-node am-node--rect" data-key="客户端" data-step="0"><rect class="am-node-shape" x="14" y="81.3" width="67" height="35" rx="3"/><text x="47.5" y="98.8" text-anchor="middle" dominant-baseline="central">客户端</text></g><g class="am-node am-node--rect" data-key="MainRouter" data-step="0"><rect class="am-node-shape" x="259.5" y="81.3" width="96.9" height="35" rx="3"/><text x="308" y="98.8" text-anchor="middle" dominant-baseline="central">MainRouter</text></g><g class="am-node am-node--rect" data-key="SR_P" data-step="1"><rect class="am-node-shape" x="543.7" y="54" width="64" height="35" rx="3"/><text x="575.7" y="71.5" text-anchor="middle" dominant-baseline="central">SR_P</text></g><g class="am-node am-node--rect" data-key="SR_D" data-step="2"><rect class="am-node-shape" x="806" y="241" width="64.1" height="35" rx="3"/><text x="838.1" y="258.5" text-anchor="middle" dominant-baseline="central">SR_D</text></g><g class="am-node am-node--rect" data-key="P_workers" data-step="3"><rect class="am-node-shape" x="791.7" y="54" width="92.7" height="35" rx="3"/><text x="838.1" y="71.5" text-anchor="middle" dominant-baseline="central">P_workers</text></g><g class="am-node am-node--rect" data-key="D_workers" data-step="4"><rect class="am-node-shape" x="1085.5" y="222" width="95.1" height="35" rx="3"/><text x="1133" y="239.5" text-anchor="middle" dominant-baseline="central">D_workers</text></g></g></svg></figure>
+<div class="am-md"><p>图中的 SR_P、SR_D 是逻辑角色。它们各自的协调者位于 rank 0 scheduler 内。
+每个 rank 都有 SR 分片，包括 rank 0；分片与本 rank 的模型执行共进程。
+Main Router 默认放 P 机，使用 CPU，不分配模型权重或 NPU KV。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>进程或模块</th>
+<th>数量 / 位置</th>
+<th>负责什么</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Main Router</td>
+<td>P 机独立进程 1 个</td>
+<td>HTTP 入口、注册、容量账本、请求编排、结果返回</td>
+</tr>
+<tr>
+<td>P 推理实例</td>
+<td>P 机，TP16</td>
+<td>原生 HTTP / tokenizer / scheduler 和 prefill</td>
+</tr>
+<tr>
+<td>SR_P 协调者</td>
+<td>P 的 rank 0 scheduler 内</td>
+<td>分配 P alive、汇总 P 完成、确认释放</td>
+</tr>
+<tr>
+<td>SR_P 分片</td>
+<td>P 的每个 worker 内</td>
+<td>本地映射、描述符校验、写回完成与原生清理</td>
+</tr>
+<tr>
+<td>D 推理实例</td>
+<td>D 机，TP16</td>
+<td>原生请求接收、Index K 接收和 decode</td>
+</tr>
+<tr>
+<td>SR_D 协调者</td>
+<td>D 的 rank 0 scheduler 内</td>
+<td>分配 D 资源、安装两侧绑定、汇总 finished</td>
+</tr>
+<tr>
+<td>SR_D 分片</td>
+<td>D 的每个 worker 内</td>
+<td>解析本 rank 的 P/D 描述符、取数和 drain</td>
+</tr>
+</tbody></table></div>
+<p><strong>拟定的三条通信路径</strong></p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>路径</th>
+<th>传输方式</th>
+<th>内容与约束</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Main Router ↔ SR 协调者</td>
+<td>新增 ZMQ ROUTER / DEALER</td>
+<td>结构化控制消息；只发小型元数据和 token IDs</td>
+</tr>
+<tr>
+<td>Main Router → P/D 原生 HTTP</td>
+<td>复用 <code>/generate</code></td>
+<td>创建原生 Req，保留 tokenizer / 输出返回路径</td>
+</tr>
+<tr>
+<td>P_i ↔ D_i</td>
+<td>复用 Ascend PD 连接与设备映射</td>
+<td>Index K、handoff、目标页索引；主 KV 从 mempool 读取</td>
+</tr>
+</tbody></table></div>
+<p>Main Router 只向每侧 rank 0 发控制消息。
+网络线程拥有自己的 ZMQ socket，收发均通过有界队列。
+它不调用 NPU，不修改 allocator，也不调用 TP collective。</p>
+<p>HTTP 请求必须匹配 SR 已确认的 dispatch。
+在进入原生 P/D 队列前检查 rid、room、输入和采样参数。
+因此直接访问后端 HTTP 也不能绕过统一分配和串行门。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-B">
+<header class="am-panel-head"><span class="am-panel-id">B</span><h2>Main Router 的实现</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>拟新增 <code>mempool_router.py</code>，提供可启动的 Python 入口。
+使用单进程、单事件循环；HTTP 和 SR 消息都交给同一请求控制逻辑。
+拟采用仓库已使用的 aiohttp 与 pyzmq。
+不把请求状态分散到多个 Web worker，也不引入外部数据库。</p>
+<p><strong>对外接口</strong></p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>接口</th>
+<th>拟定行为</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST /generate</code></td>
+<td>接收一个 token IDs 请求；首版使用 <code>stream=false</code></td>
+</tr>
+<tr>
+<td><code>GET /health</code></td>
+<td>仅表示 Router 进程存活</td>
+</tr>
+<tr>
+<td><code>GET /ready</code></td>
+<td>检查两侧注册、实际能力、TP 完整性及配对握手</td>
+</tr>
+<tr>
+<td><code>GET /status</code></td>
+<td>返回当前请求阶段、可用配额、待确认操作和故障原因</td>
+</tr>
+</tbody></table></div>
+<p><code>/ready</code> 为 200 不代表当前空闲；第二个请求还要通过串行门。
+首版忙时返回 429，不建立等待队列。
+输入非法返回明确的 4xx；已知容量不足在分配前拒绝。
+这些拒绝均不修改账本、目录和分配状态。</p>
+<p><strong>五项核心职责</strong></p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>职责</th>
+<th>具体做法</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>注册与兼容检查</td>
+<td>核对模型/布局身份、TP/DP/PP、rank 集合、页大小、池容量与会话</td>
+</tr>
+<tr>
+<td>入口与 reserve</td>
+<td>校验输入后，一次预留四类资源；整槽计费</td>
+</tr>
+<tr>
+<td>请求编排</td>
+<td>分配 rid、room、op_id；依次驱动 alloc、dispatch、ready 和 free</td>
+</tr>
+<tr>
+<td>完成与账本</td>
+<td>只根据实际完成回执更新资源；重复回执只生效一次</td>
+</tr>
+<tr>
+<td>串行与 fail-stop</td>
+<td>上一请求全部归还后才接收下一请求；内部失败停止本轮</td>
+</tr>
+</tbody></table></div>
+<p>注册包括实际 <code>hbm_page_size</code>、S_P/S_D、槽数、Index K HBM 页容量和请求行容量。
+还包括各类副本数、rank → NUMA、P 静态 prompt 上限和功能开关。
+多 rank 的容量按共同可满足的配额计算，不能把副本容量相加。
+ticket01 将 P alive Index K DRAM 和 prefix 标记为未启用，容量为零。</p>
+<p>输入要求沿用规格：token IDs、greedy、单请求、单 chunk、B-token 对齐。
+还要检查词表范围、实际上下文上限和双方采样配置。
+拒绝不支持的文本、批量输入、logprob、LoRA、多模态和自定义生成方式。</p>
+<p><strong>一次 reserve 的四项资源</strong></p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>资源</th>
+<th>记账单位</th>
+<th>4096 输入 / 最多 128 输出时</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>P alive</td>
+<td>一整个 S_P 槽</td>
+<td>1 槽，额度为 8192 / B = 64 页</td>
+</tr>
+<tr>
+<td>D alive</td>
+<td>一整个 S_D 槽</td>
+<td>1 槽，额度为 128 / B = 1 页</td>
+</tr>
+<tr>
+<td>D Index K HBM</td>
+<td>原生 HBM 页</td>
+<td>ceil((4096 + 128) / 128) = 33 页</td>
+</tr>
+<tr>
+<td>D 原生请求行</td>
+<td>行</td>
+<td>1 行</td>
+</tr>
+</tbody></table></div>
+<p>四项 reserve 在 Router 内作为一次状态变更完成。
+Router 管额度，SR 管实际编号和分配结果。
+Router 不再维护另一份可以自行挑选物理槽的 free list。
+P 原生 HBM 用静态上限保证，不加入上述四项账本。</p>
+<p><strong>保留的状态</strong></p>
+<p>下面给出拟实现的记录形状，便于核对数据归属。
+字段名是说明用的草案；序列化类型在实现时确定。
+这些记录放在 Main 的 CPU 内存中，主 KV 字节留在 worker 管理的池中。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>记录</th>
+<th>索引与主要字段</th>
+<th>何时改变</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>注册表</td>
+<td>按实例会话索引；role、rank 集合、model/layout 身份、容量、能力开关</td>
+<td>启动注册；身份不兼容则不 ready</td>
+</tr>
+<tr>
+<td>请求表</td>
+<td>按 rid 索引；room、attempt、input_ids、max_new_tokens、phase、两侧页表、ready_tokens</td>
+<td>从接收请求保留到释放完成</td>
+</tr>
+<tr>
+<td>操作表</td>
+<td>按 op_id 索引；rid、kind、目标侧、预期回执、已完成标记</td>
+<td>发命令时建立；实际 ack 只确认一次</td>
+</tr>
+<tr>
+<td>资源账本</td>
+<td>按机器、attention group、资源种类索引；total、free、outstanding</td>
+<td>reserve 扣额度；实际归还后恢复</td>
+</tr>
+<tr>
+<td>活跃目录</td>
+<td>页哈希、parent_hash、位置列表、状态、owner hold</td>
+<td>分配后登记 writing；写完变 ready；回收后移除</td>
+</tr>
+</tbody></table></div>
+<p>账本每次转换都要满足 <code>total = free + outstanding</code>。
+<code>outstanding</code> 表示尚未实际归还的全部预留。
+alloc_ack 将预留关联到真实编号，不能再扣第二次额度。
+同一侧 16 个副本共同服务一个请求，容量按全组共同余量计算。</p>
+<p><strong>位置和页表怎么关联</strong></p>
+</div>
+<pre class="am-code"><code data-lang="text">Request[rid]
+  identity: room + attempt + P/D session
+  prompt_len / max_new_tokens / ready_tokens
+  P_page_table: 按请求内逻辑页顺序排列
+  D_page_table: 按生成段逻辑页顺序排列
+
+PageEntry（示意字段）
+  logical_page: 池内逻辑页编号
+  token_start / token_count
+  descriptors_by_kind:
+    main_kv: [replica_0_handle, ..., replica_15_handle]
+
+Directory[page_hash]
+  parent_hash
+  locations: [machine, pool, logical_page, state, owner_hold]</code></pre>
+<div class="am-md"><p>PageEntry 的位置可在分配后存在，此时数据仍可能是 writing。
+只有 ready 才表示对应有效范围已经可读。
+Main 发布位置时同时更新 ready_tokens，再通知 SR_D。
+未写入的槽尾只占容量，不作为有效内容发布。</p>
+<p>一个描述符列表代表同一逻辑页的多个物理副本。
+相同 token 页出现在另一池时，会产生另一条位置记录。
+目录跟踪内容与位置，页表按本请求的 token 顺序组织访问。</p>
+<p>页哈希沿用现有命名空间和链式哈希语义。
+首片的 <code>hit_len</code> 固定为零，仅跟踪当前请求的 alive 位置。
+不创建 prefix 数据区；请求结束后按依赖删除活跃位置。
+避免现在实现空的 load_back、fill 或 admit 执行器。</p>
+<p>正常请求阶段为：</p>
+<p><code>allocating → dispatching → prefilling → decoding → finished → freeing → done</code></p>
+<p>任一内部阶段可进入 <code>failed</code>。
+<code>finished</code> 不恢复 alive 容量；<code>done</code> 才打开下一请求的串行门。
+首版暂存 D 的 HTTP 结果，完成释放后再返回成功响应。
+HTTP 返回、P 完成以及最后一个输出 token，都不单独证明资源已归还。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-C">
+<header class="am-panel-head"><span class="am-panel-id">C</span><h2>Sub Router 的实现</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>拟新增 <code>mempool_subrouter.py</code>，由现有 <code>MempoolPDService</code> 接入。
+保留 scheduler 已有的调用入口，避免再加入第二条独立调度循环。
+SR 协调者负责决定本侧动作；分片负责执行与报告实际结果。</p>
+<p><strong>mempool 里的真实数据是什么</strong></p>
+<p>ticket01 的主 KV 使用现有 BM DRAM 池及 NPU 映射。
+按 GLM-5.2 几何，一份逻辑数据可以写成以下形状。
+这是地址布局说明；不会新建这样一个 CPU Tensor。</p>
+</div>
+<pre class="am-code"><code data-lang="text">P 主 KV：BF16 [78 层, 16 槽, 8192 token, 1 compact head, 576 维]
+D 主 KV：BF16 [78 层, 16 槽,  128 token, 1 compact head, 576 维]
+
+一个 rank 的主 KV 区域（layer-first）
+  layer 0: slot 0 的 token ... | slot 1 的 token ... | ... | slot 15
+  layer 1: slot 0 的 token ... | slot 1 的 token ... | ... | slot 15
+  ...
+  layer 77</code></pre>
+<div class="am-md"><p>每个 token、每层占 <code>576 × 2 = 1152</code> 字节。
+每层内一个槽的 token 连续存储，跨层通过 layer stride 定位。
+78 层有各自的主 KV；Indexer 共享 top-k 不会合并这些层。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>数据种类</th>
+<th>存放位置及形状</th>
+<th>ticket01 生命周期</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>P prompt 主 KV</td>
+<td>每个 P rank 的 BM DRAM；上述 P 布局</td>
+<td>P 写回后保留到显式 free</td>
+</tr>
+<tr>
+<td>D 生成主 KV</td>
+<td>每个 D rank 的 BM DRAM；上述 D 布局</td>
+<td>decode 逐步写入，drain 后等待 free</td>
+</tr>
+<tr>
+<td>P 原生主 KV</td>
+<td>原生 HBM 的 512／64 两部分缓冲</td>
+<td>写回、发送等依赖完成后可提前清理</td>
+</tr>
+<tr>
+<td>prompt Index K</td>
+<td>P 原生 HBM，经既有数据通道到 D HBM</td>
+<td>P 发送完成后可清理；D 保留到请求结束</td>
+</tr>
+<tr>
+<td>D 生成 Index K</td>
+<td>D 原生 HBM；21 个 producer 层，每 token 128 维 BF16</td>
+<td>与 prompt 共用本请求的预留索引范围</td>
+</tr>
+<tr>
+<td>P alive Index K DRAM</td>
+<td>本票未分配，能力未启用</td>
+<td>ticket02 接入</td>
+</tr>
+<tr>
+<td>prefix 主 KV／Index K</td>
+<td>本票未分配，能力未启用</td>
+<td>ticket02 接入保存，ticket03 接入命中</td>
+</tr>
+</tbody></table></div>
+<p>Index K 每层每 token 占 <code>128 × 2 = 256</code> 字节，没有独立 scale。
+主 KV 供 sparse attention 取数；Index K 供 indexer 选择 token 位置。
+两个结构的用途和就绪条件分别检查。</p>
+<p><strong>B-token 逻辑页、mempool 槽和原生 HBM 页</strong></p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>名称</th>
+<th>含义</th>
+<th>4096-token prompt 的例子</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>DRAM 逻辑页</td>
+<td>目录和页表的 B-token 单位</td>
+<td>prompt 有 32 个有效页</td>
+</tr>
+<tr>
+<td>P mempool 槽</td>
+<td>为一个请求保留的 S_P 容量</td>
+<td>整槽占 64 页额度；后 32 页尚未写入</td>
+</tr>
+<tr>
+<td>D mempool 槽</td>
+<td>为生成段保留的 S_D 容量</td>
+<td>整槽占 2 页额度；不再存一份 prompt</td>
+</tr>
+<tr>
+<td>原生 HBM 页</td>
+<td>原生 allocator 的单位，本次为 128 token</td>
+<td>最多 128 输出时预留 33 页</td>
+</tr>
+<tr>
+<td>req_pool_idx</td>
+<td>原生请求行编号</td>
+<td>用于索引 req_to_token；与 P/D 槽号独立</td>
+</tr>
+<tr>
+<td>Graph 行</td>
+<td>图捕获的 batch 行，可能包含 padding</td>
+<td>16 行 Graph 仍只允许 1 个真实请求</td>
+</tr>
+</tbody></table></div>
+<p>P 槽 <code>s</code> 对应逻辑页 <code>[s × (S_P/B), (s+1) × (S_P/B) - 1]</code>，本例为 <code>[64s, 64s+63]</code>。
+D 槽 <code>d</code> 对应逻辑页 <code>[2d, 2d + 1]</code>。
+请求内页序号 <code>j</code> 映射到该槽起始页加 <code>j</code>。
+这层页接口由整槽后端承载；本票不能把空闲槽尾分给另一请求。</p>
+<p>假设本次 P 槽为 2、D 槽为 5、D 原生请求行为 7。
+这三个编号分别来自各自的分配器，互相不要求相等。</p>
+</div>
+<pre class="am-code"><code data-lang="text">prompt_len = 4096
+全局 token 位置 4095 -&gt; P_i 的 slot 2，槽内位置 4095
+全局 token 位置 4096 -&gt; D_i 的 slot 5，槽内位置 0
+全局 token 位置 4097 -&gt; D_i 的 slot 5，槽内位置 1
+
+D 槽内位置 = 全局 token 位置 - prompt_len</code></pre>
+<div class="am-md"><p>后两行只在对应 token 已经过 decode forward 时有有效 KV。
+采样出一个输出 token，不表示该 token 的 KV 已经写入。
+因此生成上限、预留容量和实际有效 KV 长度必须分开记录。</p>
+<p><strong>每个 rank 持有哪些结构</strong></p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>结构</th>
+<th>关键字段或内容</th>
+<th>负责的事实</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>现有 KVLayout / PoolLayout</td>
+<td>layers、slots、tokens、heads、dim、dtype；P/D 布局与对齐</td>
+<td>布局、边界及字节偏移</td>
+</tr>
+<tr>
+<td>现有 MempoolKVManager / View</td>
+<td>BM handle、P/D bases、层视图</td>
+<td>实际映射和本进程可用的 NPU 地址</td>
+</tr>
+<tr>
+<td>现有 RequestIdentity</td>
+<td>room、attempt、p_session、d_session</td>
+<td>这是哪次请求尝试</td>
+</tr>
+<tr>
+<td>现有 SlotLease</td>
+<td>slot、generation、proof</td>
+<td>这是该槽的哪次占用</td>
+</tr>
+<tr>
+<td>现有 MempoolPDControl</td>
+<td>slot_owner、generation、请求记录</td>
+<td>分片唯一的槽所有权事实</td>
+</tr>
+<tr>
+<td>现有 KVRowBinding / Runtime</td>
+<td>req_pool_idx、slot、prompt_slot、prompt_tokens；绑定张量</td>
+<td>原生请求行如何访问两侧槽</td>
+</tr>
+<tr>
+<td>现有写回记录</td>
+<td>submitted、completed、设备事件、KVWriteReceipt</td>
+<td>提交了多少、真正完成了多少</td>
+</tr>
+<tr>
+<td>拟新增原生预留记录</td>
+<td>请求身份、原生行、实际页／token 索引、消费进度、清理状态</td>
+<td>D 的原生资源属于谁、是否已归还</td>
+</tr>
+</tbody></table></div>
+<p><code>SlotLease</code> 随槽复用推进 generation，旧租约不能操作新请求。
+session 防止上一轮进程的消息干扰本轮。
+attempt 隔离请求尝试；op_id 用于当前编排中的操作回执去重。
+这些身份各管一层，不用一个 rid 替代所有校验。</p>
+<p>现有 Runtime 保留稳定的设备绑定张量：
+<code>row_slot</code>、<code>row_prompt_slot</code>、<code>row_prompt_len</code>、<code>row_decode_len</code>。
+Graph replay 读取这些张量，绑定更新也需要正确的流依赖。
+原生行 0 用于 padding，不能分配给真实请求；mempool 槽 0 则是合法槽。</p>
+<p><strong>固定 16 槽会占多少 DRAM</strong></p>
+<p>以下按上述几何和当前 PoolLayout 的 1 GiB 对齐计算。
+BM 每侧贡献还包含 64 字节探针；列出的对齐值已计入探针。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>主 KV 区域</th>
+<th>每 rank 有效载荷</th>
+<th>每 rank 对齐后 BM 贡献</th>
+<th>16 个私有副本合计</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>P：16 × 8192 token</td>
+<td>10.96875 GiB</td>
+<td>11 GiB</td>
+<td>176 GiB</td>
+</tr>
+<tr>
+<td>D：16 × 128 token</td>
+<td>175.5 MiB</td>
+<td>1 GiB</td>
+<td>16 GiB</td>
+</tr>
+</tbody></table></div>
+<p>这些是布局算术，未包含模型、原生 HBM、SDK 及其他运行开销。
+启动仍须验证真实容量、NUMA 拓扑和映射可见性。
+BM 固定区域在启动时建立；请求 alloc 取得已建区域的槽租约。
+只有 1 个活跃请求，也仍按当前固定配置建 16 个槽。
+两个 rank 落在同一 NUMA 节点，仍各持有自己的物理副本。</p>
+<p><strong>每个 scheduler tick 的顺序</strong></p>
+<ol>
+<li>rank 0 取出有界控制命令。</li>
+<li>在 TP CPU group 中分发相同命令。</li>
+<li>各 rank 采集原生与设备完成事实。</li>
+<li>汇总事实，校验同一请求和操作。</li>
+<li>按固定顺序执行获准动作。</li>
+<li>汇总实际执行结果。</li>
+<li>rank 0 向 Main Router 发回执。</li>
+</ol>
+<p>空闲时也推进 tick，避免控制消息无人处理。
+任一 rank 失败或迟到，都不能被其他 rank 的成功覆盖。
+准备阶段的校验成功不等于执行成功；ack 在执行结果汇总后发送。
+设备操作提交返回也不等于完成，继续使用实际事件和 drain 证据。</p>
+<p><strong>SR_P</strong></p>
+<ul>
+<li>alloc 时选择本池编号最小的空闲 alive 槽。</li>
+<li>将同一个槽号安装到全部 P ranks。</li>
+<li>返回逻辑页表，每页包含各 rank 的不透明描述符。</li>
+<li>dispatch 时核对本请求身份、页表与完整输入。</li>
+<li>Req 进入后，复用原生 prefill 和 mempool 写回。</li>
+<li>汇总全部 rank 的主 KV 写回完成，报告 ready_tokens。</li>
+<li>原生发送完成后，可清理 P HBM 和请求行。</li>
+<li>保留 alive 租约及写回收据，直到显式 free。</li>
+</ul>
+<p><strong>SR_D</strong></p>
+<ul>
+<li>alloc 时选择 D alive 槽，并预留原生请求行与全部 Index K HBM 页。</li>
+<li>dispatch 时安装 P/D 两张页表，逐 rank 校验对应关系。</li>
+<li>本地分片将描述符解析为 runtime 所需的槽号和偏移。</li>
+<li>等待 Router ready、Index K 完成及 handoff，才允许首 token 和 decode。</li>
+<li>结束时停止提交，完成 drain，再清理原生资源。</li>
+<li>全部 rank 清理完成后汇总 finished。</li>
+<li>收到 free 后归还 D alive，汇总 free_ack。</li>
+</ul>
+<p><strong>页描述符与所有权</strong></p>
+<p>对外页表用逻辑位置及不透明描述符表示。
+描述符内编码池会话、rank、数据种类、slot lease 和槽内页位置。
+Router 只保存和转发，不从中计算设备地址。</p>
+<p>只有持有映射的分片解析地址；D_i 读取映射中的 P_i 副本。
+P 槽与 D 槽可以不同；原生 <code>req_pool_idx</code> 又是另一种编号。</p>
+<p>以上 D_i 读 P_i 是阶段 0 的副本对应关系。
+协议按数据种类保存描述符列表，不能把一 rank 一副本写成永久合同。
+K1 将 alive 主 KV 改为共享组映射，其他三类 DRAM 数据各一份。
+分片数量仍取决于 worker 数量；物理副本数独立注册。</p>
+<p>现有 <code>MempoolPDControl</code> 的租约记录作为每个分片的唯一槽所有权事实。
+SR 协调者从一致的所有权快照选择最小空闲槽。
+新增受控操作使用显式 slot、rid 和租约身份，不再触发自主 ACQUIRE。
+沿用已有 session、attempt、generation 校验，不增加故障恢复协议。</p>
+<p><strong>D 原生资源如何做到足额预留</strong></p>
+<p>这是需要新增的实质适配，不能只在 Router 账本上减 33。
+拟新增 <code>mempool_native_reservation.py</code>，封装本请求的原生资源预留。</p>
+<p>当前代码已有 <code>ReqToTokenPool.alloc_rows()</code>，允许在 Req 创建前取出原生请求行。
+页分配器已有 <code>alloc(need_size)</code>，参数单位是 token，且必须按整页对齐。
+预留 33 个 128-token 页时，应传入 <code>33 × 128 = 4224</code>。
+返回值是实际 token 索引；各页的物理编号不保证连续。</p>
+<p>SR_D 在 alloc 阶段调用这些接口，实际移走所需请求行和全部页。
+任一 rank 分配失败则进入 fail-stop，不发送成功 alloc_ack。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>时机</th>
+<th>预留适配的行为</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>alloc</td>
+<td>取出原生行和 ceil((prompt + max_new) / page_size) 页，保留实际索引</td>
+</tr>
+<tr>
+<td>原生 Req 到达</td>
+<td>将预留行绑定到 Req；原生 prealloc 使用已有的 prompt 索引</td>
+</tr>
+<tr>
+<td>每次 decode</td>
+<td>从本请求预留范围取得下一个真实 token 的索引</td>
+</tr>
+<tr>
+<td>原生内存检查</td>
+<td>检查本请求剩余预留，不能再用全局空闲量重复收费</td>
+</tr>
+<tr>
+<td>请求结束</td>
+<td>原生清理归还已使用页；预留适配归还尚未使用的整页</td>
+</tr>
+<tr>
+<td>finished</td>
+<td>全部 rank 的行、已用页和未用页均实际归还后确认</td>
+</tr>
+</tbody></table></div>
+<p>预留范围与“已写入有效 KV 的长度”分开记录。
+不能将 <code>kv_committed_len</code> 提前设为 prompt + max_new。
+保留普通 decode 对 <code>kv_allocated_len</code> 的现有含义。
+已转交原生生命周期的整页和未使用整页必须不相交。
+实际尾页的未用部分随其所属整页归还，不能两边各 free 一次。</p>
+<p>例如先向原生 prompt 路径提供前 4096 个预留索引。
+decode 每处理一个新 token，再消费后续对应索引。
+若提前 EOS，剩余索引中可能同时包含实际尾页的未用部分和未使用整页。
+清理按整页归属划分，不能把同一页拆成两份各自归还。</p>
+<p>该适配需要覆盖 prealloc、逐步取索引、容量检查和清理四处。
+仅在新 Router 模式生效；不以改长序列计数器替代真正的预留。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-D">
+<header class="am-panel-head"><span class="am-panel-id">D</span><h2>一个冷请求如何走完</h2></header>
+<div class="am-panel-body"><div class="am-md"><p><strong>拟定消息契约</strong></p>
+<p>请求消息携带版本、run_id、实例会话、rid、bootstrap_room 和操作身份。
+需要回执的操作使用单调 op_id。
+保留已有 request attempt 和 slot lease 身份，用于隔离迟到消息。
+run_id 用于本次部署关联，不代表支持恢复旧进程状态。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>消息</th>
+<th>方向</th>
+<th>成功语义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>register / register_ack</td>
+<td>SR ↔ Main</td>
+<td>全部 rank 的真实能力被接受</td>
+</tr>
+<tr>
+<td>alloc / alloc_ack</td>
+<td>Main ↔ SR_P、SR_D</td>
+<td>分片实际分配完成，返回页表和资源收据</td>
+</tr>
+<tr>
+<td>dispatch / dispatch_ack</td>
+<td>Main ↔ SR_P、SR_D</td>
+<td>完整绑定和预期输入已安装；允许匹配的原生 Req 进入</td>
+</tr>
+<tr>
+<td>ready_tokens</td>
+<td>SR_P → Main</td>
+<td>全部必要 rank 的 prompt 主 KV 已可读</td>
+</tr>
+<tr>
+<td>ready</td>
+<td>Main → SR_D</td>
+<td>Main 已发布该请求 prompt 的可读位置</td>
+</tr>
+<tr>
+<td>finished</td>
+<td>SR_D → Main</td>
+<td>全部读写结束，D 原生资源已实际清理</td>
+</tr>
+<tr>
+<td>free / free_ack</td>
+<td>Main ↔ SR_P、SR_D</td>
+<td>对应 alive 租约已实际归还</td>
+</tr>
+<tr>
+<td>error</td>
+<td>任一方 → Main</td>
+<td>冻结本轮，不再分配或发起新的 free</td>
+</tr>
+</tbody></table></div>
+<p><code>alloc_ack</code> 不表示可以计算；<code>dispatch_ack</code> 不表示 prompt 可读。
+两个 SR 都确认 dispatch 后，Main 才向原生 HTTP 发请求。
+HTTP 中的 rid、room、token IDs 和参数必须与 dispatch 一致。
+该步骤复用原生 Req 创建、bootstrap 和响应返回路径。</p>
+<p>P 原生队列会把 max_new_tokens 改为 1，用于自身内存估算。
+输入一致性检查在这次改写之前完成。
+SR 保留 Router 声明的生成上限，供 D 预留和跨侧绑定校验。</p>
+</div>
+<figure class="am-diagram am-seq"><svg viewBox="0 0 741 1070" width="741" height="1070" role="img" aria-label="时序图：Client、Main、SR_P、SR_D" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am2-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><line class="am-lifeline" x1="54" y1="42" x2="54" y2="1066"/><g data-key="Client"><rect class="am-actor" x="12" y="8" width="84" height="34" rx="2"/><text x="54" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">Client</text></g><line class="am-lifeline" x1="238.5" y1="42" x2="238.5" y2="1066"/><g data-key="Main"><rect class="am-actor" x="196.5" y="8" width="84" height="34" rx="2"/><text x="238.5" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">Main</text></g><line class="am-lifeline" x1="515.5" y1="42" x2="515.5" y2="1066"/><g data-key="SR_P"><rect class="am-actor" x="473.5" y="8" width="84" height="34" rx="2"/><text x="515.5" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">SR_P</text></g><line class="am-lifeline" x1="627.5" y1="42" x2="627.5" y2="1066"/><g data-key="SR_D"><rect class="am-actor" x="585.5" y="8" width="84" height="34" rx="2"/><text x="627.5" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">SR_D</text></g><g data-step="0"><text x="146.3" y="70" text-anchor="middle">token IDs，最多生成 128</text><path class="am-edge" d="M54,80 L236.5,80" marker-end="url(#am2-arrow)"/><text class="am-step" x="60" y="74" text-anchor="start">1</text></g><g data-step="1"><text x="278.5" y="108" dominant-baseline="central">校验，关闭串行门，预留四类资源</text><path class="am-edge" d="M238.5,104 H268.5 V124 H240.5" marker-end="url(#am2-arrow)"/><text class="am-step" x="244.5" y="114" text-anchor="start">2</text></g><g data-step="2"><text x="377" y="158" text-anchor="middle">alloc P alive</text><path class="am-edge" d="M238.5,168 L513.5,168" marker-end="url(#am2-arrow)"/><text class="am-step" x="244.5" y="162" text-anchor="start">3</text></g><g data-step="3"><text x="433" y="198" text-anchor="middle">alloc D alive、原生行、Index K 页</text><path class="am-edge" d="M238.5,208 L625.5,208" marker-end="url(#am2-arrow)"/><text class="am-step" x="244.5" y="202" text-anchor="start">4</text></g><g data-step="4"><text x="377" y="238" text-anchor="middle">alloc_ack + P 页表</text><path class="am-edge am-edge--dashed" d="M515.5,248 L240.5,248" marker-end="url(#am2-arrow)"/><text class="am-step" x="509.5" y="242" text-anchor="end">5</text></g><g data-step="5"><text x="433" y="278" text-anchor="middle">alloc_ack + D 页表</text><path class="am-edge am-edge--dashed" d="M627.5,288 L240.5,288" marker-end="url(#am2-arrow)"/><text class="am-step" x="621.5" y="282" text-anchor="end">6</text></g><g data-step="6"><text x="377" y="318" text-anchor="middle">dispatch 输入与 P 绑定</text><path class="am-edge" d="M238.5,328 L513.5,328" marker-end="url(#am2-arrow)"/><text class="am-step" x="244.5" y="322" text-anchor="start">7</text></g><g data-step="7"><text x="433" y="358" text-anchor="middle">dispatch 输入与 P/D 绑定</text><path class="am-edge" d="M238.5,368 L625.5,368" marker-end="url(#am2-arrow)"/><text class="am-step" x="244.5" y="362" text-anchor="start">8</text></g><g data-step="8"><text x="377" y="398" text-anchor="middle">dispatch_ack</text><path class="am-edge am-edge--dashed" d="M515.5,408 L240.5,408" marker-end="url(#am2-arrow)"/><text class="am-step" x="509.5" y="402" text-anchor="end">9</text></g><g data-step="9"><text x="433" y="438" text-anchor="middle">dispatch_ack</text><path class="am-edge am-edge--dashed" d="M627.5,448 L240.5,448" marker-end="url(#am2-arrow)"/><text class="am-step" x="621.5" y="442" text-anchor="end">10</text></g><g data-step="10"><rect class="am-note" x="218.5" y="472" width="429" height="44" rx="2"/><text x="433" y="486" text-anchor="middle" dominant-baseline="central" font-size="12">Main 并发调用两侧原生 HTTP，创建匹</text><text x="433" y="502" text-anchor="middle" dominant-baseline="central" font-size="12">配的 Req</text></g><g data-step="11"><rect class="am-note" x="455.6" y="532" width="231.9" height="44" rx="2"/><text x="571.5" y="546" text-anchor="middle" dominant-baseline="central" font-size="12">原生 bootstrap 与 Index K / handoff 传</text><text x="571.5" y="562" text-anchor="middle" dominant-baseline="central" font-size="12">输继续沿用</text></g><g data-step="12"><text x="377" y="598" text-anchor="middle">所有 rank 的 prompt ready_tokens</text><path class="am-edge am-edge--dashed" d="M515.5,608 L240.5,608" marker-end="url(#am2-arrow)"/><text class="am-step" x="509.5" y="602" text-anchor="end">11</text></g><g data-step="13"><text x="433" y="638" text-anchor="middle">ready</text><path class="am-edge" d="M238.5,648 L625.5,648" marker-end="url(#am2-arrow)"/><text class="am-step" x="244.5" y="642" text-anchor="start">12</text></g><g data-step="14"><rect class="am-note" x="526.6" y="672" width="201.9" height="44" rx="2"/><text x="627.5" y="686" text-anchor="middle" dominant-baseline="central" font-size="12">三个条件齐备后，输出首 token 并</text><text x="627.5" y="702" text-anchor="middle" dominant-baseline="central" font-size="12">decode</text></g><g data-step="15"><rect class="am-note" x="400.9" y="732" width="229.3" height="28" rx="2"/><text x="515.5" y="746" text-anchor="middle" dominant-baseline="central" font-size="12">原生 HBM 可提前释放，alive 继续保留</text></g><g data-step="16"><text x="433" y="782" text-anchor="middle">drain 和原生清理完成，finished</text><path class="am-edge am-edge--dashed" d="M627.5,792 L240.5,792" marker-end="url(#am2-arrow)"/><text class="am-step" x="621.5" y="786" text-anchor="end">13</text></g><g data-step="17"><text x="377" y="822" text-anchor="middle">free P alive</text><path class="am-edge" d="M238.5,832 L513.5,832" marker-end="url(#am2-arrow)"/><text class="am-step" x="244.5" y="826" text-anchor="start">14</text></g><g data-step="18"><text x="433" y="862" text-anchor="middle">free D alive</text><path class="am-edge" d="M238.5,872 L625.5,872" marker-end="url(#am2-arrow)"/><text class="am-step" x="244.5" y="866" text-anchor="start">15</text></g><g data-step="19"><text x="377" y="902" text-anchor="middle">实际 free_ack</text><path class="am-edge am-edge--dashed" d="M515.5,912 L240.5,912" marker-end="url(#am2-arrow)"/><text class="am-step" x="509.5" y="906" text-anchor="end">16</text></g><g data-step="20"><text x="433" y="942" text-anchor="middle">实际 free_ack</text><path class="am-edge am-edge--dashed" d="M627.5,952 L240.5,952" marker-end="url(#am2-arrow)"/><text class="am-step" x="621.5" y="946" text-anchor="end">17</text></g><g data-step="21"><text x="278.5" y="980" dominant-baseline="central">核对账本，打开串行门</text><path class="am-edge" d="M238.5,976 H268.5 V996 H240.5" marker-end="url(#am2-arrow)"/><text class="am-step" x="244.5" y="986" text-anchor="start">18</text></g><g data-step="22"><text x="146.3" y="1030" text-anchor="middle">完整输出 token IDs</text><path class="am-edge am-edge--dashed" d="M238.5,1040 L56,1040" marker-end="url(#am2-arrow)"/><text class="am-step" x="232.5" y="1034" text-anchor="end">19</text></g></svg></figure>
+<div class="am-md"><p><strong>D 的三个开始条件</strong></p>
+<p><code>Router ready AND 全部 rank Index K 完成 AND 全部 rank handoff 到达</code></p>
+<p>现有 transfer 成功与 <code>transfer_complete()</code> hook 可以继续承担原生条件。
+新的 Router ready 替代旧 KV_READY 对开始 decode 的授权。
+首 token 的 <code>_commit_transfer_to_req</code> 也必须位于此门控之后。</p>
+<p><strong>释放所需证据</strong></p>
+<p>P 的 free 还要确认自身写回、原生发送和本地原生资源清理已完成。
+D finished 是远端消费者结束的证据，不替代 P 本地条件。
+free 可先排队，但 free_ack 必须等条件全部成立。
+下一请求等待两侧 free_ack；不能只看 D HTTP 返回。</p>
+<p>提前 EOS 仍走完整清理，归还未使用的预留页。
+生成上限为 1 时可能没有 D decode forward，也仍要正确清理。
+硬件主验收要实际发生 decode 和 mempool 读取。</p>
+<p>重复 ack 只确认一次；内容冲突的同号消息触发失败。
+旧会话、旧 attempt 或旧 lease 的消息不能改变当前所有权。
+客户端断开不等于 drain，不能据此提前 free。
+主进程或 worker 故障后由运行入口协调终止本轮，不在进程内重试复用。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-E">
+<header class="am-panel-head"><span class="am-panel-id">E</span><h2>怎样接入现有代码</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>当前已有写回、两侧取数、Graph、bootstrap 和原生传输。
+新工作集中在控制编排、原生预留、入口门控及显式释放。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>拟新增文件</th>
+<th>承担的实现</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>python/sglang/srt/disaggregation/ascend/mempool_router.py</code></td>
+<td>HTTP / ZMQ 入口、Main Router 请求状态与账本</td>
+</tr>
+<tr>
+<td><code>python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py</code></td>
+<td>注册、命令、回执、逻辑页表的类型与校验</td>
+</tr>
+<tr>
+<td><code>python/sglang/srt/disaggregation/ascend/mempool_subrouter.py</code></td>
+<td>协调者、rank 分片和同侧完成汇总</td>
+</tr>
+<tr>
+<td><code>python/sglang/srt/disaggregation/ascend/mempool_native_reservation.py</code></td>
+<td>D 请求行、Index K 页的真实预留与消费</td>
+</tr>
+<tr>
+<td><code>ascend-mempool-test/scripts/run_mempool_min.sh</code> / <code>.py</code></td>
+<td>双机自运行启动、验收、收集与进程清理</td>
+</tr>
+<tr>
+<td><code>ascend-mempool-test/configs/mempool-min.example.json</code></td>
+<td>部署配置模板；实际环境必须核对</td>
+</tr>
+</tbody></table></div>
+<p>这些文件名是拟定落点，可随实现局部整理。
+不复制一个新的 attention backend 或两区域取数 kernel。</p>
+<p><strong>Decode 的 DRAM → HBM sparse 访问沿用什么</strong></p>
+<p>ticket01 沿用当前正式 mempool fetch：每层的 BM miss 路径调用两次 UniDexCopy。
+一次读取 P prompt DRAM，另一次读取 D 生成段 DRAM。
+两次调用使用同一条 miss stream，按 P、D 顺序提交。
+它们写入同一个 HBM selected_kv_buffer，目标位置由 top-k 列号确定。</p>
+</div>
+<figure class="am-diagram am-flow"><svg viewBox="0 0 1310 205" width="1310" height="205" role="img" aria-label="流程图：TopK位置、HBM槽表查询、HBM命中复制、P来源复制、D来源复制、selected_HBM、SparseAttention、HBM缓存回填" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am3-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><g></g><g><g data-step="0"><path class="am-edge" d="M100.2,102.5 L140.6,102.5 Q181,102.5 221.4,102.5 L261.7,102.5" marker-end="url(#am3-arrow)"/><g class="am-edge-label"><rect x="124.2" y="93.5" width="113.5" height="18" rx="3"/><text x="181" y="102.5" text-anchor="middle" dominant-baseline="central">校验绑定及有效长度</text></g></g><g data-step="1"><path class="am-edge" d="M351.4,120 L405.4,146.8 Q459.3,173.5 503.6,173.5 L548,173.5" marker-end="url(#am3-arrow)"/><g class="am-edge-label"><rect x="431.1" y="164.5" width="56.5" height="18" rx="3"/><text x="459.3" y="173.5" text-anchor="middle" dominant-baseline="central">hit mask</text></g></g><g data-step="2"><path class="am-edge" d="M370.6,102.5 L414.9,102.5 Q459.3,102.5 508.6,102.5 L558,102.5" marker-end="url(#am3-arrow)"/><g class="am-edge-label"><rect x="394.6" y="93.5" width="129.4" height="18" rx="3"/><text x="459.3" y="102.5" text-anchor="middle" dominant-baseline="central">miss 中的 prompt 位置</text></g></g><g data-step="3"><path class="am-edge" d="M351.4,85 L405.4,58.3 Q459.3,31.5 508,31.5 L556.8,31.5" marker-end="url(#am3-arrow)"/><g class="am-edge-label"><rect x="399.1" y="22.5" width="120.4" height="18" rx="3"/><text x="459.3" y="31.5" text-anchor="middle" dominant-baseline="central">miss 中的生成段位置</text></g></g><g data-step="4"><path class="am-edge" d="M656.8,173.5 L704.5,173.5 Q752.1,173.5 809.8,146.8 L867.6,120" marker-end="url(#am3-arrow)"/><g class="am-edge-label"><rect x="712.3" y="164.5" width="79.5" height="18" rx="3"/><text x="752.1" y="173.5" text-anchor="middle" dominant-baseline="central">HBM 到 HBM</text></g></g><g data-step="5"><path class="am-edge" d="M646.8,102.5 L699.4,102.5 Q752.1,102.5 799.7,102.5 L847.3,102.5" marker-end="url(#am3-arrow)"/><g class="am-edge-label"><rect x="681.9" y="93.5" width="140.4" height="18" rx="3"/><text x="752.1" y="102.5" text-anchor="middle" dominant-baseline="central">远端 P DRAM 到 D HBM</text></g></g><g data-step="6"><path class="am-edge" d="M648,31.5 L700,31.5 Q752.1,31.5 809.8,58.3 L867.6,85" marker-end="url(#am3-arrow)"/><g class="am-edge-label"><rect x="680.8" y="22.5" width="142.5" height="18" rx="3"/><text x="752.1" y="31.5" text-anchor="middle" dominant-baseline="central">本侧 D DRAM 到 D HBM</text></g></g><g data-step="7"><path class="am-edge" d="M963.5,115.2 L1015.3,126.6 Q1067.2,138 1119.1,138 L1171,138" marker-end="url(#am3-arrow)"/><g class="am-edge-label"><rect x="987.5" y="129" width="159.5" height="18" rx="3"/><text x="1067.2" y="138" text-anchor="middle" dominant-baseline="central">等待 hit_done 和 miss_done</text></g></g><g data-step="8"><path class="am-edge" d="M963.5,89.8 L1015.3,78.4 Q1067.2,67 1123,67 L1178.9,67" marker-end="url(#am3-arrow)"/><g class="am-edge-label"><rect x="1022" y="58" width="90.5" height="18" rx="3"/><text x="1067.2" y="67" text-anchor="middle" dominant-baseline="central">供后续步骤复用</text></g></g></g><g><g class="am-node am-node--rect" data-key="TopK位置" data-step="0"><rect class="am-node-shape" x="14" y="85" width="86.2" height="35" rx="3"/><text x="57.1" y="102.5" text-anchor="middle" dominant-baseline="central">TopK位置</text></g><g class="am-node am-node--rect" data-key="HBM槽表查询" data-step="0"><rect class="am-node-shape" x="261.7" y="85" width="108.9" height="35" rx="3"/><text x="316.2" y="102.5" text-anchor="middle" dominant-baseline="central">HBM槽表查询</text></g><g class="am-node am-node--rect" data-key="HBM命中复制" data-step="1"><rect class="am-node-shape" x="548" y="156" width="108.9" height="35" rx="3"/><text x="602.4" y="173.5" text-anchor="middle" dominant-baseline="central">HBM命中复制</text></g><g class="am-node am-node--rect" data-key="P来源复制" data-step="2"><rect class="am-node-shape" x="558" y="85" width="88.8" height="35" rx="3"/><text x="602.4" y="102.5" text-anchor="middle" dominant-baseline="central">P来源复制</text></g><g class="am-node am-node--rect" data-key="D来源复制" data-step="3"><rect class="am-node-shape" x="556.8" y="14" width="91.2" height="35" rx="3"/><text x="602.4" y="31.5" text-anchor="middle" dominant-baseline="central">D来源复制</text></g><g class="am-node am-node--rect" data-key="selected_HBM" data-step="4"><rect class="am-node-shape" x="847.3" y="85" width="116.1" height="35" rx="3"/><text x="905.4" y="102.5" text-anchor="middle" dominant-baseline="central">selected_HBM</text></g><g class="am-node am-node--rect" data-key="SparseAttention" data-step="7"><rect class="am-node-shape" x="1171" y="120.5" width="124.7" height="35" rx="3"/><text x="1233.3" y="138" text-anchor="middle" dominant-baseline="central">SparseAttention</text></g><g class="am-node am-node--rect" data-key="HBM缓存回填" data-step="8"><rect class="am-node-shape" x="1178.9" y="49.5" width="108.9" height="35" rx="3"/><text x="1233.3" y="67" text-anchor="middle" dominant-baseline="central">HBM缓存回填</text></g></g></svg></figure>
+<div class="am-md"><p>图表示数据来源；P／D 两路复制在同一 stream 内串行。
+HBM hit 路径使用独立 stream，可与 miss 路径重叠。
+每层的 selected buffer 形状为 <code>[batch_rows, topk_width, 1, 576]</code>，类型为 BF16。
+有效 top-k 比固定宽度短时，其余列使用无效 mask。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>来源</th>
+<th>选择条件</th>
+<th>层内源行索引</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>HBM sparse cache</td>
+<td>valid 且 cache hit</td>
+<td>使用 slot-map 返回的 cache 位置</td>
+</tr>
+<tr>
+<td>P prompt DRAM</td>
+<td>valid 且 miss，<code>0 ≤ pos &lt; prompt_len</code></td>
+<td><code>p_slot × S_P + pos</code></td>
+</tr>
+<tr>
+<td>D 生成段 DRAM</td>
+<td>valid 且 miss，<code>0 ≤ pos - prompt_len &lt; decode_len</code></td>
+<td><code>d_slot × S_D + pos - prompt_len</code></td>
+</tr>
+</tbody></table></div>
+<p>公共 valid mask 还限制本层真正已写入的范围。
+P/D 两个 mask 互斥，也与 hit mask 互斥，不会覆盖彼此的有效结果。
+每个被选中的主 KV token 搬运 1152 字节，不要求搬运整页 B 个 token。
+逻辑页用于分配和目录；当前 kernel 仍按 token 行索引取数。</p>
+<p>例如 prompt_len=4096，选中位置为 <code>[10, 4095, 4096]</code>。
+假设位置 10 已在 HBM cache，另外两项有效且 miss。
+hit 路径填第 0 列，P copy 填第 1 列，D copy 填第 2 列。</p>
+<p>两次 BM 调用都会保留，即使一侧没有有效项或全部 cache hit。
+此时相应 valid mask 全为 false，没有有效 KV 数据搬运。
+这样 Graph capture 保留固定的两路节点；replay 使用更新后的设备绑定和 mask。
+这里的“两次”限定于每层的 BM miss 分支。
+完整 decode 还包含主 KV 写回、HBM hit、refill 和 slot-map 更新等操作。</p>
+<p>当前实现先提交本层新 KV 到 D mempool 的写回，再记录 copy_ready。
+miss stream 等待 copy_ready，两次 BM copy 后记录 miss_done。
+attention 和 cache refill 都等待 hit_done 与 miss_done。
+本票继续沿用这套事件依赖；共享方案中的本步 KV 本地直供另属后续接入。</p>
+<p>Main/SR 在请求绑定时提供 P/D 槽和长度，推进 ready 与最终释放。
+每层取数由 worker 的 Runtime 和 sparse manager 在设备路径内完成。
+实际调用链为：
+<code>materialize_selected_kv → fetch_selected_kv → KVFetch.gather → SparseKVCopy.gather</code>。</p>
+<p>代码依据：<a href="../../python/sglang/srt/hardware_backend/npu/mempool/copy.py">两来源索引和 kernel 调用</a>、
+<a href="../../python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/manager.py">hit／miss／refill 事件</a>、
+<a href="../../python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/attention.py">attention 等待与消费</a>。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>现有位置</th>
+<th>当前行为</th>
+<th>拟修改</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>scheduler.py:1651</code></td>
+<td>创建 MempoolPDService</td>
+<td>按启动参数加载 SR，保留旧模式参考路径</td>
+</tr>
+<tr>
+<td><code>scheduler.py:2114</code></td>
+<td>每个 ingest tick 调用 advance</td>
+<td>纳入 SR 控制命令；保持唯一有序 TP tick</td>
+</tr>
+<tr>
+<td><code>scheduler.py:3290</code></td>
+<td>把 Req 加入原生 P/D 队列</td>
+<td>新模式先校验 SR dispatch，阻止绕过</td>
+</tr>
+<tr>
+<td><code>mempool_tick.py:481</code></td>
+<td>自主规划 acquire / ready / release</td>
+<td>新模式仅执行显式请求动作；沿用 TP 事实汇总</td>
+</tr>
+<tr>
+<td><code>mempool_control.py:500</code></td>
+<td>finish_drain 归还 D 槽</td>
+<td>拆开 drain 完成和显式释放</td>
+</tr>
+<tr>
+<td><code>mempool_control.py:778</code></td>
+<td>DONE 触发 P 释放</td>
+<td>新模式不因 DONE 归还；早到/迟到分支也覆盖</td>
+</tr>
+<tr>
+<td><code>mempool_service.py:569</code></td>
+<td>执行 drain 与 native_release</td>
+<td>分别保留原生资源收据和 alive 租约</td>
+</tr>
+<tr>
+<td><code>decode.py:1902</code></td>
+<td>Req 到达后分配原生资源</td>
+<td>采用 SR 的预留行和 prompt 索引，避免二次分配</td>
+</tr>
+<tr>
+<td><code>decode.py:2527</code></td>
+<td>transfer_complete 门控 handoff</td>
+<td>加入 Router ready，覆盖首 token</td>
+</tr>
+<tr>
+<td><code>allocation.py:587</code> / <code>schedule_batch.py:3212</code></td>
+<td>逐步分配和检查 decode 内存</td>
+<td>新模式从预留中取索引、按剩余预留检查</td>
+</tr>
+<tr>
+<td><code>mempool/runtime.py:223</code></td>
+<td>runtime.bind / detach_row</td>
+<td>复用，绑定来源改为 SR；保持稳定 Graph 缓冲</td>
+</tr>
+<tr>
+<td><code>arg_groups/fields/disagg.py</code></td>
+<td>mempool 启动参数</td>
+<td>增加 Router endpoint、run_id 及成对校验</td>
+</tr>
+</tbody></table></div>
+<p><strong>新模式的旧协议处理</strong></p>
+<p>POOL_HELLO、heartbeat、布局校验、native transport session 校验继续使用。
+它们服务于启动和数据通道身份，不决定请求槽位分配。
+新模式不发送自主 ACQUIRE，也不接受旧消息改变请求所有权。
+旧 DONE、RELEASE_ACK 不能转换成新 free_ack。
+遇到冲突消息报告错误；可识别的迟到消息保留日志并隔离。</p>
+<p>接管范围包括 D finish_drain、P DONE、pending_done 和取消回滚。
+特别检查 finish_prefill_writes 处理早到 DONE 的分支。
+新模式的 cancel / timeout 进入 fail-stop，不能沿旧回滚路径自行归还槽。</p>
+<p>在启动时选择一种请求控制模式，避免两个 planner 同时运行。
+旧正式 mempool 模式保留，用于同长度参考对照。
+新模式仍通过现有 MempoolPDService hook 接入 scheduler。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-F">
+<header class="am-panel-head"><span class="am-panel-id">F</span><h2>实现完成后如何启动</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>计划交付一个入口，支持 <code>serve</code> 和 <code>acceptance</code> 两种模式。
+两台机器各运行一条命令，后续步骤由入口自动协调。
+以下是拟交付的 CLI 契约，脚本目前尚不存在。</p>
+<p><strong>运行前配置一次</strong></p>
+<p>将同一份部署配置放入两侧容器，例如 <code>/home/cryang/mempool-min.json</code>。
+机器地址采用最近记录的 P <code>10.120.72.23</code>、D <code>10.120.72.25</code>。
+模型路径、网卡及当前机器拓扑需要按部署环境核对。
+实现入口将检查路径、模型配置、可用端口、依赖及双方配置摘要。</p>
+</div>
+<pre class="am-code"><code data-lang="json">{
+  &quot;prefill_host&quot;: &quot;10.120.72.23&quot;,
+  &quot;decode_host&quot;: &quot;10.120.72.25&quot;,
+  &quot;model_path&quot;: &quot;/data_lib/data/models/GLM-5.2-w4a8&quot;,
+  &quot;network_interface&quot;: &quot;bond4&quot;,
+  &quot;numa_nodes&quot;: [0, 1, 2, 3, 4, 5, 6, 7],
+  &quot;prefill_capacity&quot;: 8192,
+  &quot;decode_capacity&quot;: 128,
+  &quot;page_size&quot;: 128,
+  &quot;context_length&quot;: 8320,
+  &quot;max_total_tokens&quot;: 16384,
+  &quot;max_prefill_tokens&quot;: 8192,
+  &quot;router_http_port&quot;: 6699,
+  &quot;router_control_port&quot;: 16700,
+  &quot;runner_control_port&quot;: 18891,
+  &quot;log_root&quot;: &quot;/home/cryang/log/mempool-min&quot;
+}</code></pre>
+<div class="am-md"><p>以上 HBM 配置是拟定启动值，不构成容量通过证据。
+模型加载后根据真实容量注册；容量不足则启动失败。
+context_length 覆盖 S_P + S_D，避免存储上限与模型上下文不一致。
+原生 <code>max_total_tokens</code> 表示 HBM allocator 的预算，与 BM 槽容量分开。</p>
+<p>固定部署参数为 TP16、DP1、PP1、BF16、各 rank 私有副本。
+每侧 16 个 BM 槽，DRAM 逻辑页与原生 HBM 页统一为 B token，当前部署 B=128。
+P eager、D Graph，先保留既有 16 行 Graph 捕获设置。
+Graph 的 padding 行与真实请求数分别检查，真实负载最多为 1。</p>
+<p>入口显式设置 <code>SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD=1</code> 与 <code>SGLANG_NPU_ENABLE_MEMPOOL=1</code>。
+设置 <code>SGLANG_NPU_MEMPOOL_SHARE=0</code>，按配置生成连续 NUMA 分配。</p>
+<p>这只启动阶段 0 的私有后端；两个 rank 同处一个 NUMA 不表示共用一份 KV。
+K1 的共享启动与映射需要后续实现，不能只把该开关改为 1。</p>
+<p>关闭原生 radix cache，单 chunk，禁止投机与 sparse decode admit。
+原生 <code>max-running-requests</code> 保留与已有 16 行路径兼容的容量配置。
+实际串行约束由 Main Router 和 SR 入口共同执行。</p>
+<p><strong>常驻服务：P 机</strong></p>
+</div>
+<pre class="am-code"><code data-lang="bash">bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role prefill --mode serve \
+  --config /home/cryang/mempool-min.json \
+  --run-id ticket01-serve-001</code></pre>
+<div class="am-md"><p><strong>常驻服务：D 机</strong></p>
+</div>
+<pre class="am-code"><code data-lang="bash">bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role decode --mode serve \
+  --config /home/cryang/mempool-min.json \
+  --run-id ticket01-serve-001</code></pre>
+<div class="am-md"><p>在两个终端先后提交即可；不需要等 P 服务完全 ready 再启动 D。
+P 侧入口拉起 Main Router 和 P 服务，D 侧入口拉起 D 服务。
+两侧 <code>sglang.launch_server</code> 自动创建 SR；无需另启 subrouter 命令。
+入口复用现有 Ascend 环境加载及进程管理方式。</p>
+<p>底层仍使用 <code>python3 -m sglang.launch_server</code>。
+拟增加 <code>--mempool-router-endpoint tcp://10.120.72.23:16700</code> 和
+<code>--mempool-router-run-id ticket01-serve-001</code>。
+这两个新参数尚未实现；其它 mempool 参数按配置展开并写入日志。
+Main Router 拟用 <code>python3 -m sglang.srt.disaggregation.ascend.mempool_router</code> 启动。
+日常使用由包装入口完成，不要求手工维护三份长命令。</p>
+<p><strong>自动启动顺序</strong></p>
+<ol>
+<li>双侧入口检查环境并交换 run_id / 配置摘要。</li>
+<li>P 侧启动 Main Router，暂不接收生成请求。</li>
+<li>两侧同时启动模型服务，完成 BM 映射。</li>
+<li>D 完成 Graph capture，各侧挂接 SR。</li>
+<li>P/D 完成原有配对身份与布局握手。</li>
+<li>SR 汇总实际资源并 register。</li>
+<li>Main 核对两侧完整能力，发布 ready。</li>
+</ol>
+<p>BM 映射必须先于 Graph capture；控制 ready 不作为捕获前提。
+不能让 P 等待 D 注册、而 D 又等待 P 模型完全 ready。
+入口检查 <code>/ready</code> 时不发送真实 warmup 请求来绕过 Router。
+原生 fake warmup 如有使用，也不占用用户请求配额。</p>
+<p><strong>端口分工</strong></p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>端口</th>
+<th>位置</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>6699</td>
+<td>P 机</td>
+<td>新 Main Router HTTP</td>
+</tr>
+<tr>
+<td>16700</td>
+<td>P 机</td>
+<td>新 Main Router 控制端点</td>
+</tr>
+<tr>
+<td>18891</td>
+<td>P 机</td>
+<td>双侧启动 / 验收入口协调</td>
+</tr>
+<tr>
+<td>8000 / 8001</td>
+<td>P / D</td>
+<td>现有模型 HTTP，作为 Router 内部入口</td>
+</tr>
+<tr>
+<td>8995</td>
+<td>P 机</td>
+<td>既有 PD bootstrap</td>
+</tr>
+<tr>
+<td>19000–19015</td>
+<td>P 机</td>
+<td>既有独立 rank-pair BM store</td>
+</tr>
+<tr>
+<td>25670–25701</td>
+<td>两机</td>
+<td>既有 BM NIC 地址范围</td>
+</tr>
+</tbody></table></div>
+<p>原生 TransferEngine / HCCL 等其它端口仍由既有启动路径管理。
+新模式使用新 Main Router，不在同一阶段启动旧 mini_lb。</p>
+<p>服务就绪后，客户端只访问 <code>http://10.120.72.23:6699</code>。
+输入文件应由真实模型 tokenizer 生成并满足页对齐。
+示例文件 <code>request.json</code> 包含 input_ids、stream=false 和 greedy sampling_params。</p>
+</div>
+<pre class="am-code"><code data-lang="bash">curl --fail-with-body http://10.120.72.23:6699/ready
+curl --fail-with-body http://10.120.72.23:6699/generate \
+  -H &#39;Content-Type: application/json&#39; \
+  --data-binary @request.json</code></pre>
+<div class="am-md"><p><strong>自动验收</strong></p>
+<p>两机将上面命令改为 <code>--mode acceptance</code>，使用相同的新 run_id。
+完整拟定命令如下，仍需等待脚本实现。</p>
+</div>
+<pre class="am-code"><code data-lang="bash"># P 机
+bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role prefill --mode acceptance \
+  --config /home/cryang/mempool-min.json \
+  --run-id ticket01-accept-001
+
+# D 机
+bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role decode --mode acceptance \
+  --config /home/cryang/mempool-min.json \
+  --run-id ticket01-accept-001</code></pre>
+<div class="am-md"><p>入口先跑既有正式 mempool 参考组，再跑新 Router 目标组。
+两组顺序启动和结束，避免同时占用模型、端口和池。
+参考组与目标组使用相同模型、输入、Graph 配置、容量和采样设置。</p>
+<p>验收入口自动生成输入、等待服务、发请求、检查输出、核对事件、收集报告并清理。
+失败返回非零。报告存放在 <code>/home/cryang/log/mempool-min/&lt;run-id&gt;/</code>。
+P 侧汇总两侧材料；保留 <code>prefill/</code>、<code>decode/</code>、<code>router/</code> 与 summary.json。</p>
+<p>正常停止和失败清理只处理本次启动的进程组。
+失联或强制终止不能记作成功 drain 或 free_ack。
+另提供 <code>--describe</code>，在没有 NPU 的环境中查看展开的启动计划。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-G">
+<header class="am-panel-head"><span class="am-panel-id">G</span><h2>怎样证明方案实现正确</h2></header>
+<div class="am-panel-body"><div class="am-md"><p><strong>CPU / 静态检查</strong></p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>测试入口</th>
+<th>应验证的外部行为</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>RouterCore + 双侧协议驱动</td>
+<td>完整 cold 流程、四类账本、重复回执、P/D 不同槽</td>
+</tr>
+<tr>
+<td>实际控制 socket + SR tick 驱动</td>
+<td>消息入队、全 rank 一致、延迟 rank、注册不全</td>
+</tr>
+<tr>
+<td>原生预留适配</td>
+<td>分配不足、预留消费、实际尾页、提前 EOS、未使用整页归还</td>
+</tr>
+<tr>
+<td>service / scheduler hook</td>
+<td>未获 dispatch 不入队，三条件不齐不返回首 token</td>
+</tr>
+<tr>
+<td>显式释放</td>
+<td>无 free 不复用；旧 DONE 不释放；free_ack 不提前</td>
+</tr>
+<tr>
+<td>运行入口</td>
+<td>配置展开、就绪判断、进程归属、失败退出、报告收集</td>
+</tr>
+</tbody></table></div>
+<p>allocator 行为测试不能只断言方法被调用。
+需要核对分配前后可用行/页、真实索引归属和无重复归还。
+预留后的全局 free 较少，也不能误触发原生 retract。
+新模式与旧参考路径均要运行适用的回归检查。</p>
+<p><strong>用户执行的 NPU 验收</strong></p>
+<ul>
+<li>两个内容不同的 4096-token 冷请求，各允许最多生成 128 token。</li>
+<li>每个请求完整 output_ids 与同配置参考完全一致。</li>
+<li>存在真实 D decode forward 和 mempool 读取。</li>
+<li>P/D 来源、Graph replay 和 padding 行符合 ticket 要求。</li>
+<li>P 原生资源可提前归还，之后 D 仍正确读取 P alive。</li>
+<li>D finished 发生在最后访问及原生资源归还之后。</li>
+<li>free_ack 发生在实际归还之后，四项账本恢复。</li>
+<li>第二请求复用上一请求真实归还的最小空闲 mempool 槽。</li>
+<li>输入拒绝、超时和 fail-stop 的检查有独立结果。</li>
+</ul>
+<p>主验收设置应确保覆盖真实 decode。
+可用 <code>ignore_eos=true</code> 固定生成长度，参考组采用相同设置。
+另测自然 EOS 和 max_new_tokens=1 的资源清理行为。
+报告区分 smoke 与完整 ticket01 验收，不宣称 prefix 已覆盖。</p>
+<p>每条事件记录 run_id、代码版本、rid、op_id、rank 和槽租约。
+因果关系通过命令与回执身份确认，不仅比较跨机时间戳。
+硬件证据由用户执行后回传，再决定是否关闭 ticket01。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-H">
+<header class="am-panel-head"><span class="am-panel-id">H</span><h2>实施顺序与代码依据</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>实施仍属于一个 ticket，按以下可检查步骤推进。
+每一步覆盖真实接口行为，再继续下一个步骤。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>交付内容</th>
+<th>检查重点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>Main 事件逻辑、消息类型、SR 注册与 tick 接入；整理旧控制副作用</td>
+<td>全 rank 注册、容量与输入拒绝；新旧控制模式互斥</td>
+</tr>
+<tr>
+<td>2</td>
+<td>显式 alloc / dispatch 和 D 原生预留</td>
+<td>真实行页分配、唯一槽所有权、避免双重分配</td>
+</tr>
+<tr>
+<td>3</td>
+<td>接通原生 HTTP、prefill、ready 与 decode</td>
+<td>输入身份一致、首 token 门控、两侧数据路径</td>
+</tr>
+<tr>
+<td>4</td>
+<td>finished、free、free_ack 与槽复用</td>
+<td>原生与 alive 分离、所有旧自动释放分支</td>
+</tr>
+<tr>
+<td>5</td>
+<td>双机 serve / acceptance 入口与报告</td>
+<td>启动依赖、完整参考对照、自动清理</td>
+</tr>
+<tr>
+<td>6</td>
+<td>中文说明、代码审阅、用户 NPU 验收</td>
+<td>行为与规格一致，证据完整后才闭票</td>
+</tr>
+</tbody></table></div>
+<p>实现中最需要验证的三个位置：</p>
+<ul>
+<li>原生预留的消费与清理，尤其实际尾页和提前结束。</li>
+<li>SR 集体通信与原有 scheduler tick 的一致顺序。</li>
+<li>旧 drain / DONE / 迟到消息分支不再绕过显式 free。</li>
+</ul>
+<p>当前没有运行新实现的 CPU 或 NPU 测试，因为本轮没有实现代码。
+新 CLI、端口和模块划分属于此方案的建议，尚未替代已发布规格。
+ticket01 继续保持 ready-for-agent / open。</p>
+<p>2026-10-23 本次补充了内存几何、记录形状和原生预留细节。
+核对代码基线为 <code>3883624810</code> 加当前工作区。
+拟新增的 Router／SR 模块与 run_mempool_min 脚本尚不存在。
+本次检查仅覆盖文档、代码事实及容量算术，不计为功能通过。
+目标页 D 继续记录待实现、待用户 NPU 验收。</p>
+<p><strong>现有代码依据</strong></p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>依据</th>
+<th>本轮核对内容</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="spec.md">本地规格</a></td>
+<td>角色分工、资源预留、输入范围、显式释放</td>
+</tr>
+<tr>
+<td><a href="issues/01-cold-request-lifecycle.md">独立 ticket01</a></td>
+<td>冷请求、复用、验收与排除项</td>
+</tr>
+<tr>
+<td><a href="../../python/sglang/srt/hardware_backend/npu/mempool/layout.py">KVLayout / PoolLayout</a></td>
+<td>layer-first 几何、字节偏移及 BM 对齐</td>
+</tr>
+<tr>
+<td><a href="../../python/sglang/srt/hardware_backend/npu/mempool/manager.py">MempoolKVManager / View</a></td>
+<td>rank-pair 建池、NUMA 分配及本进程地址解析</td>
+</tr>
+<tr>
+<td><a href="../../python/sglang/srt/hardware_backend/npu/mempool/runtime.py">MempoolRuntime</a></td>
+<td>稳定绑定张量、Graph padding、写回事件及收据</td>
+</tr>
+<tr>
+<td><a href="../../python/sglang/srt/disaggregation/ascend/mempool_protocol.py">现有协议类型</a></td>
+<td>RequestIdentity、SlotLease、原生 Index K 布局</td>
+</tr>
+<tr>
+<td><a href="../../python/sglang/srt/disaggregation/ascend/mempool_service.py">MempoolPDService</a></td>
+<td>模型加载后挂接、native_release、transfer_complete</td>
+</tr>
+<tr>
+<td><a href="../../python/sglang/srt/disaggregation/ascend/mempool_tick.py">MempoolTPTick</a></td>
+<td>有序 TP 事实汇总与旧自主动作</td>
+</tr>
+<tr>
+<td><a href="../../python/sglang/srt/disaggregation/ascend/mempool_control.py">MempoolPDControl</a></td>
+<td>租约身份、finish_drain、DONE 与 RELEASE_ACK</td>
+</tr>
+<tr>
+<td><a href="../../python/sglang/srt/managers/scheduler.py">Scheduler</a></td>
+<td>ingest_requests、原生请求入队与空闲 tick</td>
+</tr>
+<tr>
+<td><a href="../../python/sglang/srt/disaggregation/decode.py">Decode</a></td>
+<td>原生 prealloc、handoff 门控</td>
+</tr>
+<tr>
+<td><a href="../../python/sglang/srt/mem_cache/memory_pool.py">原生行池</a></td>
+<td>alloc_rows / free_rows</td>
+</tr>
+<tr>
+<td><a href="../../python/sglang/srt/mem_cache/allocator/paged.py">页分配器</a></td>
+<td>按 token 数传入 alloc；返回实际 token 索引</td>
+</tr>
+<tr>
+<td><a href="../../python/sglang/srt/mem_cache/allocation.py">逐步分配</a></td>
+<td>alloc_for_decode 的索引与有效长度更新</td>
+</tr>
+<tr>
+<td><a href="../../python/sglang/srt/mem_cache/common.py">原生清理</a></td>
+<td>release_kv_cache 与 overallocated 约束</td>
+</tr>
+<tr>
+<td><a href="../../sgl-model-gateway/bindings/python/src/sglang_router/mini_lb.py">现有 Python mini_lb</a></td>
+<td>同 room 分发两侧 HTTP、收取 D 响应</td>
+</tr>
+<tr>
+<td><a href="../../ascend-mempool-test/scripts/run_service.sh">现有启动脚本</a></td>
+<td>Ascend 环境、模型参数、端口与日志</td>
+</tr>
+<tr>
+<td><a href="../../ascend-mempool-test/scripts/run_ticket10.py">现有自运行入口</a></td>
+<td>双侧协调、参考对照和进程管理</td>
+</tr>
+<tr>
+<td><a href="../ascend-mempool/verification.md">硬件验收规则</a></td>
+<td>用户运行 NPU 测试，验收后闭票</td>
+</tr>
+</tbody></table></div>
+</div></div>
+</section>
+</div>
+</div>
+</main>
+<footer class="am-colophon">Generated by Answer me with HTML 0.4.3 · 2026-10-24 00:47</footer>
+<textarea id="am-source" hidden readonly aria-hidden="true">---
+title: Ticket01：Main Router / Sub Router 实施方案
+subtitle: 真实冷请求、统一分配、显式释放与双机启动
+template: doc
+theme: blueprint
+lang: zh
+date: 2026-10-23
+status: 实施提案；尚未实现
+baseline: 3883624810 + 当前工作区
+---
+
+目标是让一个 Main Router 管请求全程，由两侧 Sub Router 执行真实资源操作。
+Main Router 是独立 Python 进程。SR_P、SR_D 随推理服务加载。
+每侧 TP rank 0 负责协调，每个 worker 保留自己的执行分片。
+
+本文细化 [ticket01](issues/01-cold-request-lifecycle.md)。功能范围以 [spec](spec.md) 为准。
+下文新增文件名、接口和命令均为拟定方案，当前不能按这些新命令启动。
+现有代码事实与新增设计分别标明；本轮只形成方案。
+
+本方案是 syncfile 所定义的 **sparse 阶段 0 的首个切片**。
+私有副本和 alive 整槽分配是阶段 0 的临时后端约束。
+整体目标继续包含 K1 共享及后续阶段，见[目标对齐核对](target-alignment.md)。
+阶段 0 / L0 后接 K1，再推进阶段 1；四票结束不代表共享已完成。
+
+## A 进程如何部署
+
+```flow LR
+客户端 -&gt; MainRouter: token IDs / HTTP
+MainRouter -&gt; SR_P: 分配、绑定、释放
+MainRouter -&gt; SR_D: 分配、绑定、就绪、释放
+SR_P -&gt; P_workers: 有序 TP tick
+SR_D -&gt; D_workers: 有序 TP tick
+P_workers -&gt; D_workers: 原生 Index K / handoff
+group P机器: MainRouter, SR_P, P_workers
+group D机器: SR_D, D_workers
+```
+
+图中的 SR_P、SR_D 是逻辑角色。它们各自的协调者位于 rank 0 scheduler 内。
+每个 rank 都有 SR 分片，包括 rank 0；分片与本 rank 的模型执行共进程。
+Main Router 默认放 P 机，使用 CPU，不分配模型权重或 NPU KV。
+
+| 进程或模块 | 数量 / 位置 | 负责什么 |
+|---|---|---|
+| Main Router | P 机独立进程 1 个 | HTTP 入口、注册、容量账本、请求编排、结果返回 |
+| P 推理实例 | P 机，TP16 | 原生 HTTP / tokenizer / scheduler 和 prefill |
+| SR_P 协调者 | P 的 rank 0 scheduler 内 | 分配 P alive、汇总 P 完成、确认释放 |
+| SR_P 分片 | P 的每个 worker 内 | 本地映射、描述符校验、写回完成与原生清理 |
+| D 推理实例 | D 机，TP16 | 原生请求接收、Index K 接收和 decode |
+| SR_D 协调者 | D 的 rank 0 scheduler 内 | 分配 D 资源、安装两侧绑定、汇总 finished |
+| SR_D 分片 | D 的每个 worker 内 | 解析本 rank 的 P/D 描述符、取数和 drain |
+
+**拟定的三条通信路径**
+
+| 路径 | 传输方式 | 内容与约束 |
+|---|---|---|
+| Main Router ↔ SR 协调者 | 新增 ZMQ ROUTER / DEALER | 结构化控制消息；只发小型元数据和 token IDs |
+| Main Router → P/D 原生 HTTP | 复用 `/generate` | 创建原生 Req，保留 tokenizer / 输出返回路径 |
+| P_i ↔ D_i | 复用 Ascend PD 连接与设备映射 | Index K、handoff、目标页索引；主 KV 从 mempool 读取 |
+
+Main Router 只向每侧 rank 0 发控制消息。
+网络线程拥有自己的 ZMQ socket，收发均通过有界队列。
+它不调用 NPU，不修改 allocator，也不调用 TP collective。
+
+HTTP 请求必须匹配 SR 已确认的 dispatch。
+在进入原生 P/D 队列前检查 rid、room、输入和采样参数。
+因此直接访问后端 HTTP 也不能绕过统一分配和串行门。
+
+## B Main Router 的实现
+
+拟新增 `mempool_router.py`，提供可启动的 Python 入口。
+使用单进程、单事件循环；HTTP 和 SR 消息都交给同一请求控制逻辑。
+拟采用仓库已使用的 aiohttp 与 pyzmq。
+不把请求状态分散到多个 Web worker，也不引入外部数据库。
+
+**对外接口**
+
+| 接口 | 拟定行为 |
+|---|---|
+| `POST /generate` | 接收一个 token IDs 请求；首版使用 `stream=false` |
+| `GET /health` | 仅表示 Router 进程存活 |
+| `GET /ready` | 检查两侧注册、实际能力、TP 完整性及配对握手 |
+| `GET /status` | 返回当前请求阶段、可用配额、待确认操作和故障原因 |
+
+`/ready` 为 200 不代表当前空闲；第二个请求还要通过串行门。
+首版忙时返回 429，不建立等待队列。
+输入非法返回明确的 4xx；已知容量不足在分配前拒绝。
+这些拒绝均不修改账本、目录和分配状态。
+
+**五项核心职责**
+
+| 职责 | 具体做法 |
+|---|---|
+| 注册与兼容检查 | 核对模型/布局身份、TP/DP/PP、rank 集合、页大小、池容量与会话 |
+| 入口与 reserve | 校验输入后，一次预留四类资源；整槽计费 |
+| 请求编排 | 分配 rid、room、op_id；依次驱动 alloc、dispatch、ready 和 free |
+| 完成与账本 | 只根据实际完成回执更新资源；重复回执只生效一次 |
+| 串行与 fail-stop | 上一请求全部归还后才接收下一请求；内部失败停止本轮 |
+
+注册包括实际 `hbm_page_size`、S_P/S_D、槽数、Index K HBM 页容量和请求行容量。
+还包括各类副本数、rank → NUMA、P 静态 prompt 上限和功能开关。
+多 rank 的容量按共同可满足的配额计算，不能把副本容量相加。
+ticket01 将 P alive Index K DRAM 和 prefix 标记为未启用，容量为零。
+
+输入要求沿用规格：token IDs、greedy、单请求、单 chunk、B-token 对齐。
+还要检查词表范围、实际上下文上限和双方采样配置。
+拒绝不支持的文本、批量输入、logprob、LoRA、多模态和自定义生成方式。
+
+**一次 reserve 的四项资源**
+
+| 资源 | 记账单位 | 4096 输入 / 最多 128 输出时 |
+|---|---|---|
+| P alive | 一整个 S_P 槽 | 1 槽，额度为 8192 / B = 64 页 |
+| D alive | 一整个 S_D 槽 | 1 槽，额度为 128 / B = 1 页 |
+| D Index K HBM | 原生 HBM 页 | ceil((4096 + 128) / 128) = 33 页 |
+| D 原生请求行 | 行 | 1 行 |
+
+四项 reserve 在 Router 内作为一次状态变更完成。
+Router 管额度，SR 管实际编号和分配结果。
+Router 不再维护另一份可以自行挑选物理槽的 free list。
+P 原生 HBM 用静态上限保证，不加入上述四项账本。
+
+**保留的状态**
+
+下面给出拟实现的记录形状，便于核对数据归属。
+字段名是说明用的草案；序列化类型在实现时确定。
+这些记录放在 Main 的 CPU 内存中，主 KV 字节留在 worker 管理的池中。
+
+| 记录 | 索引与主要字段 | 何时改变 |
+|---|---|---|
+| 注册表 | 按实例会话索引；role、rank 集合、model/layout 身份、容量、能力开关 | 启动注册；身份不兼容则不 ready |
+| 请求表 | 按 rid 索引；room、attempt、input_ids、max_new_tokens、phase、两侧页表、ready_tokens | 从接收请求保留到释放完成 |
+| 操作表 | 按 op_id 索引；rid、kind、目标侧、预期回执、已完成标记 | 发命令时建立；实际 ack 只确认一次 |
+| 资源账本 | 按机器、attention group、资源种类索引；total、free、outstanding | reserve 扣额度；实际归还后恢复 |
+| 活跃目录 | 页哈希、parent_hash、位置列表、状态、owner hold | 分配后登记 writing；写完变 ready；回收后移除 |
+
+账本每次转换都要满足 `total = free + outstanding`。
+`outstanding` 表示尚未实际归还的全部预留。
+alloc_ack 将预留关联到真实编号，不能再扣第二次额度。
+同一侧 16 个副本共同服务一个请求，容量按全组共同余量计算。
+
+**位置和页表怎么关联**
+
+```text
+Request[rid]
+  identity: room + attempt + P/D session
+  prompt_len / max_new_tokens / ready_tokens
+  P_page_table: 按请求内逻辑页顺序排列
+  D_page_table: 按生成段逻辑页顺序排列
+
+PageEntry（示意字段）
+  logical_page: 池内逻辑页编号
+  token_start / token_count
+  descriptors_by_kind:
+    main_kv: [replica_0_handle, ..., replica_15_handle]
+
+Directory[page_hash]
+  parent_hash
+  locations: [machine, pool, logical_page, state, owner_hold]
+```
+
+PageEntry 的位置可在分配后存在，此时数据仍可能是 writing。
+只有 ready 才表示对应有效范围已经可读。
+Main 发布位置时同时更新 ready_tokens，再通知 SR_D。
+未写入的槽尾只占容量，不作为有效内容发布。
+
+一个描述符列表代表同一逻辑页的多个物理副本。
+相同 token 页出现在另一池时，会产生另一条位置记录。
+目录跟踪内容与位置，页表按本请求的 token 顺序组织访问。
+
+页哈希沿用现有命名空间和链式哈希语义。
+首片的 `hit_len` 固定为零，仅跟踪当前请求的 alive 位置。
+不创建 prefix 数据区；请求结束后按依赖删除活跃位置。
+避免现在实现空的 load_back、fill 或 admit 执行器。
+
+正常请求阶段为：
+
+`allocating → dispatching → prefilling → decoding → finished → freeing → done`
+
+任一内部阶段可进入 `failed`。
+`finished` 不恢复 alive 容量；`done` 才打开下一请求的串行门。
+首版暂存 D 的 HTTP 结果，完成释放后再返回成功响应。
+HTTP 返回、P 完成以及最后一个输出 token，都不单独证明资源已归还。
+
+## C Sub Router 的实现
+
+拟新增 `mempool_subrouter.py`，由现有 `MempoolPDService` 接入。
+保留 scheduler 已有的调用入口，避免再加入第二条独立调度循环。
+SR 协调者负责决定本侧动作；分片负责执行与报告实际结果。
+
+**mempool 里的真实数据是什么**
+
+ticket01 的主 KV 使用现有 BM DRAM 池及 NPU 映射。
+按 GLM-5.2 几何，一份逻辑数据可以写成以下形状。
+这是地址布局说明；不会新建这样一个 CPU Tensor。
+
+```text
+P 主 KV：BF16 [78 层, 16 槽, 8192 token, 1 compact head, 576 维]
+D 主 KV：BF16 [78 层, 16 槽,  128 token, 1 compact head, 576 维]
+
+一个 rank 的主 KV 区域（layer-first）
+  layer 0: slot 0 的 token ... | slot 1 的 token ... | ... | slot 15
+  layer 1: slot 0 的 token ... | slot 1 的 token ... | ... | slot 15
+  ...
+  layer 77
+```
+
+每个 token、每层占 `576 × 2 = 1152` 字节。
+每层内一个槽的 token 连续存储，跨层通过 layer stride 定位。
+78 层有各自的主 KV；Indexer 共享 top-k 不会合并这些层。
+
+| 数据种类 | 存放位置及形状 | ticket01 生命周期 |
+|---|---|---|
+| P prompt 主 KV | 每个 P rank 的 BM DRAM；上述 P 布局 | P 写回后保留到显式 free |
+| D 生成主 KV | 每个 D rank 的 BM DRAM；上述 D 布局 | decode 逐步写入，drain 后等待 free |
+| P 原生主 KV | 原生 HBM 的 512／64 两部分缓冲 | 写回、发送等依赖完成后可提前清理 |
+| prompt Index K | P 原生 HBM，经既有数据通道到 D HBM | P 发送完成后可清理；D 保留到请求结束 |
+| D 生成 Index K | D 原生 HBM；21 个 producer 层，每 token 128 维 BF16 | 与 prompt 共用本请求的预留索引范围 |
+| P alive Index K DRAM | 本票未分配，能力未启用 | ticket02 接入 |
+| prefix 主 KV／Index K | 本票未分配，能力未启用 | ticket02 接入保存，ticket03 接入命中 |
+
+Index K 每层每 token 占 `128 × 2 = 256` 字节，没有独立 scale。
+主 KV 供 sparse attention 取数；Index K 供 indexer 选择 token 位置。
+两个结构的用途和就绪条件分别检查。
+
+**B-token 逻辑页、mempool 槽和原生 HBM 页**
+
+| 名称 | 含义 | 4096-token prompt 的例子 |
+|---|---|---|
+| DRAM 逻辑页 | 目录和页表的 B-token 单位 | prompt 有 32 个有效页 |
+| P mempool 槽 | 为一个请求保留的 S_P 容量 | 整槽占 64 页额度；后 32 页尚未写入 |
+| D mempool 槽 | 为生成段保留的 S_D 容量 | 整槽占 2 页额度；不再存一份 prompt |
+| 原生 HBM 页 | 原生 allocator 的单位，本次为 128 token | 最多 128 输出时预留 33 页 |
+| req_pool_idx | 原生请求行编号 | 用于索引 req_to_token；与 P/D 槽号独立 |
+| Graph 行 | 图捕获的 batch 行，可能包含 padding | 16 行 Graph 仍只允许 1 个真实请求 |
+
+P 槽 `s` 对应逻辑页 `[s × (S_P/B), (s+1) × (S_P/B) - 1]`，本例为 `[64s, 64s+63]`。
+D 槽 `d` 对应逻辑页 `[2d, 2d + 1]`。
+请求内页序号 `j` 映射到该槽起始页加 `j`。
+这层页接口由整槽后端承载；本票不能把空闲槽尾分给另一请求。
+
+假设本次 P 槽为 2、D 槽为 5、D 原生请求行为 7。
+这三个编号分别来自各自的分配器，互相不要求相等。
+
+```text
+prompt_len = 4096
+全局 token 位置 4095 -&gt; P_i 的 slot 2，槽内位置 4095
+全局 token 位置 4096 -&gt; D_i 的 slot 5，槽内位置 0
+全局 token 位置 4097 -&gt; D_i 的 slot 5，槽内位置 1
+
+D 槽内位置 = 全局 token 位置 - prompt_len
+```
+
+后两行只在对应 token 已经过 decode forward 时有有效 KV。
+采样出一个输出 token，不表示该 token 的 KV 已经写入。
+因此生成上限、预留容量和实际有效 KV 长度必须分开记录。
+
+**每个 rank 持有哪些结构**
+
+| 结构 | 关键字段或内容 | 负责的事实 |
+|---|---|---|
+| 现有 KVLayout / PoolLayout | layers、slots、tokens、heads、dim、dtype；P/D 布局与对齐 | 布局、边界及字节偏移 |
+| 现有 MempoolKVManager / View | BM handle、P/D bases、层视图 | 实际映射和本进程可用的 NPU 地址 |
+| 现有 RequestIdentity | room、attempt、p_session、d_session | 这是哪次请求尝试 |
+| 现有 SlotLease | slot、generation、proof | 这是该槽的哪次占用 |
+| 现有 MempoolPDControl | slot_owner、generation、请求记录 | 分片唯一的槽所有权事实 |
+| 现有 KVRowBinding / Runtime | req_pool_idx、slot、prompt_slot、prompt_tokens；绑定张量 | 原生请求行如何访问两侧槽 |
+| 现有写回记录 | submitted、completed、设备事件、KVWriteReceipt | 提交了多少、真正完成了多少 |
+| 拟新增原生预留记录 | 请求身份、原生行、实际页／token 索引、消费进度、清理状态 | D 的原生资源属于谁、是否已归还 |
+
+`SlotLease` 随槽复用推进 generation，旧租约不能操作新请求。
+session 防止上一轮进程的消息干扰本轮。
+attempt 隔离请求尝试；op_id 用于当前编排中的操作回执去重。
+这些身份各管一层，不用一个 rid 替代所有校验。
+
+现有 Runtime 保留稳定的设备绑定张量：
+`row_slot`、`row_prompt_slot`、`row_prompt_len`、`row_decode_len`。
+Graph replay 读取这些张量，绑定更新也需要正确的流依赖。
+原生行 0 用于 padding，不能分配给真实请求；mempool 槽 0 则是合法槽。
+
+**固定 16 槽会占多少 DRAM**
+
+以下按上述几何和当前 PoolLayout 的 1 GiB 对齐计算。
+BM 每侧贡献还包含 64 字节探针；列出的对齐值已计入探针。
+
+| 主 KV 区域 | 每 rank 有效载荷 | 每 rank 对齐后 BM 贡献 | 16 个私有副本合计 |
+|---|---|---|---|
+| P：16 × 8192 token | 10.96875 GiB | 11 GiB | 176 GiB |
+| D：16 × 128 token | 175.5 MiB | 1 GiB | 16 GiB |
+
+这些是布局算术，未包含模型、原生 HBM、SDK 及其他运行开销。
+启动仍须验证真实容量、NUMA 拓扑和映射可见性。
+BM 固定区域在启动时建立；请求 alloc 取得已建区域的槽租约。
+只有 1 个活跃请求，也仍按当前固定配置建 16 个槽。
+两个 rank 落在同一 NUMA 节点，仍各持有自己的物理副本。
+
+**每个 scheduler tick 的顺序**
+
+1. rank 0 取出有界控制命令。
+2. 在 TP CPU group 中分发相同命令。
+3. 各 rank 采集原生与设备完成事实。
+4. 汇总事实，校验同一请求和操作。
+5. 按固定顺序执行获准动作。
+6. 汇总实际执行结果。
+7. rank 0 向 Main Router 发回执。
+
+空闲时也推进 tick，避免控制消息无人处理。
+任一 rank 失败或迟到，都不能被其他 rank 的成功覆盖。
+准备阶段的校验成功不等于执行成功；ack 在执行结果汇总后发送。
+设备操作提交返回也不等于完成，继续使用实际事件和 drain 证据。
+
+**SR_P**
+
+- alloc 时选择本池编号最小的空闲 alive 槽。
+- 将同一个槽号安装到全部 P ranks。
+- 返回逻辑页表，每页包含各 rank 的不透明描述符。
+- dispatch 时核对本请求身份、页表与完整输入。
+- Req 进入后，复用原生 prefill 和 mempool 写回。
+- 汇总全部 rank 的主 KV 写回完成，报告 ready_tokens。
+- 原生发送完成后，可清理 P HBM 和请求行。
+- 保留 alive 租约及写回收据，直到显式 free。
+
+**SR_D**
+
+- alloc 时选择 D alive 槽，并预留原生请求行与全部 Index K HBM 页。
+- dispatch 时安装 P/D 两张页表，逐 rank 校验对应关系。
+- 本地分片将描述符解析为 runtime 所需的槽号和偏移。
+- 等待 Router ready、Index K 完成及 handoff，才允许首 token 和 decode。
+- 结束时停止提交，完成 drain，再清理原生资源。
+- 全部 rank 清理完成后汇总 finished。
+- 收到 free 后归还 D alive，汇总 free_ack。
+
+**页描述符与所有权**
+
+对外页表用逻辑位置及不透明描述符表示。
+描述符内编码池会话、rank、数据种类、slot lease 和槽内页位置。
+Router 只保存和转发，不从中计算设备地址。
+
+只有持有映射的分片解析地址；D_i 读取映射中的 P_i 副本。
+P 槽与 D 槽可以不同；原生 `req_pool_idx` 又是另一种编号。
+
+以上 D_i 读 P_i 是阶段 0 的副本对应关系。
+协议按数据种类保存描述符列表，不能把一 rank 一副本写成永久合同。
+K1 将 alive 主 KV 改为共享组映射，其他三类 DRAM 数据各一份。
+分片数量仍取决于 worker 数量；物理副本数独立注册。
+
+现有 `MempoolPDControl` 的租约记录作为每个分片的唯一槽所有权事实。
+SR 协调者从一致的所有权快照选择最小空闲槽。
+新增受控操作使用显式 slot、rid 和租约身份，不再触发自主 ACQUIRE。
+沿用已有 session、attempt、generation 校验，不增加故障恢复协议。
+
+**D 原生资源如何做到足额预留**
+
+这是需要新增的实质适配，不能只在 Router 账本上减 33。
+拟新增 `mempool_native_reservation.py`，封装本请求的原生资源预留。
+
+当前代码已有 `ReqToTokenPool.alloc_rows()`，允许在 Req 创建前取出原生请求行。
+页分配器已有 `alloc(need_size)`，参数单位是 token，且必须按整页对齐。
+预留 33 个 128-token 页时，应传入 `33 × 128 = 4224`。
+返回值是实际 token 索引；各页的物理编号不保证连续。
+
+SR_D 在 alloc 阶段调用这些接口，实际移走所需请求行和全部页。
+任一 rank 分配失败则进入 fail-stop，不发送成功 alloc_ack。
+
+| 时机 | 预留适配的行为 |
+|---|---|
+| alloc | 取出原生行和 ceil((prompt + max_new) / page_size) 页，保留实际索引 |
+| 原生 Req 到达 | 将预留行绑定到 Req；原生 prealloc 使用已有的 prompt 索引 |
+| 每次 decode | 从本请求预留范围取得下一个真实 token 的索引 |
+| 原生内存检查 | 检查本请求剩余预留，不能再用全局空闲量重复收费 |
+| 请求结束 | 原生清理归还已使用页；预留适配归还尚未使用的整页 |
+| finished | 全部 rank 的行、已用页和未用页均实际归还后确认 |
+
+预留范围与“已写入有效 KV 的长度”分开记录。
+不能将 `kv_committed_len` 提前设为 prompt + max_new。
+保留普通 decode 对 `kv_allocated_len` 的现有含义。
+已转交原生生命周期的整页和未使用整页必须不相交。
+实际尾页的未用部分随其所属整页归还，不能两边各 free 一次。
+
+例如先向原生 prompt 路径提供前 4096 个预留索引。
+decode 每处理一个新 token，再消费后续对应索引。
+若提前 EOS，剩余索引中可能同时包含实际尾页的未用部分和未使用整页。
+清理按整页归属划分，不能把同一页拆成两份各自归还。
+
+该适配需要覆盖 prealloc、逐步取索引、容量检查和清理四处。
+仅在新 Router 模式生效；不以改长序列计数器替代真正的预留。
+
+## D 一个冷请求如何走完
+
+**拟定消息契约**
+
+请求消息携带版本、run_id、实例会话、rid、bootstrap_room 和操作身份。
+需要回执的操作使用单调 op_id。
+保留已有 request attempt 和 slot lease 身份，用于隔离迟到消息。
+run_id 用于本次部署关联，不代表支持恢复旧进程状态。
+
+| 消息 | 方向 | 成功语义 |
+|---|---|---|
+| register / register_ack | SR ↔ Main | 全部 rank 的真实能力被接受 |
+| alloc / alloc_ack | Main ↔ SR_P、SR_D | 分片实际分配完成，返回页表和资源收据 |
+| dispatch / dispatch_ack | Main ↔ SR_P、SR_D | 完整绑定和预期输入已安装；允许匹配的原生 Req 进入 |
+| ready_tokens | SR_P → Main | 全部必要 rank 的 prompt 主 KV 已可读 |
+| ready | Main → SR_D | Main 已发布该请求 prompt 的可读位置 |
+| finished | SR_D → Main | 全部读写结束，D 原生资源已实际清理 |
+| free / free_ack | Main ↔ SR_P、SR_D | 对应 alive 租约已实际归还 |
+| error | 任一方 → Main | 冻结本轮，不再分配或发起新的 free |
+
+`alloc_ack` 不表示可以计算；`dispatch_ack` 不表示 prompt 可读。
+两个 SR 都确认 dispatch 后，Main 才向原生 HTTP 发请求。
+HTTP 中的 rid、room、token IDs 和参数必须与 dispatch 一致。
+该步骤复用原生 Req 创建、bootstrap 和响应返回路径。
+
+P 原生队列会把 max_new_tokens 改为 1，用于自身内存估算。
+输入一致性检查在这次改写之前完成。
+SR 保留 Router 声明的生成上限，供 D 预留和跨侧绑定校验。
+
+```sequence num
+participants: Client, Main, SR_P, SR_D
+Client -&gt; Main: token IDs，最多生成 128
+Main -&gt; Main: 校验，关闭串行门，预留四类资源
+Main -&gt; SR_P: alloc P alive
+Main -&gt; SR_D: alloc D alive、原生行、Index K 页
+SR_P --&gt; Main: alloc_ack + P 页表
+SR_D --&gt; Main: alloc_ack + D 页表
+Main -&gt; SR_P: dispatch 输入与 P 绑定
+Main -&gt; SR_D: dispatch 输入与 P/D 绑定
+SR_P --&gt; Main: dispatch_ack
+SR_D --&gt; Main: dispatch_ack
+note Main, SR_D: Main 并发调用两侧原生 HTTP，创建匹配的 Req
+note SR_P, SR_D: 原生 bootstrap 与 Index K / handoff 传输继续沿用
+SR_P --&gt; Main: 所有 rank 的 prompt ready_tokens
+Main -&gt; SR_D: ready
+note SR_D: 三个条件齐备后，输出首 token 并 decode
+note SR_P: 原生 HBM 可提前释放，alive 继续保留
+SR_D --&gt; Main: drain 和原生清理完成，finished
+Main -&gt; SR_P: free P alive
+Main -&gt; SR_D: free D alive
+SR_P --&gt; Main: 实际 free_ack
+SR_D --&gt; Main: 实际 free_ack
+Main -&gt; Main: 核对账本，打开串行门
+Main --&gt; Client: 完整输出 token IDs
+```
+
+**D 的三个开始条件**
+
+`Router ready AND 全部 rank Index K 完成 AND 全部 rank handoff 到达`
+
+现有 transfer 成功与 `transfer_complete()` hook 可以继续承担原生条件。
+新的 Router ready 替代旧 KV_READY 对开始 decode 的授权。
+首 token 的 `_commit_transfer_to_req` 也必须位于此门控之后。
+
+**释放所需证据**
+
+P 的 free 还要确认自身写回、原生发送和本地原生资源清理已完成。
+D finished 是远端消费者结束的证据，不替代 P 本地条件。
+free 可先排队，但 free_ack 必须等条件全部成立。
+下一请求等待两侧 free_ack；不能只看 D HTTP 返回。
+
+提前 EOS 仍走完整清理，归还未使用的预留页。
+生成上限为 1 时可能没有 D decode forward，也仍要正确清理。
+硬件主验收要实际发生 decode 和 mempool 读取。
+
+重复 ack 只确认一次；内容冲突的同号消息触发失败。
+旧会话、旧 attempt 或旧 lease 的消息不能改变当前所有权。
+客户端断开不等于 drain，不能据此提前 free。
+主进程或 worker 故障后由运行入口协调终止本轮，不在进程内重试复用。
+
+## E 怎样接入现有代码
+
+当前已有写回、两侧取数、Graph、bootstrap 和原生传输。
+新工作集中在控制编排、原生预留、入口门控及显式释放。
+
+| 拟新增文件 | 承担的实现 |
+|---|---|
+| `python/sglang/srt/disaggregation/ascend/mempool_router.py` | HTTP / ZMQ 入口、Main Router 请求状态与账本 |
+| `python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py` | 注册、命令、回执、逻辑页表的类型与校验 |
+| `python/sglang/srt/disaggregation/ascend/mempool_subrouter.py` | 协调者、rank 分片和同侧完成汇总 |
+| `python/sglang/srt/disaggregation/ascend/mempool_native_reservation.py` | D 请求行、Index K 页的真实预留与消费 |
+| `ascend-mempool-test/scripts/run_mempool_min.sh` / `.py` | 双机自运行启动、验收、收集与进程清理 |
+| `ascend-mempool-test/configs/mempool-min.example.json` | 部署配置模板；实际环境必须核对 |
+
+这些文件名是拟定落点，可随实现局部整理。
+不复制一个新的 attention backend 或两区域取数 kernel。
+
+**Decode 的 DRAM → HBM sparse 访问沿用什么**
+
+ticket01 沿用当前正式 mempool fetch：每层的 BM miss 路径调用两次 UniDexCopy。
+一次读取 P prompt DRAM，另一次读取 D 生成段 DRAM。
+两次调用使用同一条 miss stream，按 P、D 顺序提交。
+它们写入同一个 HBM selected_kv_buffer，目标位置由 top-k 列号确定。
+
+```flow LR
+TopK位置 -&gt; HBM槽表查询: 校验绑定及有效长度
+HBM槽表查询 -&gt; HBM命中复制: hit mask
+HBM槽表查询 -&gt; P来源复制: miss 中的 prompt 位置
+HBM槽表查询 -&gt; D来源复制: miss 中的生成段位置
+HBM命中复制 -&gt; selected_HBM: HBM 到 HBM
+P来源复制 -&gt; selected_HBM: 远端 P DRAM 到 D HBM
+D来源复制 -&gt; selected_HBM: 本侧 D DRAM 到 D HBM
+selected_HBM -&gt; SparseAttention: 等待 hit_done 和 miss_done
+selected_HBM -&gt; HBM缓存回填: 供后续步骤复用
+```
+
+图表示数据来源；P／D 两路复制在同一 stream 内串行。
+HBM hit 路径使用独立 stream，可与 miss 路径重叠。
+每层的 selected buffer 形状为 `[batch_rows, topk_width, 1, 576]`，类型为 BF16。
+有效 top-k 比固定宽度短时，其余列使用无效 mask。
+
+| 来源 | 选择条件 | 层内源行索引 |
+|---|---|---|
+| HBM sparse cache | valid 且 cache hit | 使用 slot-map 返回的 cache 位置 |
+| P prompt DRAM | valid 且 miss，`0 ≤ pos &lt; prompt_len` | `p_slot × S_P + pos` |
+| D 生成段 DRAM | valid 且 miss，`0 ≤ pos - prompt_len &lt; decode_len` | `d_slot × S_D + pos - prompt_len` |
+
+公共 valid mask 还限制本层真正已写入的范围。
+P/D 两个 mask 互斥，也与 hit mask 互斥，不会覆盖彼此的有效结果。
+每个被选中的主 KV token 搬运 1152 字节，不要求搬运整页 B 个 token。
+逻辑页用于分配和目录；当前 kernel 仍按 token 行索引取数。
+
+例如 prompt_len=4096，选中位置为 `[10, 4095, 4096]`。
+假设位置 10 已在 HBM cache，另外两项有效且 miss。
+hit 路径填第 0 列，P copy 填第 1 列，D copy 填第 2 列。
+
+两次 BM 调用都会保留，即使一侧没有有效项或全部 cache hit。
+此时相应 valid mask 全为 false，没有有效 KV 数据搬运。
+这样 Graph capture 保留固定的两路节点；replay 使用更新后的设备绑定和 mask。
+这里的“两次”限定于每层的 BM miss 分支。
+完整 decode 还包含主 KV 写回、HBM hit、refill 和 slot-map 更新等操作。
+
+当前实现先提交本层新 KV 到 D mempool 的写回，再记录 copy_ready。
+miss stream 等待 copy_ready，两次 BM copy 后记录 miss_done。
+attention 和 cache refill 都等待 hit_done 与 miss_done。
+本票继续沿用这套事件依赖；共享方案中的本步 KV 本地直供另属后续接入。
+
+Main/SR 在请求绑定时提供 P/D 槽和长度，推进 ready 与最终释放。
+每层取数由 worker 的 Runtime 和 sparse manager 在设备路径内完成。
+实际调用链为：
+`materialize_selected_kv → fetch_selected_kv → KVFetch.gather → SparseKVCopy.gather`。
+
+代码依据：[两来源索引和 kernel 调用](../../python/sglang/srt/hardware_backend/npu/mempool/copy.py)、
+[hit／miss／refill 事件](../../python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/manager.py)、
+[attention 等待与消费](../../python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/attention.py)。
+
+| 现有位置 | 当前行为 | 拟修改 |
+|---|---|---|
+| `scheduler.py:1651` | 创建 MempoolPDService | 按启动参数加载 SR，保留旧模式参考路径 |
+| `scheduler.py:2114` | 每个 ingest tick 调用 advance | 纳入 SR 控制命令；保持唯一有序 TP tick |
+| `scheduler.py:3290` | 把 Req 加入原生 P/D 队列 | 新模式先校验 SR dispatch，阻止绕过 |
+| `mempool_tick.py:481` | 自主规划 acquire / ready / release | 新模式仅执行显式请求动作；沿用 TP 事实汇总 |
+| `mempool_control.py:500` | finish_drain 归还 D 槽 | 拆开 drain 完成和显式释放 |
+| `mempool_control.py:778` | DONE 触发 P 释放 | 新模式不因 DONE 归还；早到/迟到分支也覆盖 |
+| `mempool_service.py:569` | 执行 drain 与 native_release | 分别保留原生资源收据和 alive 租约 |
+| `decode.py:1902` | Req 到达后分配原生资源 | 采用 SR 的预留行和 prompt 索引，避免二次分配 |
+| `decode.py:2527` | transfer_complete 门控 handoff | 加入 Router ready，覆盖首 token |
+| `allocation.py:587` / `schedule_batch.py:3212` | 逐步分配和检查 decode 内存 | 新模式从预留中取索引、按剩余预留检查 |
+| `mempool/runtime.py:223` | runtime.bind / detach_row | 复用，绑定来源改为 SR；保持稳定 Graph 缓冲 |
+| `arg_groups/fields/disagg.py` | mempool 启动参数 | 增加 Router endpoint、run_id 及成对校验 |
+
+**新模式的旧协议处理**
+
+POOL_HELLO、heartbeat、布局校验、native transport session 校验继续使用。
+它们服务于启动和数据通道身份，不决定请求槽位分配。
+新模式不发送自主 ACQUIRE，也不接受旧消息改变请求所有权。
+旧 DONE、RELEASE_ACK 不能转换成新 free_ack。
+遇到冲突消息报告错误；可识别的迟到消息保留日志并隔离。
+
+接管范围包括 D finish_drain、P DONE、pending_done 和取消回滚。
+特别检查 finish_prefill_writes 处理早到 DONE 的分支。
+新模式的 cancel / timeout 进入 fail-stop，不能沿旧回滚路径自行归还槽。
+
+在启动时选择一种请求控制模式，避免两个 planner 同时运行。
+旧正式 mempool 模式保留，用于同长度参考对照。
+新模式仍通过现有 MempoolPDService hook 接入 scheduler。
+
+## F 实现完成后如何启动
+
+计划交付一个入口，支持 `serve` 和 `acceptance` 两种模式。
+两台机器各运行一条命令，后续步骤由入口自动协调。
+以下是拟交付的 CLI 契约，脚本目前尚不存在。
+
+**运行前配置一次**
+
+将同一份部署配置放入两侧容器，例如 `/home/cryang/mempool-min.json`。
+机器地址采用最近记录的 P `10.120.72.23`、D `10.120.72.25`。
+模型路径、网卡及当前机器拓扑需要按部署环境核对。
+实现入口将检查路径、模型配置、可用端口、依赖及双方配置摘要。
+
+```json
+{
+  &quot;prefill_host&quot;: &quot;10.120.72.23&quot;,
+  &quot;decode_host&quot;: &quot;10.120.72.25&quot;,
+  &quot;model_path&quot;: &quot;/data_lib/data/models/GLM-5.2-w4a8&quot;,
+  &quot;network_interface&quot;: &quot;bond4&quot;,
+  &quot;numa_nodes&quot;: [0, 1, 2, 3, 4, 5, 6, 7],
+  &quot;prefill_capacity&quot;: 8192,
+  &quot;decode_capacity&quot;: 128,
+  &quot;page_size&quot;: 128,
+  &quot;context_length&quot;: 8320,
+  &quot;max_total_tokens&quot;: 16384,
+  &quot;max_prefill_tokens&quot;: 8192,
+  &quot;router_http_port&quot;: 6699,
+  &quot;router_control_port&quot;: 16700,
+  &quot;runner_control_port&quot;: 18891,
+  &quot;log_root&quot;: &quot;/home/cryang/log/mempool-min&quot;
+}
+```
+
+以上 HBM 配置是拟定启动值，不构成容量通过证据。
+模型加载后根据真实容量注册；容量不足则启动失败。
+context_length 覆盖 S_P + S_D，避免存储上限与模型上下文不一致。
+原生 `max_total_tokens` 表示 HBM allocator 的预算，与 BM 槽容量分开。
+
+固定部署参数为 TP16、DP1、PP1、BF16、各 rank 私有副本。
+每侧 16 个 BM 槽，DRAM 逻辑页与原生 HBM 页统一为 B token，当前部署 B=128。
+P eager、D Graph，先保留既有 16 行 Graph 捕获设置。
+Graph 的 padding 行与真实请求数分别检查，真实负载最多为 1。
+
+入口显式设置 `SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD=1` 与 `SGLANG_NPU_ENABLE_MEMPOOL=1`。
+设置 `SGLANG_NPU_MEMPOOL_SHARE=0`，按配置生成连续 NUMA 分配。
+
+这只启动阶段 0 的私有后端；两个 rank 同处一个 NUMA 不表示共用一份 KV。
+K1 的共享启动与映射需要后续实现，不能只把该开关改为 1。
+
+关闭原生 radix cache，单 chunk，禁止投机与 sparse decode admit。
+原生 `max-running-requests` 保留与已有 16 行路径兼容的容量配置。
+实际串行约束由 Main Router 和 SR 入口共同执行。
+
+**常驻服务：P 机**
+
+```bash
+bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role prefill --mode serve \
+  --config /home/cryang/mempool-min.json \
+  --run-id ticket01-serve-001
+```
+
+**常驻服务：D 机**
+
+```bash
+bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role decode --mode serve \
+  --config /home/cryang/mempool-min.json \
+  --run-id ticket01-serve-001
+```
+
+在两个终端先后提交即可；不需要等 P 服务完全 ready 再启动 D。
+P 侧入口拉起 Main Router 和 P 服务，D 侧入口拉起 D 服务。
+两侧 `sglang.launch_server` 自动创建 SR；无需另启 subrouter 命令。
+入口复用现有 Ascend 环境加载及进程管理方式。
+
+底层仍使用 `python3 -m sglang.launch_server`。
+拟增加 `--mempool-router-endpoint tcp://10.120.72.23:16700` 和
+`--mempool-router-run-id ticket01-serve-001`。
+这两个新参数尚未实现；其它 mempool 参数按配置展开并写入日志。
+Main Router 拟用 `python3 -m sglang.srt.disaggregation.ascend.mempool_router` 启动。
+日常使用由包装入口完成，不要求手工维护三份长命令。
+
+**自动启动顺序**
+
+1. 双侧入口检查环境并交换 run_id / 配置摘要。
+2. P 侧启动 Main Router，暂不接收生成请求。
+3. 两侧同时启动模型服务，完成 BM 映射。
+4. D 完成 Graph capture，各侧挂接 SR。
+5. P/D 完成原有配对身份与布局握手。
+6. SR 汇总实际资源并 register。
+7. Main 核对两侧完整能力，发布 ready。
+
+BM 映射必须先于 Graph capture；控制 ready 不作为捕获前提。
+不能让 P 等待 D 注册、而 D 又等待 P 模型完全 ready。
+入口检查 `/ready` 时不发送真实 warmup 请求来绕过 Router。
+原生 fake warmup 如有使用，也不占用用户请求配额。
+
+**端口分工**
+
+| 端口 | 位置 | 用途 |
+|---|---|---|
+| 6699 | P 机 | 新 Main Router HTTP |
+| 16700 | P 机 | 新 Main Router 控制端点 |
+| 18891 | P 机 | 双侧启动 / 验收入口协调 |
+| 8000 / 8001 | P / D | 现有模型 HTTP，作为 Router 内部入口 |
+| 8995 | P 机 | 既有 PD bootstrap |
+| 19000–19015 | P 机 | 既有独立 rank-pair BM store |
+| 25670–25701 | 两机 | 既有 BM NIC 地址范围 |
+
+原生 TransferEngine / HCCL 等其它端口仍由既有启动路径管理。
+新模式使用新 Main Router，不在同一阶段启动旧 mini_lb。
+
+服务就绪后，客户端只访问 `http://10.120.72.23:6699`。
+输入文件应由真实模型 tokenizer 生成并满足页对齐。
+示例文件 `request.json` 包含 input_ids、stream=false 和 greedy sampling_params。
+
+```bash
+curl --fail-with-body http://10.120.72.23:6699/ready
+curl --fail-with-body http://10.120.72.23:6699/generate \
+  -H &#39;Content-Type: application/json&#39; \
+  --data-binary @request.json
+```
+
+**自动验收**
+
+两机将上面命令改为 `--mode acceptance`，使用相同的新 run_id。
+完整拟定命令如下，仍需等待脚本实现。
+
+```bash
+# P 机
+bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role prefill --mode acceptance \
+  --config /home/cryang/mempool-min.json \
+  --run-id ticket01-accept-001
+
+# D 机
+bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role decode --mode acceptance \
+  --config /home/cryang/mempool-min.json \
+  --run-id ticket01-accept-001
+```
+
+入口先跑既有正式 mempool 参考组，再跑新 Router 目标组。
+两组顺序启动和结束，避免同时占用模型、端口和池。
+参考组与目标组使用相同模型、输入、Graph 配置、容量和采样设置。
+
+验收入口自动生成输入、等待服务、发请求、检查输出、核对事件、收集报告并清理。
+失败返回非零。报告存放在 `/home/cryang/log/mempool-min/&lt;run-id&gt;/`。
+P 侧汇总两侧材料；保留 `prefill/`、`decode/`、`router/` 与 summary.json。
+
+正常停止和失败清理只处理本次启动的进程组。
+失联或强制终止不能记作成功 drain 或 free_ack。
+另提供 `--describe`，在没有 NPU 的环境中查看展开的启动计划。
+
+## G 怎样证明方案实现正确
+
+**CPU / 静态检查**
+
+| 测试入口 | 应验证的外部行为 |
+|---|---|
+| RouterCore + 双侧协议驱动 | 完整 cold 流程、四类账本、重复回执、P/D 不同槽 |
+| 实际控制 socket + SR tick 驱动 | 消息入队、全 rank 一致、延迟 rank、注册不全 |
+| 原生预留适配 | 分配不足、预留消费、实际尾页、提前 EOS、未使用整页归还 |
+| service / scheduler hook | 未获 dispatch 不入队，三条件不齐不返回首 token |
+| 显式释放 | 无 free 不复用；旧 DONE 不释放；free_ack 不提前 |
+| 运行入口 | 配置展开、就绪判断、进程归属、失败退出、报告收集 |
+
+allocator 行为测试不能只断言方法被调用。
+需要核对分配前后可用行/页、真实索引归属和无重复归还。
+预留后的全局 free 较少，也不能误触发原生 retract。
+新模式与旧参考路径均要运行适用的回归检查。
+
+**用户执行的 NPU 验收**
+
+- 两个内容不同的 4096-token 冷请求，各允许最多生成 128 token。
+- 每个请求完整 output_ids 与同配置参考完全一致。
+- 存在真实 D decode forward 和 mempool 读取。
+- P/D 来源、Graph replay 和 padding 行符合 ticket 要求。
+- P 原生资源可提前归还，之后 D 仍正确读取 P alive。
+- D finished 发生在最后访问及原生资源归还之后。
+- free_ack 发生在实际归还之后，四项账本恢复。
+- 第二请求复用上一请求真实归还的最小空闲 mempool 槽。
+- 输入拒绝、超时和 fail-stop 的检查有独立结果。
+
+主验收设置应确保覆盖真实 decode。
+可用 `ignore_eos=true` 固定生成长度，参考组采用相同设置。
+另测自然 EOS 和 max_new_tokens=1 的资源清理行为。
+报告区分 smoke 与完整 ticket01 验收，不宣称 prefix 已覆盖。
+
+每条事件记录 run_id、代码版本、rid、op_id、rank 和槽租约。
+因果关系通过命令与回执身份确认，不仅比较跨机时间戳。
+硬件证据由用户执行后回传，再决定是否关闭 ticket01。
+
+## H 实施顺序与代码依据
+
+实施仍属于一个 ticket，按以下可检查步骤推进。
+每一步覆盖真实接口行为，再继续下一个步骤。
+
+| 步骤 | 交付内容 | 检查重点 |
+|---|---|---|
+| 1 | Main 事件逻辑、消息类型、SR 注册与 tick 接入；整理旧控制副作用 | 全 rank 注册、容量与输入拒绝；新旧控制模式互斥 |
+| 2 | 显式 alloc / dispatch 和 D 原生预留 | 真实行页分配、唯一槽所有权、避免双重分配 |
+| 3 | 接通原生 HTTP、prefill、ready 与 decode | 输入身份一致、首 token 门控、两侧数据路径 |
+| 4 | finished、free、free_ack 与槽复用 | 原生与 alive 分离、所有旧自动释放分支 |
+| 5 | 双机 serve / acceptance 入口与报告 | 启动依赖、完整参考对照、自动清理 |
+| 6 | 中文说明、代码审阅、用户 NPU 验收 | 行为与规格一致，证据完整后才闭票 |
+
+实现中最需要验证的三个位置：
+
+- 原生预留的消费与清理，尤其实际尾页和提前结束。
+- SR 集体通信与原有 scheduler tick 的一致顺序。
+- 旧 drain / DONE / 迟到消息分支不再绕过显式 free。
+
+当前没有运行新实现的 CPU 或 NPU 测试，因为本轮没有实现代码。
+新 CLI、端口和模块划分属于此方案的建议，尚未替代已发布规格。
+ticket01 继续保持 ready-for-agent / open。
+
+2026-10-23 本次补充了内存几何、记录形状和原生预留细节。
+核对代码基线为 `3883624810` 加当前工作区。
+拟新增的 Router／SR 模块与 run_mempool_min 脚本尚不存在。
+本次检查仅覆盖文档、代码事实及容量算术，不计为功能通过。
+目标页 D 继续记录待实现、待用户 NPU 验收。
+
+**现有代码依据**
+
+| 依据 | 本轮核对内容 |
+|---|---|
+| [本地规格](spec.md) | 角色分工、资源预留、输入范围、显式释放 |
+| [独立 ticket01](issues/01-cold-request-lifecycle.md) | 冷请求、复用、验收与排除项 |
+| [KVLayout / PoolLayout](../../python/sglang/srt/hardware_backend/npu/mempool/layout.py) | layer-first 几何、字节偏移及 BM 对齐 |
+| [MempoolKVManager / View](../../python/sglang/srt/hardware_backend/npu/mempool/manager.py) | rank-pair 建池、NUMA 分配及本进程地址解析 |
+| [MempoolRuntime](../../python/sglang/srt/hardware_backend/npu/mempool/runtime.py) | 稳定绑定张量、Graph padding、写回事件及收据 |
+| [现有协议类型](../../python/sglang/srt/disaggregation/ascend/mempool_protocol.py) | RequestIdentity、SlotLease、原生 Index K 布局 |
+| [MempoolPDService](../../python/sglang/srt/disaggregation/ascend/mempool_service.py) | 模型加载后挂接、native_release、transfer_complete |
+| [MempoolTPTick](../../python/sglang/srt/disaggregation/ascend/mempool_tick.py) | 有序 TP 事实汇总与旧自主动作 |
+| [MempoolPDControl](../../python/sglang/srt/disaggregation/ascend/mempool_control.py) | 租约身份、finish_drain、DONE 与 RELEASE_ACK |
+| [Scheduler](../../python/sglang/srt/managers/scheduler.py) | ingest_requests、原生请求入队与空闲 tick |
+| [Decode](../../python/sglang/srt/disaggregation/decode.py) | 原生 prealloc、handoff 门控 |
+| [原生行池](../../python/sglang/srt/mem_cache/memory_pool.py) | alloc_rows / free_rows |
+| [页分配器](../../python/sglang/srt/mem_cache/allocator/paged.py) | 按 token 数传入 alloc；返回实际 token 索引 |
+| [逐步分配](../../python/sglang/srt/mem_cache/allocation.py) | alloc_for_decode 的索引与有效长度更新 |
+| [原生清理](../../python/sglang/srt/mem_cache/common.py) | release_kv_cache 与 overallocated 约束 |
+| [现有 Python mini_lb](../../sgl-model-gateway/bindings/python/src/sglang_router/mini_lb.py) | 同 room 分发两侧 HTTP、收取 D 响应 |
+| [现有启动脚本](../../ascend-mempool-test/scripts/run_service.sh) | Ascend 环境、模型参数、端口与日志 |
+| [现有自运行入口](../../ascend-mempool-test/scripts/run_ticket10.py) | 双侧协调、参考对照和进程管理 |
+| [硬件验收规则](../ascend-mempool/verification.md) | 用户运行 NPU 测试，验收后闭票 |
+</textarea>
+<script>
+(() => {
+  const root = document.documentElement;
+  const cycle = (list, cur) => list[(list.indexOf(cur) + 1) % list.length];
+  const label = (btn, value) => {
+    const map = JSON.parse(btn.dataset.labels || '{}');
+    btn.textContent = map[value] || value;
+  };
+  const bind = (name, attr, values) => {
+    const btn = document.querySelector(`[data-am="${name}"]`);
+    if (!btn) return;
+    label(btn, root.getAttribute(attr));
+    btn.addEventListener('click', () => {
+      const next = cycle(values, root.getAttribute(attr));
+      root.setAttribute(attr, next);
+      label(btn, next);
+    });
+  };
+  bind('theme', 'data-theme', ['blueprint', 'shadcn']);
+  bind('mode', 'data-mode', ['auto', 'light', 'dark']);
+
+  const copyBtn = document.querySelector('[data-am="copy"]');
+  copyBtn?.addEventListener('click', async () => {
+    const text = document.getElementById('am-source').value;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = Object.assign(document.createElement('textarea'), { value: text });
+      document.body.append(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    const original = copyBtn.textContent;
+    copyBtn.textContent = copyBtn.dataset.done;
+    setTimeout(() => { copyBtn.textContent = original; }, 1400);
+  });
+})();
+</script>
+</body>
+</html>

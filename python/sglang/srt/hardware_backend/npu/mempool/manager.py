@@ -100,6 +100,7 @@ class MempoolKVManager:
         self._closed = False
         self._owns_bm_context = False
         self._mapping_pending = "not checked"
+        self.numa_node = -1
 
     @classmethod
     def create(
@@ -172,7 +173,9 @@ class MempoolKVManager:
             if handle is None:
                 raise RuntimeError("BM create2 returned no handle")
         logger.info("Mempool BM pool created: bm_rank=%d pool_id=%d", rank, pool_id)
-        return cls(layout, rank, handle, bm_module)
+        manager = cls(layout, rank, handle, bm_module)
+        manager.numa_node = numa_node
+        return manager
 
     @classmethod
     def initialize_rank_pair(

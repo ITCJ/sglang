@@ -111,3 +111,37 @@ NUMA页落点已验证。记录与待核对文件见`numa-startup-verification.m
 3. 按 askmatt 的实际流程准备本仓库实施规格与任务依赖，提出可独立审阅、CPU 开发可推进、之后有明确硬件验收的首个切片。不要仅按源码文件机械拆票。
 4. 提出 sparse/dense 的实施顺序建议，以及 Kimi-Linear 参数重算清单。仅对确实影响最小范围或重大返工的 2–3 个问题和用户讨论，其余沿用已确认设计。
 5. 暂不更新 syncfile 或 HTML，不重新开展整轮架构设计。原始需求中“当时只讨论、不写代码”是设计阶段记录；本次已进入实施准备，后续按当前用户指令和 askmatt 流程推进。
+
+## 2026-10-24：统一 token 页大小（用户明确决定）
+
+DRAM 逻辑页与原生 HBM 页严格共享同一个可配置 `page_size=B`。
+该约束覆盖 sparse、dense、P/D、alive、prefix、Index K 相关存储池。
+仅为整数倍不算一致。本决定取代旧 sparse 固定 DRAM=64／HBM=128 约定。
+旧轮次及 Comments 保留历史；现行正文、公式、验收以本决定为准。
+
+- 哈希按 B 个 token 分块；目录页 q 覆盖 `[qB,(q+1)B)`。
+- 阶段 0 输入满足 `B <= prompt_len <= P_max` 且 `prompt_len % B == 0`。
+- prefix 命中上限 `floor((prompt_len-1)/B)*B`；dense 还须有对应可恢复状态。
+- 整槽额度 `S_P/B`、`S_D/B`；池内逻辑页为 `slot*(S/B)+page_in_slot`。
+- HBM 预留 `ceil((prompt_len+max_new_tokens)/B)`；实际 token 索引按原生映射构造。
+- 主 KV 每页 `B*78*1152` 字节；Index K 每页 `B*21*256` 字节。
+- sparse prefix 容量保持 5120 token，即 `5120/B` 页；副本数不扩大可缓存逻辑容量。
+- dense 状态检查点和 D 跟踪间隔都为 B；后端必须能在所需边界捕获状态。
+- OS 页、字节对齐、kernel tile/chunk、特征维（如 512/64）和 Graph padding 各按原义处理。
+
+当前 GLM-5.2 mempool-min 默认且仅接受 B=128，这是本集成的支持范围，
+不是所有 Ascend 后端能力的声明；其它值先验证对应模型/内核/池并扩展允许集合。
+dense 本仓库尚未集成，Kimi-Linear 的实际支持范围和状态预算须在接入时验证。
+
+B=128 时：A=4096 token=32 页；B 请求=5120 token=40 页；C 命中3968，
+恢复31页、重算最后128 token。prefix 32→40→40→40，E 保持满池跳过保存。
+P/D 整槽分别64/1页；native 预留33/41/33/33页。生成提前结束时，
+已用页、实际尾页及未用预留仍须在 drain 后仅释放一次。
+
+起点已核对为 `cryang/dev/mempool-min` / `af517b1a23`，已有未提交修改保留。
+ticket01 仍 open，等待用户 NPU 验收；02–04 不解锁；CPU 结果不代表硬件通过。
+
+2026-10-24本轮交付与下一步：详见[统一页修正清单](unified-page-size-change.md)。
+修正起点HEAD为af517b1a23a115d19fddd639e249c73e44a7614f，分支cryang/dev/mempool-min。
+用户要求统一页修正并入原ticket01提交；提交后的当前HEAD以git log为准。
+完整CPU416项通过；NPU由用户运行，01仍open，下游仍门控。

@@ -1,0 +1,821 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="blueprint" data-mode="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Answer me with HTML 0.4.3">
+<title>用一个请求看懂 SR 与 Scheduler</title>
+<style>
+html[data-theme="blueprint"], html[data-theme="blueprint"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 0px;
+  --shadow: none;
+  --bw: 1.5px;
+  --head-font: var(--font-sans);
+  --bg: #f6f6f3;
+  --paper: #ffffff;
+  --ink: #16181d;
+  --ink-2: #4b5260;
+  --ink-3: #8b929e;
+  --line: #1d2026;
+  --line-2: #d6dae1;
+  --fill: #f3f5f8;
+  --accent: #1d5fbf;
+  --accent-bg: #e4ecf8;
+  --ok: #1d5fbf;
+  --ok-bg: #e4ecf8;
+  --err: #c62828;
+  --err-bg: #fbeaea;
+  --warn: #a8620a;
+  --warn-bg: #fdf3e2;
+  --head-bg: #16181d;
+  --head-fg: #ffffff;
+}
+html[data-theme="blueprint"][data-mode="dark"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="blueprint"][data-mode="auto"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+}
+
+html[data-theme="shadcn"], html[data-theme="shadcn"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 8px;
+  --shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --bw: 1px;
+  --head-font: var(--font-sans);
+  --bg: #fafafa;
+  --paper: #ffffff;
+  --ink: #09090b;
+  --ink-2: #71717a;
+  --ink-3: #a1a1aa;
+  --line: #e4e4e7;
+  --line-2: #f0f0f2;
+  --fill: #f4f4f5;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --ok: #16a34a;
+  --ok-bg: #f0fdf4;
+  --err: #dc2626;
+  --err-bg: #fef2f2;
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --head-bg: #18181b;
+  --head-fg: #fafafa;
+}
+html[data-theme="shadcn"][data-mode="dark"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="shadcn"][data-mode="auto"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+}
+
+/* Answer me with HTML base — 只引用主题变量，禁止写死颜色（主题 token 见 themes/index.js） */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd { font-family: var(--font-mono); }
+
+/* ── 工具栏 ─────────────────────────────── */
+.am-toolbar {
+  position: fixed; top: 12px; right: 12px; z-index: 10; display: flex; gap: 6px;
+}
+.am-btn {
+  font: 12px/1 var(--font-sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding: 7px 10px; cursor: pointer;
+}
+.am-btn:hover { border-color: var(--ink-3); }
+.am-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── 页头 ───────────────────────────────── */
+.am-head { margin: 0 0 20px; padding-right: 260px; }
+.am-head h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; }
+.am-sub { margin: 4px 0 0; color: var(--ink-2); }
+.am-head-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 12px; color: var(--ink-2); }
+.am-head-meta b { font-family: var(--font-mono); font-weight: 400; color: var(--ink-3); margin-right: 6px; }
+.am-intro { margin-top: 12px; max-width: 80ch; }
+
+/* ── sheet 图纸板 ────────────────────────── */
+.am-sheet { max-width: 1680px; margin: 0 auto; padding: 32px 28px 40px; }
+.am-frame { position: relative; }
+.am-grid {
+  display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 20px; align-items: start;
+}
+.am-ruler { display: none; }
+html[data-theme="blueprint"] .am-frame { border: 1px solid var(--line); padding: 30px; }
+html[data-theme="blueprint"] .am-frame::before {
+  content: ""; position: absolute; inset: 18px; border: 1px solid var(--line); pointer-events: none;
+}
+html[data-theme="blueprint"] .am-ruler {
+  display: flex; position: absolute; font: 10px/1 var(--font-mono); color: var(--ink-3);
+}
+.am-ruler span { flex: 1; display: flex; align-items: center; justify-content: center; }
+.am-ruler--top, .am-ruler--bottom { left: 18px; right: 18px; height: 18px; }
+.am-ruler--top { top: 0; }
+.am-ruler--bottom { bottom: 0; }
+.am-ruler--left, .am-ruler--right { top: 18px; bottom: 18px; width: 18px; flex-direction: column; }
+.am-ruler--left { left: 0; }
+.am-ruler--right { right: 0; }
+.am-ruler--top span + span, .am-ruler--bottom span + span { border-left: 1px solid var(--line); }
+.am-ruler--left span + span, .am-ruler--right span + span { border-top: 1px solid var(--line); }
+
+/* ── 面板 ───────────────────────────────── */
+.am-panel {
+  background: var(--paper); border: var(--bw) solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); min-width: 0; overflow: hidden;
+}
+.am-panel-head {
+  display: flex; align-items: stretch; gap: 0; border-bottom: var(--bw) solid var(--line); min-height: 34px;
+}
+.am-panel-id {
+  display: flex; align-items: center; justify-content: center; min-width: 34px; padding: 0 8px;
+  background: var(--head-bg); color: var(--head-fg); font-weight: 600; font-size: 14px;
+}
+html[data-theme="shadcn"] .am-panel-id { border-radius: 6px; min-width: 24px; height: 24px; margin: 9px 0 9px 14px; font-size: 12px; }
+html[data-theme="shadcn"] .am-panel-head { border-bottom-width: 1px; }
+.am-panel-head h2 { margin: 0; padding: 7px 12px; font-size: 15px; font-weight: 600; flex: 1; display: flex; align-items: center; }
+.am-panel-meta { align-self: center; padding: 0 12px; font: 11px/1.3 var(--font-mono); color: var(--ink-2); text-align: right; }
+.am-panel-body { padding: 14px 16px 16px; }
+.am-panel-body > * + * { margin-top: 12px; }
+
+/* ── Markdown 正文 ───────────────────────── */
+.am-md > :first-child { margin-top: 0; }
+.am-md > :last-child { margin-bottom: 0; }
+.am-md p { margin: 0 0 8px; }
+.am-md ul, .am-md ol { margin: 0 0 8px; padding-left: 20px; }
+.am-md li + li { margin-top: 3px; }
+.am-md h3, .am-md h4 { margin: 14px 0 6px; font-size: 13px; }
+.am-md a { color: var(--accent); }
+.am-md blockquote { margin: 0 0 8px; padding: 2px 12px; border-left: 3px solid var(--line-2); color: var(--ink-2); }
+.am-md :not(pre) > code { font-size: 0.9em; background: var(--fill); padding: 1px 5px; border-radius: 4px; }
+.am-md hr { border: 0; border-top: 1px solid var(--line-2); margin: 12px 0; }
+.am-md table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.am-md th {
+  text-align: left; font: 11px/1.3 var(--font-mono); color: var(--ink-2); font-weight: 400;
+  padding: 6px 10px; border-bottom: 1px solid var(--line-2);
+}
+.am-md td { padding: 7px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.am-md tbody tr:nth-child(even) td { background: var(--fill); }
+.am-table-wrap { overflow-x: auto; }
+.am-code {
+  margin: 0; padding: 12px 14px; background: var(--fill); border: 1px solid var(--line-2);
+  border-radius: var(--radius); overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+}
+
+/* ── 状态徽章 ok / no / warn ──────────────── */
+.am-status { white-space: nowrap; font-weight: 500; }
+.am-status--ok { color: var(--ok); }
+.am-status--no { color: var(--err); }
+.am-status--warn { color: var(--warn); }
+.am-status-icon { display: inline-block; width: 1.1em; font-weight: 700; }
+
+/* ── callout ─────────────────────────────── */
+.am-callout {
+  border: 1px solid var(--line-2); border-left: 3px solid var(--accent); background: var(--accent-bg);
+  padding: 10px 14px; border-radius: var(--radius);
+}
+.am-callout--ok { border-left-color: var(--ok); background: var(--ok-bg); }
+.am-callout--warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.am-callout--err { border-left-color: var(--err); background: var(--err-bg); }
+.am-callout-title { font-weight: 600; margin-bottom: 4px; }
+
+/* ── kv 标题栏格 ─────────────────────────── */
+.am-kv {
+  display: grid; grid-template-columns: repeat(var(--kv-cols, 2), minmax(0, 1fr)); margin: 0;
+  border-top: var(--bw) solid var(--line); border-left: var(--bw) solid var(--line);
+}
+.am-kv-cell { border-right: var(--bw) solid var(--line); border-bottom: var(--bw) solid var(--line); padding: 6px 10px 8px; min-width: 0; }
+.am-kv-cell--wide { grid-column: 1 / -1; }
+.am-kv dt { font: 11px/1.4 var(--font-mono); color: var(--ink-2); }
+.am-kv dd { margin: 2px 0 0; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.am-kv-cell--wide dd { font-size: 17px; font-weight: 600; }
+html[data-theme="shadcn"] .am-kv { border-color: var(--line); border-radius: var(--radius); overflow: hidden; }
+
+/* ── timeline ────────────────────────────── */
+.am-timeline { list-style: none; margin: 0; padding: 0; }
+.am-timeline--h { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); padding-top: 4px; }
+.am-timeline--h li { position: relative; text-align: center; padding: 0 6px; }
+.am-timeline--h li::before {
+  content: ""; position: absolute; top: 31px; left: 0; right: 0; border-top: var(--bw) solid var(--line);
+}
+.am-timeline--h li:first-child::before { left: 50%; }
+.am-timeline--h li:last-child::before { right: 50%; }
+.am-tl-when { display: block; font-size: 15px; font-weight: 500; height: 24px; }
+.am-tl-dot {
+  position: relative; display: block; width: 11px; height: 11px; margin: 2px auto 8px;
+  border: var(--bw) solid var(--line); border-radius: 50%; background: var(--paper);
+}
+.am-tl-item--hi .am-tl-dot { background: var(--accent); border-color: var(--accent); }
+.am-tl-title { display: block; font-size: 12.5px; font-weight: 500; }
+.am-tl-text { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.45; }
+.am-timeline--v li { position: relative; padding: 0 0 14px 22px; }
+.am-timeline--v li::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: -6px; border-left: var(--bw) solid var(--line-2); }
+.am-timeline--v li:last-child::before { display: none; }
+.am-timeline--v .am-tl-dot { position: absolute; left: 0; top: 4px; margin: 0; }
+.am-timeline--v .am-tl-when { display: inline; height: auto; font: 12px var(--font-mono); color: var(--ink-2); margin-right: 8px; }
+.am-timeline--v .am-tl-title { display: inline; font-size: 14px; }
+.am-timeline--v .am-tl-text { margin-top: 2px; }
+
+/* ── annot 句子标注 ──────────────────────── */
+.am-annot + .am-annot { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.am-annot-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.am-annot-meta { font: 11px var(--font-mono); font-weight: 400; color: var(--ink-2); }
+.am-annot-scroll { overflow-x: auto; }
+.am-annot-line {
+  position: relative; display: inline-block; white-space: pre; font: 14px/1.6 var(--font-mono);
+  padding-bottom: calc(var(--rows, 0) * 17px + 14px);
+}
+.am-annot-line--wrap { display: block; white-space: normal; padding-bottom: 10px; }
+.am-annot-line--wrap .am-seg { white-space: nowrap; }
+.am-seg { position: relative; }
+.am-seg::after {
+  content: ""; position: absolute; left: 1px; right: 1px; top: calc(100% + 1px); height: 5px;
+  border: 1px solid var(--accent); border-top: 0;
+}
+.am-seg-n {
+  position: absolute; left: 0; top: calc(100% + 8px + var(--row, 0) * 17px);
+  font: 11px/16px var(--font-sans); color: var(--accent); white-space: nowrap;
+}
+.am-seg--err { color: var(--err); }
+.am-seg--err::after { border-color: var(--err); }
+.am-seg--err .am-seg-n { color: var(--err); }
+.am-annot-caption { font-size: 12px; color: var(--ink-2); }
+
+/* ── limits 限值条 ───────────────────────── */
+.am-lim + .am-lim { margin-top: 14px; }
+.am-lim-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; margin-bottom: 4px; }
+.am-lim-val { font: 12px var(--font-mono); color: var(--accent); white-space: nowrap; }
+.am-lim-track { position: relative; height: 12px; border: 1px solid var(--line-2); background: var(--fill); border-radius: calc(var(--radius) / 2); }
+.am-lim-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-bg); border-right: 1px solid var(--accent); }
+.am-lim-mark { position: absolute; top: -4px; bottom: -4px; border-left: 2px solid var(--accent); }
+.am-lim.is-over .am-lim-fill { background: var(--err-bg); border-right-color: var(--err); }
+.am-lim.is-over .am-lim-val { color: var(--err); }
+.am-lim-ticks { position: relative; height: 16px; font: 10px/16px var(--font-mono); color: var(--ink-3); }
+.am-lim-ticks span { position: absolute; transform: translateX(-50%); }
+.am-lim-ticks span:first-child { transform: none; }
+.am-lim-note { font-size: 11px; color: var(--ink-2); margin-left: 6px; }
+
+/* ── tree 结构树 ─────────────────────────── */
+.am-tree { font-size: 13px; }
+.am-tree-root { display: flex; justify-content: center; position: relative; padding-bottom: 18px; }
+.am-tree-root::after { content: ""; position: absolute; bottom: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-root--solo { padding-bottom: 12px; }
+.am-tree-root--solo::after { display: none; }
+.am-tree-box {
+  border: var(--bw) solid var(--line); background: var(--paper); padding: 6px 14px; text-align: center;
+  border-radius: var(--radius); font-weight: 600;
+}
+.am-tree-box small { display: block; font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.am-tree-box--root { background: var(--accent-bg); font-size: 15px; padding: 8px 28px; }
+.am-tree-cols { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
+.am-tree-col { position: relative; padding: 18px 8px 0; min-width: 0; }
+.am-tree-col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; border-top: var(--bw) solid var(--line); }
+.am-tree-col:first-child::before { left: 50%; }
+.am-tree-col:last-child::before { right: 50%; }
+.am-tree-col::after { content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-list, .am-tree-list ul { list-style: none; margin: 0; padding: 0; }
+.am-tree-col > .am-tree-list { margin: 8px 0 0 14px; }
+.am-tree-list ul { margin-left: 16px; }
+.am-tree-list li { position: relative; padding: 3px 0 3px 18px; }
+.am-tree-list li::before { content: ""; position: absolute; left: 0; top: 0.95em; width: 12px; border-top: 1px solid var(--ink-3); }
+.am-tree-list li::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--ink-3); }
+.am-tree-list li:last-child::after { bottom: auto; height: 0.95em; }
+.am-tree-tag { font: 11px var(--font-mono); color: var(--ink-3); margin-right: 4px; }
+.am-tree code { font: 12px var(--font-mono); }
+.am-tree-sub { display: block; font-size: 11.5px; color: var(--ink-2); }
+.am-tree-hi > .am-tree-label { color: var(--accent); font-weight: 600; }
+
+/* ── 图（flow / sequence）───────────────── */
+.am-diagram { margin: 0; overflow-x: auto; text-align: center; }
+.am-diagram svg { max-width: 100%; height: auto; font-family: var(--font-sans); }
+.am-diagram text { fill: var(--ink); font-size: 13px; }
+.am-node-shape { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-node--hi .am-node-shape { fill: var(--accent-bg); stroke: var(--accent); }
+.am-node--hi text { fill: var(--accent); font-weight: 600; }
+.am-edge { fill: none; stroke: var(--ink-2); stroke-width: 1.3; }
+.am-edge--dashed { stroke-dasharray: 5 4; }
+.am-arrow { fill: var(--ink-2); }
+.am-edge-label rect { fill: var(--paper); }
+.am-diagram .am-edge-label text { fill: var(--accent); font-size: 11.5px; }
+.am-cluster { fill: var(--fill); stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 4 3; }
+.am-diagram .am-cluster-label { fill: var(--ink-2); font: 11px var(--font-mono); }
+.am-lifeline { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 4 4; }
+.am-actor { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-note { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 1; }
+.am-diagram .am-step { fill: var(--ink-3); font: 10px var(--font-mono); }
+
+/* ── doc 线性讲解 ────────────────────────── */
+.am-doc { max-width: 1120px; margin: 0 auto; padding: 40px 28px 64px; }
+.am-doc-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
+.am-doc-layout--notoc { grid-template-columns: minmax(0, 1fr); max-width: 860px; }
+.am-toc { position: sticky; top: 24px; font-size: 13px; }
+.am-toc a { display: block; color: var(--ink-2); text-decoration: none; padding: 4px 0 4px 10px; border-left: 2px solid var(--line-2); }
+.am-toc a:hover { color: var(--ink); border-left-color: var(--accent); }
+.am-doc-body > .am-panel + .am-panel { margin-top: 20px; }
+
+/* ── 响应式与打印 ─────────────────────────── */
+@media (max-width: 1100px) {
+  .am-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .am-grid > .am-panel { grid-column: auto !important; }
+  .am-grid > .am-panel.am-span-wide { grid-column: 1 / -1 !important; }
+}
+@media (max-width: 760px) {
+  .am-sheet, .am-doc { padding: 56px 12px 24px; }
+  .am-head { padding-right: 0; }
+  .am-grid { grid-template-columns: minmax(0, 1fr); }
+  .am-grid > .am-panel.am-span-wide { grid-column: auto !important; }
+  html[data-theme="blueprint"] .am-frame { padding: 0; border: 0; }
+  html[data-theme="blueprint"] .am-frame::before, html[data-theme="blueprint"] .am-ruler { display: none; }
+  .am-doc-layout { grid-template-columns: minmax(0, 1fr); }
+  .am-toc { position: static; }
+  .am-timeline--h { grid-template-columns: minmax(0, 1fr); }
+  .am-tree-cols { grid-template-columns: minmax(0, 1fr); }
+}
+.am-colophon { text-align: center; padding: 0 0 28px; font: 11px var(--font-mono); color: var(--ink-3); }
+
+@media print {
+  .am-toolbar { display: none; }
+  body { background: var(--paper); }
+  .am-panel { break-inside: avoid; box-shadow: none; }
+}
+.am-panel--bare { border: 0; background: transparent; box-shadow: none; }
+.am-panel--bare > .am-panel-body { padding: 0; }
+.am-panel--bare .am-kv { background: var(--paper); }
+
+</style>
+</head>
+<body>
+<div class="am-toolbar">
+<button class="am-btn" type="button" data-am="theme" data-labels="{&quot;blueprint&quot;:&quot;主题：图纸&quot;,&quot;shadcn&quot;:&quot;主题：卡片&quot;}">主题：图纸</button>
+<button class="am-btn" type="button" data-am="mode" data-labels="{&quot;auto&quot;:&quot;明暗：跟随系统&quot;,&quot;light&quot;:&quot;明暗：亮&quot;,&quot;dark&quot;:&quot;明暗：暗&quot;}">明暗：跟随系统</button>
+<button class="am-btn" type="button" data-am="copy" data-done="已复制 ✓">复制源稿</button>
+</div>
+<main class="am-doc">
+<header class="am-head"><h1>用一个请求看懂 SR 与 Scheduler</h1><p class="am-sub">协调者汇总全组，分片执行本地操作，Scheduler 安排计算</p><div class="am-head-meta"><span><b>status</b>SR 是 ticket01 的拟定实现；Scheduler 已存在</span></div><div class="am-intro am-md"><div class="am-md"><p>SR 协调者和 SR 分片共同组成一侧的 Sub Router。
+协调者负责本侧统一分配、下发命令和汇总完成。
+分片在各 rank 内执行本地存储操作。
+Scheduler 是每个 rank 内持续运行的推理调度循环。</p>
+<p>本文的私有副本和 slot 示例限定在 syncfile 的 sparse 阶段 0。
+K1 会让两个 rank 共用一份 alive 主 KV，SR 分片仍各 rank 一个。
+后续目标及阶段对应见<a href="target-alignment.md">目标对齐核对</a>。</p>
+</div></div></header>
+<div class="am-doc-layout">
+<nav class="am-toc" aria-label="目录"><a href="#panel-A">A · 它们在哪里</a><a href="#panel-B">B · 例子：请求 A 需要保存 4096-token prompt</a><a href="#panel-C">C · Scheduler 每一轮做什么</a><a href="#panel-D">D · Main Router、SR 和 Scheduler 如何配合</a></nav><div class="am-doc-body">
+<section class="am-panel" id="panel-A">
+<header class="am-panel-head"><span class="am-panel-id">A</span><h2>它们在哪里</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>以 P 机的 TP16 为例。一台机器有 16 个参与推理的 rank。
+每个 rank 都有 Scheduler、SR 分片及模型执行模块。
+rank 0 还放置 SR 协调者。</p>
+</div>
+<div class="am-tree"><div class="am-tree-root"><div class="am-tree-box am-tree-box--root" data-key="P 机：一个 TP16 推理实例" data-step="0">P 机：一个 TP16 推理实例</div></div><div class="am-tree-cols" style="--n: 3"><div class="am-tree-col"><div class="am-tree-box" data-key="rank 0 进程" data-step="1">rank 0 进程</div><ul class="am-tree-list"><li data-key="Scheduler 0" data-step="2"><span class="am-tree-label">Scheduler 0</span><ul><li data-key="SR_P 协调者：与 Main Router 通信，协调全组" data-step="3"><span class="am-tree-label">SR_P 协调者：与 Main Router 通信，协调全组</span></li><li data-key="SR_P 分片 0：处理 rank 0 自己的存储" data-step="4"><span class="am-tree-label">SR_P 分片 0：处理 rank 0 自己的存储</span></li><li data-key="ModelWorker 0：执行本 rank 的模型计算" data-step="5"><span class="am-tree-label">ModelWorker 0：执行本 rank 的模型计算</span></li></ul></li></ul></div><div class="am-tree-col"><div class="am-tree-box" data-key="rank 1 进程" data-step="6">rank 1 进程</div><ul class="am-tree-list"><li data-key="Scheduler 1" data-step="7"><span class="am-tree-label">Scheduler 1</span><ul><li data-key="SR_P 分片 1：处理 rank 1 自己的存储" data-step="8"><span class="am-tree-label">SR_P 分片 1：处理 rank 1 自己的存储</span></li><li data-key="ModelWorker 1：执行本 rank 的模型计算" data-step="9"><span class="am-tree-label">ModelWorker 1：执行本 rank 的模型计算</span></li></ul></li></ul></div><div class="am-tree-col"><div class="am-tree-box" data-key="rank 2 至 rank 15" data-step="10">rank 2 至 rank 15</div><ul class="am-tree-list"><li data-key="各自的 Scheduler、SR_P 分片、ModelWorker" data-step="11"><span class="am-tree-label">各自的 Scheduler、SR_P 分片、ModelWorker</span></li></ul></div></div></div>
+<div class="am-md"><p>图表示模块归属，不表示这些对象是新增进程。
+D 机使用相同组织方式，换成 SR_D。</p>
+<p><strong>“分片”在这里是 SR 按 rank 拆开的执行部分。</strong>
+ticket01 使用各 rank 私有的 compact 主 KV 副本。
+对于 4096-token prompt，每个 rank 保存自己那份完整逻辑主 KV。
+同一逻辑位置在不同 rank 中对应各自的存储和设备映射。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-B">
+<header class="am-panel-head"><span class="am-panel-id">B</span><h2>例子：请求 A 需要保存 4096-token prompt</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>假设所有 P 槽都空闲，协调者为 A 选择最小空闲槽 0。
+“slot 0”在这里表示各 rank 私有池中编号相同的槽。
+全部 P ranks 必须确认同一请求与分配结果。</p>
+<p>这里的 slot 是 alive 临时后端的分配单位。
+S_P = 8192 时，一个槽占 64 个 B-token 逻辑页额度。
+4096-token 请求只写入前 32 页，槽尾仍被占用。
+prefix 在阶段 0 已按页分配；alive 的真正页分配器安排在阶段 3。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>时刻</th>
+<th>SR_P 协调者</th>
+<th>每个 SR_P 分片</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>收到 alloc(A)</td>
+<td>选择槽 0，在有序 tick 中下发</td>
+<td>校验身份，在本 rank 的池中占用槽 0</td>
+</tr>
+<tr>
+<td>分配结束</td>
+<td>收齐 16 个成功结果，回 alloc_ack</td>
+<td>返回本地分配结果和描述符</td>
+</tr>
+<tr>
+<td>P 开始计算</td>
+<td>保留请求与分配记录</td>
+<td>配合本 rank 的 runtime 跟踪写回完成</td>
+</tr>
+<tr>
+<td>rank 7 仍有写回未完成</td>
+<td>继续等待</td>
+<td>其他分片报告完成；分片 7 报告未完成</td>
+</tr>
+<tr>
+<td>16 个 rank 全部完成</td>
+<td>向 Main Router 报 ready_tokens=4096</td>
+<td>本地设备事件证明写回已完成</td>
+</tr>
+<tr>
+<td>最后收到 free(A)</td>
+<td>下发释放，收齐结果后回 free_ack</td>
+<td>检查本地依赖，归还自己的槽 0</td>
+</tr>
+</tbody></table></div>
+<p>协调者对 Main Router 报告的是“本侧整体完成”。
+单个分片完成，只能证明本 rank 的那一份已完成。
+rank 0 的本地工作也由分片 0 完成，并计入这 16 份结果。</p>
+</div>
+<figure class="am-diagram am-seq"><svg viewBox="0 0 609 554" width="609" height="554" role="img" aria-label="时序图：Main、协调者、分片0至6、分片7、分片8至15" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am1-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><line class="am-lifeline" x1="54" y1="42" x2="54" y2="550"/><g data-key="Main"><rect class="am-actor" x="12" y="8" width="84" height="34" rx="2"/><text x="54" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">Main</text></g><line class="am-lifeline" x1="201.3" y1="42" x2="201.3" y2="550"/><g data-key="协调者"><rect class="am-actor" x="159.3" y="8" width="84" height="34" rx="2"/><text x="201.3" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">协调者</text></g><line class="am-lifeline" x1="325.5" y1="42" x2="325.5" y2="550"/><g data-key="分片0至6"><rect class="am-actor" x="283.5" y="8" width="84" height="34" rx="2"/><text x="325.5" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">分片0至6</text></g><line class="am-lifeline" x1="437.5" y1="42" x2="437.5" y2="550"/><g data-key="分片7"><rect class="am-actor" x="395.5" y="8" width="84" height="34" rx="2"/><text x="437.5" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">分片7</text></g><line class="am-lifeline" x1="551.9" y1="42" x2="551.9" y2="550"/><g data-key="分片8至15"><rect class="am-actor" x="507.5" y="8" width="88.8" height="34" rx="2"/><text x="551.9" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">分片8至15</text></g><g data-step="0"><text x="127.7" y="70" text-anchor="middle">为 A 分配 P alive</text><path class="am-edge" d="M54,80 L199.3,80" marker-end="url(#am1-arrow)"/></g><g data-step="1"><text x="263.4" y="110" text-anchor="middle">在各自池占用槽 0</text><path class="am-edge" d="M201.3,120 L323.5,120" marker-end="url(#am1-arrow)"/></g><g data-step="2"><text x="319.4" y="150" text-anchor="middle">在本地池占用槽 0</text><path class="am-edge" d="M201.3,160 L435.5,160" marker-end="url(#am1-arrow)"/></g><g data-step="3"><text x="376.6" y="190" text-anchor="middle">在各自池占用槽 0</text><path class="am-edge" d="M201.3,200 L549.9,200" marker-end="url(#am1-arrow)"/></g><g data-step="4"><rect class="am-note" x="181.3" y="224" width="390.6" height="44" rx="2"/><text x="376.6" y="238" text-anchor="middle" dominant-baseline="central" font-size="12">收齐实际分配结果后，协调者向 Main 回</text><text x="376.6" y="254" text-anchor="middle" dominant-baseline="central" font-size="12">alloc_ack</text></g><g data-step="5"><rect class="am-note" x="181.3" y="284" width="390.6" height="44" rx="2"/><text x="376.6" y="298" text-anchor="middle" dominant-baseline="central" font-size="12">dispatch 后，各 Scheduler 驱动共同的</text><text x="376.6" y="314" text-anchor="middle" dominant-baseline="central" font-size="12">prefill</text></g><g data-step="6"><text x="263.4" y="350" text-anchor="middle">主 KV 写回完成</text><path class="am-edge am-edge--dashed" d="M325.5,360 L203.3,360" marker-end="url(#am1-arrow)"/></g><g data-step="7"><text x="376.6" y="390" text-anchor="middle">主 KV 写回完成</text><path class="am-edge am-edge--dashed" d="M551.9,400 L203.3,400" marker-end="url(#am1-arrow)"/></g><g data-step="8"><rect class="am-note" x="124.4" y="424" width="153.9" height="28" rx="2"/><text x="201.3" y="438" text-anchor="middle" dominant-baseline="central" font-size="12">rank 7 未完成，继续等待</text></g><g data-step="9"><text x="319.4" y="474" text-anchor="middle">主 KV 写回完成</text><path class="am-edge am-edge--dashed" d="M437.5,484 L203.3,484" marker-end="url(#am1-arrow)"/></g><g data-step="10"><text x="127.7" y="514" text-anchor="middle">ready_tokens = 4096</text><path class="am-edge am-edge--dashed" d="M201.3,524 L56,524" marker-end="url(#am1-arrow)"/></g></svg></figure>
+<div class="am-md"><p>图中分组仅用于展示，实际通过 TP 组通信汇总。
+单 chunk 的本例在全部完成后报告 4096。
+后续若支持分段进度，也只能报告所有必要分片均完成的连续范围。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-C">
+<header class="am-panel-head"><span class="am-panel-id">C</span><h2>Scheduler 每一轮做什么</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>Scheduler 决定本轮运行哪个请求、运行哪种 forward，以及何时处理结果。
+它调用 ModelWorker 执行实际模型计算，并管理原生请求的推进。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>工作</th>
+<th>当前请求 A 中的含义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>接收输入</td>
+<td>接收原生 Req，推进控制命令和完成事件</td>
+</tr>
+<tr>
+<td>检查能否运行</td>
+<td>检查资源、绑定，以及当前阶段要求的就绪条件</td>
+</tr>
+<tr>
+<td>组织 batch</td>
+<td>将可以运行的请求放进本轮计算；本 ticket 最多一个真实请求</td>
+</tr>
+<tr>
+<td>调用模型</td>
+<td>P 执行 prompt prefill；D 执行下一步 decode</td>
+</tr>
+<tr>
+<td>处理结果</td>
+<td>更新输出 token、长度、EOS 和停止状态</td>
+</tr>
+<tr>
+<td>推进清理</td>
+<td>触发原生资源清理，并让 SR 观察完成与释放条件</td>
+</tr>
+</tbody></table></div>
+<p>调度循环可以概括为以下伪代码：</p>
+</div>
+<pre class="am-code"><code data-lang="text">while 服务运行:
+    接收请求和控制消息
+    推进本轮 SR 操作与完成检查
+    处理原生 bootstrap / transfer 队列
+    选择已经满足条件的计算 batch
+    调用 ModelWorker 执行 forward
+    处理可用结果，更新请求状态</code></pre>
+<div class="am-md"><p>实际 P/D 循环有各自的队列，overlap 模式还会交错处理前一轮结果。
+以上只表达职责，不是要求按此重写现有循环。
+一次 tick 是一次调度循环迭代；它可以只处理控制消息。
+它不保证每轮都生成 token，也不保证设备在返回时已完成。</p>
+<p><strong>每个 rank 都有 Scheduler。</strong>
+TP ranks 处理同一组请求，并保持兼容的计算与通信顺序。
+各 rank 执行模型中分配给自己的部分，合起来完成一次 forward。</p>
+<p>普通 decode 中，P 的首 token 通过 handoff 交给 D。
+D 各 Scheduler 满足门控后，让各 ModelWorker 处理这个 token。
+这次 forward 产生下一个 token，随后重复执行，直到停止条件满足。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-D">
+<header class="am-panel-head"><span class="am-panel-id">D</span><h2>Main Router、SR 和 Scheduler 如何配合</h2></header>
+<div class="am-panel-body"><div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>角色</th>
+<th>主要回答的问题</th>
+<th>A 的例子</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Main Router</td>
+<td>这个请求能否接收？跨 P/D 应推进到哪一步？</td>
+<td>预留四类资源，通知 D ready，最后下发 free</td>
+</tr>
+<tr>
+<td>SR 协调者</td>
+<td>本侧应该使用哪些存储？所有 rank 完成了吗？</td>
+<td>选槽 0；等待全部 16 份写回</td>
+</tr>
+<tr>
+<td>SR 分片</td>
+<td>本 rank 的存储在哪里？本地操作完成了吗？</td>
+<td>解析本地描述符，观察事件，归还本地租约</td>
+</tr>
+<tr>
+<td>Scheduler</td>
+<td>本轮哪些计算可以运行？结果和请求如何推进？</td>
+<td>条件满足后启动 prefill / decode，处理 EOS</td>
+</tr>
+<tr>
+<td>ModelWorker / runtime</td>
+<td>如何执行模型与设备读写？</td>
+<td>执行 forward、mempool 写回与稀疏读取</td>
+</tr>
+</tbody></table></div>
+<p>将 SR 放入 Scheduler 的有序 tick，有两个直接作用。
+计算启动前可以检查存储绑定与就绪状态。
+各 rank 可以按一致顺序参加 SR 和模型所需的组内通信。</p>
+<p>网络接收线程只把消息排队。
+Scheduler 在约定位置推进 SR，避免不同 rank 在同一时刻等待不同的通信。
+D 完成生成后，Scheduler 推进 drain 和原生清理。
+SR 汇总 finished，Main 下发 free，再由各分片实际归还 alive。</p>
+<p>SR 的上述职责是 <a href="ticket-01-implementation-plan.md">ticket01 方案</a> 中拟新增的部分。
+现有 <a href="../../python/sglang/srt/managers/scheduler.py">Scheduler</a> 已负责接收、batch 和模型调用。
+其 ingest_requests 已调用 mempool_service.advance，准备沿用这一接入点。
+实际 P/D 主循环见 <a href="../../python/sglang/srt/disaggregation/prefill.py">prefill.py</a> 与
+<a href="../../python/sglang/srt/disaggregation/decode.py">decode.py</a>。</p>
+</div></div>
+</section>
+</div>
+</div>
+</main>
+<footer class="am-colophon">Generated by Answer me with HTML 0.4.3 · 2026-10-24 00:47</footer>
+<textarea id="am-source" hidden readonly aria-hidden="true">---
+title: 用一个请求看懂 SR 与 Scheduler
+subtitle: 协调者汇总全组，分片执行本地操作，Scheduler 安排计算
+template: doc
+theme: blueprint
+lang: zh
+status: SR 是 ticket01 的拟定实现；Scheduler 已存在
+---
+
+SR 协调者和 SR 分片共同组成一侧的 Sub Router。
+协调者负责本侧统一分配、下发命令和汇总完成。
+分片在各 rank 内执行本地存储操作。
+Scheduler 是每个 rank 内持续运行的推理调度循环。
+
+本文的私有副本和 slot 示例限定在 syncfile 的 sparse 阶段 0。
+K1 会让两个 rank 共用一份 alive 主 KV，SR 分片仍各 rank 一个。
+后续目标及阶段对应见[目标对齐核对](target-alignment.md)。
+
+## A 它们在哪里
+
+以 P 机的 TP16 为例。一台机器有 16 个参与推理的 rank。
+每个 rank 都有 Scheduler、SR 分片及模型执行模块。
+rank 0 还放置 SR 协调者。
+
+```tree
+P 机：一个 TP16 推理实例
+  rank 0 进程
+    Scheduler 0
+      SR_P 协调者：与 Main Router 通信，协调全组
+      SR_P 分片 0：处理 rank 0 自己的存储
+      ModelWorker 0：执行本 rank 的模型计算
+  rank 1 进程
+    Scheduler 1
+      SR_P 分片 1：处理 rank 1 自己的存储
+      ModelWorker 1：执行本 rank 的模型计算
+  rank 2 至 rank 15
+    各自的 Scheduler、SR_P 分片、ModelWorker
+```
+
+图表示模块归属，不表示这些对象是新增进程。
+D 机使用相同组织方式，换成 SR_D。
+
+**“分片”在这里是 SR 按 rank 拆开的执行部分。**
+ticket01 使用各 rank 私有的 compact 主 KV 副本。
+对于 4096-token prompt，每个 rank 保存自己那份完整逻辑主 KV。
+同一逻辑位置在不同 rank 中对应各自的存储和设备映射。
+
+## B 例子：请求 A 需要保存 4096-token prompt
+
+假设所有 P 槽都空闲，协调者为 A 选择最小空闲槽 0。
+“slot 0”在这里表示各 rank 私有池中编号相同的槽。
+全部 P ranks 必须确认同一请求与分配结果。
+
+这里的 slot 是 alive 临时后端的分配单位。
+S_P = 8192 时，一个槽占 64 个 B-token 逻辑页额度。
+4096-token 请求只写入前 32 页，槽尾仍被占用。
+prefix 在阶段 0 已按页分配；alive 的真正页分配器安排在阶段 3。
+
+| 时刻 | SR_P 协调者 | 每个 SR_P 分片 |
+|---|---|---|
+| 收到 alloc(A) | 选择槽 0，在有序 tick 中下发 | 校验身份，在本 rank 的池中占用槽 0 |
+| 分配结束 | 收齐 16 个成功结果，回 alloc_ack | 返回本地分配结果和描述符 |
+| P 开始计算 | 保留请求与分配记录 | 配合本 rank 的 runtime 跟踪写回完成 |
+| rank 7 仍有写回未完成 | 继续等待 | 其他分片报告完成；分片 7 报告未完成 |
+| 16 个 rank 全部完成 | 向 Main Router 报 ready_tokens=4096 | 本地设备事件证明写回已完成 |
+| 最后收到 free(A) | 下发释放，收齐结果后回 free_ack | 检查本地依赖，归还自己的槽 0 |
+
+协调者对 Main Router 报告的是“本侧整体完成”。
+单个分片完成，只能证明本 rank 的那一份已完成。
+rank 0 的本地工作也由分片 0 完成，并计入这 16 份结果。
+
+```sequence
+participants: Main, 协调者, 分片0至6, 分片7, 分片8至15
+Main -&gt; 协调者: 为 A 分配 P alive
+协调者 -&gt; 分片0至6: 在各自池占用槽 0
+协调者 -&gt; 分片7: 在本地池占用槽 0
+协调者 -&gt; 分片8至15: 在各自池占用槽 0
+note 协调者, 分片8至15: 收齐实际分配结果后，协调者向 Main 回 alloc_ack
+note 协调者, 分片8至15: dispatch 后，各 Scheduler 驱动共同的 prefill
+分片0至6 --&gt; 协调者: 主 KV 写回完成
+分片8至15 --&gt; 协调者: 主 KV 写回完成
+note 协调者: rank 7 未完成，继续等待
+分片7 --&gt; 协调者: 主 KV 写回完成
+协调者 --&gt; Main: ready_tokens = 4096
+```
+
+图中分组仅用于展示，实际通过 TP 组通信汇总。
+单 chunk 的本例在全部完成后报告 4096。
+后续若支持分段进度，也只能报告所有必要分片均完成的连续范围。
+
+## C Scheduler 每一轮做什么
+
+Scheduler 决定本轮运行哪个请求、运行哪种 forward，以及何时处理结果。
+它调用 ModelWorker 执行实际模型计算，并管理原生请求的推进。
+
+| 工作 | 当前请求 A 中的含义 |
+|---|---|
+| 接收输入 | 接收原生 Req，推进控制命令和完成事件 |
+| 检查能否运行 | 检查资源、绑定，以及当前阶段要求的就绪条件 |
+| 组织 batch | 将可以运行的请求放进本轮计算；本 ticket 最多一个真实请求 |
+| 调用模型 | P 执行 prompt prefill；D 执行下一步 decode |
+| 处理结果 | 更新输出 token、长度、EOS 和停止状态 |
+| 推进清理 | 触发原生资源清理，并让 SR 观察完成与释放条件 |
+
+调度循环可以概括为以下伪代码：
+
+```text
+while 服务运行:
+    接收请求和控制消息
+    推进本轮 SR 操作与完成检查
+    处理原生 bootstrap / transfer 队列
+    选择已经满足条件的计算 batch
+    调用 ModelWorker 执行 forward
+    处理可用结果，更新请求状态
+```
+
+实际 P/D 循环有各自的队列，overlap 模式还会交错处理前一轮结果。
+以上只表达职责，不是要求按此重写现有循环。
+一次 tick 是一次调度循环迭代；它可以只处理控制消息。
+它不保证每轮都生成 token，也不保证设备在返回时已完成。
+
+**每个 rank 都有 Scheduler。**
+TP ranks 处理同一组请求，并保持兼容的计算与通信顺序。
+各 rank 执行模型中分配给自己的部分，合起来完成一次 forward。
+
+普通 decode 中，P 的首 token 通过 handoff 交给 D。
+D 各 Scheduler 满足门控后，让各 ModelWorker 处理这个 token。
+这次 forward 产生下一个 token，随后重复执行，直到停止条件满足。
+
+## D Main Router、SR 和 Scheduler 如何配合
+
+| 角色 | 主要回答的问题 | A 的例子 |
+|---|---|---|
+| Main Router | 这个请求能否接收？跨 P/D 应推进到哪一步？ | 预留四类资源，通知 D ready，最后下发 free |
+| SR 协调者 | 本侧应该使用哪些存储？所有 rank 完成了吗？ | 选槽 0；等待全部 16 份写回 |
+| SR 分片 | 本 rank 的存储在哪里？本地操作完成了吗？ | 解析本地描述符，观察事件，归还本地租约 |
+| Scheduler | 本轮哪些计算可以运行？结果和请求如何推进？ | 条件满足后启动 prefill / decode，处理 EOS |
+| ModelWorker / runtime | 如何执行模型与设备读写？ | 执行 forward、mempool 写回与稀疏读取 |
+
+将 SR 放入 Scheduler 的有序 tick，有两个直接作用。
+计算启动前可以检查存储绑定与就绪状态。
+各 rank 可以按一致顺序参加 SR 和模型所需的组内通信。
+
+网络接收线程只把消息排队。
+Scheduler 在约定位置推进 SR，避免不同 rank 在同一时刻等待不同的通信。
+D 完成生成后，Scheduler 推进 drain 和原生清理。
+SR 汇总 finished，Main 下发 free，再由各分片实际归还 alive。
+
+SR 的上述职责是 [ticket01 方案](ticket-01-implementation-plan.md) 中拟新增的部分。
+现有 [Scheduler](../../python/sglang/srt/managers/scheduler.py) 已负责接收、batch 和模型调用。
+其 ingest_requests 已调用 mempool_service.advance，准备沿用这一接入点。
+实际 P/D 主循环见 [prefill.py](../../python/sglang/srt/disaggregation/prefill.py) 与
+[decode.py](../../python/sglang/srt/disaggregation/decode.py)。
+</textarea>
+<script>
+(() => {
+  const root = document.documentElement;
+  const cycle = (list, cur) => list[(list.indexOf(cur) + 1) % list.length];
+  const label = (btn, value) => {
+    const map = JSON.parse(btn.dataset.labels || '{}');
+    btn.textContent = map[value] || value;
+  };
+  const bind = (name, attr, values) => {
+    const btn = document.querySelector(`[data-am="${name}"]`);
+    if (!btn) return;
+    label(btn, root.getAttribute(attr));
+    btn.addEventListener('click', () => {
+      const next = cycle(values, root.getAttribute(attr));
+      root.setAttribute(attr, next);
+      label(btn, next);
+    });
+  };
+  bind('theme', 'data-theme', ['blueprint', 'shadcn']);
+  bind('mode', 'data-mode', ['auto', 'light', 'dark']);
+
+  const copyBtn = document.querySelector('[data-am="copy"]');
+  copyBtn?.addEventListener('click', async () => {
+    const text = document.getElementById('am-source').value;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = Object.assign(document.createElement('textarea'), { value: text });
+      document.body.append(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    const original = copyBtn.textContent;
+    copyBtn.textContent = copyBtn.dataset.done;
+    setTimeout(() => { copyBtn.textContent = original; }, 1400);
+  });
+})();
+</script>
+</body>
+</html>

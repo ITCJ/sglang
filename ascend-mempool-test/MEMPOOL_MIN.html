@@ -1,0 +1,1171 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="blueprint" data-mode="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Answer me with HTML 0.4.3">
+<title>Ticket01 实现与代码审核指南</title>
+<style>
+html[data-theme="blueprint"], html[data-theme="blueprint"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 0px;
+  --shadow: none;
+  --bw: 1.5px;
+  --head-font: var(--font-sans);
+  --bg: #f6f6f3;
+  --paper: #ffffff;
+  --ink: #16181d;
+  --ink-2: #4b5260;
+  --ink-3: #8b929e;
+  --line: #1d2026;
+  --line-2: #d6dae1;
+  --fill: #f3f5f8;
+  --accent: #1d5fbf;
+  --accent-bg: #e4ecf8;
+  --ok: #1d5fbf;
+  --ok-bg: #e4ecf8;
+  --err: #c62828;
+  --err-bg: #fbeaea;
+  --warn: #a8620a;
+  --warn-bg: #fdf3e2;
+  --head-bg: #16181d;
+  --head-fg: #ffffff;
+}
+html[data-theme="blueprint"][data-mode="dark"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="blueprint"][data-mode="auto"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+}
+
+html[data-theme="shadcn"], html[data-theme="shadcn"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 8px;
+  --shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --bw: 1px;
+  --head-font: var(--font-sans);
+  --bg: #fafafa;
+  --paper: #ffffff;
+  --ink: #09090b;
+  --ink-2: #71717a;
+  --ink-3: #a1a1aa;
+  --line: #e4e4e7;
+  --line-2: #f0f0f2;
+  --fill: #f4f4f5;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --ok: #16a34a;
+  --ok-bg: #f0fdf4;
+  --err: #dc2626;
+  --err-bg: #fef2f2;
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --head-bg: #18181b;
+  --head-fg: #fafafa;
+}
+html[data-theme="shadcn"][data-mode="dark"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="shadcn"][data-mode="auto"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+}
+
+/* Answer me with HTML base — 只引用主题变量，禁止写死颜色（主题 token 见 themes/index.js） */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd { font-family: var(--font-mono); }
+
+/* ── 工具栏 ─────────────────────────────── */
+.am-toolbar {
+  position: fixed; top: 12px; right: 12px; z-index: 10; display: flex; gap: 6px;
+}
+.am-btn {
+  font: 12px/1 var(--font-sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding: 7px 10px; cursor: pointer;
+}
+.am-btn:hover { border-color: var(--ink-3); }
+.am-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── 页头 ───────────────────────────────── */
+.am-head { margin: 0 0 20px; padding-right: 260px; }
+.am-head h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; }
+.am-sub { margin: 4px 0 0; color: var(--ink-2); }
+.am-head-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 12px; color: var(--ink-2); }
+.am-head-meta b { font-family: var(--font-mono); font-weight: 400; color: var(--ink-3); margin-right: 6px; }
+.am-intro { margin-top: 12px; max-width: 80ch; }
+
+/* ── sheet 图纸板 ────────────────────────── */
+.am-sheet { max-width: 1680px; margin: 0 auto; padding: 32px 28px 40px; }
+.am-frame { position: relative; }
+.am-grid {
+  display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 20px; align-items: start;
+}
+.am-ruler { display: none; }
+html[data-theme="blueprint"] .am-frame { border: 1px solid var(--line); padding: 30px; }
+html[data-theme="blueprint"] .am-frame::before {
+  content: ""; position: absolute; inset: 18px; border: 1px solid var(--line); pointer-events: none;
+}
+html[data-theme="blueprint"] .am-ruler {
+  display: flex; position: absolute; font: 10px/1 var(--font-mono); color: var(--ink-3);
+}
+.am-ruler span { flex: 1; display: flex; align-items: center; justify-content: center; }
+.am-ruler--top, .am-ruler--bottom { left: 18px; right: 18px; height: 18px; }
+.am-ruler--top { top: 0; }
+.am-ruler--bottom { bottom: 0; }
+.am-ruler--left, .am-ruler--right { top: 18px; bottom: 18px; width: 18px; flex-direction: column; }
+.am-ruler--left { left: 0; }
+.am-ruler--right { right: 0; }
+.am-ruler--top span + span, .am-ruler--bottom span + span { border-left: 1px solid var(--line); }
+.am-ruler--left span + span, .am-ruler--right span + span { border-top: 1px solid var(--line); }
+
+/* ── 面板 ───────────────────────────────── */
+.am-panel {
+  background: var(--paper); border: var(--bw) solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); min-width: 0; overflow: hidden;
+}
+.am-panel-head {
+  display: flex; align-items: stretch; gap: 0; border-bottom: var(--bw) solid var(--line); min-height: 34px;
+}
+.am-panel-id {
+  display: flex; align-items: center; justify-content: center; min-width: 34px; padding: 0 8px;
+  background: var(--head-bg); color: var(--head-fg); font-weight: 600; font-size: 14px;
+}
+html[data-theme="shadcn"] .am-panel-id { border-radius: 6px; min-width: 24px; height: 24px; margin: 9px 0 9px 14px; font-size: 12px; }
+html[data-theme="shadcn"] .am-panel-head { border-bottom-width: 1px; }
+.am-panel-head h2 { margin: 0; padding: 7px 12px; font-size: 15px; font-weight: 600; flex: 1; display: flex; align-items: center; }
+.am-panel-meta { align-self: center; padding: 0 12px; font: 11px/1.3 var(--font-mono); color: var(--ink-2); text-align: right; }
+.am-panel-body { padding: 14px 16px 16px; }
+.am-panel-body > * + * { margin-top: 12px; }
+
+/* ── Markdown 正文 ───────────────────────── */
+.am-md > :first-child { margin-top: 0; }
+.am-md > :last-child { margin-bottom: 0; }
+.am-md p { margin: 0 0 8px; }
+.am-md ul, .am-md ol { margin: 0 0 8px; padding-left: 20px; }
+.am-md li + li { margin-top: 3px; }
+.am-md h3, .am-md h4 { margin: 14px 0 6px; font-size: 13px; }
+.am-md a { color: var(--accent); }
+.am-md blockquote { margin: 0 0 8px; padding: 2px 12px; border-left: 3px solid var(--line-2); color: var(--ink-2); }
+.am-md :not(pre) > code { font-size: 0.9em; background: var(--fill); padding: 1px 5px; border-radius: 4px; }
+.am-md hr { border: 0; border-top: 1px solid var(--line-2); margin: 12px 0; }
+.am-md table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.am-md th {
+  text-align: left; font: 11px/1.3 var(--font-mono); color: var(--ink-2); font-weight: 400;
+  padding: 6px 10px; border-bottom: 1px solid var(--line-2);
+}
+.am-md td { padding: 7px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.am-md tbody tr:nth-child(even) td { background: var(--fill); }
+.am-table-wrap { overflow-x: auto; }
+.am-code {
+  margin: 0; padding: 12px 14px; background: var(--fill); border: 1px solid var(--line-2);
+  border-radius: var(--radius); overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+}
+
+/* ── 状态徽章 ok / no / warn ──────────────── */
+.am-status { white-space: nowrap; font-weight: 500; }
+.am-status--ok { color: var(--ok); }
+.am-status--no { color: var(--err); }
+.am-status--warn { color: var(--warn); }
+.am-status-icon { display: inline-block; width: 1.1em; font-weight: 700; }
+
+/* ── callout ─────────────────────────────── */
+.am-callout {
+  border: 1px solid var(--line-2); border-left: 3px solid var(--accent); background: var(--accent-bg);
+  padding: 10px 14px; border-radius: var(--radius);
+}
+.am-callout--ok { border-left-color: var(--ok); background: var(--ok-bg); }
+.am-callout--warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.am-callout--err { border-left-color: var(--err); background: var(--err-bg); }
+.am-callout-title { font-weight: 600; margin-bottom: 4px; }
+
+/* ── kv 标题栏格 ─────────────────────────── */
+.am-kv {
+  display: grid; grid-template-columns: repeat(var(--kv-cols, 2), minmax(0, 1fr)); margin: 0;
+  border-top: var(--bw) solid var(--line); border-left: var(--bw) solid var(--line);
+}
+.am-kv-cell { border-right: var(--bw) solid var(--line); border-bottom: var(--bw) solid var(--line); padding: 6px 10px 8px; min-width: 0; }
+.am-kv-cell--wide { grid-column: 1 / -1; }
+.am-kv dt { font: 11px/1.4 var(--font-mono); color: var(--ink-2); }
+.am-kv dd { margin: 2px 0 0; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.am-kv-cell--wide dd { font-size: 17px; font-weight: 600; }
+html[data-theme="shadcn"] .am-kv { border-color: var(--line); border-radius: var(--radius); overflow: hidden; }
+
+/* ── timeline ────────────────────────────── */
+.am-timeline { list-style: none; margin: 0; padding: 0; }
+.am-timeline--h { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); padding-top: 4px; }
+.am-timeline--h li { position: relative; text-align: center; padding: 0 6px; }
+.am-timeline--h li::before {
+  content: ""; position: absolute; top: 31px; left: 0; right: 0; border-top: var(--bw) solid var(--line);
+}
+.am-timeline--h li:first-child::before { left: 50%; }
+.am-timeline--h li:last-child::before { right: 50%; }
+.am-tl-when { display: block; font-size: 15px; font-weight: 500; height: 24px; }
+.am-tl-dot {
+  position: relative; display: block; width: 11px; height: 11px; margin: 2px auto 8px;
+  border: var(--bw) solid var(--line); border-radius: 50%; background: var(--paper);
+}
+.am-tl-item--hi .am-tl-dot { background: var(--accent); border-color: var(--accent); }
+.am-tl-title { display: block; font-size: 12.5px; font-weight: 500; }
+.am-tl-text { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.45; }
+.am-timeline--v li { position: relative; padding: 0 0 14px 22px; }
+.am-timeline--v li::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: -6px; border-left: var(--bw) solid var(--line-2); }
+.am-timeline--v li:last-child::before { display: none; }
+.am-timeline--v .am-tl-dot { position: absolute; left: 0; top: 4px; margin: 0; }
+.am-timeline--v .am-tl-when { display: inline; height: auto; font: 12px var(--font-mono); color: var(--ink-2); margin-right: 8px; }
+.am-timeline--v .am-tl-title { display: inline; font-size: 14px; }
+.am-timeline--v .am-tl-text { margin-top: 2px; }
+
+/* ── annot 句子标注 ──────────────────────── */
+.am-annot + .am-annot { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.am-annot-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.am-annot-meta { font: 11px var(--font-mono); font-weight: 400; color: var(--ink-2); }
+.am-annot-scroll { overflow-x: auto; }
+.am-annot-line {
+  position: relative; display: inline-block; white-space: pre; font: 14px/1.6 var(--font-mono);
+  padding-bottom: calc(var(--rows, 0) * 17px + 14px);
+}
+.am-annot-line--wrap { display: block; white-space: normal; padding-bottom: 10px; }
+.am-annot-line--wrap .am-seg { white-space: nowrap; }
+.am-seg { position: relative; }
+.am-seg::after {
+  content: ""; position: absolute; left: 1px; right: 1px; top: calc(100% + 1px); height: 5px;
+  border: 1px solid var(--accent); border-top: 0;
+}
+.am-seg-n {
+  position: absolute; left: 0; top: calc(100% + 8px + var(--row, 0) * 17px);
+  font: 11px/16px var(--font-sans); color: var(--accent); white-space: nowrap;
+}
+.am-seg--err { color: var(--err); }
+.am-seg--err::after { border-color: var(--err); }
+.am-seg--err .am-seg-n { color: var(--err); }
+.am-annot-caption { font-size: 12px; color: var(--ink-2); }
+
+/* ── limits 限值条 ───────────────────────── */
+.am-lim + .am-lim { margin-top: 14px; }
+.am-lim-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; margin-bottom: 4px; }
+.am-lim-val { font: 12px var(--font-mono); color: var(--accent); white-space: nowrap; }
+.am-lim-track { position: relative; height: 12px; border: 1px solid var(--line-2); background: var(--fill); border-radius: calc(var(--radius) / 2); }
+.am-lim-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-bg); border-right: 1px solid var(--accent); }
+.am-lim-mark { position: absolute; top: -4px; bottom: -4px; border-left: 2px solid var(--accent); }
+.am-lim.is-over .am-lim-fill { background: var(--err-bg); border-right-color: var(--err); }
+.am-lim.is-over .am-lim-val { color: var(--err); }
+.am-lim-ticks { position: relative; height: 16px; font: 10px/16px var(--font-mono); color: var(--ink-3); }
+.am-lim-ticks span { position: absolute; transform: translateX(-50%); }
+.am-lim-ticks span:first-child { transform: none; }
+.am-lim-note { font-size: 11px; color: var(--ink-2); margin-left: 6px; }
+
+/* ── tree 结构树 ─────────────────────────── */
+.am-tree { font-size: 13px; }
+.am-tree-root { display: flex; justify-content: center; position: relative; padding-bottom: 18px; }
+.am-tree-root::after { content: ""; position: absolute; bottom: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-root--solo { padding-bottom: 12px; }
+.am-tree-root--solo::after { display: none; }
+.am-tree-box {
+  border: var(--bw) solid var(--line); background: var(--paper); padding: 6px 14px; text-align: center;
+  border-radius: var(--radius); font-weight: 600;
+}
+.am-tree-box small { display: block; font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.am-tree-box--root { background: var(--accent-bg); font-size: 15px; padding: 8px 28px; }
+.am-tree-cols { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
+.am-tree-col { position: relative; padding: 18px 8px 0; min-width: 0; }
+.am-tree-col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; border-top: var(--bw) solid var(--line); }
+.am-tree-col:first-child::before { left: 50%; }
+.am-tree-col:last-child::before { right: 50%; }
+.am-tree-col::after { content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-list, .am-tree-list ul { list-style: none; margin: 0; padding: 0; }
+.am-tree-col > .am-tree-list { margin: 8px 0 0 14px; }
+.am-tree-list ul { margin-left: 16px; }
+.am-tree-list li { position: relative; padding: 3px 0 3px 18px; }
+.am-tree-list li::before { content: ""; position: absolute; left: 0; top: 0.95em; width: 12px; border-top: 1px solid var(--ink-3); }
+.am-tree-list li::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--ink-3); }
+.am-tree-list li:last-child::after { bottom: auto; height: 0.95em; }
+.am-tree-tag { font: 11px var(--font-mono); color: var(--ink-3); margin-right: 4px; }
+.am-tree code { font: 12px var(--font-mono); }
+.am-tree-sub { display: block; font-size: 11.5px; color: var(--ink-2); }
+.am-tree-hi > .am-tree-label { color: var(--accent); font-weight: 600; }
+
+/* ── 图（flow / sequence）───────────────── */
+.am-diagram { margin: 0; overflow-x: auto; text-align: center; }
+.am-diagram svg { max-width: 100%; height: auto; font-family: var(--font-sans); }
+.am-diagram text { fill: var(--ink); font-size: 13px; }
+.am-node-shape { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-node--hi .am-node-shape { fill: var(--accent-bg); stroke: var(--accent); }
+.am-node--hi text { fill: var(--accent); font-weight: 600; }
+.am-edge { fill: none; stroke: var(--ink-2); stroke-width: 1.3; }
+.am-edge--dashed { stroke-dasharray: 5 4; }
+.am-arrow { fill: var(--ink-2); }
+.am-edge-label rect { fill: var(--paper); }
+.am-diagram .am-edge-label text { fill: var(--accent); font-size: 11.5px; }
+.am-cluster { fill: var(--fill); stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 4 3; }
+.am-diagram .am-cluster-label { fill: var(--ink-2); font: 11px var(--font-mono); }
+.am-lifeline { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 4 4; }
+.am-actor { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-note { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 1; }
+.am-diagram .am-step { fill: var(--ink-3); font: 10px var(--font-mono); }
+
+/* ── doc 线性讲解 ────────────────────────── */
+.am-doc { max-width: 1120px; margin: 0 auto; padding: 40px 28px 64px; }
+.am-doc-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
+.am-doc-layout--notoc { grid-template-columns: minmax(0, 1fr); max-width: 860px; }
+.am-toc { position: sticky; top: 24px; font-size: 13px; }
+.am-toc a { display: block; color: var(--ink-2); text-decoration: none; padding: 4px 0 4px 10px; border-left: 2px solid var(--line-2); }
+.am-toc a:hover { color: var(--ink); border-left-color: var(--accent); }
+.am-doc-body > .am-panel + .am-panel { margin-top: 20px; }
+
+/* ── 响应式与打印 ─────────────────────────── */
+@media (max-width: 1100px) {
+  .am-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .am-grid > .am-panel { grid-column: auto !important; }
+  .am-grid > .am-panel.am-span-wide { grid-column: 1 / -1 !important; }
+}
+@media (max-width: 760px) {
+  .am-sheet, .am-doc { padding: 56px 12px 24px; }
+  .am-head { padding-right: 0; }
+  .am-grid { grid-template-columns: minmax(0, 1fr); }
+  .am-grid > .am-panel.am-span-wide { grid-column: auto !important; }
+  html[data-theme="blueprint"] .am-frame { padding: 0; border: 0; }
+  html[data-theme="blueprint"] .am-frame::before, html[data-theme="blueprint"] .am-ruler { display: none; }
+  .am-doc-layout { grid-template-columns: minmax(0, 1fr); }
+  .am-toc { position: static; }
+  .am-timeline--h { grid-template-columns: minmax(0, 1fr); }
+  .am-tree-cols { grid-template-columns: minmax(0, 1fr); }
+}
+.am-colophon { text-align: center; padding: 0 0 28px; font: 11px var(--font-mono); color: var(--ink-3); }
+
+@media print {
+  .am-toolbar { display: none; }
+  body { background: var(--paper); }
+  .am-panel { break-inside: avoid; box-shadow: none; }
+}
+.am-panel--bare { border: 0; background: transparent; box-shadow: none; }
+.am-panel--bare > .am-panel-body { padding: 0; }
+.am-panel--bare .am-kv { background: var(--paper); }
+
+</style>
+</head>
+<body>
+<div class="am-toolbar">
+<button class="am-btn" type="button" data-am="theme" data-labels="{&quot;blueprint&quot;:&quot;主题：图纸&quot;,&quot;shadcn&quot;:&quot;主题：卡片&quot;}">主题：图纸</button>
+<button class="am-btn" type="button" data-am="mode" data-labels="{&quot;auto&quot;:&quot;明暗：跟随系统&quot;,&quot;light&quot;:&quot;明暗：亮&quot;,&quot;dark&quot;:&quot;明暗：暗&quot;}">明暗：跟随系统</button>
+<button class="am-btn" type="button" data-am="copy" data-done="已复制 ✓">复制源稿</button>
+</div>
+<main class="am-doc">
+<header class="am-head"><h1>Ticket01 实现与代码审核指南</h1><p class="am-sub">Main / SR、原生预留、显式释放和双机启动</p><div class="am-head-meta"><span><b>date</b>2026-10-24</span></div></header>
+<div class="am-doc-layout">
+<nav class="am-toc" aria-label="目录"><a href="#panel-A">A · 本轮实现范围与阅读顺序</a><a href="#panel-B">B · 正常路径、数据结构和 DRAM 读取</a><a href="#panel-C">C · 生产代码逐文件说明</a><a href="#panel-D">D · 启动、验收及交付文件</a><a href="#panel-E">E · 测试文件与验证边界</a><a href="#panel-F">F · 进度记录与审核边界</a><a href="#panel-G">G · Standards</a><a href="#panel-H">H · Spec</a></nav><div class="am-doc-body">
+<section class="am-panel" id="panel-A">
+<header class="am-panel-head"><span class="am-panel-id">A</span><h2>本轮实现范围与阅读顺序</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>2026-10-24统一页修正见<a href="../.scratch/mempool-min/unified-page-size-change.md">本轮改动与验证清单</a>。
+以下34文件统计描述原ticket01交付范围；本轮功能修改为5个Ascend/NPU文件。
+当前GLM-5.2 mempool-min默认且仅允许B=128，所有相关组件严格一致。</p>
+<p>本轮实现 mempool-min ticket01 的冷请求路径。Main 是独立 CPU 进程；每侧 rank 0
+scheduler 负责 SR 协调，每个 TP worker 执行本 rank 的分片操作。
+代码已接入真实服务入口。NPU 测试由用户运行，ticket01 保持 open，后续票仍受验收门控。</p>
+<p>本轮共 34 个文件：15 个生产代码文件、9 个测试文件、5 个配置与启动文件、5 个说明与进度文件。
+生产代码中 11 个位于 Ascend / NPU 目录，4 个位于公共调用入口。</p>
+<p>建议先看 <code>mempool_router.py</code> 的 submit / receive，再看 <code>mempool_subrouter.py</code> 的
+execute / advance，最后看 native reservation 和四个主线接缝。
+审核重点是资源何时实际取走、何时可读、何时实际归还。</p>
+</div>
+<figure class="am-diagram am-flow"><svg viewBox="0 0 1151 134" width="1151" height="134" role="img" aria-label="流程图：客户端、Main、SR_P、SR_D、P_workers、D_workers" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am1-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><g></g><g><g data-step="0"><path class="am-edge" d="M81,67 L117.4,67 Q153.8,67 190.2,67 L226.6,67" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="105" y="58" width="97.6" height="18" rx="3"/><text x="153.8" y="67" text-anchor="middle" dominant-baseline="central">HTTP token IDs</text></g></g><g data-step="1"><path class="am-edge" d="M290.6,76.4 L335,89.5 Q379.4,102.5 451.4,102.5 L523.4,102.5" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="314.6" y="93.5" width="129.6" height="18" rx="3"/><text x="379.4" y="102.5" text-anchor="middle" dominant-baseline="central">alloc / dispatch / free</text></g></g><g data-step="2"><path class="am-edge" d="M290.6,57.6 L335,44.5 Q379.4,31.5 467.4,31.5 Q555.4,31.5 637.3,31.5 Q719.2,31.5 764.7,31.5 L810.1,31.5" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="469.2" y="22.5" width="172.4" height="18" rx="3"/><text x="555.4" y="31.5" text-anchor="middle" dominant-baseline="central">alloc / dispatch / ready / free</text></g></g><g data-step="3"><path class="am-edge" d="M587.4,102.5 L653.3,102.5 Q719.2,102.5 757.5,102.5 L795.8,102.5" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="666.6" y="93.5" width="105.2" height="18" rx="3"/><text x="719.2" y="102.5" text-anchor="middle" dominant-baseline="central">scheduler TP tick</text></g></g><g data-step="4"><path class="am-edge" d="M874.3,31.5 L919.7,31.5 Q965.2,31.5 1003.5,42.5 L1041.8,53.4" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="912.6" y="22.5" width="105.2" height="18" rx="3"/><text x="965.2" y="31.5" text-anchor="middle" dominant-baseline="central">scheduler TP tick</text></g></g><g data-step="5"><path class="am-edge" d="M888.6,102.5 L926.9,102.5 Q965.2,102.5 1003.5,91.5 L1041.8,80.6" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="913.4" y="93.5" width="103.6" height="18" rx="3"/><text x="965.2" y="102.5" text-anchor="middle" dominant-baseline="central">Index K / handoff</text></g></g></g><g><g class="am-node am-node--rect" data-key="客户端" data-step="0"><rect class="am-node-shape" x="14" y="49.5" width="67" height="35" rx="3"/><text x="47.5" y="67" text-anchor="middle" dominant-baseline="central">客户端</text></g><g class="am-node am-node--rect" data-key="Main" data-step="0"><rect class="am-node-shape" x="226.6" y="49.5" width="64" height="35" rx="3"/><text x="258.6" y="67" text-anchor="middle" dominant-baseline="central">Main</text></g><g class="am-node am-node--rect" data-key="SR_P" data-step="1"><rect class="am-node-shape" x="523.4" y="85" width="64" height="35" rx="3"/><text x="555.4" y="102.5" text-anchor="middle" dominant-baseline="central">SR_P</text></g><g class="am-node am-node--rect" data-key="SR_D" data-step="2"><rect class="am-node-shape" x="810.1" y="14" width="64.1" height="35" rx="3"/><text x="842.2" y="31.5" text-anchor="middle" dominant-baseline="central">SR_D</text></g><g class="am-node am-node--rect" data-key="P_workers" data-step="3"><rect class="am-node-shape" x="795.8" y="85" width="92.7" height="35" rx="3"/><text x="842.2" y="102.5" text-anchor="middle" dominant-baseline="central">P_workers</text></g><g class="am-node am-node--rect" data-key="D_workers" data-step="4"><rect class="am-node-shape" x="1041.8" y="49.5" width="95.1" height="35" rx="3"/><text x="1089.3" y="67" text-anchor="middle" dominant-baseline="central">D_workers</text></g></g></svg></figure>
+<div class="am-md"><p>启用开关是 <code>SGLANG_NPU_MEMPOOL_ROUTER_CONFIG</code>，轮次变量为 <code>SGLANG_NPU_MEMPOOL_ROUTER_RUN_ID</code>。
+启动脚本自动设置这两项。旧正式 mempool 参考运行会清除这两个变量。</p>
+<p>本票为 TP16 / DP1 / PP1、单真实请求、单 chunk、private replicas、greedy、无 radix。
+P eager，D Graph 固定补齐 16 行；补齐行不占真实请求槽。
+P alive Index K DRAM 与 prefix 的注册容量为零。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-B">
+<header class="am-panel-head"><span class="am-panel-id">B</span><h2>正常路径、数据结构和 DRAM 读取</h2></header>
+<div class="am-panel-body"><div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>顺序</th>
+<th>Main / SR 的动作</th>
+<th>可审核的完成条件</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>启动</td>
+<td>BM 映射、D Graph、原生握手完成，SR 上报全组注册</td>
+<td>两侧 16 rank 的模型、布局、会话和容量相符</td>
+</tr>
+<tr>
+<td>reserve</td>
+<td>Main 一次扣四类额度，先 D alloc，再 P alloc</td>
+<td>SR 返回实际槽、opaque 页表、D native 行页</td>
+</tr>
+<tr>
+<td>dispatch</td>
+<td>D 安装 P/D 绑定，再由 P 确认</td>
+<td>两侧 ack 后才向原生 HTTP 创建匹配 Req</td>
+</tr>
+<tr>
+<td>ready</td>
+<td>P 写回真实主 KV，SR 汇总 ready_tokens</td>
+<td>Main 发布可读位置，再通知 D</td>
+</tr>
+<tr>
+<td>decode</td>
+<td>D 等待 Router ready 与原生 Index K / handoff</td>
+<td>全组满足条件；P 返回的首 token 也受此门控</td>
+</tr>
+<tr>
+<td>native cleanup</td>
+<td>P 可先清理 native；D 停止提交并 drain</td>
+<td>P 写回收据保留；D 原生页行实际归还后报 finished</td>
+</tr>
+<tr>
+<td>free</td>
+<td>Main 归还 D native 额度，下发 P/D free</td>
+<td>SR 真实归还 alive 后才回 free_ack</td>
+</tr>
+<tr>
+<td>完成</td>
+<td>两侧 free_ack 收齐且 D HTTP 结果已到</td>
+<td>账本归零、目录清空，然后返回结果并允许下一请求</td>
+</tr>
+</tbody></table></div>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>数据结构 / 所在模块</th>
+<th>内容与所有权</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>MainRouter.registrations</code></td>
+<td>两侧完整 rank 表；实际 HBM 页、请求行、NUMA 配置、模型身份、Graph 开关</td>
+</tr>
+<tr>
+<td><code>MainRouter.ledger</code> / <code>Quota</code></td>
+<td>P alive、D alive、D HBM、D row；始终满足 total = free + outstanding</td>
+</tr>
+<tr>
+<td><code>active</code> / <code>operations</code> / <code>history</code></td>
+<td>当前请求、op_id 回执和最近 64 个完成请求；操作回执随历史回收</td>
+</tr>
+<tr>
+<td><code>directory</code></td>
+<td>B-token 链式页哈希、父节点、child_count、writing/ready/draining、owner hold、opaque locations</td>
+</tr>
+<tr>
+<td><code>RouterShard</code></td>
+<td>当前 dispatch 与 Req 的绑定；复用原有 control 的槽所有权，不另建 free list</td>
+</tr>
+<tr>
+<td><code>MempoolPDControl</code></td>
+<td>原生 session / attempt / lease generation 校验和真实 alive 槽归属</td>
+</tr>
+<tr>
+<td><code>NativeReservation</code></td>
+<td>D 请求行、完整非连续 token 索引、prompt 长度、生成上限及绑定 Req</td>
+</tr>
+<tr>
+<td><code>MempoolRuntime</code></td>
+<td>稳定 NPU row→P/D 绑定、写回/读取事件、native 行释放后仍可用的完成收据</td>
+</tr>
+</tbody></table></div>
+<p>P 每 rank 的 BM 主 KV 是 BF16 <code>[78,16,8192,1,576]</code>，D 是
+<code>[78,16,128,1,576]</code>。16 个 rank 各有私有副本，同一 NUMA 节点不表示共享。
+DRAM 逻辑页与 native HBM 页统一使用 page_size=B，默认 B=128。4096 输入、上限 128 的请求
+占 P 整槽 64 个逻辑页、D 整槽 1 个逻辑页、D 33 个 HBM 页及 1 行。
+目录只发布实际 prompt 的 32 页，未写槽尾仅占额度。</p>
+<p><strong>DRAM → HBM sparse 访问仍沿用现有两次 <code>unidexcopy</code> kernel launch。</strong></p>
+<p>每层已有 materialize 逻辑先处理 HBM sparse-cache hit，再把 miss 按位置分为两路：
+位置小于 prompt_len 的数据来自 P；生成段来自 D，其槽内偏移为位置减 prompt_len。
+两路通过现有 NPU 映射直接填充 HBM workspace，随后合并并进入 attention。
+Main 和 SR 不搬运主 KV。<code>copy.py</code> 与 kernel 实现本轮无改动。</p>
+<p>新增统计只记录完成 forward 中实际提交的 P/D miss 行数，并在完成事件后读取。
+它用于证明数据来源，不作为性能基准。</p>
+<p>每个 D forward 还记录实际常驻请求数、实际执行请求数、step 和槽位关联。
+验收逐 rank、逐请求、逐 step 核对两项请求数均为 1。
+首 token 即结束的请求应没有 D forward，不会用 padding 行冒充真实负载。</p>
+<p>native 预留直接调用 allocator.alloc(token_count)，保存真实非连续索引。
+<code>req_to_token</code> 提前写入整个预留范围，Req 的有效 KV 长度仍只等于当前已使用部分。
+接收 Index K 和后续 decode 均消费这些索引，不再向全局 allocator 申请。
+最终在 drain 后一次归还完整预留，覆盖提前 EOS、实际尾页的未用部分和未用整页。
+预留行会重置 sparse-cache 元数据，释放行仍经过原生 free hook。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-C">
+<header class="am-panel-head"><span class="am-panel-id">C</span><h2>生产代码逐文件说明</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>下表路径均相对仓库根目录。新增文件标记为“新增”，其余为修改。</p>
+<p>目录 <code>python/sglang/srt/disaggregation/ascend/</code>：</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>具体改动 / 审核重点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>mempool_router_protocol.py</code>（新增）</td>
+<td>配置合同、环境开关、模型摘要、B-token hash chain、原生签名消息序列化；固定本票布局，context 留足原生长度余量</td>
+</tr>
+<tr>
+<td><code>mempool_router.py</code>（新增）</td>
+<td>CPU Main 状态机：严格入口检查、串行 429、一次 reserve、全 rank ack、显式 free、超时 fail-stop、状态接口数据</td>
+</tr>
+<tr>
+<td><code>mempool_router_transport.py</code>（新增）</td>
+<td>aiohttp / ZMQ 适配、真实能力注册、worker SR 装配、Main 进程入口；启动时核对实际 scheduler 长度限制；客户端断开不取消资源生命周期</td>
+</tr>
+<tr>
+<td><code>mempool_subrouter.py</code>（新增）</td>
+<td>SR 分片和 rank 0 协调；两轮 TP gather 先统一命令再确认效果；校验 dispatch；迟到 rank 保持门控；近期重复操作幂等</td>
+</tr>
+<tr>
+<td><code>mempool_native_reservation.py</code>（新增）</td>
+<td>D 实际预留 native 行和全部 HBM 页、attach Req、逐 token 消费、最终一次释放；区分预留容量与有效长度</td>
+</tr>
+<tr>
+<td><code>mempool_control.py</code></td>
+<td>新增 router_owned 模式和显式 acquire/bind/ready/free；旧 DONE/CANCEL 等请求消息被拒绝；D drain 停在 ROUTER_FINISHED</td>
+</tr>
+<tr>
+<td><code>mempool_tick.py</code></td>
+<td>保留原生握手和心跳；router_owned 下关闭旧自主分配、绑定、drain、释放计划，防止两套资源所有者</td>
+</tr>
+<tr>
+<td><code>mempool_service.py</code></td>
+<td>scheduler 装配 SR，track 前验证 dispatch，每个 tick 推进 SR；逐 D forward 记录真实负载；native 清理选择预留释放；取消/传输失败保留资源并 fail-stop</td>
+</tr>
+</tbody></table></div>
+<p>目录 <code>python/sglang/srt/hardware_backend/npu/</code>：</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>具体改动 / 审核重点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>mempool/manager.py</code></td>
+<td>保存实际采用的 NUMA 分配节点；注册不能把 fallback 分配伪报为目标节点</td>
+</tr>
+<tr>
+<td><code>mempool/runtime.py</code></td>
+<td>可选 P/D miss 来源计数；capture 时复用稳定地址，完成事件覆盖统计快照；完成报告含来源证据</td>
+</tr>
+<tr>
+<td><code>graph_runner/npu_cudagraph_backend.py</code></td>
+<td>capture 日志增加实际 batch_rows，验收区分 16 行 padding 与单真实请求</td>
+</tr>
+</tbody></table></div>
+<p><strong>主线目录仅有以下四个文件；改动必要性如下。</strong></p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>改动</th>
+<th>为什么必须接入这里</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>python/sglang/srt/disaggregation/decode.py</code></td>
+<td>DecodeReqToTokenPool 暴露 alloc_rows/free_rows；已有预留绕过重复容量检查；prealloc 绑定预留</td>
+<td>SR 在 Req 出现前分配；原生 D 接收 Index K 的目的索引由这个公共入口决定</td>
+</tr>
+<tr>
+<td><code>python/sglang/srt/mem_cache/allocation.py</code></td>
+<td>alloc_for_decode 检测 reservation 后直接消费预留</td>
+<td>逐 token 分配在这里统一执行，否则仍会二次申请 HBM 页</td>
+</tr>
+<tr>
+<td><code>python/sglang/srt/managers/schedule_batch.py</code></td>
+<td>check_decode_mem 使用本请求剩余预留</td>
+<td>已预留页不在全局 free pool，继续按 free pool 判断会错误触发 retract</td>
+</tr>
+<tr>
+<td><code>python/sglang/srt/disaggregation/prefill.py</code></td>
+<td>前移已有 service.track，先核对原始 dispatch，再创建 sender</td>
+<td>原生 P 会把 max_new_tokens 改为 1；若此后才核对，正常 128-token 请求会被误拒绝</td>
+</tr>
+</tbody></table></div>
+<p>前三个接缝只在 pool 挂有 <code>mempool_reservations</code> 时生效，该属性只由 Ascend SR_D 装配。
+第四个只移动已有 mempool track 的调用时机，验证逻辑仍在 Ascend service 中。
+scheduler 主循环和 server_args 均未修改。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-D">
+<header class="am-panel-head"><span class="am-panel-id">D</span><h2>启动、验收及交付文件</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>目录 <code>ascend-mempool-test/</code>：</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>具体内容</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>configs/mempool-min.example.json</code>（新增）</td>
+<td>双机、模型、NUMA 节点、端口、8192/128 容量、统一 B-token 页（当前 128）和超时示例</td>
+</tr>
+<tr>
+<td><code>scripts/run_mempool_min.sh</code>（新增）</td>
+<td>加载 Ascend toolkit / ATB 环境，进入 Python 自运行入口；describe 可在 CPU 环境运行</td>
+</tr>
+<tr>
+<td><code>scripts/run_mempool_min.py</code>（新增）</td>
+<td>比对双机身份，记录容量和环境，启动并检查服务。运行 reference/target 和暂停 P 的超时场景；清理后再收最终日志；失败返回非零，仅清理自身进程</td>
+</tr>
+<tr>
+<td><code>scripts/verify_mempool_min.py</code>（新增）</td>
+<td>四个正常请求的全输出 IDs、32 rank、Graph、逐步负载、P/D 来源、native→free 顺序、槽复用和账本归零；独立检查超时期间没有提前或迟到 free</td>
+</tr>
+<tr>
+<td><code>scripts/run_service.sh</code></td>
+<td>增加可配置端口、统一PAGE_SIZE、skip warmup、timeout 参数；新入口复用旧正式服务启动配置</td>
+</tr>
+<tr>
+<td><code>MEMPOOL_MIN.md</code> / <code>MEMPOOL_MIN.html</code>（新增）</td>
+<td>本审核和操作指南，HTML 由 Markdown 生成</td>
+</tr>
+</tbody></table></div>
+<p>在两机已有的 Ascend 容器中使用相同代码。复制示例为 <code>mempool-min.json</code>，填写
+P/D 实际地址、GLM-5.2 模型路径、网卡及在线 NUMA 节点。两侧配置内容必须完全相同。
+run-id 必须相同，且对应日志目录不存在。默认 Main 在 P 的 6699 端口。</p>
+<p>示例 context 为 8448，native 总容量为 16384 token。
+原生 worker 与 scheduler 各保留一个位置，所以 context 至少需要 8322。
+旧计划中的 8320 会把最大请求裁成 126 输出；已实现的配置会拒绝该值。</p>
+<p>P 机一条命令：</p>
+</div>
+<pre class="am-code"><code data-lang="bash">bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role prefill --mode acceptance --config mempool-min.json --run-id ticket01-001</code></pre>
+<div class="am-md"><p>D 机一条命令：</p>
+</div>
+<pre class="am-code"><code data-lang="bash">bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role decode --mode acceptance --config mempool-min.json --run-id ticket01-001</code></pre>
+<div class="am-md"><p><code>acceptance</code> 自动运行 P-only / D-only / 混合复制适配器、同配置同长度的旧正式
+mempool 参考、Main/SR 目标服务，再比对完整输出。四个请求依次为：
+两个不同 4096-token 输入各强制 128 输出；B-token 输入实际提前 EOS；4096 输入仅输出 1 token。</p>
+<p>正常请求通过后，入口执行一次独立 timeout / fail-stop 场景：</p>
+<ol>
+<li>保存正常日志，暂停本轮启动的 P worker 进程组。</li>
+<li>新请求让 D 实际占用 native 行页，P 的 alloc 无法完成。</li>
+<li>等待超时，检查拒绝新请求、额度不退还、目录不变化、没有 free。</li>
+<li>恢复 P，再清理本轮进程；两侧退出后再次检查完整 D 日志。</li>
+</ol>
+<p>该场景默认额外等待一次 600 秒的 operation_timeout。
+CPU 模拟已覆盖暂停、恢复、跨端协调和真实子进程回收；硬件结果待用户运行。</p>
+<p>全流程失败即非零退出。Graph 未覆盖全 rank、缺少真实 D forward、未证明 P/D 来源、
+资源未归还、未复用槽或输出不同，均不能作为通过。</p>
+<p>常驻服务把两条命令的 <code>--mode acceptance</code> 改为 <code>--mode serve</code>，并换新的 run-id。
+P 侧启动 Main 与 P，D 侧启动 D，SR 随 worker 加载。服务就绪后从 Main <code>/generate</code>
+提交 token IDs；<code>/status</code> 可审查账本，忙时 429，注册不全或故障时 503。</p>
+<p>两机的 runner 自动协调后续步骤。任一侧失败或退出，另一侧结束自身子进程。</p>
+<p>可在启动前添加 <code>--describe</code> 查看配置。该模式只展示计划，不执行 NPU 验收。</p>
+<p>主报告：<code>/home/cryang/log/mempool-min/ticket01-001/summary.json</code>。
+回传整个同名运行目录，包含两机 identity、code.patch、npu-smi、meminfo、服务日志、
+实际输入输出、Main snapshots、adapter 报告和 evidence.json。
+target 目录另保存 <code>prefill-normal.log</code>、<code>decode-normal.log</code>、
+<code>timeout-snapshots.json</code>、<code>decode-fault-final.log</code> 和 <code>timeout.json</code>。
+最终 timeout 报告必须包含 <code>process_cleanup_verified=true</code>。</p>
+<p>本轮验收额外核对32个rank的page_size/hbm_page_size注册、整槽页表和native实际预留。
+PAGE_SIZE与旧HBM_PAGE_SIZE同时存在时必须相等，冲突会拒绝启动。</p>
+<p>报告保留 <code>user_accepted=false</code>；测试脚本通过后仍需用户核对并确认验收。
+NUMA 节点按配置和实际映射记录，物理页驻留未做独立测量，报告明确标为未验证。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-E">
+<header class="am-panel-head"><span class="am-panel-id">E</span><h2>测试文件与验证边界</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>目录 <code>ascend-mempool-test/tests/unit/</code>：</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>本轮新增验证</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>test_mempool_router.py</code>（新增）</td>
+<td>注册完整性、入口原子拒绝、四类额度、两侧 free_ack、重复 ack、错误和超时保留资源</td>
+</tr>
+<tr>
+<td><code>test_mempool_subrouter.py</code>（新增）</td>
+<td>真实 16 对 control / TP tick；迟到 native rank 门控、dispatch 参数检查、重复 alloc 和冲突 fail-stop</td>
+</tr>
+<tr>
+<td><code>test_mempool_native_reservation.py</code>（新增）</td>
+<td>非连续 33 页实际占用、有效长度、提前 EOS、max=1 未用预留释放、页不足归还未发布行</td>
+</tr>
+<tr>
+<td><code>test_mempool_native_hooks.py</code>（新增）</td>
+<td>执行公共接缝的真实方法体；全局空闲行页为零仍消费预留；P 参数规范化前校验；原生 scheduler 保留 8192+128 完整预算</td>
+</tr>
+<tr>
+<td><code>test_mempool_min_service.py</code>（新增）</td>
+<td>32 个真实 service / runtime / control，P 真写回并先清 native，收据保留；D 首 token 门控、实际 forward 负载、零 forward 结束和显式 free</td>
+</tr>
+<tr>
+<td><code>test_mempool_min_entry.py</code>（新增）</td>
+<td>HTTP 429、断开不释放、CPU describe、参考配置、完整 IDs 与实际 EOS；逐步负载证据；超时暂停恢复、两侧清理和迟到 free 拒绝</td>
+</tr>
+<tr>
+<td><code>test_pd_tick.py</code></td>
+<td>新模式不自主分配和释放，旧消息隔离、显式 free；同时保留旧模式回归</td>
+</tr>
+<tr>
+<td><code>test_fetch_layers.py</code></td>
+<td>78 层 P/D 来源计数、prompt 边界、生成段零偏移、padding 和复用</td>
+</tr>
+<tr>
+<td><code>test_materialize.py</code></td>
+<td>native 预留行复用后必须重新取第二请求的数据，不能命中第一请求的 sparse cache</td>
+</tr>
+</tbody></table></div>
+<p>CPU 测试替代设备、通信和 allocator 边界，验证状态与资源生命周期。
+native hook 测试沿用现有 AST loader，执行原方法体，避开 Mac 上无法加载的 NPU 模块。
+这些结果不能代替 NPU kernel、Graph、MemFabric 可见性或模型输出验收。</p>
+<p>本地完整 CPU 测试命令（依赖包括 torch/msgspec/aiohttp/pyzmq/numpy/transformers）：</p>
+</div>
+<pre class="am-code"><code data-lang="bash">PYTHONPATH=ascend-mempool-test/src \
+  python -m unittest discover -s ascend-mempool-test/tests/unit -v</code></pre>
+<div class="am-md"><p>完整 CPU 套件 408 项全部通过，耗时 24.358 秒。
+首次运行缺少 transformers；补齐仓库指定的 5.12.1 后完整重跑通过。</p>
+<p>15 个相关源文件 strict mypy、26 个修改 Python 文件 AST 和 lint 已通过。
+mypy 使用本机 Python 3.12 配置；transformers 的缺失导入仅在本机检查配置中忽略。
+lint 只豁免 <code>schedule_batch.py</code> 原有 ForwardBatch 重复导入的 F811；本轮未改该导入。</p>
+<p>两个 shell 入口的语法检查、启动 dry-run、git diff whitespace 检查均通过。
+HTML 从 Markdown 生成，两个页面的 STE 检查均无警告。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-F">
+<header class="am-panel-head"><span class="am-panel-id">F</span><h2>进度记录与审核边界</h2></header>
+<div class="am-panel-body"><div class="am-md"><p><code>.scratch/mempool-min/issues/01-cold-request-lifecycle.md</code> 追加本轮实施和待验收记录。
+<code>.scratch/mempool-min/target-alignment.md</code> 的 D 面板随实现步骤更新。
+<code>.scratch/mempool-min/target-alignment.html</code> 从对应 Markdown 同步生成。
+这些进度记录区分代码实现、CPU 检查和用户已接受的 NPU 证据。</p>
+<p>发生错误或超时后，Main 停止新操作，worker 不走旧取消回滚，不把进程退出视为 drain。
+资源保留到本轮进程结束，入口收集失败报告并清理自身进程。客户端断开同样不能证明完成。
+本票未启用 prefix、load-back、admit 或共享副本，也不解锁下一票。
+审核后请按双机命令取得真实硬件证据，再决定是否接受和关闭 ticket01。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-G">
+<header class="am-panel-head"><span class="am-panel-id">G</span><h2>Standards</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>硬性规范问题已解决，无新增阻断项。
+Quota 与 NativeReservation 已改为 msgspec.Struct，符合贡献指南要求。
+prefill.py 的调用前移范围合理，Ascend 专用验证仍由 service 承担。</p>
+<p>保留两项非阻断维护性建议：</p>
+<ul>
+<li><code>_receive</code>、<code>advance</code>、<code>stage</code>、<code>check_target</code> 较长，可后续拆出专用 helper。</li>
+<li><code>MainRouter.active</code> 使用字典与字符串状态，可用内部类型容器增强静态检查。</li>
+</ul>
+<p>规范轴剩余 2 项维护建议，最高为函数长度建议；没有未解决的硬性违规。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-H">
+<header class="am-panel-head"><span class="am-panel-id">H</span><h2>Spec</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>最终复核没有未解决发现。已修复并复核：</p>
+<ul>
+<li>P 参数校验先于 max_new_tokens=1 规范化。</li>
+<li>每个 D forward 都有真实常驻数和执行数证据。</li>
+<li>独立 timeout 场景检查 fail-stop，并在两侧退出后核查完整日志。</li>
+<li>8192+128 请求保留完整生成预算，启动时检查实际原生限制。</li>
+</ul>
+<p>规格轴剩余 0 项代码发现。NPU 验收仍待用户执行并确认。</p>
+</div></div>
+</section>
+</div>
+</div>
+</main>
+<footer class="am-colophon">Generated by Answer me with HTML 0.4.3 · 2026-10-24 00:47</footer>
+<textarea id="am-source" hidden readonly aria-hidden="true">---
+title: Ticket01 实现与代码审核指南
+subtitle: Main / SR、原生预留、显式释放和双机启动
+template: doc
+theme: blueprint
+lang: zh
+date: 2026-10-24
+---
+
+## A 本轮实现范围与阅读顺序
+
+2026-10-24统一页修正见[本轮改动与验证清单](../.scratch/mempool-min/unified-page-size-change.md)。
+以下34文件统计描述原ticket01交付范围；本轮功能修改为5个Ascend/NPU文件。
+当前GLM-5.2 mempool-min默认且仅允许B=128，所有相关组件严格一致。
+
+本轮实现 mempool-min ticket01 的冷请求路径。Main 是独立 CPU 进程；每侧 rank 0
+scheduler 负责 SR 协调，每个 TP worker 执行本 rank 的分片操作。
+代码已接入真实服务入口。NPU 测试由用户运行，ticket01 保持 open，后续票仍受验收门控。
+
+本轮共 34 个文件：15 个生产代码文件、9 个测试文件、5 个配置与启动文件、5 个说明与进度文件。
+生产代码中 11 个位于 Ascend / NPU 目录，4 个位于公共调用入口。
+
+建议先看 `mempool_router.py` 的 submit / receive，再看 `mempool_subrouter.py` 的
+execute / advance，最后看 native reservation 和四个主线接缝。
+审核重点是资源何时实际取走、何时可读、何时实际归还。
+
+```flow LR
+客户端 -&gt; Main: HTTP token IDs
+Main -&gt; SR_P: alloc / dispatch / free
+Main -&gt; SR_D: alloc / dispatch / ready / free
+SR_P -&gt; P_workers: scheduler TP tick
+SR_D -&gt; D_workers: scheduler TP tick
+P_workers -&gt; D_workers: Index K / handoff
+```
+
+启用开关是 `SGLANG_NPU_MEMPOOL_ROUTER_CONFIG`，轮次变量为 `SGLANG_NPU_MEMPOOL_ROUTER_RUN_ID`。
+启动脚本自动设置这两项。旧正式 mempool 参考运行会清除这两个变量。
+
+本票为 TP16 / DP1 / PP1、单真实请求、单 chunk、private replicas、greedy、无 radix。
+P eager，D Graph 固定补齐 16 行；补齐行不占真实请求槽。
+P alive Index K DRAM 与 prefix 的注册容量为零。
+
+## B 正常路径、数据结构和 DRAM 读取
+
+| 顺序 | Main / SR 的动作 | 可审核的完成条件 |
+|---|---|---|
+| 启动 | BM 映射、D Graph、原生握手完成，SR 上报全组注册 | 两侧 16 rank 的模型、布局、会话和容量相符 |
+| reserve | Main 一次扣四类额度，先 D alloc，再 P alloc | SR 返回实际槽、opaque 页表、D native 行页 |
+| dispatch | D 安装 P/D 绑定，再由 P 确认 | 两侧 ack 后才向原生 HTTP 创建匹配 Req |
+| ready | P 写回真实主 KV，SR 汇总 ready_tokens | Main 发布可读位置，再通知 D |
+| decode | D 等待 Router ready 与原生 Index K / handoff | 全组满足条件；P 返回的首 token 也受此门控 |
+| native cleanup | P 可先清理 native；D 停止提交并 drain | P 写回收据保留；D 原生页行实际归还后报 finished |
+| free | Main 归还 D native 额度，下发 P/D free | SR 真实归还 alive 后才回 free_ack |
+| 完成 | 两侧 free_ack 收齐且 D HTTP 结果已到 | 账本归零、目录清空，然后返回结果并允许下一请求 |
+
+| 数据结构 / 所在模块 | 内容与所有权 |
+|---|---|
+| `MainRouter.registrations` | 两侧完整 rank 表；实际 HBM 页、请求行、NUMA 配置、模型身份、Graph 开关 |
+| `MainRouter.ledger` / `Quota` | P alive、D alive、D HBM、D row；始终满足 total = free + outstanding |
+| `active` / `operations` / `history` | 当前请求、op_id 回执和最近 64 个完成请求；操作回执随历史回收 |
+| `directory` | B-token 链式页哈希、父节点、child_count、writing/ready/draining、owner hold、opaque locations |
+| `RouterShard` | 当前 dispatch 与 Req 的绑定；复用原有 control 的槽所有权，不另建 free list |
+| `MempoolPDControl` | 原生 session / attempt / lease generation 校验和真实 alive 槽归属 |
+| `NativeReservation` | D 请求行、完整非连续 token 索引、prompt 长度、生成上限及绑定 Req |
+| `MempoolRuntime` | 稳定 NPU row→P/D 绑定、写回/读取事件、native 行释放后仍可用的完成收据 |
+
+P 每 rank 的 BM 主 KV 是 BF16 `[78,16,8192,1,576]`，D 是
+`[78,16,128,1,576]`。16 个 rank 各有私有副本，同一 NUMA 节点不表示共享。
+DRAM 逻辑页与 native HBM 页统一使用 page_size=B，默认 B=128。4096 输入、上限 128 的请求
+占 P 整槽 64 个逻辑页、D 整槽 1 个逻辑页、D 33 个 HBM 页及 1 行。
+目录只发布实际 prompt 的 32 页，未写槽尾仅占额度。
+
+**DRAM → HBM sparse 访问仍沿用现有两次 `unidexcopy` kernel launch。**
+
+每层已有 materialize 逻辑先处理 HBM sparse-cache hit，再把 miss 按位置分为两路：
+位置小于 prompt_len 的数据来自 P；生成段来自 D，其槽内偏移为位置减 prompt_len。
+两路通过现有 NPU 映射直接填充 HBM workspace，随后合并并进入 attention。
+Main 和 SR 不搬运主 KV。`copy.py` 与 kernel 实现本轮无改动。
+
+新增统计只记录完成 forward 中实际提交的 P/D miss 行数，并在完成事件后读取。
+它用于证明数据来源，不作为性能基准。
+
+每个 D forward 还记录实际常驻请求数、实际执行请求数、step 和槽位关联。
+验收逐 rank、逐请求、逐 step 核对两项请求数均为 1。
+首 token 即结束的请求应没有 D forward，不会用 padding 行冒充真实负载。
+
+native 预留直接调用 allocator.alloc(token_count)，保存真实非连续索引。
+`req_to_token` 提前写入整个预留范围，Req 的有效 KV 长度仍只等于当前已使用部分。
+接收 Index K 和后续 decode 均消费这些索引，不再向全局 allocator 申请。
+最终在 drain 后一次归还完整预留，覆盖提前 EOS、实际尾页的未用部分和未用整页。
+预留行会重置 sparse-cache 元数据，释放行仍经过原生 free hook。
+
+## C 生产代码逐文件说明
+
+下表路径均相对仓库根目录。新增文件标记为“新增”，其余为修改。
+
+目录 `python/sglang/srt/disaggregation/ascend/`：
+
+| 文件 | 具体改动 / 审核重点 |
+|---|---|
+| `mempool_router_protocol.py`（新增） | 配置合同、环境开关、模型摘要、B-token hash chain、原生签名消息序列化；固定本票布局，context 留足原生长度余量 |
+| `mempool_router.py`（新增） | CPU Main 状态机：严格入口检查、串行 429、一次 reserve、全 rank ack、显式 free、超时 fail-stop、状态接口数据 |
+| `mempool_router_transport.py`（新增） | aiohttp / ZMQ 适配、真实能力注册、worker SR 装配、Main 进程入口；启动时核对实际 scheduler 长度限制；客户端断开不取消资源生命周期 |
+| `mempool_subrouter.py`（新增） | SR 分片和 rank 0 协调；两轮 TP gather 先统一命令再确认效果；校验 dispatch；迟到 rank 保持门控；近期重复操作幂等 |
+| `mempool_native_reservation.py`（新增） | D 实际预留 native 行和全部 HBM 页、attach Req、逐 token 消费、最终一次释放；区分预留容量与有效长度 |
+| `mempool_control.py` | 新增 router_owned 模式和显式 acquire/bind/ready/free；旧 DONE/CANCEL 等请求消息被拒绝；D drain 停在 ROUTER_FINISHED |
+| `mempool_tick.py` | 保留原生握手和心跳；router_owned 下关闭旧自主分配、绑定、drain、释放计划，防止两套资源所有者 |
+| `mempool_service.py` | scheduler 装配 SR，track 前验证 dispatch，每个 tick 推进 SR；逐 D forward 记录真实负载；native 清理选择预留释放；取消/传输失败保留资源并 fail-stop |
+
+目录 `python/sglang/srt/hardware_backend/npu/`：
+
+| 文件 | 具体改动 / 审核重点 |
+|---|---|
+| `mempool/manager.py` | 保存实际采用的 NUMA 分配节点；注册不能把 fallback 分配伪报为目标节点 |
+| `mempool/runtime.py` | 可选 P/D miss 来源计数；capture 时复用稳定地址，完成事件覆盖统计快照；完成报告含来源证据 |
+| `graph_runner/npu_cudagraph_backend.py` | capture 日志增加实际 batch_rows，验收区分 16 行 padding 与单真实请求 |
+
+**主线目录仅有以下四个文件；改动必要性如下。**
+
+| 文件 | 改动 | 为什么必须接入这里 |
+|---|---|---|
+| `python/sglang/srt/disaggregation/decode.py` | DecodeReqToTokenPool 暴露 alloc_rows/free_rows；已有预留绕过重复容量检查；prealloc 绑定预留 | SR 在 Req 出现前分配；原生 D 接收 Index K 的目的索引由这个公共入口决定 |
+| `python/sglang/srt/mem_cache/allocation.py` | alloc_for_decode 检测 reservation 后直接消费预留 | 逐 token 分配在这里统一执行，否则仍会二次申请 HBM 页 |
+| `python/sglang/srt/managers/schedule_batch.py` | check_decode_mem 使用本请求剩余预留 | 已预留页不在全局 free pool，继续按 free pool 判断会错误触发 retract |
+| `python/sglang/srt/disaggregation/prefill.py` | 前移已有 service.track，先核对原始 dispatch，再创建 sender | 原生 P 会把 max_new_tokens 改为 1；若此后才核对，正常 128-token 请求会被误拒绝 |
+
+前三个接缝只在 pool 挂有 `mempool_reservations` 时生效，该属性只由 Ascend SR_D 装配。
+第四个只移动已有 mempool track 的调用时机，验证逻辑仍在 Ascend service 中。
+scheduler 主循环和 server_args 均未修改。
+
+## D 启动、验收及交付文件
+
+目录 `ascend-mempool-test/`：
+
+| 文件 | 具体内容 |
+|---|---|
+| `configs/mempool-min.example.json`（新增） | 双机、模型、NUMA 节点、端口、8192/128 容量、统一 B-token 页（当前 128）和超时示例 |
+| `scripts/run_mempool_min.sh`（新增） | 加载 Ascend toolkit / ATB 环境，进入 Python 自运行入口；describe 可在 CPU 环境运行 |
+| `scripts/run_mempool_min.py`（新增） | 比对双机身份，记录容量和环境，启动并检查服务。运行 reference/target 和暂停 P 的超时场景；清理后再收最终日志；失败返回非零，仅清理自身进程 |
+| `scripts/verify_mempool_min.py`（新增） | 四个正常请求的全输出 IDs、32 rank、Graph、逐步负载、P/D 来源、native→free 顺序、槽复用和账本归零；独立检查超时期间没有提前或迟到 free |
+| `scripts/run_service.sh` | 增加可配置端口、统一PAGE_SIZE、skip warmup、timeout 参数；新入口复用旧正式服务启动配置 |
+| `MEMPOOL_MIN.md` / `MEMPOOL_MIN.html`（新增） | 本审核和操作指南，HTML 由 Markdown 生成 |
+
+在两机已有的 Ascend 容器中使用相同代码。复制示例为 `mempool-min.json`，填写
+P/D 实际地址、GLM-5.2 模型路径、网卡及在线 NUMA 节点。两侧配置内容必须完全相同。
+run-id 必须相同，且对应日志目录不存在。默认 Main 在 P 的 6699 端口。
+
+示例 context 为 8448，native 总容量为 16384 token。
+原生 worker 与 scheduler 各保留一个位置，所以 context 至少需要 8322。
+旧计划中的 8320 会把最大请求裁成 126 输出；已实现的配置会拒绝该值。
+
+P 机一条命令：
+
+```bash
+bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role prefill --mode acceptance --config mempool-min.json --run-id ticket01-001
+```
+
+D 机一条命令：
+
+```bash
+bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role decode --mode acceptance --config mempool-min.json --run-id ticket01-001
+```
+
+`acceptance` 自动运行 P-only / D-only / 混合复制适配器、同配置同长度的旧正式
+mempool 参考、Main/SR 目标服务，再比对完整输出。四个请求依次为：
+两个不同 4096-token 输入各强制 128 输出；B-token 输入实际提前 EOS；4096 输入仅输出 1 token。
+
+正常请求通过后，入口执行一次独立 timeout / fail-stop 场景：
+
+1. 保存正常日志，暂停本轮启动的 P worker 进程组。
+2. 新请求让 D 实际占用 native 行页，P 的 alloc 无法完成。
+3. 等待超时，检查拒绝新请求、额度不退还、目录不变化、没有 free。
+4. 恢复 P，再清理本轮进程；两侧退出后再次检查完整 D 日志。
+
+该场景默认额外等待一次 600 秒的 operation_timeout。
+CPU 模拟已覆盖暂停、恢复、跨端协调和真实子进程回收；硬件结果待用户运行。
+
+全流程失败即非零退出。Graph 未覆盖全 rank、缺少真实 D forward、未证明 P/D 来源、
+资源未归还、未复用槽或输出不同，均不能作为通过。
+
+常驻服务把两条命令的 `--mode acceptance` 改为 `--mode serve`，并换新的 run-id。
+P 侧启动 Main 与 P，D 侧启动 D，SR 随 worker 加载。服务就绪后从 Main `/generate`
+提交 token IDs；`/status` 可审查账本，忙时 429，注册不全或故障时 503。
+
+两机的 runner 自动协调后续步骤。任一侧失败或退出，另一侧结束自身子进程。
+
+可在启动前添加 `--describe` 查看配置。该模式只展示计划，不执行 NPU 验收。
+
+主报告：`/home/cryang/log/mempool-min/ticket01-001/summary.json`。
+回传整个同名运行目录，包含两机 identity、code.patch、npu-smi、meminfo、服务日志、
+实际输入输出、Main snapshots、adapter 报告和 evidence.json。
+target 目录另保存 `prefill-normal.log`、`decode-normal.log`、
+`timeout-snapshots.json`、`decode-fault-final.log` 和 `timeout.json`。
+最终 timeout 报告必须包含 `process_cleanup_verified=true`。
+
+本轮验收额外核对32个rank的page_size/hbm_page_size注册、整槽页表和native实际预留。
+PAGE_SIZE与旧HBM_PAGE_SIZE同时存在时必须相等，冲突会拒绝启动。
+
+报告保留 `user_accepted=false`；测试脚本通过后仍需用户核对并确认验收。
+NUMA 节点按配置和实际映射记录，物理页驻留未做独立测量，报告明确标为未验证。
+
+## E 测试文件与验证边界
+
+目录 `ascend-mempool-test/tests/unit/`：
+
+| 文件 | 本轮新增验证 |
+|---|---|
+| `test_mempool_router.py`（新增） | 注册完整性、入口原子拒绝、四类额度、两侧 free_ack、重复 ack、错误和超时保留资源 |
+| `test_mempool_subrouter.py`（新增） | 真实 16 对 control / TP tick；迟到 native rank 门控、dispatch 参数检查、重复 alloc 和冲突 fail-stop |
+| `test_mempool_native_reservation.py`（新增） | 非连续 33 页实际占用、有效长度、提前 EOS、max=1 未用预留释放、页不足归还未发布行 |
+| `test_mempool_native_hooks.py`（新增） | 执行公共接缝的真实方法体；全局空闲行页为零仍消费预留；P 参数规范化前校验；原生 scheduler 保留 8192+128 完整预算 |
+| `test_mempool_min_service.py`（新增） | 32 个真实 service / runtime / control，P 真写回并先清 native，收据保留；D 首 token 门控、实际 forward 负载、零 forward 结束和显式 free |
+| `test_mempool_min_entry.py`（新增） | HTTP 429、断开不释放、CPU describe、参考配置、完整 IDs 与实际 EOS；逐步负载证据；超时暂停恢复、两侧清理和迟到 free 拒绝 |
+| `test_pd_tick.py` | 新模式不自主分配和释放，旧消息隔离、显式 free；同时保留旧模式回归 |
+| `test_fetch_layers.py` | 78 层 P/D 来源计数、prompt 边界、生成段零偏移、padding 和复用 |
+| `test_materialize.py` | native 预留行复用后必须重新取第二请求的数据，不能命中第一请求的 sparse cache |
+
+CPU 测试替代设备、通信和 allocator 边界，验证状态与资源生命周期。
+native hook 测试沿用现有 AST loader，执行原方法体，避开 Mac 上无法加载的 NPU 模块。
+这些结果不能代替 NPU kernel、Graph、MemFabric 可见性或模型输出验收。
+
+本地完整 CPU 测试命令（依赖包括 torch/msgspec/aiohttp/pyzmq/numpy/transformers）：
+
+```bash
+PYTHONPATH=ascend-mempool-test/src \
+  python -m unittest discover -s ascend-mempool-test/tests/unit -v
+```
+
+完整 CPU 套件 408 项全部通过，耗时 24.358 秒。
+首次运行缺少 transformers；补齐仓库指定的 5.12.1 后完整重跑通过。
+
+15 个相关源文件 strict mypy、26 个修改 Python 文件 AST 和 lint 已通过。
+mypy 使用本机 Python 3.12 配置；transformers 的缺失导入仅在本机检查配置中忽略。
+lint 只豁免 `schedule_batch.py` 原有 ForwardBatch 重复导入的 F811；本轮未改该导入。
+
+两个 shell 入口的语法检查、启动 dry-run、git diff whitespace 检查均通过。
+HTML 从 Markdown 生成，两个页面的 STE 检查均无警告。
+
+## F 进度记录与审核边界
+
+`.scratch/mempool-min/issues/01-cold-request-lifecycle.md` 追加本轮实施和待验收记录。
+`.scratch/mempool-min/target-alignment.md` 的 D 面板随实现步骤更新。
+`.scratch/mempool-min/target-alignment.html` 从对应 Markdown 同步生成。
+这些进度记录区分代码实现、CPU 检查和用户已接受的 NPU 证据。
+
+发生错误或超时后，Main 停止新操作，worker 不走旧取消回滚，不把进程退出视为 drain。
+资源保留到本轮进程结束，入口收集失败报告并清理自身进程。客户端断开同样不能证明完成。
+本票未启用 prefix、load-back、admit 或共享副本，也不解锁下一票。
+审核后请按双机命令取得真实硬件证据，再决定是否接受和关闭 ticket01。
+
+## G Standards
+
+硬性规范问题已解决，无新增阻断项。
+Quota 与 NativeReservation 已改为 msgspec.Struct，符合贡献指南要求。
+prefill.py 的调用前移范围合理，Ascend 专用验证仍由 service 承担。
+
+保留两项非阻断维护性建议：
+
+- `_receive`、`advance`、`stage`、`check_target` 较长，可后续拆出专用 helper。
+- `MainRouter.active` 使用字典与字符串状态，可用内部类型容器增强静态检查。
+
+规范轴剩余 2 项维护建议，最高为函数长度建议；没有未解决的硬性违规。
+
+## H Spec
+
+最终复核没有未解决发现。已修复并复核：
+
+- P 参数校验先于 max_new_tokens=1 规范化。
+- 每个 D forward 都有真实常驻数和执行数证据。
+- 独立 timeout 场景检查 fail-stop，并在两侧退出后核查完整日志。
+- 8192+128 请求保留完整生成预算，启动时检查实际原生限制。
+
+规格轴剩余 0 项代码发现。NPU 验收仍待用户执行并确认。
+</textarea>
+<script>
+(() => {
+  const root = document.documentElement;
+  const cycle = (list, cur) => list[(list.indexOf(cur) + 1) % list.length];
+  const label = (btn, value) => {
+    const map = JSON.parse(btn.dataset.labels || '{}');
+    btn.textContent = map[value] || value;
+  };
+  const bind = (name, attr, values) => {
+    const btn = document.querySelector(`[data-am="${name}"]`);
+    if (!btn) return;
+    label(btn, root.getAttribute(attr));
+    btn.addEventListener('click', () => {
+      const next = cycle(values, root.getAttribute(attr));
+      root.setAttribute(attr, next);
+      label(btn, next);
+    });
+  };
+  bind('theme', 'data-theme', ['blueprint', 'shadcn']);
+  bind('mode', 'data-mode', ['auto', 'light', 'dark']);
+
+  const copyBtn = document.querySelector('[data-am="copy"]');
+  copyBtn?.addEventListener('click', async () => {
+    const text = document.getElementById('am-source').value;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = Object.assign(document.createElement('textarea'), { value: text });
+      document.body.append(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    const original = copyBtn.textContent;
+    copyBtn.textContent = copyBtn.dataset.done;
+    setTimeout(() => { copyBtn.textContent = original; }, 1400);
+  });
+})();
+</script>
+</body>
+</html>

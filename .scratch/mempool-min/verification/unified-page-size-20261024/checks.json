@@ -1,0 +1,174 @@
+{
+  "date": "2026-10-24",
+  "branch": "cryang/dev/mempool-min",
+  "head": "af517b1a23a115d19fddd639e249c73e44a7614f",
+  "contract": {
+    "token_page_size": "same B across sparse/dense DRAM/HBM P/D and related pools",
+    "integration": "GLM-5.2 mempool-min",
+    "default": 128,
+    "supported_values": [
+      128
+    ],
+    "dense_runtime_implemented": false
+  },
+  "cpu": {
+    "status": "passed",
+    "tests": 416,
+    "seconds": 23.28,
+    "log": "cpu.log",
+    "native_storage_hash_extension": "not executed on macOS; B and namespace seed contract covered with CPU seam"
+  },
+  "static": {
+    "strict_mypy_files": 7,
+    "ruff_files": 13,
+    "python39_ast_files": 13,
+    "shell_syntax": [
+      "run_service.sh",
+      "run_mempool_min.sh"
+    ],
+    "status": "passed",
+    "git_diff_check": "passed"
+  },
+  "launch": {
+    "prefill_page_size": 128,
+    "decode_page_size": 128,
+    "alias_conflict_exit": 2,
+    "describe": "passed",
+    "hardware_launched": false
+  },
+  "diagrams": [
+    {
+      "kind": "min",
+      "scriptSyntax": "passed",
+      "formulaCases": 6,
+      "invalidPageSizes": 7,
+      "capacityAlignment": "passed",
+      "historicalBanner": "passed"
+    },
+    {
+      "kind": "full",
+      "scriptSyntax": "passed",
+      "formulaCases": 6,
+      "invalidPageSizes": 7,
+      "capacityAlignment": "passed",
+      "historicalBanner": "passed"
+    }
+  ],
+  "source_sync": {
+    "status": "applied and SHA-256 verified",
+    "root": "/Users/hibikid/Documents/syncfile/sglang-kv-explainer",
+    "changed_files": 17,
+    "files": [
+      {
+        "path": "README.md",
+        "change": "modified",
+        "sha256": "34f9408cff347b5c2ac063df3beee2120ce2f7b59c62dfc754c70948d5e3f8a9",
+        "bytes": 10864
+      },
+      {
+        "path": "handover/handover-report.md",
+        "change": "modified",
+        "sha256": "13f0636aff5ae6fbdd2c8d7c4d14d6b572b9c3fffe27187978f26a6111fc29cd",
+        "bytes": 4504
+      },
+      {
+        "path": "mempool-design/copy-perf-tests.md",
+        "change": "modified",
+        "sha256": "366ef74717fec03f53c593c857581a8fea81c8a05abc24bdadae45ab6e8468dc",
+        "bytes": 13776
+      },
+      {
+        "path": "mempool-design/discussion.md",
+        "change": "modified",
+        "sha256": "83b25c251a9b71a397a04c735753a2c277bdce79030e162d1aa18a6273c12d8e",
+        "bytes": 313609
+      },
+      {
+        "path": "mempool-design/requirement.md",
+        "change": "modified",
+        "sha256": "a0fbf989a9d7ccbaa18ee454e4f592b1e04748127faf3403f8517bf74a091d09",
+        "bytes": 24380
+      },
+      {
+        "path": "mempool-design/walkthrough.md",
+        "change": "modified",
+        "sha256": "ee9560615b72bd8144a284b3e8acca23ff631da3f4e55bb32f4b5d416215df57",
+        "bytes": 76905
+      },
+      {
+        "path": "mempool-html/plan-full-demo.md",
+        "change": "modified",
+        "sha256": "8ed3e1cb17d87a67a1a60ac1158a1a36fa3e907037180a307794d83b4c5a0002",
+        "bytes": 30625
+      },
+      {
+        "path": "mempool-html/plan-min-demo.md",
+        "change": "modified",
+        "sha256": "fe7f30f3b3b642e91051b6b3cface6e216872caf78f8da106eb2e37df631df27",
+        "bytes": 23514
+      },
+      {
+        "path": "mempool-html/unified-full-demo.md",
+        "change": "new",
+        "sha256": "c9ca0ed9c1ea414ab96c37cd1f6cd74c1a2210150e7806760a8d52b7bb7f16c8",
+        "bytes": 10102
+      },
+      {
+        "path": "mempool-html/unified-min-demo.md",
+        "change": "new",
+        "sha256": "4a109d5ec1c4e1fd3e7afc6e5c1ba9b65852fc083044cdd9373ce6039def7243",
+        "bytes": 9153
+      },
+      {
+        "path": "mempool-min-demo/discussion.md",
+        "change": "modified",
+        "sha256": "316e2f430481005d59f9fc86b9530182a8a1c4d37b95c3f06ce1c396494510c1",
+        "bytes": 127951
+      },
+      {
+        "path": "mempool-min-demo/requirement.md",
+        "change": "modified",
+        "sha256": "32f1eddb4592832c26991e7fb80349df4eec8a8cb6acaec7231108fdcb0cc2b6",
+        "bytes": 10633
+      },
+      {
+        "path": "mempool-min-demo/walkthrough.md",
+        "change": "modified",
+        "sha256": "f8b5815742171fda3f6b4643e56798516b9b1c5bf4940fbb0005aae5dfd83669",
+        "bytes": 85009
+      },
+      {
+        "path": "page/history/mempool-full-demo-pre-unified-pages.html",
+        "change": "new",
+        "sha256": "932e453244618a701d435ef65ba1451c3cab8fbcadbd3188c91ae5d9b9e53544",
+        "bytes": 476406
+      },
+      {
+        "path": "page/history/mempool-min-demo-pre-unified-pages.html",
+        "change": "new",
+        "sha256": "ba869ffbccae3c24a3deb567916d808a3712ea7a741e341a5dd6105ad0a61805",
+        "bytes": 342395
+      },
+      {
+        "path": "page/mempool-full-demo.html",
+        "change": "modified",
+        "sha256": "57d95f96ba765785a9bbafe053e01802aae7d05411768f6523a964df3741e73b",
+        "bytes": 62288
+      },
+      {
+        "path": "page/mempool-min-demo.html",
+        "change": "modified",
+        "sha256": "f4368ddabcd8208ab2bd97dcdbfde2574964916084b1a2cef177a8b9a34eec27",
+        "bytes": 59235
+      }
+    ]
+  },
+  "hardware": {
+    "status": "not run",
+    "executor": "user",
+    "ticket01": "open",
+    "downstream": "blocked",
+    "next": "Run paired --mode acceptance entry points; CPU does not constitute NPU acceptance"
+  },
+  "diagrams_render": "All eight generated HTML pages pass STE with no warnings"
+}

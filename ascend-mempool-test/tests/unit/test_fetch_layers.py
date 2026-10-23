@@ -61,6 +61,7 @@ class TestKVFetchLayers(unittest.TestCase):
             device="cpu",
             event_factory=event,
             fetch_enabled=True,
+            source_evidence=True,
             fetch_kernel=copy,
             kernels=[
                 CPUWriteKernel(self.d[i], manager.view(1, i).device_base)
@@ -118,6 +119,9 @@ class TestKVFetchLayers(unittest.TestCase):
                     self.runtime.detach_row(binding)
                 event.done = True
                 self.runtime.poll_completed()
+                report = self.runtime.completion_report(binding)
+                self.assertEqual(report["prompt_bm_rows"], 2 * len(self.layer_ids))
+                self.assertEqual(report["decode_bm_rows"], len(self.layer_ids))
                 self.assertEqual(self.runtime.written_tokens(1), 1)
                 self.runtime.detach_row(binding)
                 old = binding

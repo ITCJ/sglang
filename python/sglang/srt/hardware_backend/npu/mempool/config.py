@@ -26,11 +26,13 @@ class MempoolConfig(msgspec.Struct, frozen=True):
     pool_id: int = 104
     timeout: float = 120.0
     numa: MempoolNumaConfig = msgspec.field(default_factory=MempoolNumaConfig)
+    page_size: int = 128
 
     def __post_init__(self) -> None:
         """Reject unusable token capacities before allocating device or BM memory."""
         positive_int("prefill_capacity", self.prefill_capacity)
         positive_int("decode_capacity", self.decode_capacity)
+        positive_int("page_size", self.page_size)
 
     @classmethod
     def from_server_args(
@@ -92,7 +94,13 @@ class MempoolConfig(msgspec.Struct, frozen=True):
             numa=MempoolNumaConfig.from_environment(
                 rank_numa_map=getattr(args, "mempool_rank_numa_map", None)
             ),
+            page_size=args.page_size,
         )
+        if any(
+            n % config.page_size
+            for n in (config.prefill_capacity, config.decode_capacity)
+        ):
+            raise ValueError("mempool capacities must align to the native page_size")
         config.numa.require_rank_pair_startup()
         if not config.prefill_host.strip() or not config.nic.startswith("tcp://"):
             raise ValueError(

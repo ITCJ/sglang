@@ -139,8 +139,9 @@ class NPUCudaGraphBackend(BaseCudaGraphBackend):
         self._outputs[shape_key] = out
         if getattr(self._attn_backend, "mempool_runtime", None) is not None:
             logging.getLogger(__name__).info(
-                "mempool graph_captured device=npu:%s shape=%s",
+                "mempool graph_captured device=npu:%s batch_rows=%s shape=%s",
                 self._device_id,
+                shape_key.size,
                 shape_key,
             )
 

@@ -192,6 +192,13 @@ class DecodeReqToTokenPool:
     def reset_aux_cache_allocator(self) -> None:
         pass
 
+    def alloc_rows(self, need_size: int) -> Optional[List[int]]:
+        """Support Ascend SR reservations before the native Req arrives."""
+        return ReqToTokenPool.alloc_rows(self, need_size)
+
+    def free_rows(self, indices: List[int]) -> None:
+        ReqToTokenPool.free_rows(self, indices)
+
     def schedulable_token_capacity(self, physical_capacity: int) -> int:
         return physical_capacity
 
@@ -1293,7 +1300,9 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
             if service is not None and not service.can_preallocate(decode_req.req):
                 continue
 
-            if self.req_to_token_pool.available_size() <= 0:
+            reservations = getattr(self.req_to_token_pool, "mempool_reservations", None)
+            reserved = reservations is not None and reservations.owns(decode_req.req)
+            if not reserved and self.req_to_token_pool.available_size() <= 0:
                 break
 
             # Hybrid models (e.g. K3 with KDA): guard against prealloc
@@ -1423,7 +1432,7 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
             elif swa_allocatable_tokens is not None:
                 swa_required_for_admission = full_required_for_admission
 
-            if not self._prealloc_reservation_fits(
+            if not reserved and not self._prealloc_reservation_fits(
                 full_required_for_admission,
                 swa_required_for_admission,
                 full_allocatable_tokens=full_allocatable_tokens,
@@ -1918,6 +1927,12 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
             prefix_len = 0
         if total_prefix_len is None:
             total_prefix_len = prefix_len
+
+        reservations = getattr(self.req_to_token_pool, "mempool_reservations", None)
+        if reservations is not None:
+            if prefix_len or total_prefix_len:
+                raise RuntimeError("Ascend Router cold request cannot reuse a prefix")
+            return reservations.attach(req, self._pre_alloc_fill_len(req))
 
         req_pool_indices = self.req_to_token_pool.alloc([req])
 

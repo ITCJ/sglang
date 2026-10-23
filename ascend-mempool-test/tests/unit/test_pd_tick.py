@@ -85,6 +85,35 @@ class TestMempoolTPTick(unittest.TestCase):
         self.assertEqual(self.pc.rounds, [4] * 16)
         self.assertTrue(all(len(c.available_slots()) == 16 for c in self.p))
 
+    def test_router_owns_admission_and_explicit_release(self):
+        """Legacy ticks cannot acquire or recycle a Router-owned request."""
+        for control in self.p + self.d:
+            control.router_owned = True
+        facts = (RequestObservation(42, 32, 8, 100, attempt="router"),)
+        self.advance(self.dt, facts)
+        self.assertTrue(all(len(c.available_slots()) == 16 for c in self.d))
+        for p, d in zip(self.p, self.d):
+            acquire = d.acquire_decode(42, "router", 3, 32, 8, "tcp://d:1")
+            acquired = p.router_acquire_prefill(acquire, 5)
+            bound = d.router_bind(acquired)
+            p.router_bind(bound)
+            p.start_prefill(acquire.request)
+            p.finish_prefill_writes(acquire.request)
+            ready = p.publish_kv_ready(acquire.request, 32)
+            d.router_ready(ready)
+            d.transfer_succeeded(acquire.request)
+            d.start_decode(acquire.request)
+            d.begin_drain(acquire.request)
+            self.assertIsNone(d.finish_drain(acquire.request))
+            self.assertNotIn(3, d.available_slots())
+            self.assertNotIn(5, p.available_slots())
+            d.router_free(acquire.request)
+            p.router_free(acquire.request)
+            # A duplicate explicit free cannot touch a later slot owner.
+            d.router_free(acquire.request)
+            p.router_free(acquire.request)
+        self.assertTrue(all(len(c.available_slots()) == 16 for c in self.p + self.d))
+
     def test_decode_acquire_is_same_slot_and_attempt_on_all_ranks(self):
         """Leader attempt and independent D slot are agreed before ACQUIRE leaves."""
         with ThreadPoolExecutor(max_workers=16) as workers:
