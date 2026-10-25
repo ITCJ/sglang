@@ -269,10 +269,10 @@ class MempoolPDService:
 
     def track(self, req: Any) -> None:
         """Retain the original bootstrap deadline before any mempool wait."""
-        if self.subrouter is not None:
-            self.subrouter.track(req)
         if self.is_fake(req):
             return
+        if self.subrouter is not None:
+            self.subrouter.track(req)
         room = req.bootstrap_room
         if type(room) is not int or room < 0:
             raise ValueError("real mempool request requires a bootstrap room")
@@ -411,7 +411,11 @@ class MempoolPDService:
             else:
                 start, rows = batch.prefix_lens[index], batch.extend_lens[index]
             writes.append(KVWriteExpectation(row, start, rows))
-        if self.subrouter is not None and self.control.local.role == "decode":
+        if (
+            writes
+            and self.subrouter is not None
+            and self.control.local.role == "decode"
+        ):
             self._record_decode_step(batch, writes)
         self.runtime.prepare_forward(writes)
 

@@ -130,7 +130,7 @@ def service_environment(
         D_PORT=str(config.decode_port),
         BOOTSTRAP_PORT=str(config.bootstrap_port),
         PAGE_SIZE=str(config.page_size),
-        SKIP_SERVER_WARMUP="1",
+        SKIP_SERVER_WARMUP="0",
         MEMPOOL_TIMEOUT=str(config.startup_timeout),
         SGLANG_NPU_MEMPOOL_SHARE="0",
         SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=",".join(map(str, config.numa_nodes)),

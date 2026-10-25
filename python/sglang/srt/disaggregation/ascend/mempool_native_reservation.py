@@ -34,6 +34,18 @@ class NativeReservations:
         self.reset_rows = reset_rows
         self.reservations: dict[int, NativeReservation] = {}
 
+    @staticmethod
+    def applies_to(reqs: list[Any]) -> bool:
+        """Only explicit native fake warmup may use the ordinary allocator path.
+
+        Missing reservations must still fail for real requests. In particular,
+        checking owns() here would silently admit undispatched backend traffic.
+        """
+        fake = [getattr(req, "bootstrap_host", None) == "2.2.2.2" for req in reqs]
+        if any(fake) and not all(fake):
+            raise RuntimeError("fake warmup cannot share a batch with Router requests")
+        return not any(fake)
+
     def reserve(
         self, room: int, prompt_tokens: int, decode_tokens: int
     ) -> dict[str, int]:

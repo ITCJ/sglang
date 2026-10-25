@@ -61,7 +61,6 @@ def attach_subrouter(
     role = control.local.role
     required = dict(
         page_size=config.page_size,
-        skip_server_warmup=True,
         disable_radix_cache=True,
         chunked_prefill_size=-1,
         max_prefill_tokens=config.prompt_capacity,

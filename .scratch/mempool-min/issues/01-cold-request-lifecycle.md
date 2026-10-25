@@ -262,3 +262,60 @@ P DONE、早到／迟到 DONE 和取消回滚；旧 RELEASE_ACK 不等于新 fre
   本身消耗的时间计入预算，后续 HTTP timeout 缩小且耗尽后不再重试。
 - 用户硬件重跑待执行，State 保持 open。修复单独交付在 ticket01 之后，
   ticket02 继续保留独立本地提交。
+
+### 2026-10-25：按用户确认适配原生 fake server warmup，撤回 HTTP 重试
+
+- 用户要求最小改动，P/D 各自完成本机 fake warmup，临时资源由原生 scheduler
+  分配和回收；不经过 Main 请求账本，不占 alive/prefix，不跨 P/D 传请求数据。
+  BM 映射和控制握手仍正常初始化。本次单独提交接在 ticket01 的既有修复后。
+- 用户撤回旧 ticket02：本地 364cbc97d0 已从当前分支移除，其实现及交付材料
+  恢复到 ticket01 基线；留有本地恢复引用。等待 ticket01 验收后重写 ticket02。
+  用户其他未提交文件逐字节保留，本次不提交 AGENTS.md 等已有工作。
+- 根因仍是验收强制 skip_server_warmup 后跳过了 HTTP 监听等待，freeze_gc 提前连接。
+  改为启用原生 warmup，恢复原生的监听等待。前条 Comment 中“启用 warmup 会破坏
+  验收”的判断由本次适配取代；http_server.py 恢复到 93678e5fd4 的完整内容。
+- 两个先红后绿的真实代码回归确认原先的适配阻塞：fake 被 SR 拒绝为未 dispatch；
+  D prealloc 按真实请求查找 reservation 导致 KeyError: 0。修复不修改原生分配算法。
+- service 在 SR track 前识别 fake；fake 不创建请求/槽位绑定，不计真实 decode_step。
+  NativeReservations.applies_to 只让显式 fake 标记走原生路径，缺少 reservation 的
+  真实请求仍失败，fake 与真实请求混批失败。现有 defer_release(fake)=False 不变。
+- 参考组与目标组统一 SKIP_SERVER_WARMUP=0；移除 attach_subrouter 对 skip 的强制要求。
+  双机入口保留已有 /ready + peer barrier，之后才发送正式请求；日志异常检查不放宽。
+
+功能文件 review 顺序（不含测试与说明文件）：
+
+1. python/sglang/srt/disaggregation/ascend/mempool_native_reservation.py：定义预留路径适用条件。
+2. python/sglang/srt/disaggregation/ascend/mempool_service.py：fake 分流和真实 decode 证据隔离。
+3. python/sglang/srt/disaggregation/decode.py：D prealloc 对 fake 使用原生临时资源。
+4. python/sglang/srt/managers/schedule_batch.py：fake 使用原生 decode 容量检查。
+5. python/sglang/srt/mem_cache/allocation.py：fake 使用原生逐步分配。
+6. python/sglang/srt/disaggregation/ascend/mempool_router_transport.py：允许 server warmup。
+7. ascend-mempool-test/scripts/run_mempool_min.py：参考与目标服务均开启 warmup。
+8. python/sglang/srt/entrypoints/http_server.py：撤回上一补丁，恢复原生行为。
+
+主线文件必要性：decode.py、schedule_batch.py、allocation.py 已持有预留接口的调用点，
+只有这些调用点能决定是否提前返回、是否继续执行原生逻辑。各处只增加一个 applies_to
+条件，分类规则仍在 Ascend 模块；无需重写或 monkey-patch 原生函数。http_server.py
+仅撤回先前 ticket01 修复，没有新增主线行为。启动入口位于既有 Ascend 专用测试目录。
+
+验证记录：
+
+- 本机真实 HTTP 测试：P/D 均复现首次连接拒绝，原生 warmup 等监听后依次发送
+  本机 fake /generate 和 /freeze_gc；检查原生 payload、Up 状态及无失败 Traceback。
+  首跑受开发机代理影响失败，测试明确为回环地址绕过代理后通过。
+- CPU 原生 D 路径：4-token fake 预分配、7 步 decode、原生 ChunkCache/release_kv_cache
+  释放，页数和请求行归还，随后真实 reservation 可复用；缺预留/混批负向用例通过。
+- 16-rank service 用例：先 warmup，再真实请求，包含 zero-decode 和真实 decode 分支；
+  warmup 无 alive 绑定、无 SR 请求账本，真实请求完整释放。
+- 完整 CPU 首跑 421/421 通过；13 个改动 Python 文件通过仓库 Ruff 规则、格式、isort
+  和 AST 检查，4 个功能文件 strict mypy 通过。额外扩大 Ruff 到全部 F 规则时发现
+  http_server.py/schedule_batch.py 的旧 F541/F811，与本补丁无关，未扩大代码修改。
+- Spec review 0 发现；Standards 指出测试 AST loader 重复，已共用 loader 并拆分 fixture。
+  修改共享测试 helper 后完整套件再次 421/421 通过（33.988 秒）；Standards 复核无剩余发现。
+- 本次未执行 NPU。01 State 保持 open，不能把本机通过视为硬件验收；02 等待重写。
+- P/D × serve/acceptance 共 4 组 --describe 成功；两份启动 shell 语法检查通过。
+  http_server.py 与 93678e5fd4 逐字节一致；git diff --check 通过。
+- 本机复查命令：
+  `PYTHONPATH=/tmp/mempool-http-startup-deps:/tmp/mempool-min-implementation/deps:/tmp/mempool-numa-test-deps-20261023:/tmp/mempool-min-implementation/transformers-deps:ascend-mempool-test/src /tmp/sglang-merge-venv/bin/python -m unittest discover -s ascend-mempool-test/tests/unit -v`。
+  日志保存在开发机 `/tmp/ticket01-native-warmup-20261025/cpu-tests-final.log`。
+  这是开发机临时依赖环境；NPU 用户继续使用仓库自运行 run_mempool_min.sh 入口。

@@ -593,7 +593,7 @@ def alloc_for_decode(batch: ScheduleBatch, token_per_req: int) -> torch.Tensor:
     """
 
     reservations = getattr(batch.req_to_token_pool, "mempool_reservations", None)
-    if reservations is not None:
+    if reservations is not None and reservations.applies_to(batch.reqs):
         return reservations.decode(batch, token_per_req)
 
     batch.maybe_evict_swa()

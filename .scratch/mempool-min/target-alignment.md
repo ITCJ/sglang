@@ -100,6 +100,50 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 
 ## D 名称、验收与实施票怎样对应
 
+**2026-10-25 ticket01 原生 warmup 适配，第 4 步：本机验证完成。**
+共享测试 helper 整理后，完整 CPU 套件再次 421/421 通过。
+Standards 和 Spec 均无剩余发现；静态检查及四组入口描述通过。
+公共 HTTP 文件与重试补丁前逐字节一致。
+
+本次独立提交接在 ticket01 后，不包含 ticket02 实现。
+用户在 31/32 用新 run-id 重跑硬件验收；01 仍为 open。
+02 旧提交已撤回，待 01 验收通过后重写。
+
+**2026-10-25 ticket01 原生 warmup 适配，第 3 步：CPU 首跑与 review。**
+完整 CPU 套件 421/421 通过，4 个功能文件 strict mypy 通过。
+13 个改动 Python 文件通过仓库 lint、格式、isort 与 AST 检查。
+Spec review 无发现；Standards 指出重复测试 loader，已共用并拆分 fixture。
+共享测试 helper 修改后重新验证，NPU 尚未执行。
+
+**2026-10-25 ticket01 原生 warmup 适配，第 2 步：定向 CPU 回归通过。**
+真实 HTTP 回归分别验证 P/D：先等监听，再发本机 fake warmup，最后 freeze_gc。
+本机回环测试明确绕过代理；公共 HTTP 实现无需连接重试。
+
+原生 D 预分配、7 步 decode 和原生释放归还页及请求行。
+同一池随后能预留真实请求；未预留真实请求和混批均被拒绝。
+16-rank service warmup 后仍完成真实请求和显式释放。
+完整 CPU 套件、双轴 review 和用户 NPU 验收仍待执行。
+
+**2026-10-25 ticket01 原生 warmup 适配，第 1 步：最小路径改动已完成。**
+fake warmup 先于 SR dispatch 检查识别，沿用原生分配与释放。
+D 的三处既有 hook 仅对真实请求执行预留逻辑。
+真实请求缺少预留仍失败，fake 与真实请求混批也失败。
+
+参考组和目标组均启用 server warmup，并等待两端 ready。
+fake batch 不计入真实 decode 步证据，不建立 alive 绑定。
+公共 http_server.py 已恢复重试补丁之前的内容。
+已复现 dispatch 误拒绝和 D 预留 KeyError；修复后回归待运行。
+
+**2026-10-25 ticket01 原生 warmup 适配，第 0 步：撤回未验收的 ticket02。**
+用户要求先稳定 ticket01，再重写 ticket02。
+当前分支已移除旧 ticket02 提交及实现，保留恢复引用。
+其他未提交修改保持原样；01 与 02 均为 open。
+
+本次仅适配各机的原生 fake warmup，不跨 P/D 传请求数据。
+临时 HBM 和请求行由原生 scheduler 分配与释放。
+真实请求仍须经过 Main/SR；拟撤回公共 HTTP 重试修改。
+本步仅完成代码基线整理，回归和 NPU 验收均待执行。
+
 **2026-10-25 ticket01 第二次 NPU 验收：HTTP 启动竞态修复。**
 31/32 在 93678e5fd4 通过身份检查，进入参考服务请求阶段。
 P 日志显示 4096-token Prefill、DONE 和 free=16。
@@ -210,8 +254,8 @@ ticket01 代码和测试入口已交付，等待用户 NPU 验收；四票均保
 
 | Ticket | 已完成 | 待实现的主要行为 | 验证状态与进入条件 |
 |---|---|---|---|
-| [01 冷请求与显式释放](issues/01-cold-request-lifecycle.md) | 冷请求及统一页代码已交付；身份比较和 HTTP freeze_gc 启动竞态已修复 | 用户更新独立 ticket01 修复版本，在 31/32 使用新 run-id 重跑 NPU 验收 | 第二次运行在参考组日志检查发现 freeze_gc 启动异常；补丁 CPU 15 项及静态检查通过，双轴 review 无阻断项；目标组 NPU 验收待执行 |
-| [02 prompt 保存](issues/02-prompt-prefix-save.md) | 规格、回顾确认及重编实施票 | P alive Index K、prefix 页池、admit 和 publish | CPU／NPU 新行为未验收；等待 01 关闭 |
+| [01 冷请求与显式释放](issues/01-cold-request-lifecycle.md) | 冷请求及统一页代码已交付；身份比较已修复，启动改为原生 fake warmup | 用户更新独立 warmup 适配提交，在 31/32 使用新 run-id 重跑 NPU 验收 | 第二次运行在参考组日志检查发现 freeze_gc 启动异常；原生 warmup 适配 CPU 421 项、静态检查及双轴 review 通过；目标组 NPU 验收待执行 |
+| [02 prompt 保存](issues/02-prompt-prefix-save.md) | 规格、回顾确认；旧实现已撤回 | 01 稳定后重写 P alive Index K、prefix 页池、admit 和 publish | 未通过 NPU 验收；等待 01 关闭后重写 |
 | [03 命中恢复与后缀](issues/03-prefix-restore-and-suffix.md) | 规格、回顾确认及重编实施票 | load_back、fill、两段就绪与实际尾页接续 | CPU／NPU 新行为未验收；等待 02 关闭 |
 | [04 完整自运行验收](issues/04-full-demo-acceptance.md) | 规格、回顾确认及重编实施票 | 独立参考组、A/B/C/E、V1–V10 与报告整合 | 完整验收未执行；等待 03 关闭 |
 

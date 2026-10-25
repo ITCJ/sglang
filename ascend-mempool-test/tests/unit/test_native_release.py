@@ -26,17 +26,35 @@ def load_methods(path, name, methods, namespace, *, standalone=False):
         for n in definition.body
         if isinstance(n, ast.FunctionDef) and n.name in methods
     ]
+    _exec_definitions(source, [definition], namespace)
+    return namespace[name]
+
+
+def load_functions(path, names, namespace):
+    """Load real sync/async functions while avoiding device-only module imports."""
+    source = Path(__file__).resolve().parents[3] / "python/sglang/srt" / path
+    definitions = [
+        node
+        for node in ast.parse(source.read_text()).body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name in names
+    ]
+    if {node.name for node in definitions} != names:
+        raise AssertionError(f"production functions missing in {path}")
+    _exec_definitions(source, definitions, namespace)
+
+
+def _exec_definitions(source, definitions, namespace):
     module = ast.Module(
         body=[
             ast.ImportFrom(
                 module="__future__", names=[ast.alias(name="annotations")], level=0
             ),
-            definition,
+            *definitions,
         ],
         type_ignores=[],
     )
     exec(compile(ast.fix_missing_locations(module), str(source), "exec"), namespace)
-    return namespace[name]
 
 
 def native_receiver(room, events, *, mempool_control=None, senders=1):

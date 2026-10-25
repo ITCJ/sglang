@@ -334,6 +334,8 @@ class TestMinRunner(unittest.TestCase):
         )
         self.assertIn(CONFIG_ENV, target)
         self.assertNotIn(CONFIG_ENV, reference)
+        self.assertEqual(target["SKIP_SERVER_WARMUP"], "0")
+        self.assertEqual(reference["SKIP_SERVER_WARMUP"], "0")
         for key in (
             "MODEL_PATH",
             "PREFILL_CAPACITY",
@@ -368,7 +370,7 @@ class TestMinRunner(unittest.TestCase):
         config = RouterConfig("p", "d", "/model")
         args = SimpleNamespace(
             page_size=128,
-            skip_server_warmup=True,
+            skip_server_warmup=False,
             disable_radix_cache=True,
             chunked_prefill_size=-1,
             max_prefill_tokens=8192,

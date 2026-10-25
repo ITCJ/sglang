@@ -76,6 +76,34 @@ class TestRouterService(unittest.TestCase):
             with ThreadPoolExecutor(max_workers=16) as pool:
                 list(pool.map(lambda service: service.advance(), services[role]))
 
+        # Native startup warmup stays local, then the same workers run a real Req.
+        for role in services:
+            for rank, service in enumerate(services[role]):
+                fake = service_fixture.TestMempoolPDService.request(0, 1)
+                fake.bootstrap_host = "2.2.2.2"
+                service.track(fake)
+                self.assertFalse(service.tracks(fake))
+                self.assertIsNone(service.subrouter.shard.req)
+                self.assertTrue(service.can_prefill(fake))
+                self.assertTrue(service.can_preallocate(fake))
+                self.assertTrue(service.transfer_complete(fake))
+                batch = runtime_fixture.prefill_batch((2,), (0,), (1,))
+                batch.reqs = [fake]
+                batch.forward_mode.is_idle = lambda: False
+                batch.forward_mode.is_prebuilt = lambda: False
+                service.prepare_batch(batch)
+                with service.runtime.forward_scope():
+                    k = torch.ones((2, 2), dtype=torch.bfloat16)
+                    service.runtime.write_layer(5, k, k, batch)
+                events[role][rank][-1].done = True
+                service.runtime.poll_completed()
+                self.assertFalse(service.defer_release(fake, handoff=role == "prefill"))
+                self.assertEqual(len(service.control.available_slots()), 16)
+                self.assertEqual(service.runtime.row_slot[1].item(), -1)
+                self.assertFalse(service._requests)
+                if role == "decode":
+                    self.assertFalse(service.subrouter.shard.native.reservations)
+
         # A direct HTTP Req cannot create ownership or bypass dispatch.
         with self.assertRaisesRegex(ValueError, "dispatch"):
             services["decode"][0].track(requests["decode"][0])

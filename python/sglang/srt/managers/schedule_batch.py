@@ -3233,7 +3233,7 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
         shortfalls retract gracefully instead of tripping fail-loud alloc
         errors."""
         reservations = getattr(self.req_to_token_pool, "mempool_reservations", None)
-        if reservations is not None:
+        if reservations is not None and reservations.applies_to(self.reqs):
             return reservations.can_decode(self.reqs)
         num_tokens = self.new_tokens_required_next_decode(selected_indices)
         requests = (

@@ -1929,7 +1929,7 @@ class DecodePreallocQueue(DecodeHiCachePreallocMixin):
             total_prefix_len = prefix_len
 
         reservations = getattr(self.req_to_token_pool, "mempool_reservations", None)
-        if reservations is not None:
+        if reservations is not None and reservations.applies_to([req]):
             if prefix_len or total_prefix_len:
                 raise RuntimeError("Ascend Router cold request cannot reuse a prefix")
             return reservations.attach(req, self._pre_alloc_fill_len(req))
