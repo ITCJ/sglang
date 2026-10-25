@@ -2411,16 +2411,29 @@ def _freeze_gc_after_server_warmup(server_args: ServerArgs):
     freeze_headers = {}
     if freeze_key:
         freeze_headers["Authorization"] = f"Bearer {freeze_key}"
-    try:
-        res = requests.post(
-            server_args.url() + "/freeze_gc",
-            headers=freeze_headers,
-            timeout=10,
-            verify=ssl_verify_of(server_args),
-        )
-        res.raise_for_status()
-    except requests.exceptions.RequestException:
-        logger.warning("post-warmup freeze_gc failed", exc_info=True)
+    # The lifespan starts this thread before the HTTP listener. Skipping warmup
+    # also skips its readiness wait, so allow the listener time to accept us.
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            res = requests.post(
+                server_args.url() + "/freeze_gc",
+                headers=freeze_headers,
+                timeout=max(0.1, deadline - time.monotonic()),
+                verify=ssl_verify_of(server_args),
+            )
+            res.raise_for_status()
+            return
+        except requests.exceptions.RequestException as exc:
+            if (
+                isinstance(exc, requests.exceptions.ConnectionError)
+                and not isinstance(exc, requests.exceptions.SSLError)
+                and deadline - time.monotonic() > 0.1
+            ):
+                time.sleep(0.1)
+                continue
+            logger.warning("post-warmup freeze_gc failed", exc_info=True)
+            return
 
 
 def _wait_and_warmup(

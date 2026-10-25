@@ -100,6 +100,20 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 
 ## D 名称、验收与实施票怎样对应
 
+**2026-10-25 ticket01 第二次 NPU 验收：HTTP 启动竞态修复。**
+31/32 在 93678e5fd4 通过身份检查，进入参考服务请求阶段。
+P 日志显示 4096-token Prefill、DONE 和 free=16。
+验收扫描到启动时的 freeze_gc ConnectionRefused，尚未进入目标组。
+
+跳过 warmup 也跳过了监听等待，启动线程提前调用 freeze_gc。
+真实本地 HTTP 回归已复现；现增加有时限的连接重试。
+HTTP/TLS 错误和持续连接失败仍记录异常，验收器保持原有检查。
+
+本次需修改公共 HTTP 启动函数，NPU hook 无法控制监听顺序。
+本地 HTTP 回归 6 项、参考验收器 9 项通过，静态检查通过。
+双轴 review 无阻断项；已补连接耗时计入预算的测试。
+修复单独交付在 ticket01 之后；整票仍等待用户 NPU 验收。
+
 **2026-10-25 ticket01 首次 NPU 验收：身份比较修复。**
 31/32 已建立连接，复制与模型测试尚未启动。
 本地 numa_nodes 为 tuple，经 JSON 传输变为 list，导致相同配置被误拒绝。
@@ -196,7 +210,7 @@ ticket01 代码和测试入口已交付，等待用户 NPU 验收；四票均保
 
 | Ticket | 已完成 | 待实现的主要行为 | 验证状态与进入条件 |
 |---|---|---|---|
-| [01 冷请求与显式释放](issues/01-cold-request-lifecycle.md) | 冷请求及统一页代码已交付；已修复 preflight 的 JSON tuple/list 误判并补两侧差异报告 | 用户更新独立 ticket01 修复版本，在 31/32 使用新 run-id 重跑 NPU 验收 | 首次运行停在身份检查；补丁 CPU 10 项及静态检查通过，双轴 review 无发现；复制与模型 NPU 验收待执行 |
+| [01 冷请求与显式释放](issues/01-cold-request-lifecycle.md) | 冷请求及统一页代码已交付；身份比较和 HTTP freeze_gc 启动竞态已修复 | 用户更新独立 ticket01 修复版本，在 31/32 使用新 run-id 重跑 NPU 验收 | 第二次运行在参考组日志检查发现 freeze_gc 启动异常；补丁 CPU 15 项及静态检查通过，双轴 review 无阻断项；目标组 NPU 验收待执行 |
 | [02 prompt 保存](issues/02-prompt-prefix-save.md) | 规格、回顾确认及重编实施票 | P alive Index K、prefix 页池、admit 和 publish | CPU／NPU 新行为未验收；等待 01 关闭 |
 | [03 命中恢复与后缀](issues/03-prefix-restore-and-suffix.md) | 规格、回顾确认及重编实施票 | load_back、fill、两段就绪与实际尾页接续 | CPU／NPU 新行为未验收；等待 02 关闭 |
 | [04 完整自运行验收](issues/04-full-demo-acceptance.md) | 规格、回顾确认及重编实施票 | 独立参考组、A/B/C/E、V1–V10 与报告整合 | 完整验收未执行；等待 03 关闭 |

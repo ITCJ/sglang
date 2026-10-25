@@ -238,3 +238,27 @@ P DONE、早到／迟到 DONE 和取消回滚；旧 RELEASE_ACK 不等于新 fre
 - 修复作为 f5924d557e 之后的独立 ticket01 验收提交；ticket02 保持独立本地提交。
   用户仍在原目录运行，复用 31/32 配置并换新 run-id；等待用户重跑 NPU 验收。
   State 保持 open，尚无本票硬件通过结论。
+
+### 2026-10-25：31/32 第二次验收停在参考日志检查，修复 freeze_gc 启动竞态
+
+- 用户运行 93678e5fd4、run-id=ticket01-3132-20261025-02；身份比较已通过。
+  参考组已启动并执行请求，P 日志显示 4096-token prefill、各 rank DONE/free=16。
+  这些片段不是整票通过证据；本次尚未进入 Main/SR 目标组。
+- 首个 Traceback 来自 post-warmup freeze_gc failed：本机 8000 端口拒绝连接。
+  紧接着服务 ready=200，后续请求继续完成。最终 verify_service.check_logs
+  扫到启动时的 Traceback，拒绝参考组，32 收到对端失败通知。
+- 根因：lifespan 在 HTTP 开始监听前启动 warmup 线程。验收入口使用
+  skip_server_warmup，跳过了普通 warmup 中的 HTTP 等待；随后立即请求 freeze_gc。
+- 修复在公共 http_server.py 的 _freeze_gc_after_server_warmup 内，为连接错误
+  增加 10 秒预算内的重试。成功后结束；持续失败、HTTP 拒绝、读超时及 TLS
+  错误仍报告原始异常。保留认证、TLS 设置、GC 操作和所有验收错误检查。
+- 主线改动必要性：竞态发生在 tokenizer HTTP lifespan 与监听之间，P/D 参考组
+  和目标组共用此启动函数。Ascend/NPU worker hook 无法控制父 HTTP 进程的
+  监听时序；启用模型 warmup 又会破坏当前显式请求和资源生命周期验证。
+- 本地真实 HTTP 回归先复现首次拒绝连接时丢失 GC 请求，再确认监听就绪后成功。
+  新增 6 项 CPU 测试，覆盖 skip/普通/joiner、认证/TLS、失败边界和 callback；
+  参考验收器 9 项测试通过。Ruff lint/format、isort、AST、diff 检查通过。
+- Spec 0 项发现；Standards 无硬性问题。已落实唯一非阻断建议，补测连接请求
+  本身消耗的时间计入预算，后续 HTTP timeout 缩小且耗尽后不再重试。
+- 用户硬件重跑待执行，State 保持 open。修复单独交付在 ticket01 之后，
+  ticket02 继续保留独立本地提交。
