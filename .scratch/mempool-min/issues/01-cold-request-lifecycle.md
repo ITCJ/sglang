@@ -218,3 +218,23 @@ P DONE、早到／迟到 DONE 和取消回滚；旧 RELEASE_ACK 不等于新 fre
 - 哈希B参数、32/40页、整槽64/1页、注册不一致及native释放由CPU覆盖。
 - 图解已重算，syncfile写回按独立清单同步；详细证据见../unified-page-size-change.md。
 - NPU未执行、用户未验收；State=open，不解锁ticket02。
+
+### 2026-10-25：31/32 首次 NPU 验收停在身份比较，修复 JSON 类型误判
+
+- 用户在 P=10.120.72.31、D=10.120.72.32 运行 f5924d557e；两侧已连接，
+  随即报告 P/D code, config, runtime packages or model identity differ。
+  本次尚未启动复制适配器或模型服务，不计为 NPU 功能通过。
+- CPU 使用真实 Peer/socketpair 复现根因：msgspec.to_builtins 保留 numa_nodes
+  的 tuple，JSON 传输后变为 list；内容相同也会直接比较失败。
+- run_mempool_min.py 将配置转为实际 JSON 表示后比较，保留所有真实配置、模型、
+  运行库和代码差异的拒绝条件。握手前保存 identity.json，收到对端后保存
+  peer-identity.json 和 identity-diff.json；终端列出确切差异字段。
+- 本次唯一功能文件位于独立 Ascend 验收入口：身份交换在服务启动前发生，
+  Ascend/NPU worker 尚未装配，因此 worker hook 无法修复 runner 的类型比较。
+- 验收入口 CPU 回归 10 项通过，包含相同身份通过、真实差异拒绝与断连留证；
+  原型先复现 tuple/list 不等，再确认 JSON 规范化后相等。strict mypy 两文件、
+  Ruff 与格式检查通过。
+- Standards：0 项发现；Spec：0 项发现。两轴只读复核本补丁，不包含 ticket02。
+- 修复作为 f5924d557e 之后的独立 ticket01 验收提交；ticket02 保持独立本地提交。
+  用户仍在原目录运行，复用 31/32 配置并换新 run-id；等待用户重跑 NPU 验收。
+  State 保持 open，尚无本票硬件通过结论。

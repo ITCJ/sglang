@@ -57,6 +57,116 @@ class TestHTTPEntry(unittest.IsolatedAsyncioTestCase):
             future.cancel()
 
 
+class TestPreflightIdentity(unittest.TestCase):
+    def make_runner(self, root, *, change=None, disconnect=False):
+        def send(kind, *, value):
+            self.assertEqual(kind, "identity")
+            peer.value = json.loads(json.dumps(value))
+            if change is not None:
+                change(peer.value)
+
+        def expect(kind):
+            self.assertEqual(kind, "identity")
+            if disconnect:
+                raise ConnectionError("peer disconnected")
+            return dict(value=peer.value)
+
+        peer = SimpleNamespace(send=send, expect=expect, barrier=lambda phase: None)
+        config = RouterConfig("p", "d", "/model")
+        args = SimpleNamespace(
+            role="prefill", mode="acceptance", run_id="identity-test"
+        )
+        return runner.Runner(args, config, peer, root)
+
+    @contextlib.contextmanager
+    def environment(self):
+        def git(command, **kwargs):
+            if command[1] == "diff":
+                return b""
+            if command[1] == "ls-files":
+                return ""
+            if command[1] == "rev-parse":
+                return "a" * 40
+            self.fail(f"unexpected subprocess: {command}")
+
+        with (
+            patch.object(runner.socket, "if_nameindex", return_value=[(1, "bond4")]),
+            patch.object(Path, "is_dir", return_value=True),
+            patch.object(
+                runner,
+                "model_identity",
+                return_value={"manifest": {"config.json": "hash-a"}},
+            ),
+            patch.object(runner, "version", return_value="1.0"),
+            patch.object(runner.subprocess, "check_output", side_effect=git),
+            patch.object(runner.subprocess, "run") as npu_smi,
+            patch.object(runner, "available_port"),
+            patch.object(
+                Path, "read_text", return_value="MemAvailable: 999999999 kB\n"
+            ),
+        ):
+            yield npu_smi
+
+    def test_mismatch_keeps_both_identities_and_names_the_differing_field(self):
+        for category, key, value in (
+            ("versions", "torch-npu", "2.0"),
+            ("model.manifest", "config.json", "hash-b"),
+            ("untracked_sha256", "python/local.py", "hash-c"),
+        ):
+
+            def change(identity):
+                target = identity
+                for part in category.split("."):
+                    target = target[part]
+                target[key] = value
+
+            with (
+                self.subTest(field=category + "." + key),
+                tempfile.TemporaryDirectory() as folder,
+            ):
+                root = Path(folder)
+                instance = self.make_runner(root, change=change)
+                with (
+                    self.environment() as npu_smi,
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
+                    with self.assertRaisesRegex(ValueError, "P/D") as error:
+                        instance.preflight()
+                    npu_smi.assert_not_called()
+                self.assertTrue((root / "identity.json").is_file())
+                local = json.loads((root / "identity.json").read_text())
+                peer = json.loads((root / "peer-identity.json").read_text())
+                report = json.loads((root / "identity-diff.json").read_text())
+                self.assertNotEqual(local, peer)
+                self.assertEqual(report["status"], "failed")
+                self.assertEqual(
+                    report["differences"][0]["field"], category + "." + key
+                )
+                self.assertEqual(report["differences"][0]["peer"], value)
+                self.assertIn(category + "." + key, str(error.exception))
+                self.assertEqual(instance.report["identity_check"], report)
+
+    def test_matching_identities_keep_preflight_enabled(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            instance = self.make_runner(root)
+            with self.environment() as npu_smi:
+                instance.preflight()
+                npu_smi.assert_called_once()
+            report = json.loads((root / "identity-diff.json").read_text())
+            self.assertEqual(report["status"], "passed")
+            self.assertEqual(report["differences"], [])
+
+    def test_peer_disconnect_still_preserves_local_identity(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            instance = self.make_runner(root, disconnect=True)
+            with self.environment(), self.assertRaisesRegex(ConnectionError, "peer"):
+                instance.preflight()
+            self.assertTrue((root / "identity.json").is_file())
+            self.assertIn("identity", instance.report)
+
+
 class TestMinRunner(unittest.TestCase):
     def test_paired_timeout_retains_quota_and_reaps_only_owned_children(self):
         now = [0.0]

@@ -100,6 +100,14 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 
 ## D 名称、验收与实施票怎样对应
 
+**2026-10-25 ticket01 首次 NPU 验收：身份比较修复。**
+31/32 已建立连接，复制与模型测试尚未启动。
+本地 numa_nodes 为 tuple，经 JSON 传输变为 list，导致相同配置被误拒绝。
+
+配置现先转成 JSON 表示；失败时也保存两侧身份和逐字段差异。
+验收入口 CPU 10 项、静态检查通过；Standards / Spec 均无发现。
+修复单独交付在 ticket01 基线上，等待用户在原目录重跑；01 保持 open。
+
 **2026-10-24 统一页修正，第 1 步：实现已修改，验证待运行。**
 Main 配置、页哈希、入口对齐、整槽账本和 SR 页描述统一从 `page_size=B` 推导。
 NPU mempool 记录实际 B；注册前核对 worker、DRAM、allocator、KV 池和 Index K。
@@ -188,7 +196,7 @@ ticket01 代码和测试入口已交付，等待用户 NPU 验收；四票均保
 
 | Ticket | 已完成 | 待实现的主要行为 | 验证状态与进入条件 |
 |---|---|---|---|
-| [01 冷请求与显式释放](issues/01-cold-request-lifecycle.md) | Main/SR 冷请求、真实预留、显式 ready/free、自运行 serve/acceptance 已实现；统一页修正及逐文件记录已交付 | 用户运行双机 NPU 验收，核对实现和证据后确认关闭；ticket02 仍受门控 | 统一页修正后完整 CPU 416/416、静态检查及启动 dry-run 通过；NPU 未执行；等待用户 NPU 验收 |
+| [01 冷请求与显式释放](issues/01-cold-request-lifecycle.md) | 冷请求及统一页代码已交付；已修复 preflight 的 JSON tuple/list 误判并补两侧差异报告 | 用户更新独立 ticket01 修复版本，在 31/32 使用新 run-id 重跑 NPU 验收 | 首次运行停在身份检查；补丁 CPU 10 项及静态检查通过，双轴 review 无发现；复制与模型 NPU 验收待执行 |
 | [02 prompt 保存](issues/02-prompt-prefix-save.md) | 规格、回顾确认及重编实施票 | P alive Index K、prefix 页池、admit 和 publish | CPU／NPU 新行为未验收；等待 01 关闭 |
 | [03 命中恢复与后缀](issues/03-prefix-restore-and-suffix.md) | 规格、回顾确认及重编实施票 | load_back、fill、两段就绪与实际尾页接续 | CPU／NPU 新行为未验收；等待 02 关闭 |
 | [04 完整自运行验收](issues/04-full-demo-acceptance.md) | 规格、回顾确认及重编实施票 | 独立参考组、A/B/C/E、V1–V10 与报告整合 | 完整验收未执行；等待 03 关闭 |

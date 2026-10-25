@@ -54,6 +54,34 @@ def write_json(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
 
 
+def identity_differences(
+    local: dict[str, Any], peer: dict[str, Any], prefix: str = ""
+) -> list[dict[str, Any]]:
+    """Name exact deployment differences, including files present on one host."""
+    differences = []
+    for key in sorted(local.keys() | peer.keys()):
+        field = f"{prefix}.{key}" if prefix else key
+        left, right = local.get(key), peer.get(key)
+        if (
+            key in local
+            and key in peer
+            and isinstance(left, dict)
+            and isinstance(right, dict)
+        ):
+            differences.extend(identity_differences(left, right, field))
+        elif key not in local or key not in peer or left != right:
+            differences.append(
+                dict(
+                    field=field,
+                    local=left,
+                    peer=right,
+                    local_present=key in local,
+                    peer_present=key in peer,
+                )
+            )
+    return differences
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--role", choices=("prefill", "decode"), required=True)
@@ -172,7 +200,9 @@ class Runner:
         identity = dict(
             run_id=self.args.run_id,
             mode=self.args.mode,
-            config=msgspec.to_builtins(self.config),
+            # Peer sends JSON, which turns tuple fields such as numa_nodes into
+            # lists. Compare the same wire representation on both sides.
+            config=json.loads(msgspec.json.encode(self.config)),
             git_sha=subprocess.check_output(
                 ["git", "rev-parse", "HEAD"], cwd=REPO, text=True
             ).strip(),
@@ -187,13 +217,28 @@ class Runner:
                 for name in ("torch", "torch-npu", "sgl-kernel-npu", "memfabric-hybrid")
             },
         )
-        self.peer.send("identity", value=identity)
-        if self.peer.expect("identity")["value"] != identity:
-            raise ValueError(
-                "P/D code, config, runtime packages or model identity differ"
-            )
         write_json(self.root / "identity.json", identity)
         self.report["identity"] = identity
+        self.peer.send("identity", value=identity)
+        peer_identity = self.peer.expect("identity")["value"]
+        write_json(self.root / "peer-identity.json", peer_identity)
+        differences = identity_differences(identity, peer_identity)
+        comparison = dict(
+            status="failed" if differences else "passed",
+            local_role=self.args.role,
+            differences=differences,
+        )
+        write_json(self.root / "identity-diff.json", comparison)
+        self.report["identity_check"] = comparison
+        if differences:
+            print(
+                "IDENTITY_MISMATCH " + json.dumps(comparison, ensure_ascii=False),
+                flush=True,
+            )
+            fields = ", ".join(item["field"] for item in differences)
+            raise ValueError(
+                f"P/D identity mismatch: {fields}; see {self.root / 'identity-diff.json'}"
+            )
         meminfo = Path("/proc/meminfo").read_text()
         (self.root / "meminfo.txt").write_text(meminfo)
         match = re.search(r"^MemAvailable:\s+(\d+)", meminfo, re.M)
