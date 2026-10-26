@@ -1,0 +1,150 @@
+{
+  "run": "ticket03-005-normal-abc",
+  "source": "User pasted P/D terminal output; remote raw artifacts not downloaded",
+  "purpose": "diagnostic comparison; not full acceptance",
+  "status": "failed",
+  "full_acceptance": false,
+  "controls": {
+    "force_noncontiguous_restore": false,
+    "delay_prefix_fill": false
+  },
+  "output_comparison": [
+    {
+      "name": "reuse-prefix-a",
+      "equal": true,
+      "reference_length": 128,
+      "actual_length": 128,
+      "first_difference": null
+    },
+    {
+      "name": "reuse-prefix-b",
+      "equal": true,
+      "reference_length": 128,
+      "actual_length": 128,
+      "first_difference": null
+    },
+    {
+      "name": "reuse-prefix-c",
+      "equal": false,
+      "reference_length": 128,
+      "actual_length": 128,
+      "first_difference": 15
+    }
+  ],
+  "probes_ok": true,
+  "diagnostic": {
+    "complete": true,
+    "prefix_complete": true,
+    "parse_errors": 0
+  },
+  "content": {
+    "status": "passed",
+    "hit_lengths": [
+      0,
+      4096,
+      3968
+    ],
+    "suffix_tokens": [
+      4096,
+      1024,
+      128
+    ],
+    "pages_per_request": [
+      32,
+      40,
+      40
+    ],
+    "ranks": 16,
+    "main_layers": 78,
+    "index_layers": 21,
+    "noncontiguous_native_mapping": false,
+    "native_free_before_fill": false,
+    "boolean_semantics": "all B/C ranks; false is not none",
+    "contents": "original saved prefix == restored native == fill; computed suffix == alive"
+  },
+  "lifecycle": {
+    "status": "passed",
+    "graph": true,
+    "requests": 3,
+    "paired_process_cleanup": "passed; both owned groups stopped",
+    "timeout_injection": "not part of this diagnostic comparison"
+  },
+  "rank_statistics": {
+    "ranks": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "identity_ok": true,
+    "metadata_ok": true,
+    "failed_checks": {},
+    "changed_main_layers": 77,
+    "changed_index_layers": 20,
+    "nonfinite": 0,
+    "first_main": {
+      "layer": 1,
+      "changed": 43936,
+      "elements": 73728,
+      "max_abs": 0.03125,
+      "rms": 0.0050276098772883415,
+      "first_difference": [
+        3968,
+        0,
+        0
+      ]
+    },
+    "first_index": {
+      "layer": 1,
+      "changed": 4124,
+      "elements": 16384,
+      "max_abs": 0.0625,
+      "rms": 0.0031052138656377792,
+      "first_difference": [
+        3968,
+        0,
+        1
+      ]
+    }
+  },
+  "operator_counts": {
+    "all_ranks_layer1_input": 595969,
+    "all_ranks_topk": 2725,
+    "all_ranks_topk_set": 0,
+    "query": {
+      "2": 19,
+      "4": 20,
+      "11": 3
+    },
+    "attention": {
+      "3": 2,
+      "15": 1
+    },
+    "value_projection": {
+      "3": 6,
+      "15": 47
+    },
+    "output_projection": {
+      "15": 780
+    },
+    "unlisted_ranks_zero": true,
+    "same_shape_changed": 0,
+    "tail_query_changed": 0
+  },
+  "comparison_to_004": "Printed statistics match; this does not establish bitwise equality of all tensors across runs",
+  "root_cause": "unresolved",
+  "ticket_state": "open",
+  "downstream04_unlocked": false
+}
