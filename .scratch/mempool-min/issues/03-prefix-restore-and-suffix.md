@@ -340,3 +340,16 @@ Mac 本机验证和两轴审核记录见 ../verification/ticket03-normal-abc-202
 普通恢复也复现，强制非连续页/延迟fill不是必要条件；具体算子尚未定位。
 [用户贴文摘录](../verification/ticket03-005-20261027/user-results.json)保留为独立硬件记录。
 未下载远端原始文件，不声称新的远端代码SHA或完整NPU验收通过；03仍open。
+
+### 2026-10-27：006 首层后半段与同输入控制
+
+用户明确授权同轮尽量区分reduce-scatter、残差/归一化/MLP量化、行映射/权重副本三组候选。
+新增仅P target启用的三个边界与逐token residual记录；保持原始ABC和普通恢复。
+同输入归约full/tail/rotated与各rank的norm/MLP 256行/重复/8行控制，隔离已有上游扰动。
+全内容摘要覆盖相关norm和MLP权重/固定scale，以及ModelSlim实际layer.scheme/kernel配置。
+按逻辑token对齐16rank，重点3968/4061/4090；严格输出、内容/生命周期和自动清理仍保留。
+
+实现与功能源码阅读顺序见[006交付说明](../ticket03-post-attention.md)。
+本机482项CPU回归通过；含TP16、4096/128逻辑行归属与ModelSlim真实配置宿主的负向用例。
+CPU验证诊断工具，不是NPU数值复现；最终检查和两轴审核记录在
+../verification/ticket03-post-attention-20261027/。006 NPU尚未运行，03保持open，04不解锁。

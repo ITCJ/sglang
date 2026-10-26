@@ -108,6 +108,16 @@ def attach_subrouter(
     if native is not None:
         rows.mempool_reservations = native
     prefix = getattr(runtime, "prefix_store", None)
+    if role == "prefill" and os.environ.get("SGLANG_NPU_MEMPOOL_DEBUG_POST_DIR"):
+        from sglang.srt.hardware_backend.npu.mempool.debug_post_attention import (
+            install_post_attention,
+        )
+
+        if prefix is None:
+            raise ValueError("post-attention tracing requires prefix storage")
+        prefix.debug_post_probe = install_post_attention(
+            scheduler.tp_worker.model_runner.model, prefix.debug_probe
+        )
     if config.prefix_pages:
         layout = runtime.manager.layout
         if (

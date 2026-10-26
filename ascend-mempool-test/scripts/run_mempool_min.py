@@ -24,6 +24,7 @@ sys.path.insert(0, str(REPO / "ascend-mempool-test/src"))
 
 import msgspec
 import replay_mempool_reuse as replay
+import summarize_mempool_post_attention
 import summarize_mempool_reuse
 import verify_mempool_min
 import verify_mempool_prefix
@@ -55,6 +56,8 @@ else:
     )
 
 REUSE_DEBUG_ENV = "SGLANG_NPU_MEMPOOL_DEBUG_REUSE"
+POST_DEBUG_ENV = "SGLANG_NPU_MEMPOOL_DEBUG_POST_DIR"
+POST_CPU_BYTES_PER_RANK = 320 * 2**20  # 256 MiB snapshots + 64 MiB scratch.
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -117,11 +120,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--force-noncontiguous-restore", action="store_true")
     parser.add_argument("--delay-prefix-fill", action="store_true")
     parser.add_argument(
+        "--diagnose-post-attention",
+        action="store_true",
+        help="record reduction/norm/MLP boundaries and same-input controls on P",
+    )
+    parser.add_argument(
         "--diagnose-reuse",
         action="store_true",
         help="temporarily compare P-side cold/reused tails and kernel metadata",
     )
     args = parser.parse_args(argv)
+    if args.diagnose_post_attention and args.mode != "reuse-diagnostic":
+        parser.error("--diagnose-post-attention requires --mode reuse-diagnostic")
     if args.diagnose_reuse and args.mode not in (
         "reuse-acceptance",
         "reuse-diagnostic",
@@ -155,6 +165,7 @@ def service_environment(
         CONFIG_ENV,
         RUN_ENV,
         REUSE_DEBUG_ENV,
+        POST_DEBUG_ENV,
         "http_proxy",
         "https_proxy",
         "HTTP_PROXY",
@@ -188,11 +199,17 @@ def service_environment(
         env[CONFIG_ENV], env[RUN_ENV] = str(args.config), args.run_id
         if getattr(args, "diagnose_reuse", False) and args.role == "prefill":
             env[REUSE_DEBUG_ENV] = "1"
+            if getattr(args, "diagnose_post_attention", False):
+                env[POST_DEBUG_ENV] = str(root / "post-attention")
     return env
 
 
 def memory_budget(
-    config: RouterConfig, role: str, *, diagnose_reuse: bool = False
+    config: RouterConfig,
+    role: str,
+    *,
+    diagnose_reuse: bool = False,
+    diagnose_post_attention: bool = False,
 ) -> dict[str, int]:
     layout = MempoolConfig(
         prefill_capacity=config.prompt_capacity,
@@ -228,9 +245,16 @@ def memory_budget(
                 + layout.prompt_index.layers * layout.prompt_index.row_bytes
             )
             references += 64 * 2**20  # Bounded layer-0 CPU checkpoints per rank.
+        if diagnose_post_attention:
+            references += POST_CPU_BYTES_PER_RANK
         verification = 16 * ((references + scratch + 2**30 - 1) // 2**30) * 2**30
     return dict(
-        bm_bytes=bm, verification_bytes=verification, required_bytes=bm + verification
+        bm_bytes=bm,
+        verification_bytes=verification,
+        required_bytes=bm + verification,
+        post_attention_bytes_per_rank=POST_CPU_BYTES_PER_RANK
+        if rank == 0 and diagnose_post_attention
+        else 0,
     )
 
 
@@ -338,6 +362,9 @@ class Runner:
             run_id=self.args.run_id,
             mode=self.args.mode,
             diagnose_reuse=getattr(self.args, "diagnose_reuse", False),
+            diagnose_post_attention=getattr(
+                self.args, "diagnose_post_attention", False
+            ),
             replay_run=getattr(self.args, "replay_run", None),
             # Peer sends JSON, which turns tuple fields such as numa_nodes into
             # lists. Compare the same wire representation on both sides.
@@ -390,6 +417,9 @@ class Runner:
             self.config,
             self.args.role,
             diagnose_reuse=getattr(self.args, "diagnose_reuse", False),
+            diagnose_post_attention=getattr(
+                self.args, "diagnose_post_attention", False
+            ),
         )
         self.report["memory_budget"] = budget
         write_json(self.root / "memory-budget.json", budget)
@@ -846,6 +876,14 @@ class Runner:
                 )
                 for row in diagnosis["ranks"]
             )
+            post_summary = None
+            if getattr(self.args, "diagnose_post_attention", False):
+                post = summarize_mempool_post_attention.summarize(
+                    root / "post-attention"
+                )
+                write_json(root / "post-attention.json", post)
+                post_summary = summarize_mempool_post_attention.compact(post)
+                probes_ok = probes_ok and post["complete"] and post["checks_ok"]
             outputs = self.report["output_comparison"]
             result = dict(
                 purpose=replay.PURPOSE,
@@ -860,6 +898,8 @@ class Runner:
                 paired_process_cleanup="passed; both owned groups stopped",
                 timeout_injection="not part of this diagnostic comparison",
             )
+            if post_summary is not None:
+                result["post_attention"] = post_summary
             self.peer.send("diagnostic-result", value=result)
         else:
             result = self.peer.expect("diagnostic-result")["value"]
@@ -931,9 +971,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     config=msgspec.to_builtins(config),
                     logs=str(root),
                     memory_budget=memory_budget(
-                        config, args.role, diagnose_reuse=args.diagnose_reuse
+                        config,
+                        args.role,
+                        diagnose_reuse=args.diagnose_reuse,
+                        diagnose_post_attention=args.diagnose_post_attention,
                     ),
                     diagnose_reuse=args.diagnose_reuse,
+                    diagnose_post_attention=args.diagnose_post_attention,
                     replay_run=args.replay_run,
                     purpose=replay.PURPOSE
                     if args.mode == "reuse-diagnostic"
@@ -965,7 +1009,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     target_environment={
                         k: v
                         for k, v in service_environment(
-                            config, args, root, target=True
+                            config, args, root / "target", target=True
                         ).items()
                         if k
                         in (
@@ -978,6 +1022,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             "MAX_TOTAL_TOKENS",
                             "SKIP_SERVER_WARMUP",
                             REUSE_DEBUG_ENV,
+                            POST_DEBUG_ENV,
                         )
                     },
                 ),
@@ -1032,6 +1077,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             except Exception as exc:
                 # Preserve the original acceptance failure even if collection fails.
                 report["reuse_diagnostic"] = dict(error=f"{type(exc).__name__}: {exc}")
+        if args.diagnose_post_attention and args.role == "prefill":
+            try:
+                post_path = root / "target" / "post-attention.json"
+                post = (
+                    json.loads(post_path.read_text())
+                    if post_path.exists()
+                    else summarize_mempool_post_attention.summarize(
+                        root / "target" / "post-attention"
+                    )
+                )
+                write_json(post_path, post)
+                report["post_attention"] = summarize_mempool_post_attention.compact(
+                    post
+                )
+                summarize_mempool_post_attention.print_summary(post)
+            except Exception as exc:
+                report["post_attention"] = dict(
+                    complete=False,
+                    checks_ok=False,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
         write_json(root / "summary.json", report)
         if args.role == "prefill":
             write_json(root.parent / "summary.json", report)

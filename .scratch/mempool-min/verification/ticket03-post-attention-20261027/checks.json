@@ -1,0 +1,66 @@
+{
+  "date": "2026-10-27",
+  "base": "1c0280132c5f3085847aae3f7f7ef7951165848f",
+  "purpose": "Diagnostic tooling verification only; not NPU numerical reproduction or acceptance",
+  "hardware_run": false,
+  "ticket03": "open",
+  "ticket04_unlocked": false,
+  "cpu_full_suite": {
+    "status": "passed",
+    "count": 482,
+    "command": "python -m unittest discover -s ascend-mempool-test/tests/unit -v"
+  },
+  "final_targeted": {
+    "status": "passed",
+    "count": 10,
+    "reason": "CPU row-marker construction/comparison adjustment after full suite; same collective geometry",
+    "command": "python -m unittest test_mempool_post_attention -v"
+  },
+  "typecheck": {
+    "status": "passed",
+    "modules": 4,
+    "python_version": "3.10 override because installed mypy rejects 3.9 config"
+  },
+  "static": {
+    "ruff": "passed",
+    "isort": "passed",
+    "python39_ast_files": 5,
+    "python39_ast": "passed"
+  },
+  "describe": {
+    "prefill": "passed",
+    "decode": "passed",
+    "reference_and_decode_new_probe_disabled": true,
+    "controls": {
+      "force_noncontiguous_restore": false,
+      "delay_prefix_fill": false
+    }
+  },
+  "reviews": {
+    "standards_unresolved": 0,
+    "spec_unresolved": 0,
+    "resolved": [
+      "ModelSlim scheme lives on layer; include scheme/kernel/quantization_config and Mapping configuration digest"
+    ]
+  },
+  "functional_source_reading_order": [
+    "python/sglang/srt/hardware_backend/npu/mempool/debug_post_attention.py",
+    "python/sglang/srt/disaggregation/ascend/mempool_router_transport.py",
+    "ascend-mempool-test/scripts/summarize_mempool_post_attention.py",
+    "ascend-mempool-test/scripts/run_mempool_min.py"
+  ],
+  "source_sha256": {
+    "python/sglang/srt/hardware_backend/npu/mempool/debug_post_attention.py": "805de6aef58d54d9ffd5d828221b5433cfea98c768f457bbf27acbb34f43317d",
+    "python/sglang/srt/disaggregation/ascend/mempool_router_transport.py": "c128db59ca98bb55080fbb27933bed543fedaed83c8455d95c168342c93ee145",
+    "ascend-mempool-test/scripts/summarize_mempool_post_attention.py": "5a16456ebbe962b733ae3362c1018026f09494010b524a2209de903b969fadcf",
+    "ascend-mempool-test/scripts/run_mempool_min.py": "0fb6372a97946623fa9c38451a08ce252850375ebd0cb598f2ea0ff9358c655a",
+    "ascend-mempool-test/tests/unit/test_mempool_post_attention.py": "7359d8835cac1b7569ec3b74c9ce764f12e441fb4e23efcac081731ccc79152f"
+  },
+  "limitations": [
+    "NPU user-run 006 pending",
+    "Collective replay may expose shape/layout effects but does not identify actual ring or tree algorithm",
+    "Dynamic quantization internal scales are not dumped; same-input MLP controls cover observed output effects",
+    "Extra snapshots, hashing and collectives alter timing; compare 006 original fingerprints with 005",
+    "Quantization/normalization weights and fixed scales are fully hashed for observed first-layer scopes; not all model layers"
+  ]
+}

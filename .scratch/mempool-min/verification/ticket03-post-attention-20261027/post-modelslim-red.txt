@@ -1,0 +1,15 @@
+test_modelslim_layer_owned_scheme_and_kernel_are_compared (test_mempool_post_attention.TestPostAttention.test_modelslim_layer_owned_scheme_and_kernel_are_compared) ... ERROR
+
+======================================================================
+ERROR: test_modelslim_layer_owned_scheme_and_kernel_are_compared (test_mempool_post_attention.TestPostAttention.test_modelslim_layer_owned_scheme_and_kernel_are_compared)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_post_attention.py", line 370, in test_modelslim_layer_owned_scheme_and_kernel_are_compared
+    self.assertTrue(initial["settings"]["mlp.scheme.is_dynamic"])
+                    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyError: 'mlp.scheme.is_dynamic'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (errors=1)
