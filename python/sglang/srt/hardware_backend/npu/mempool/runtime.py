@@ -12,9 +12,8 @@ from typing import Any, Iterator, Optional, Protocol
 
 import msgspec
 import torch
-from torch import Tensor
-
 from sglang.srt.hardware_backend.npu.kv_rows import derive_kv_rows
+from torch import Tensor
 
 from .config import MempoolConfig
 from .copy import KVFetch
@@ -22,6 +21,7 @@ from .diagnostics import diagnostics_enabled, startup_stage
 from .layout import check_index, positive_int
 from .manager import MempoolKVManager
 from .offload import MempoolKVOffload
+from .prefix import PrefixStore
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +89,8 @@ class _Forward(msgspec.Struct):
     layers: set[int] = msgspec.field(default_factory=set)
     selection_layers: set[int] = msgspec.field(default_factory=set)
     fetch_layers: set[int] = msgspec.field(default_factory=set)
+    index_layers: set[int] = msgspec.field(default_factory=set)
+    retained: list[Tensor] = msgspec.field(default_factory=list)
 
 
 class _Completion(msgspec.Struct):
@@ -102,6 +104,8 @@ class _Completion(msgspec.Struct):
     replay: bool
     fetch: Optional[Tensor]
     sources: Optional[Tensor] = None
+    index_snapshot: Optional[Tensor] = None
+    retained: tuple[Tensor, ...] = ()
 
 
 class MempoolRuntime:
@@ -133,6 +137,9 @@ class MempoolRuntime:
         fetch_enabled: bool = False,
         fetch_kernel: Any = None,
         source_evidence: bool = False,
+        index_pool: Any = None,
+        index_kernels: Optional[Sequence[Any]] = None,
+        prefix_store: Optional[PrefixStore] = None,
     ) -> None:
         """Allocate stable bindings/counters after BM mappings are ready."""
         if mlapo_enabled:
@@ -143,6 +150,7 @@ class MempoolRuntime:
             raise ValueError("start_layer must be a nonnegative integer")
         self.config: Optional[MempoolConfig] = None
         self.manager = manager
+        self.prefix_store = prefix_store
         manager.bases(manager.rank)
         self.layout = manager.layout.layout_for_rank(manager.rank)
         if kernels is not None and len(kernels) != self.layout.layers:
@@ -187,6 +195,36 @@ class MempoolRuntime:
             )
             for layer in range(self.layout.layers)
         ]
+        self._index_pool = index_pool
+        self._index_writers: dict[int, MempoolKVOffload] = {}
+        self._index_counts: Optional[Tensor] = None
+        index_layout = manager.layout.prompt_index if manager.rank == 0 else None
+        if index_layout is not None:
+            if index_pool is None or index_pool.index_k_scale_buffer is not None:
+                raise ValueError("prefix requires the native unscaled Index K pool")
+            producers = tuple(index_pool.indexer_layer_ids)
+            if (
+                len(set(producers)) != index_layout.layers
+                or len(producers) != index_layout.layers
+                or index_pool.index_head_dim != index_layout.dim
+                or any(
+                    not start_layer <= layer < start_layer + self.layout.layers
+                    for layer in producers
+                )
+                or (index_kernels is not None and len(index_kernels) != len(producers))
+            ):
+                raise ValueError("native Index K geometry differs from DRAM layout")
+            self._index_counts = torch.zeros(
+                (index_layout.layers, self.layout.slots),
+                dtype=torch.int32,
+                device=device,
+            )
+            for index, layer in enumerate(producers):
+                self._index_writers[layer] = MempoolKVOffload(
+                    manager.view(0, index, region="alive_index"),
+                    block_dim=block_dim,
+                    kernel=index_kernels[index] if index_kernels is not None else None,
+                )
         if event_factory is None:
             if self.row_slot.device.type != "npu":
                 raise ValueError("CPU runtime tests must supply a completion event")
@@ -267,6 +305,8 @@ class MempoolRuntime:
         self.row_decode_len[req_pool_idx] = 0
         self._write_counts[:, slot].zero_()
         self._slot_totals[slot] = 0
+        if self._index_counts is not None:
+            self._index_counts[:, slot] = 0
         self._record_binding_update()
         return attachment
 
@@ -478,6 +518,42 @@ class MempoolRuntime:
         # Device counters catch silent invalid masks, including on graph replay.
         self._write_counts[layer].scatter_add_(0, safe_slot, valid.to(torch.int32))
         active.layers.add(layer)
+        if active.writes and self.prefix_store is not None:
+            self.prefix_store.capture_source(
+                region="main",
+                layer=layer,
+                values=values,
+                slots=slots,
+                positions=local_pos,
+                valid=valid,
+            )
+        if active.writes and layer_id in self._index_writers:
+            writer = self._index_writers[layer_id]
+            native = self._index_pool.get_index_k_buffer(layer_id).reshape(
+                -1, 1, writer.target.layout.dim
+            )
+            locations = forward_batch.out_cache_loc.reshape(-1).long()
+            index_valid = valid & (locations >= 0) & (locations < native.shape[0])
+            safe_locations = torch.where(index_valid, locations, 0)
+            index_values = native.index_select(0, safe_locations).contiguous()
+            writer.write(
+                index_values, slots=slots, positions=local_pos, valid=index_valid
+            )
+            assert self._index_counts is not None
+            self._index_counts[writer.target.layer].scatter_add_(
+                0, safe_slot, index_valid.to(torch.int32)
+            )
+            active.index_layers.add(layer_id)
+            active.retained.append(index_values)
+            if self.prefix_store is not None:
+                self.prefix_store.capture_source(
+                    region="index",
+                    layer=writer.target.layer,
+                    values=index_values,
+                    slots=slots,
+                    positions=local_pos,
+                    valid=index_valid,
+                )
 
     def selected_kv_valid(
         self, layer_id: int, req_rows: Tensor, positions: Tensor
@@ -628,6 +704,12 @@ class MempoolRuntime:
         if not active.replay and len(active.layers) != self.layout.layers:
             raise RuntimeError("mempool forward is missing local layer writes")
         if (
+            active.writes
+            and self._index_writers
+            and active.index_layers != set(self._index_writers)
+        ):
+            raise RuntimeError("mempool forward is missing Index K producer writes")
+        if (
             self._fetch is not None
             and not active.replay
             and len(active.fetch_layers) != self.layout.layers
@@ -648,6 +730,9 @@ class MempoolRuntime:
         sources = (
             self._fetch_sources.clone() if self._fetch_sources is not None else None
         )
+        index_snapshot = (
+            self._index_counts.clone() if self._index_counts is not None else None
+        )
         event = self._event_factory()
         event.record()
         self._pending.append(
@@ -660,6 +745,8 @@ class MempoolRuntime:
                 active.replay,
                 fetch,
                 sources,
+                index_snapshot,
+                tuple(active.retained),
             )
         )
         self._active = None
@@ -672,6 +759,12 @@ class MempoolRuntime:
             counts = item.snapshot.cpu().tolist()
             if any(tuple(layer) != item.slot_totals for layer in counts):
                 self.fault = "mempool valid write counts differ from expected rows"
+                raise RuntimeError(self.fault)
+            if item.index_snapshot is not None and any(
+                tuple(layer) != item.slot_totals
+                for layer in item.index_snapshot.cpu().tolist()
+            ):
+                self.fault = "mempool Index K write counts differ from expected rows"
                 raise RuntimeError(self.fault)
             fetch_counts = item.fetch.cpu().tolist() if item.fetch is not None else None
             source_counts = (
@@ -690,6 +783,10 @@ class MempoolRuntime:
                             raise RuntimeError(self.fault)
             for row, total in zip(item.rows, item.totals):
                 progress = self._bindings[row]
+                if self.prefix_store is not None:
+                    self.prefix_store.verify_alive(
+                        slot=progress.attachment.slot, tokens=total
+                    )
                 progress.completed = total
                 progress.forwards += 1
                 progress.replay_forwards += int(item.replay)
@@ -755,11 +852,36 @@ def initialize_for_model_runner(model_runner: Any) -> None:
         raise ValueError("mempool runtime requires a mempool startup mode")
     if not hasattr(backend, "attach_mempool_runtime"):
         raise ValueError("mempool requires the Ascend MLA attention backend")
+    from sglang.srt.disaggregation.ascend.mempool_router_protocol import (
+        CONFIG_ENV,
+        PRODUCERS,
+        RouterConfig,
+    )
+
+    router = (
+        RouterConfig.read(os.environ[CONFIG_ENV]) if CONFIG_ENV in os.environ else None
+    )
+    prefix_pages = router.prefix_pages if router else 0
+    native_pool = model_runner.token_to_kv_pool
+    if prefix_pages and (
+        tuple(native_pool.indexer_layer_ids) != tuple(PRODUCERS)
+        or native_pool.index_head_dim != 128
+        or native_pool.index_k_scale_buffer is not None
+        or native_pool.get_index_k_buffer(PRODUCERS[0]).dtype != torch.bfloat16
+        or router is None
+        or config.page_size != router.page_size
+    ):
+        raise ValueError(
+            "prefix requires the configured BF16 Index K producer geometry"
+        )
     layout = config.make_mla_layout(
         num_layers=model_runner.layer_info.end_layer
         - model_runner.layer_info.start_layer,
         kv_lora_rank=model_runner.model_config.kv_lora_rank,
         qk_rope_head_dim=model_runner.model_config.qk_rope_head_dim,
+        prefix_pages=prefix_pages,
+        indexer_layers=len(PRODUCERS) if prefix_pages else 0,
+        index_head_dim=128 if prefix_pages else 0,
     )
     sparse = getattr(backend, "sparse_kv_manager", None)
     host_buffers = getattr(sparse, "host_kv_buffer", [])
@@ -829,14 +951,28 @@ def initialize_for_model_runner(model_runner: Any) -> None:
         timeout=config.timeout,
     )
     with startup_stage("runtime.allocate", bm_rank=manager.rank):
+        device = str(model_runner.req_to_token_pool.req_to_token.device)
+        prefix_store = (
+            PrefixStore(
+                manager,
+                page_size=config.page_size,
+                device=device,
+                verify=bool(router and router.verify_prefix),
+                replica=model_runner.ps.tp_rank,
+            )
+            if prefix_pages and manager.rank == 0
+            else None
+        )
         runtime = MempoolRuntime(
             manager,
             req_pool_rows=model_runner.req_to_token_pool.req_to_token.shape[0],
             max_context_len=model_runner.model_config.context_len,
             start_layer=model_runner.layer_info.start_layer,
-            device=str(model_runner.req_to_token_pool.req_to_token.device),
+            device=device,
             source_evidence=bool(os.environ.get("SGLANG_NPU_MEMPOOL_ROUTER_CONFIG")),
             fetch_enabled=mode is SparseKVOffloadMode.PD_DECODE_MEMPOOL,
+            index_pool=native_pool if prefix_store is not None else None,
+            prefix_store=prefix_store,
         )
     runtime.config = config
     seen = set()

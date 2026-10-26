@@ -4,8 +4,8 @@ subtitle: 以 syncfile 现行文字为依据，区分阶段 0 与后续目标
 template: doc
 theme: blueprint
 lang: zh
-date: 2026-10-24
-status: 统一页修正及CPU检查完成；用户NPU验收待执行
+date: 2026-10-26
+status: ticket01 已关闭；ticket02 重写实现、CPU 与 review 完成，NPU 待验收
 ---
 
 **当前四票与 sparse 阶段 0 一致，但没有覆盖后续全部目标。**
@@ -25,7 +25,7 @@ K1 共享、真正的 alive 页分配及 dense 集成仍须承接。
 | 核对项 | 现行设计 | 本地规格与方案 | 判断 |
 |---|---|---|---|
 | Main Router / SR | 独立 Main；rank 0 协调；每 worker 一个分片 | 相同；网络线程只入队，tick 内通信 | 阶段 0 一致 |
-| 统一 token 页 | sparse/dense、DRAM/HBM、P/D与相关池严格共用B | 当前GLM-5.2集成仅放行128；注册核对实际各组件 | 已修正；NPU待验证 |
+| 统一 token 页 | sparse/dense、DRAM/HBM、P/D与相关池严格共用B | 当前GLM-5.2集成仅放行128；注册核对实际各组件 | ticket01 已验收；新增区域随 02／03 验证 |
 | page 与 slot | alive 用临时整槽后端；prefix 按页分配 | 相同；整槽扣账、free_ack 后归还 | 阶段 0 一致 |
 | 四类副本数 | 阶段 0 为 16 / 16 / 16 / 16 | 相同；ticket01 尚未启用的区域如实注册 | 阶段 0 一致 |
 | 就绪与释放 | 三条件启动 D；finished 与 free_ack 分开 | 相同；接管旧分配、绑定与自动释放 | 阶段 0 一致 |
@@ -35,7 +35,8 @@ K1 共享、真正的 alive 页分配及 dense 集成仍须承接。
 
 这是文档范围核对，不代表这些设计已经实现。
 2026-10-24统一页决定取代此前的64/128分离；本轮已修正现行正文和ticket01代码。
-HTTP/ZMQ及原生预留已有实现与CPU证据；硬件验证仍待用户执行。
+HTTP/ZMQ、原生预留和冷请求已通过 ticket01 用户 NPU 验收。
+prefix 保存已由 ticket02 实现并通过 CPU 验证，NPU 待验收；命中恢复仍待 ticket03。
 
 ## B 最小空闲 slot 0 与 page 的关系
 
@@ -99,6 +100,145 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 共享后分片解析组映射；Router 仍只处理逻辑位置和不透明描述符。
 
 ## D 名称、验收与实施票怎样对应
+
+**2026-10-26 ticket02 重写：两轴 review 整改与复核完成。**
+
+Standards 两项可读性建议已处理：提取 SR admit 分支，新增布局及状态调用补参数名。验收 checker 的短页描述符问题经 red→green 修复。相关 42 项定向回归和 5 文件 strict mypy 通过。
+
+Standards / Spec 最终均为 0 项剩余发现。功能仍为 9 个 Ascend/NPU 文件，无公共功能改动。交付说明列出功能阅读顺序和双机命令；准备独立提交，NPU 待用户执行，ticket02 保持 open。
+
+**2026-10-26 ticket02 重写：完整 CPU 回归完成并进入两轴 review。**
+
+完整 CPU 套件 437/437 通过，35.966 秒。
+首跑缺 requests 测试依赖，补回已有缓存路径后重跑通过。
+13 个源/脚本 strict mypy、21 个 Python 文件 lint/格式/isort/Python3.9 AST 检查通过。
+验收 checker 拆分后负向定向测试通过。
+
+已提供[交付说明](ticket02-delivery.md)与每机一条 prefix-acceptance 命令。
+Standards/Spec review 进行中。
+ticket02 保持 open，NPU 尚未验收，ticket03 继续等待。
+
+**2026-10-26 ticket02 重写：自运行保存验收入口与负向证据检查。**
+
+prefix-acceptance 已接入独立参考、A/B/C/E 冷算、逐 rank 原始/alive/prefix/释放后内容、实际源槽/目标目录关联及回执顺序检查。入口、证据与布局 18 项测试通过；补充 runtime/映射 22 项通过，包含坏 Index K 物理索引和最后区域映射不连续的拒绝。6 个相关源/脚本 strict mypy 通过。CPU 检查不代表 NPU 通过；尚待全回归、两轴 review 和独立提交。
+
+**2026-10-26 ticket02 重写：启动接线与完整 service 生命周期。**
+
+已接入实际模型启动、原生 Index K pool、PrefixStore 和 SR 注册；功能范围仍为 9 个 Ascend/NPU 文件。TP16 service 测试覆盖 warmup→native Index K 清空→延迟最后 rank 的 admit→alive free→prefix 留存，3 项 service 回归通过；4 个接线源文件 strict mypy 通过。NPU 启动与硬件内容验收仍待用户执行。
+
+**2026-10-26 ticket02 重写：重复保存、容量与内容验证。**
+
+CPU 路由与存储 18 项通过，覆盖 A/B/C/E、部分容量、非法回执和超时留存。新增验收模式参考链的 4 项存储测试通过：原始值→alive→prefix→alive 释放后留存，并验证 Index K 内容差异会报错。实际启动与验收 runner 尚待接线；本票 NPU 尚未验收。
+
+**2026-10-26 ticket02 重写：第 4 步，Main 保存与释放路径通过 CPU 检查。**
+
+Main 已保留 prefix 目录，新增独立页额度、源与父路径保护、admit ack 和先父后子发布。
+11 项 Router 检查通过，含 native_freed 迟到、重复 ack 和 alive 释放后的 prefix 保留。
+跨请求容量、完整 service 接线与内容验收仍待完成；NPU 尚未执行。
+
+**2026-10-26 ticket02 重写：第 3 步，全 TP 异步 admit 通过 CPU 检查。**
+
+SR 沿用两次 TP gather，统一分配 prefix 页；最后一个 rank 完成后才共同确认。
+定向 9 项通过，覆盖队列一致、源保护、显式 free 和 service warmup。
+首跑暴露重复命令缓存别名问题，修复后回归与两文件 strict mypy 通过。
+Main 持久目录与启动接线仍待接入；NPU 尚未执行。
+
+**2026-10-26 ticket02 重写：第 2 步，本地 prefix 保存接口通过。**
+
+真实页接口已覆盖主 KV 与 Index K 的非连续页复制，设备事件完成前保护 alive 源。
+CPU 保存测试通过；释放源并清空 alive 后，prefix 两类内容保持正确。
+全 TP 协调、Main 目录和真实启动接线仍待接入；NPU 尚未执行。
+
+**2026-10-26 ticket02 重写：第 1 步，Index K 写回接口通过 CPU 回归。**
+
+新增三类 P 区域及带偏移映射，Index K 写回纳入 forward 完成事件。
+定向 30 项 CPU 检查通过，覆盖 fake warmup、非连续原生索引和 native 释放后的留存。
+下一步接入独立 prefix 页复制与全 TP admit；NPU 尚未执行，ticket02 保持 open。
+
+**2026-10-26：ticket02 重写代码计划完成。**
+用户授权重新实现，并要求先规划代码修改。
+[实施计划](ticket-02-implementation-plan.html)列出 8 个现有功能文件和 1 个新增文件。
+功能修改预计全部位于 Ascend/NPU，复用已验收的 warmup 与公共接线。
+
+先补齐 Index K 写回完成，再接通异步 admit、publish 和显式 free。
+SR 收齐 TP16 设备完成后，所有分片才共同确认并移除 admit 命令。
+prefix 内容随跨请求目录保留，容量与 alive 独立。
+P BM 贡献增至 13 GiB/rank，TP16 共 208 GiB；验证缓冲另计。
+
+本轮仅核对代码与容量、编写计划，没有实施功能或执行新增 CPU／NPU 测试。
+ticket02 保持 open，03／04 继续等待各自前置票验收。
+
+**2026-10-26：ticket01 用户确认验收，后续三票规划复核完成。**
+用户明确确认 ticket01 验收成功，01 已关闭，02 的前置条件已满足。
+验收基线是 7275f29a05；旧 ticket02 实现继续撤回，本轮未开始重写。
+
+核对结果：02 保存 → 03 恢复与后缀 → 04 完整验收，无需重新拆票。
+warmup 修复保持真实请求生命周期，新增功能沿用其隔离规则。
+fake warmup 使用原生临时资源，不建立 alive 绑定，不占 Router 额度。
+启用 prefix 后也应保持目录为空，不产生 admit／publish。
+真实请求缺少预留与 fake/real 混批仍须拒绝。
+
+02 将保存 prompt 主 KV 和 Index K，并在 alive 释放后独立保留。
+冷算 A／B／C／E 验证每份 prefix 为 32 → 40 → 40 → 40 页。
+命中恢复仍属于 03，完整 V1–V10 仍属于 04。
+详细约束见[任务索引](ticket-plan.md)与 [02 实施票](issues/02-prompt-prefix-save.md)。
+
+本轮仅检查提交、代码与文档，未重跑 CPU 或 NPU 测试。
+历史报告的 user_accepted=false 保留原样，当前确认记录为 true。
+以下日期记录保留各次操作发生时的状态；当前状态以本段和进度表为准。
+
+**2026-10-26 ticket01 手动 smoke 入口，第 3 步：用户 NPU 运行通过。**
+三个入口文件已作为脚本仓库提交 42a1511 推送。
+用户在 31 向 Main 发送铅笔分配问题，模型正确回答每人 6 支。
+输入 128 token，输出 48 token，正常 EOS 结束，retractions=0。
+
+本次确认独立 demo 的自然语言单请求正确性。
+服务记录端到端耗时约 11.12 秒；这不是性能验收。
+[回传结果](verification/glm52-mempool-demo-20261026/user-reported-response.json)保留回复及元信息。
+
+D 启动配置开启 Graph；本次回复本身不含 replay 标记。
+Graph 证据仍来自此前的自动化 NPU 验收。
+没有修改功能代码；01 保持 open，等待用户确认关闭。
+
+**2026-10-26 ticket01 手动 smoke 入口，第 2 步：本机检查与交付完成。**
+两份 shell、内嵌 Python 和手动 curl 命令的语法检查通过。
+P、D、Router 三组 dry-run 通过；D Graph BS=16 与 warmup 参数已核对。
+7 个非法配置检查均按预期退出；Standards / Spec review 均无发现。
+
+三个新增文件位于用户指定的脚本仓库；SGLang 功能代码未改动。
+先启动 Main，再启动 P/D；三处 ready 后发送单条 greedy 请求。
+
+客户端用 GLM chat template 编码，在 user 内容前补空白 token 对齐到 128。
+默认问题为铅笔分配，预期答案 6；输入和回复保存在 /home/cryang/log/ 下。
+
+手动入口尚未在 NPU 执行；这不改变已通过的自动化验收记录或 01 的 open 状态。
+
+**2026-10-26 ticket01 手动 smoke 入口，第 1 步：新增启动脚本。**
+用户要求在 ascend-sglang-script/pd-disaggregation 放置独立 demo 脚本。
+新增 glm52mempool-demo.sh、router-mempool-demo.sh 和共享 JSON 配置。
+worker 复用已验收的启动环境与参数；Main Router 单独启动。
+
+默认使用 31/32，P eager、D Graph BS=16，原生 warmup 开启。
+S_P=8192、S_D=128，DRAM/HBM page_size 均为 128。
+本机三组 dry-run、容量和 Graph 参数检查已通过。
+curl 使用文本转成的对齐 input_ids；本入口的 NPU 手动 smoke 尚待用户执行。
+
+**2026-10-26 ticket01：31/32 自动化 NPU 验收首次通过。**
+用户回传提交 7275f29a05 的两端报告，status 均为 passed。
+运行编号为 ticket01-3132-20261025-04。
+身份、fetch、reference 和 target 阶段全部通过。
+
+4 个正式用例通过，P/D 各覆盖 16 rank，统一 page_size=128。
+完整输出 token IDs 与同长度正式参考一致。
+Graph、P/D BM 读取、显式释放、槽位复用和账本恢复检查通过。
+
+故障注入触发预期的 SR heartbeat timeout。
+D 的 16 rank 均保留预留资源，测试结束后两端进程清理通过。
+[回传记录](verification/ticket01-3132-20261025-04/user-reported-results.json)保留原始报告字段。
+
+本轮覆盖冷请求；prefix 未覆盖，物理 NUMA 页落点未验证。
+自动化验收已通过，用户尚未确认关闭；01 保持 open。
+02 旧实现已撤回，等待基于稳定的 01 重写。
 
 **2026-10-25 ticket01 原生 warmup 适配，第 4 步：本机验证完成。**
 共享测试 helper 整理后，完整 CPU 套件再次 421/421 通过。
@@ -234,7 +374,7 @@ K1 是原文的共享接入标记，不代表“阶段 1”。
 
 | 功能名称（原文标记） | 当前本地承接 | 状态与边界 |
 |---|---|---|
-| 基础请求流程（阶段 0） | mempool-min 01 → 02 → 03 → 04 | 已按确认回顾重编四票；待实现与验收 |
+| 基础请求流程（阶段 0） | mempool-min 01 → 02 → 03 → 04 | 01 用户验收并关闭；02 已实现待 NPU 验收；03–04 待实现与验收 |
 | 共享存储接入（K1） | 旧 NUMA 共享 02 有部分相关范围 | 尚无覆盖完整共享接入的新控制路径集成票 |
 | 远端 prefix 与布局调整（阶段 1） | 本 feature 尚未拆票 | 包含 page-first |
 | 分块与流水（阶段 2） | 本 feature 尚未拆票 | 包含逐 chunk 推进、提前首 token |
@@ -247,15 +387,15 @@ K1 是原文的共享接入标记，不代表“阶段 1”。
 用户已确认详细回顾，并要求按该内容重新拆票。
 四票已原位重编，保留编号、历史记录和直接依赖。
 
-ticket01 代码和测试入口已交付，等待用户 NPU 验收；四票均保持 open。
+ticket01 已经用户确认 NPU 验收并关闭；02–04 保持 open。
 现有 NPU 数据路径与共享组件证据不计为这四票完成。
 逐票职责、数据流、验收与启动安排见[四票详细回顾](stage-0-ticket-review.html)。
 执行索引见[ticket-plan.md](ticket-plan.md)，正式验收清单以独立票为准。
 
 | Ticket | 已完成 | 待实现的主要行为 | 验证状态与进入条件 |
 |---|---|---|---|
-| [01 冷请求与显式释放](issues/01-cold-request-lifecycle.md) | 冷请求及统一页代码已交付；身份比较已修复，启动改为原生 fake warmup | 用户更新独立 warmup 适配提交，在 31/32 使用新 run-id 重跑 NPU 验收 | 第二次运行在参考组日志检查发现 freeze_gc 启动异常；原生 warmup 适配 CPU 421 项、静态检查及双轴 review 通过；目标组 NPU 验收待执行 |
-| [02 prompt 保存](issues/02-prompt-prefix-save.md) | 规格、回顾确认；旧实现已撤回 | 01 稳定后重写 P alive Index K、prefix 页池、admit 和 publish | 未通过 NPU 验收；等待 01 关闭后重写 |
+| [01 冷请求与显式释放](issues/01-cold-request-lifecycle.md) | 冷请求、统一页、原生 warmup；CPU、双轴 review 与用户 NPU 验收 | 本票已关闭 | 7275f29a05：自动化验收通过，2026-10-26 用户确认；user_accepted=true |
+| [02 prompt 保存](issues/02-prompt-prefix-save.md) | Index K 写回、40 页 prefix、异步 admit/publish、内容验收入口；9 个 Ascend/NPU 功能文件 | 功能实现与 review 完成；NPU 验收待完成 | CPU 437 项与整改后 42 项通过；两轴 review 剩余 0 项；用户 NPU 未验收，保持 open |
 | [03 命中恢复与后缀](issues/03-prefix-restore-and-suffix.md) | 规格、回顾确认及重编实施票 | load_back、fill、两段就绪与实际尾页接续 | CPU／NPU 新行为未验收；等待 02 关闭 |
 | [04 完整自运行验收](issues/04-full-demo-acceptance.md) | 规格、回顾确认及重编实施票 | 独立参考组、A/B/C/E、V1–V10 与报告整合 | 完整验收未执行；等待 03 关闭 |
 
@@ -299,7 +439,7 @@ ticket01 及 SR 讲解补充了私有副本和整槽后端的阶段限定。
 
 当前四票的功能与验收边界继续按阶段 0 执行。
 K1 不是阶段 0 的前置条件；它也是明确的后续必接能力。
-本轮没有发布新的实施票，也没有关闭任何票。
+首次范围核对未发布新票；2026-10-26 已按用户确认关闭 01。
 
 两项既有用户决定继续作为对 syncfile 的明确补充：
 

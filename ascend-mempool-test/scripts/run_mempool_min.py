@@ -1,4 +1,4 @@
-"""One command per existing NPU container for ticket01 serving or acceptance."""
+"""One command per NPU container for cold/prefix serving and acceptance."""
 
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ sys.path.insert(0, str(REPO / "ascend-mempool-test/src"))
 
 import msgspec
 import verify_mempool_min
+import verify_mempool_prefix
 import verify_service
 from run_ticket10 import (
     available_port,
@@ -41,7 +42,9 @@ if TYPE_CHECKING:
         RUN_ENV,
         RouterConfig,
     )
+    from sglang.srt.hardware_backend.npu.mempool.config import MempoolConfig
 else:
+    from ascend_mempool.config import MempoolConfig
     from ascend_mempool_pd.mempool_router_protocol import (
         CONFIG_ENV,
         RUN_ENV,
@@ -85,7 +88,9 @@ def identity_differences(
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--role", choices=("prefill", "decode"), required=True)
-    parser.add_argument("--mode", choices=("serve", "acceptance"), required=True)
+    parser.add_argument(
+        "--mode", choices=("serve", "acceptance", "prefix-acceptance"), required=True
+    )
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument(
@@ -142,6 +147,40 @@ def service_environment(
     return env
 
 
+def memory_budget(config: RouterConfig, role: str) -> dict[str, int]:
+    layout = MempoolConfig(
+        prefill_capacity=config.prompt_capacity,
+        decode_capacity=config.decode_capacity,
+        page_size=config.page_size,
+    ).make_mla_layout(
+        num_layers=78,
+        kv_lora_rank=512,
+        qk_rope_head_dim=64,
+        prefix_pages=config.prefix_pages,
+        indexer_layers=21 if config.prefix_pages else 0,
+        index_head_dim=128 if config.prefix_pages else 0,
+    )
+    rank = 0 if role == "prefill" else 1
+    bm = 16 * layout.contribution_bytes(rank)
+    # Acceptance retains CPU source + <=40 saved pages and bounded readback scratch.
+    verification = 0
+    if rank == 0 and config.verify_prefix:
+        assert (
+            layout.prompt_index is not None
+            and layout.prefix_main is not None
+            and layout.prefix_index is not None
+        )
+        references = (
+            layout.prompt.total_bytes + layout.prompt_index.total_bytes
+        ) // layout.prompt.slots
+        references += layout.prefix_main.total_bytes + layout.prefix_index.total_bytes
+        scratch = 2 * config.prompt_capacity * layout.prompt.row_bytes
+        verification = 16 * ((references + scratch + 2**30 - 1) // 2**30) * 2**30
+    return dict(
+        bm_bytes=bm, verification_bytes=verification, required_bytes=bm + verification
+    )
+
+
 def request_json(
     url: str, *, payload: dict[str, Any] | None = None, timeout: float = 10
 ) -> dict[str, Any]:
@@ -166,7 +205,9 @@ class Runner:
             status="running",
             role=args.role,
             mode=args.mode,
-            coverage="ticket01 cold requests only",
+            coverage="ticket02 cold prefix save"
+            if config.prefix_pages
+            else "ticket01 cold requests only",
             user_accepted=False,
             stages=[],
         )
@@ -245,10 +286,13 @@ class Runner:
         if match is None:
             raise ValueError("/proc/meminfo does not report MemAvailable")
         available = int(match.group(1)) * 1024
-        required = (176 if self.is_p else 16) * 2**30
+        budget = memory_budget(self.config, self.args.role)
+        self.report["memory_budget"] = budget
+        write_json(self.root / "memory-budget.json", budget)
+        required = budget["required_bytes"]
         if available < required:
             raise ValueError(
-                f"BM private replicas need at least {required} host bytes; available={available}"
+                f"BM and acceptance buffers need at least {required} host bytes; available={available}"
             )
         with (self.root / "npu-smi.txt").open("w") as report:
             subprocess.run(
@@ -605,6 +649,7 @@ class Runner:
                                 page_size=self.config.page_size,
                                 prompt_capacity=self.config.prompt_capacity,
                                 decode_capacity=self.config.decode_capacity,
+                                prefix=bool(self.config.prefix_pages),
                             )
                             if target
                             else verify_service.check_logs(
@@ -616,6 +661,13 @@ class Runner:
                                 graph=True,
                             )
                         )
+                        if target and self.config.prefix_pages:
+                            evidence["prefix"] = verify_mempool_prefix.check_prefix(
+                                root / "prefill.log", snapshots, self.cases
+                            )
+                            evidence["coverage"] = (
+                                "ticket02 cold prefix save; no prefix hits"
+                            )
                         break
                     except (ValueError, RuntimeError, KeyError):
                         if time.monotonic() >= deadline:
@@ -648,10 +700,15 @@ class Runner:
 
     def run(self) -> None:
         self.preflight()
-        if self.args.mode == "acceptance":
+        if self.args.mode in ("acceptance", "prefix-acceptance"):
             self.components()
             if self.is_p:
-                self.cases = verify_mempool_min.make_cases(
+                fixtures = (
+                    verify_mempool_prefix
+                    if self.config.prefix_pages
+                    else verify_mempool_min
+                )
+                self.cases = fixtures.make_cases(
                     self.config.model_path, self.config.page_size
                 )
                 write_json(self.root / "cases.json", self.cases)
@@ -662,7 +719,9 @@ class Runner:
             status="passed",
             accuracy="full output IDs equal to same-length formal reference",
             hardware_execution="completed by user runner",
-            prefix="not covered",
+            prefix="content/lifecycle checked"
+            if self.config.prefix_pages
+            else "not covered",
         )
 
 
@@ -670,6 +729,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     config = RouterConfig.read(str(args.config))
     root = args.log_root / args.run_id / args.role
+    requested = msgspec.to_builtins(config)
+    if args.mode == "prefix-acceptance":
+        config = msgspec.structs.replace(config, prefix_pages=40, verify_prefix=True)
+    elif args.mode == "acceptance" and config.prefix_pages:
+        raise ValueError(
+            "ticket01 acceptance requires prefix_pages=0; use prefix-acceptance"
+        )
+    args.config = root / "effective-config.json"
     if args.describe:
         print(
             json.dumps(
@@ -678,14 +745,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                     mode=args.mode,
                     config=msgspec.to_builtins(config),
                     logs=str(root),
+                    memory_budget=memory_budget(config, args.role),
                     stages=[
                         "paired preflight",
                         "P-only/D-only/mixed NPU fetch",
-                        "formal reference 4096+128",
+                        "formal reference A/B/C/E"
+                        if config.prefix_pages
+                        else "formal reference 4096+128",
                         "Main/SR target and cleanup",
                         "timeout/fail-stop and paired cleanup",
                     ]
-                    if args.mode == "acceptance"
+                    if args.mode in ("acceptance", "prefix-acceptance")
                     else ["paired preflight", "Main and P/D persistent services"],
                     service_command=[
                         "bash",
@@ -717,6 +787,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     os.chdir(REPO)
     root.mkdir(parents=True, exist_ok=False)
+    write_json(root / "requested-config.json", requested)
+    write_json(args.config, msgspec.to_builtins(config))
     report: dict[str, Any] = dict(status="failed", mode=args.mode, role=args.role)
 
     def stop(signum: int, frame: Any) -> None:

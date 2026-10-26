@@ -6,9 +6,11 @@ from types import SimpleNamespace
 
 import test_mempool_subrouter as sr_fixture
 import test_pd_service as service_fixture
+import test_prefix as prefix_fixture
 import test_runtime as runtime_fixture
 import torch
 
+from ascend_mempool.runtime import MempoolRuntime
 from ascend_mempool_pd.mempool_service import MempoolPDService
 
 
@@ -19,13 +21,17 @@ class TestRouterService(unittest.TestCase):
     def test_each_decode_step_records_actual_resident_and_executing_counts(self):
         self.lifecycle(decode_forward=True)
 
-    def lifecycle(self, *, decode_forward):
+    def test_warmup_native_release_admit_and_alive_free_keep_both_prefix_regions(self):
+        self.lifecycle(decode_forward=True, prefix=True)
+
+    def lifecycle(self, *, decode_forward, prefix=False):
         system = sr_fixture.TestSubrouter()
         system.setUp()
         self.addCleanup(system.doCleanups)
         limit = 2 if decode_forward else 1
         system.request.update(input_ids=[7, 8], prompt_tokens=2, max_new_tokens=limit)
         services, requests, events = {}, {}, {}
+        stores, copies, copy_events = [], [], []
         for role in ("prefill", "decode"):
             services[role], requests[role], events[role] = [], [], []
             for rank, tick in enumerate(system.ticks[role]):
@@ -35,12 +41,53 @@ class TestRouterService(unittest.TestCase):
                     rank=0 if role == "prefill" else 1, layers=1
                 )
                 shard = tick.shard
+                native_index = None
+                if prefix and role == "prefill":
+                    helper = prefix_fixture.TestPrefixStore()
+                    self.addCleanup(helper.doCleanups)
+                    store, manager, kernel, device_events = helper.make_store(
+                        verify=True
+                    )
+                    store.replica = rank
+                    stores.append(store)
+                    copies.append(kernel)
+                    copy_events.append(device_events)
+                    native_index = torch.tensor(
+                        [[1, 2], [11, 12], [21, 22], [31, 32]], dtype=torch.bfloat16
+                    )
+                    native_pool = SimpleNamespace(
+                        indexer_layer_ids=(5,),
+                        index_head_dim=2,
+                        index_k_scale_buffer=None,
+                        get_index_k_buffer=lambda layer, data=native_index: data,
+                    )
 
-                def free(req, insert, shard=shard):
+                    def make_event(events=device_events):
+                        event = runtime_fixture.ManualEvent()
+                        events.append(event)
+                        return event
+
+                    runtime = MempoolRuntime(
+                        manager,
+                        req_pool_rows=9,
+                        max_context_len=16,
+                        start_layer=5,
+                        device="cpu",
+                        kernels=[kernel] * 2,
+                        index_pool=native_pool,
+                        index_kernels=[kernel],
+                        prefix_store=store,
+                        event_factory=make_event,
+                    )
+                    shard.prefix = store
+
+                def free(req, insert, shard=shard, native_index=native_index):
                     if shard.native is not None:
                         shard.native.release(req)
                     else:
                         req.kv.req_pool_idx = None
+                        if native_index is not None:
+                            native_index.zero_()
 
                 service = MempoolPDService(
                     runtime,
@@ -94,7 +141,8 @@ class TestRouterService(unittest.TestCase):
                 service.prepare_batch(batch)
                 with service.runtime.forward_scope():
                     k = torch.ones((2, 2), dtype=torch.bfloat16)
-                    service.runtime.write_layer(5, k, k, batch)
+                    for layer in range(5, 5 + service.runtime.layout.layers):
+                        service.runtime.write_layer(layer, k, k, batch)
                 events[role][rank][-1].done = True
                 service.runtime.poll_completed()
                 self.assertFalse(service.defer_release(fake, handoff=role == "prefill"))
@@ -139,9 +187,10 @@ class TestRouterService(unittest.TestCase):
             service.prepare_batch(batch)
             with service.runtime.forward_scope():
                 k = torch.ones((2, 2), dtype=torch.bfloat16)
-                service.runtime.write_layer(
-                    5, k, k, runtime_fixture.prefill_batch((2,), (0,), (1,))
-                )
+                inputs = runtime_fixture.prefill_batch((2,), (0,), (1,))
+                inputs.out_cache_loc = torch.tensor([3, 1])
+                for layer in range(5, 5 + service.runtime.layout.layers):
+                    service.runtime.write_layer(layer, k, k, inputs)
             events["prefill"][rank][-1].done = True
             service.defer_release(req, handoff=True)
         advance("prefill")
@@ -188,6 +237,38 @@ class TestRouterService(unittest.TestCase):
         self.assertTrue(
             all(len(c.available_slots()) == 15 for c in system.controls["decode"])
         )
+        if prefix:
+            advance("prefill")
+            system.op += 1
+            system.commands["prefill"].append(
+                dict(
+                    run_id="cpu",
+                    role="prefill",
+                    kind="admit",
+                    rid="r1",
+                    room=1,
+                    attempt="attempt",
+                    op_id=system.op,
+                    hashes=["page0"],
+                    source_pages=[0],
+                    sources=[
+                        dict(rank=rank, slot=0, pages=[item["pages"][0]])
+                        for rank, item in enumerate(p["ranks"])
+                    ],
+                )
+            )
+            advance("prefill")
+            for device_events in copy_events[:-1]:
+                device_events[-1].done = True
+            advance("prefill")
+            self.assertFalse(
+                any(m["kind"] == "admit_ack" for m in system.messages["prefill"])
+            )
+            copy_events[-1][-1].done = True
+            advance("prefill")
+            self.assertTrue(
+                any(m["kind"] == "admit_ack" for m in system.messages["prefill"])
+            )
         for role in services:
             system.op += 1
             system.commands[role].append(
@@ -205,3 +286,17 @@ class TestRouterService(unittest.TestCase):
             self.assertTrue(
                 all(len(c.available_slots()) == 16 for c in system.controls[role])
             )
+        if prefix:
+            for store, kernel in zip(stores, copies):
+                self.assertEqual(store.free_pages, (1, 2))
+                for region, count in (("main", 2), ("index", 1)):
+                    for layer in range(count):
+                        kernel.buffers[
+                            store.manager.view(
+                                0, layer, region="alive_" + region
+                            ).device_base
+                        ].zero_()
+                index = kernel.buffers[
+                    store.manager.view(0, 0, region="prefix_index").device_base
+                ]
+                self.assertEqual(index[0, :, 0].tolist(), [[31, 32], [11, 12]])

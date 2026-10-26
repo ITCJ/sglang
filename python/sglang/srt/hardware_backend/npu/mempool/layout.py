@@ -1,6 +1,6 @@
 """Logical BF16 KV layout; importing this module needs no NPU libraries."""
 
-from typing import Any
+from typing import Any, Optional
 
 import msgspec
 
@@ -97,6 +97,9 @@ class PoolLayout(msgspec.Struct, frozen=True):
 
     # A probe lives after all KV slabs, never inside a request's KV.
     probe_bytes: int = 64
+    prompt_index: Optional[KVLayout] = None
+    prefix_main: Optional[KVLayout] = None
+    prefix_index: Optional[KVLayout] = None
 
     def __post_init__(self) -> None:
         """Require compatible layer schemas and a power-of-two allocation alignment."""
@@ -107,6 +110,38 @@ class PoolLayout(msgspec.Struct, frozen=True):
         for name in ("layers", "slots", "heads", "dim", "dtype"):
             if getattr(self.prompt, name) != getattr(self.decode, name):
                 raise ValueError(f"P/D KV {name} must match")
+        extra = (self.prompt_index, self.prefix_main, self.prefix_index)
+        if any(region is not None for region in extra):
+            if any(region is None for region in extra):
+                raise ValueError("prefix requires all three P storage regions")
+            index, main, prefix_index = extra
+            assert index is not None and main is not None and prefix_index is not None
+            for name in ("slots", "tokens", "heads", "dtype"):
+                if getattr(index, name) != getattr(self.prompt, name):
+                    raise ValueError(f"alive Index K {name} differs from prompt")
+            for name in ("layers", "heads", "dim", "dtype"):
+                if getattr(main, name) != getattr(self.prompt, name):
+                    raise ValueError(f"prefix main {name} differs from prompt")
+                if getattr(prefix_index, name) != getattr(index, name):
+                    raise ValueError(f"prefix Index K {name} differs from alive")
+            if (main.slots, main.tokens) != (prefix_index.slots, prefix_index.tokens):
+                raise ValueError("prefix main and Index K must share page geometry")
+
+    def regions(self, rank: int) -> dict[str, tuple[int, KVLayout]]:
+        """Resolve nonoverlapping slabs; P and D share the same complete schema."""
+        main = self.layout_for_rank(rank)
+        result = {"alive_main": (0, main)}
+        offset = main.total_bytes
+        if rank == 0:
+            for name, layout in (
+                ("alive_index", self.prompt_index),
+                ("prefix_main", self.prefix_main),
+                ("prefix_index", self.prefix_index),
+            ):
+                if layout is not None:
+                    result[name] = (offset, layout)
+                    offset += layout.total_bytes
+        return result
 
     def layout_for_rank(self, rank: int) -> KVLayout:
         """Select prompt or decode storage using the two-rank pool's local rank."""
@@ -115,7 +150,7 @@ class PoolLayout(msgspec.Struct, frozen=True):
 
     def probe_offset(self, rank: int) -> int:
         """Locate the reserved mapping probe after the rank's KV payload."""
-        return self.layout_for_rank(rank).total_bytes
+        return sum(layout.total_bytes for _, layout in self.regions(rank).values())
 
     def contribution_bytes(self, rank: int) -> int:
         """Round this rank's KV payload and probe up to the backend alignment."""

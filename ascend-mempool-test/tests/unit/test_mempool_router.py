@@ -1,5 +1,6 @@
 """Main's public admission/ack seam, without network or device claims."""
 
+import hashlib
 import unittest
 from copy import deepcopy
 from types import SimpleNamespace
@@ -248,3 +249,268 @@ class TestMainRouter(unittest.TestCase):
         )
         self.assertEqual(self.main.history[-1]["result"], response)
         self.assertEqual(self.main.status()["directory"], {})
+
+
+class TestPrefixMainRouter(unittest.TestCase):
+    def setUp(self):
+        self.main = MainRouter(
+            RouterConfig("p", "d", "/model", prefix_pages=40),
+            "cpu",
+            hasher=lambda ids, size: [
+                hashlib.sha256(bytes(ids[:end])).hexdigest()
+                for end in range(size, len(ids) + 1, size)
+            ],
+        )
+        for role in ("prefill", "decode"):
+            value = registration(role)
+            for rank in value["ranks"]:
+                rank.update(
+                    prefix_pages=40 if role == "prefill" else 0,
+                    local_dram_bytes=(13 if role == "prefill" else 1) * 2**30,
+                    verify_prefix=False,
+                )
+                rank["replicas"] = dict(
+                    alive_main=16, alive_index=16, prefix_main=16, prefix_index=16
+                )
+            self.main.register(value)
+
+    def ack(self, command, rank_value=lambda rank: {}):
+        message = dict(
+            command,
+            kind=command["kind"] + "_ack",
+            ranks=[dict(rank=rank, **rank_value(rank)) for rank in range(16)],
+        )
+        self.main.receive(message)
+        return message
+
+    def finish_inference(self, tokens=None, *, native_first=True):
+        data = payload()
+        if tokens is not None:
+            data["input_ids"] = tokens
+        request = self.main.submit(data)
+        count = (len(data["input_ids"]) + 128) // 128
+        self.ack(
+            self.main.outbox.popleft(),
+            lambda rank: dict(
+                slot=3,
+                pages=[dict(page_size=128)],
+                native=dict(row=1, pages=count, tokens=count * 128),
+            ),
+        )
+        self.ack(
+            self.main.outbox.popleft(),
+            lambda rank: dict(
+                slot=5,
+                pages=[
+                    dict(
+                        pool="alive_main",
+                        region=f"prefill-{rank}",
+                        replica=rank,
+                        logical_page=5 * 64 + page,
+                        page_size=128,
+                    )
+                    for page in range(64)
+                ],
+            ),
+        )
+        d_dispatch = self.main.outbox.popleft()
+        self.ack(d_dispatch)
+        p_dispatch = self.main.outbox.popleft()
+        self.ack(p_dispatch)
+        self.main.receive(
+            dict(
+                p_dispatch, kind="ready_tokens", ranks=[dict(rank=i) for i in range(16)]
+            )
+        )
+        self.ack(self.main.outbox.popleft())
+        native = dict(
+            p_dispatch,
+            kind="native_freed",
+            ranks=[dict(rank=i, native_freed=True) for i in range(16)],
+        )
+        done = dict(
+            d_dispatch,
+            kind="finished",
+            ranks=[dict(rank=i, native_freed=True, drained=True) for i in range(16)],
+        )
+        self.main.receive(native if native_first else done)
+        self.assertFalse(self.main.outbox)
+        self.main.receive(done if native_first else native)
+        self.main.backend_result(request["rid"], dict(output_ids=[1, 2]))
+        return request
+
+    def admit_ack(self, command, targets):
+        return dict(
+            command,
+            kind="admit_ack",
+            ranks=[
+                dict(
+                    rank=rank,
+                    readable=True,
+                    slot=5,
+                    source_pages=command["source_pages"],
+                    target_pages=targets,
+                    main_layers=78,
+                    index_layers=21,
+                    pages=[
+                        dict(
+                            pool="prefix",
+                            region=f"prefill-{rank}",
+                            replica=rank,
+                            logical_page=page,
+                            page_size=128,
+                        )
+                        for page in targets
+                    ],
+                )
+                for rank in range(16)
+            ],
+        )
+
+    def free(self):
+        frees = [self.main.outbox.popleft(), self.main.outbox.popleft()]
+        for command in frees:
+            self.ack(command, lambda rank: dict(freed=True, native_freed=True))
+        self.assertIsNone(self.main.status()["active"])
+
+    def test_cold_save_publishes_after_all_ranks_then_retains_prefix_after_free(self):
+        self.finish_inference(native_first=False)
+        command = self.main.outbox.popleft()
+        self.assertEqual(command["kind"], "admit")
+        self.assertEqual(command["source_pages"], list(range(32)))
+        self.assertTrue(
+            all(
+                node["lock_ref"] == 1 and node["owner"] is None
+                for node in self.main.directory.values()
+            )
+        )
+        self.assertTrue(
+            all(
+                node["prefix"]["state"] == "writing"
+                for node in self.main.directory.values()
+            )
+        )
+        with self.assertRaises(RequestRejected):
+            self.main.submit(payload())
+        ack = self.admit_ack(command, list(range(32)))
+        self.main.receive(ack)
+        self.main.receive(ack)
+        self.assertEqual(len(self.main.outbox), 2)
+        self.free()
+        self.assertEqual(self.main.ledger["p_prefix"].outstanding, 32)
+        self.assertEqual(len(self.main.directory), 32)
+        for node in self.main.directory.values():
+            self.assertEqual(node["state"], "freed")
+            self.assertEqual(node["locations"], [])
+            self.assertEqual(node["lock_ref"], 0)
+            self.assertEqual(node["prefix"]["state"], "ready")
+
+    def test_cold_abce_preserves_directory_and_skips_existing_or_full_pages(self):
+        for tokens, added, retained in (
+            ([7] * 4096, 32, 32),
+            ([7] * 4096 + [8] * 1024, 8, 40),
+            ([7] * 4096, 0, 40),
+            ([9] * 4096, 0, 40),
+        ):
+            prior = deepcopy(
+                {key: value["prefix"] for key, value in self.main.directory.items()}
+            )
+            request = self.finish_inference(tokens)
+            self.assertEqual(request["hit_len"], 0)
+            if added:
+                command = self.main.outbox.popleft()
+                self.assertEqual(
+                    command["source_pages"], list(range(retained - added, retained))
+                )
+                for key in prior:
+                    self.assertEqual(
+                        self.main.directory[key]["prefix"]["lock_ops"],
+                        [command["op_id"]],
+                    )
+                self.main.receive(
+                    self.admit_ack(command, list(range(retained - added, retained)))
+                )
+            else:
+                self.assertTrue(
+                    all(command["kind"] == "free" for command in self.main.outbox)
+                )
+            self.free()
+            self.assertEqual(self.main.ledger["p_prefix"].outstanding, retained)
+            self.assertEqual(len(self.main.directory), retained)
+            for key, value in prior.items():
+                self.assertEqual(self.main.directory[key]["prefix"], value)
+            nodes = list(self.main.directory.values())
+            self.assertEqual(
+                [node["child_count"] for node in nodes], [1] * (retained - 1) + [0]
+            )
+
+    def test_partial_capacity_saves_only_the_publishable_front(self):
+        self.finish_inference([7] * 8192)
+        command = self.main.outbox.popleft()
+        self.assertEqual(command["source_pages"], list(range(40)))
+        self.main.receive(self.admit_ack(command, list(range(40))))
+        self.free()
+        self.assertEqual(len(self.main.directory), 40)
+        self.assertEqual(
+            self.main.ledger["p_prefix"].snapshot(),
+            dict(total=40, outstanding=40, free=0),
+        )
+
+    def test_invalid_admit_receipt_fails_without_freeing_protected_source(self):
+        for defect in (
+            "late_rank",
+            "source_slot",
+            "source_pages",
+            "target_alias",
+            "layers",
+            "region",
+        ):
+            with self.subTest(defect=defect):
+                self.setUp()
+                self.finish_inference()
+                command = self.main.outbox.popleft()
+                ack = self.admit_ack(command, list(range(32)))
+                rank = ack["ranks"][15]
+                if defect == "late_rank":
+                    rank["readable"] = False
+                elif defect == "source_slot":
+                    rank["slot"] = 4
+                elif defect == "source_pages":
+                    rank["source_pages"] = list(range(1, 33))
+                elif defect == "target_alias":
+                    rank["target_pages"] = [0] * 32
+                elif defect == "layers":
+                    rank["index_layers"] = 20
+                else:
+                    rank["pages"][0]["region"] = "old-session"
+                with self.assertRaises(ValueError):
+                    self.main.receive(ack)
+                self.assertIsNotNone(self.main.fault)
+                self.assertFalse(self.main.outbox)
+                self.assertEqual(self.main.ledger["p_alive"].outstanding, 64)
+                self.assertTrue(
+                    all(node["lock_ref"] == 1 for node in self.main.directory.values())
+                )
+
+    def test_timeout_retains_writing_targets_and_parent_protection(self):
+        self.finish_inference()
+        command = self.main.outbox.popleft()
+        self.main.receive(self.admit_ack(command, list(range(32))))
+        self.free()
+        self.finish_inference([7] * 4096 + [8] * 1024)
+        command = self.main.outbox.popleft()
+        self.main.clock = lambda: self.main.started + 601
+        self.main.check_timeouts()
+        self.assertIsNotNone(self.main.fault)
+        self.assertFalse(self.main.outbox)
+        self.assertEqual(self.main.ledger["p_prefix"].outstanding, 40)
+        self.assertEqual(
+            sum(node["lock_ref"] for node in self.main.directory.values()), 8
+        )
+        self.assertEqual(
+            sum(
+                bool(node["prefix"]["lock_ops"])
+                for node in self.main.directory.values()
+            ),
+            32,
+        )

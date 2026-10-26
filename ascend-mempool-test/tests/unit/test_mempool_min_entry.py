@@ -168,6 +168,53 @@ class TestPreflightIdentity(unittest.TestCase):
 
 
 class TestMinRunner(unittest.TestCase):
+    def test_prefix_acceptance_has_effective_config_and_layout_based_memory_budget(
+        self,
+    ):
+        config_path = (
+            Path(__file__).resolve().parents[2] / "configs/mempool-min.example.json"
+        )
+        for role in ("prefill", "decode"):
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(
+                    runner.main(
+                        [
+                            "--role",
+                            role,
+                            "--mode",
+                            "prefix-acceptance",
+                            "--config",
+                            str(config_path),
+                            "--run-id",
+                            "prefix-describe",
+                            "--describe",
+                        ]
+                    ),
+                    0,
+                )
+            data = json.loads(output.getvalue())
+            self.assertEqual(data["config"]["prefix_pages"], 40)
+            self.assertTrue(data["config"]["verify_prefix"])
+            self.assertEqual(data["target_environment"]["SKIP_SERVER_WARMUP"], "0")
+            self.assertTrue(
+                data["target_environment"][CONFIG_ENV].endswith(
+                    "/effective-config.json"
+                )
+            )
+            budget = data["memory_budget"]
+            self.assertEqual(
+                budget["bm_bytes"], (208 if role == "prefill" else 16) * 2**30
+            )
+            self.assertEqual(
+                budget["verification_bytes"], (32 if role == "prefill" else 0) * 2**30
+            )
+        self.assertEqual(
+            runner.memory_budget(RouterConfig("p", "d", "/model"), "prefill")[
+                "bm_bytes"
+            ],
+            176 * 2**30,
+        )
+
     def test_paired_timeout_retains_quota_and_reaps_only_owned_children(self):
         now = [0.0]
         config = RouterConfig("p", "d", "/model", operation_timeout=0.1)

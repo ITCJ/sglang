@@ -1,0 +1,16 @@
+test_full_evidence_and_corrupted_rank_page_content_or_order (test_mempool_prefix_evidence.TestPrefixEvidence.test_full_evidence_and_corrupted_rank_page_content_or_order) ... 
+  test_full_evidence_and_corrupted_rank_page_content_or_order (test_mempool_prefix_evidence.TestPrefixEvidence.test_full_evidence_and_corrupted_rank_page_content_or_order) (change='short_receipt') ... FAIL
+
+======================================================================
+FAIL: test_full_evidence_and_corrupted_rank_page_content_or_order (test_mempool_prefix_evidence.TestPrefixEvidence.test_full_evidence_and_corrupted_rank_page_content_or_order) (change='short_receipt')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_prefix_evidence.py", line 141, in test_full_evidence_and_corrupted_rank_page_content_or_order
+    with self.assertRaises(ValueError):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+----------------------------------------------------------------------
+Ran 1 test in 1.142s
+
+FAILED (failures=1)

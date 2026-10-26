@@ -1,0 +1,68 @@
+test_acceptance_compares_original_alive_prefix_and_retained_values (test_prefix.TestPrefixStore.test_acceptance_compares_original_alive_prefix_and_retained_values) ... ok
+test_admit_copies_both_regions_and_holds_source_until_device_completion (test_prefix.TestPrefixStore.test_admit_copies_both_regions_and_holds_source_until_device_completion) ... ok
+test_conflicting_operation_and_unavailable_pages_do_not_reuse_storage (test_prefix.TestPrefixStore.test_conflicting_operation_and_unavailable_pages_do_not_reuse_storage) ... ok
+test_copy_failure_retains_target_and_prevents_source_release (test_prefix.TestPrefixStore.test_copy_failure_retains_target_and_prevents_source_release) ... ok
+test_admission_requires_the_approved_attachment_for_the_actual_req_row (test_runtime.TestMempoolRuntime.test_admission_requires_the_approved_attachment_for_the_actual_req_row)
+Project kv.req_pool_idx outside runtime; reject missing or stale approval. ... ok
+test_binding_reuse_preserves_tensor_addresses_and_rejects_conflicts (test_runtime.TestMempoolRuntime.test_binding_reuse_preserves_tensor_addresses_and_rejects_conflicts)
+A drained allocation can be rebound without replacing captured tables. ... ok
+test_binding_updates_cannot_interleave_an_open_capture (test_runtime.TestMempoolRuntime.test_binding_updates_cannot_interleave_an_open_capture)
+Dummy capture also consumes binding tables and cannot change them mid-forward. ... ok
+test_capture_cannot_access_a_real_binding (test_runtime.TestMempoolRuntime.test_capture_cannot_access_a_real_binding)
+Graph setup must not bypass normal tracking for live request storage. ... ok
+test_decode_first_row_and_last_capacity_row_use_relative_positions (test_runtime.TestMempoolRuntime.test_decode_first_row_and_last_capacity_row_use_relative_positions)
+Eight decode rows fill exactly one slot without touching its neighbor. ... ok
+test_detach_preserves_completed_facts_before_request_row_reuse (test_runtime.TestMempoolRuntime.test_detach_preserves_completed_facts_before_request_row_reuse)
+Consume local completion before detaching; retain old KV after row reuse. ... ok
+test_extra_writes_to_a_bound_request_fail_expectation_check (test_runtime.TestMempoolRuntime.test_extra_writes_to_a_bound_request_fail_expectation_check)
+A layer may not silently write a request absent from the host plan. ... ok
+test_forward_scope_requires_preparation_and_keeps_exceptions_fatal (test_runtime.TestMempoolRuntime.test_forward_scope_requires_preparation_and_keeps_exceptions_fatal)
+Host scopes record real forwards once and cannot disguise failed launches. ... ok
+test_forward_waits_for_latest_binding_install_event (test_runtime.TestMempoolRuntime.test_forward_waits_for_latest_binding_install_event)
+The injected SDK wait orders table initialization and later rebinding. ... ok
+test_hardware_gate_examples_match_full_dram_reference_on_cpu (test_runtime.TestMempoolRuntime.test_hardware_gate_examples_match_full_dram_reference_on_cpu)
+The actual gate's inputs cover both BM roles through the same runtime. ... ok
+test_index_writeback_uses_native_indices_and_survives_native_row_release (test_runtime.TestMempoolRuntime.test_index_writeback_uses_native_indices_and_survives_native_row_release) ... ok
+test_layer_coverage_is_required_even_for_dummy_capture (test_runtime.TestMempoolRuntime.test_layer_coverage_is_required_even_for_dummy_capture)
+An empty expectation list cannot bypass missing/duplicate layer checks. ... ok
+test_overlap_completion_snapshots_do_not_observe_later_writes (test_runtime.TestMempoolRuntime.test_overlap_completion_snapshots_do_not_observe_later_writes)
+Both forwards can be submitted before polling their distinct events. ... ok
+test_prefill_row_reuse_keeps_old_slot_until_its_own_done (test_runtime.TestMempoolRuntime.test_prefill_row_reuse_keeps_old_slot_until_its_own_done)
+A controlled caller separates native row reuse from protocol ownership. ... ok
+test_prompt_chunks_and_layers_are_counted_once_after_device_completion (test_runtime.TestMempoolRuntime.test_prompt_chunks_and_layers_are_counted_once_after_device_completion)
+Two forwards fill prompt KV, and readiness waits for all layer writes. ... ok
+test_rejects_unsupported_preprocessing_and_non_contiguous_progress (test_runtime.TestMempoolRuntime.test_rejects_unsupported_preprocessing_and_non_contiguous_progress)
+Only supported preprocessing and monotonically written KV are accepted. ... ok
+test_replay_requires_external_work_and_does_not_fabricate_layer_calls (test_runtime.TestMempoolRuntime.test_replay_requires_external_work_and_does_not_fabricate_layer_calls)
+Host expectation alone cannot claim a captured write actually happened. ... ok
+test_unbound_rows_are_masked_and_detected_as_missing_expected_writes (test_runtime.TestMempoolRuntime.test_unbound_rows_are_masked_and_detected_as_missing_expected_writes)
+Device masking must not make a mismatched real batch appear successful. ... ok
+test_admit_waits_for_last_rank_before_any_queue_advances_or_source_frees (test_mempool_subrouter.TestSubrouter.test_admit_waits_for_last_rank_before_any_queue_advances_or_source_frees) ... ok
+test_backend_request_cannot_change_dispatch_sampling (test_mempool_subrouter.TestSubrouter.test_backend_request_cannot_change_dispatch_sampling) ... ok
+test_duplicate_alloc_is_idempotent_and_error_retains_resources (test_mempool_subrouter.TestSubrouter.test_duplicate_alloc_is_idempotent_and_error_retains_resources) ... ok
+test_late_native_transfer_holds_first_token_and_explicit_free (test_mempool_subrouter.TestSubrouter.test_late_native_transfer_holds_first_token_and_explicit_free) ... ok
+test_router_page_mismatch_is_rejected_before_native_allocation (test_mempool_subrouter.TestSubrouter.test_router_page_mismatch_is_rejected_before_native_allocation) ... ok
+test_whole_slot_descriptors_use_unified_pages (test_mempool_subrouter.TestSubrouter.test_whole_slot_descriptors_use_unified_pages) ... ok
+test_each_decode_step_records_actual_resident_and_executing_counts (test_mempool_min_service.TestRouterService.test_each_decode_step_records_actual_resident_and_executing_counts) ... ok
+test_real_write_receipt_survives_native_cleanup_and_zero_decode_free (test_mempool_min_service.TestRouterService.test_real_write_receipt_survives_native_cleanup_and_zero_decode_free) ... ok
+test_warmup_native_release_admit_and_alive_free_keep_both_prefix_regions (test_mempool_min_service.TestRouterService.test_warmup_native_release_admit_and_alive_free_keep_both_prefix_regions) ... ok
+test_full_evidence_and_corrupted_rank_page_content_or_order (test_mempool_prefix_evidence.TestPrefixEvidence.test_full_evidence_and_corrupted_rank_page_content_or_order) ... ok
+test_actual_mla_dimensions_and_asymmetric_capacities (test_config.TestMempoolConfig.test_actual_mla_dimensions_and_asymmetric_capacities)
+Allocate all model layers with separate prompt/decode token limits. ... ok
+test_defaults_and_unsupported_model_storage (test_config.TestMempoolConfig.test_defaults_and_unsupported_model_storage)
+Keep 16K defaults and reject non-BF16 or kernel-incompatible storage. ... ok
+test_new_placement_options_cannot_silently_use_rank_pair_storage (test_config.TestMempoolConfig.test_new_placement_options_cannot_silently_use_rank_pair_storage)
+Planning is available in 02-1; group allocation belongs to 02-2. ... ok
+test_service_config_rejects_unsupported_launch_before_bm (test_config.TestMempoolConfig.test_service_config_rejects_unsupported_launch_before_bm)
+P native mode is supported; incompatible serving modes are rejected. ... ok
+test_asymmetric_contributions_share_one_rank_stride (test_layout.TestKVLayout.test_asymmetric_contributions_share_one_rank_stride) ... ok
+test_default_mla_layout_and_logical_element (test_layout.TestKVLayout.test_default_mla_layout_and_logical_element) ... ok
+test_incompatible_peers_and_alignment_are_rejected (test_layout.TestKVLayout.test_incompatible_peers_and_alignment_are_rejected) ... ok
+test_out_of_bounds_coordinates_cannot_produce_addresses (test_layout.TestKVLayout.test_out_of_bounds_coordinates_cannot_produce_addresses) ... ok
+test_prefix_regions_do_not_overlap_alive_or_probe_and_keep_d_unchanged (test_layout.TestKVLayout.test_prefix_regions_do_not_overlap_alive_or_probe_and_keep_d_unchanged) ... ok
+test_unsupported_copy_layouts_fail_before_allocation (test_layout.TestKVLayout.test_unsupported_copy_layouts_fail_before_allocation) ... ok
+
+----------------------------------------------------------------------
+Ran 42 tests in 1.642s
+
+OK

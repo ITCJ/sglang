@@ -8,6 +8,7 @@ from msgspec.structs import replace
 from test_offload import CPUWriteKernel
 from test_pool import FakeBM
 
+from ascend_mempool.config import MempoolConfig
 from ascend_mempool.layout import KVLayout, PoolLayout
 from ascend_mempool.pool import MempoolKVManager
 from ascend_mempool.runtime import KVWriteExpectation, MempoolRuntime
@@ -47,6 +48,97 @@ def prefill_batch(lengths=(2, 1), prefixes=(0, 0), rows=(1, 2)):
 
 class TestMempoolRuntime(unittest.TestCase):
     """Use real binding/index/counter logic with fake BM and device completion."""
+
+    def test_index_writeback_uses_native_indices_and_survives_native_row_release(self):
+        layout = MempoolConfig(
+            prefill_capacity=8, decode_capacity=2, page_size=2
+        ).make_mla_layout(
+            num_layers=2,
+            kv_lora_rank=2,
+            qk_rope_head_dim=2,
+            prefix_pages=3,
+            indexer_layers=1,
+            index_head_dim=2,
+        )
+        manager = MempoolKVManager.create(layout, 0, bm_module=FakeBM(0))
+        manager.join(0.1)
+        self.addCleanup(manager.close, drain=lambda: None)
+        main = [
+            torch.full(layout.prompt.shape, -1, dtype=torch.bfloat16) for _ in range(2)
+        ]
+        index = torch.full(layout.prompt_index.shape, -1, dtype=torch.bfloat16)
+        native = torch.tensor(
+            [[11, 12], [21, 22], [31, 32], [41, 42]], dtype=torch.bfloat16
+        )
+        pool = SimpleNamespace(
+            indexer_layer_ids=(5,),
+            index_head_dim=2,
+            index_k_scale_buffer=None,
+            get_index_k_buffer=lambda layer: native.view(2, 2, 1, 2),
+        )
+        events = []
+
+        def event_factory():
+            event = ManualEvent()
+            events.append(event)
+            return event
+
+        runtime = MempoolRuntime(
+            manager,
+            req_pool_rows=4,
+            max_context_len=8,
+            start_layer=5,
+            device="cpu",
+            kernels=[
+                CPUWriteKernel(target, manager.view(0, i).device_base)
+                for i, target in enumerate(main)
+            ],
+            index_pool=pool,
+            index_kernels=[
+                CPUWriteKernel(
+                    index, manager.view(0, 0, region="alive_index").device_base
+                )
+            ],
+            event_factory=event_factory,
+        )
+        # The native warmup has no binding and may contain unusable indices.
+        batch = prefill_batch((2,), (0,), (1,))
+        batch.out_cache_loc = torch.tensor([-1, 999])
+        k = torch.ones((2, 2), dtype=torch.bfloat16)
+        runtime.begin_forward([])
+        for layer in (5, 6):
+            runtime.write_layer(layer, k, k, batch)
+        runtime.end_forward()
+        events[-1].done = True
+        runtime.poll_completed()
+        self.assertTrue(torch.all(index == -1))
+        binding = runtime.bind(1, slot=3, prompt_tokens=2)
+        batch.out_cache_loc = torch.tensor([3, 1])
+        runtime.begin_forward([KVWriteExpectation(1, 0, 2)])
+        for layer in (5, 6):
+            runtime.write_layer(layer, k, k, batch)
+        runtime.end_forward()
+        self.assertFalse(runtime.writes_done(1))
+        with self.assertRaisesRegex(RuntimeError, "in-flight"):
+            runtime.detach_row(binding)
+        events[-1].done = True
+        runtime.poll_completed()
+        self.assertTrue(runtime.prompt_ready(1))
+        runtime.detach_row(binding)
+        native.zero_()
+        self.assertEqual(index[3, :2, 0].tolist(), [[41, 42], [21, 22]])
+        self.assertTrue(torch.all(index[3, 2:] == -1))
+        # A masked native index cannot manufacture a complete prompt receipt.
+        runtime.bind(1, slot=4, prompt_tokens=2)
+        batch.out_cache_loc = torch.tensor([3, 999])
+        runtime.begin_forward([KVWriteExpectation(1, 0, 2)])
+        for layer in (5, 6):
+            runtime.write_layer(layer, k, k, batch)
+        runtime.end_forward()
+        events[-1].done = True
+        with self.assertRaisesRegex(RuntimeError, "Index K write counts"):
+            runtime.poll_completed()
+        self.assertFalse(runtime.writes_done(1))
 
     def make_runtime(self, rank=0, layers=2, **kwargs):
         """Open small local storage and inject only SDK/kernel/event boundaries."""

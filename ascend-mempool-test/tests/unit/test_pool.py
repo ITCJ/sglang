@@ -1,6 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
+from ascend_mempool.config import MempoolConfig
 from ascend_mempool.layout import KVLayout, PoolLayout
 from ascend_mempool.pool import MempoolKVManager
 
@@ -57,6 +58,53 @@ class FakeHandle:
 
 
 class TestMempoolKVManager(unittest.TestCase):
+    def test_prefix_mappings_cover_last_region_and_preserve_device_pointer_offsets(
+        self,
+    ):
+        layout = MempoolConfig(
+            prefill_capacity=8, decode_capacity=2, page_size=2
+        ).make_mla_layout(
+            num_layers=2,
+            kv_lora_rank=2,
+            qk_rope_head_dim=2,
+            prefix_pages=3,
+            indexer_layers=1,
+            index_head_dim=2,
+        )
+        sdk = FakeBM(0)
+        manager = MempoolKVManager.create(layout, rank=0, bm_module=sdk)
+        manager.join(0.1)
+        self.addCleanup(manager.close, drain=lambda: None)
+        for region, (offset, geometry) in layout.regions(0).items():
+            view = manager.view(0, geometry.layers - 1, region=region)
+            byte_offset = offset + geometry.byte_offset(
+                layer=geometry.layers - 1,
+                slot=geometry.slots - 1,
+                token=geometry.tokens - 1,
+                head=0,
+                column=geometry.dim - 1,
+            )
+            self.assertEqual(
+                view.element_device_ptr(
+                    slot=geometry.slots - 1,
+                    token=geometry.tokens - 1,
+                    column=geometry.dim - 1,
+                ),
+                0x5000000000 + byte_offset,
+            )
+        sdk = FakeBM(0)
+        bad = MempoolKVManager.create(layout, rank=0, bm_module=sdk)
+        original = sdk.handle.gva_to_va
+        offset, _ = layout.regions(0)["prefix_index"]
+
+        def discontinuous(gva, kind):
+            return original(gva, kind) + (32 if gva == 0x1000000000 + offset else 0)
+
+        sdk.handle.gva_to_va = discontinuous
+        with self.assertRaises(RuntimeError):
+            bad.join(0.1)
+        bad.close(drain=lambda: None)
+
     def setUp(self):
         self.layout = PoolLayout(
             KVLayout(layers=2, slots=16, tokens=16384, heads=1, dim=576),

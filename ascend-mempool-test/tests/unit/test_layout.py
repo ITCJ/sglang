@@ -1,9 +1,36 @@
 import unittest
 
+from ascend_mempool.config import MempoolConfig
 from ascend_mempool.layout import KVLayout, PoolLayout
 
 
 class TestKVLayout(unittest.TestCase):
+    def test_prefix_regions_do_not_overlap_alive_or_probe_and_keep_d_unchanged(self):
+        layout = MempoolConfig(
+            prefill_capacity=8192, decode_capacity=128
+        ).make_mla_layout(
+            num_layers=78,
+            kv_lora_rank=512,
+            qk_rope_head_dim=64,
+            prefix_pages=40,
+            indexer_layers=21,
+            index_head_dim=128,
+        )
+        offsets = layout.regions(0)
+        cursor = 0
+        for name in ("alive_main", "alive_index", "prefix_main", "prefix_index"):
+            start, region = offsets[name]
+            self.assertEqual(start, cursor)
+            cursor += region.total_bytes
+        self.assertEqual(layout.probe_offset(0), cursor)
+        self.assertEqual(layout.contribution_bytes(0), 13 * 2**30)
+        self.assertEqual(layout.contribution_bytes(1), 2**30)
+        self.assertEqual(list(layout.regions(1)), ["alive_main"])
+        self.assertEqual(layout.prefix_main.shape, (40, 128, 1, 576))
+        self.assertEqual(layout.prefix_index.shape, (40, 128, 1, 128))
+        with self.assertRaises(ValueError):
+            PoolLayout(layout.prompt, layout.decode, prefix_main=layout.prefix_main)
+
     def test_default_mla_layout_and_logical_element(self):
         layout = KVLayout(layers=2, slots=16, tokens=16384, heads=1, dim=576)
         self.assertEqual(layout.shape, (16, 16384, 1, 576))
@@ -93,6 +120,9 @@ class TestKVLayout(unittest.TestCase):
                     },
                     "alignment_bytes": 1073741824,
                     "probe_bytes": 64,
+                    "prompt_index": None,
+                    "prefix_main": None,
+                    "prefix_index": None,
                 },
                 "contributions": [1073741824, 2147483648],
                 "rank_stride_bytes": 2147483648,

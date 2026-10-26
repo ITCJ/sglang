@@ -40,8 +40,16 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     max_total_tokens: int = 16384
     operation_timeout: float = 600.0
     startup_timeout: float = 7200.0
+    prefix_pages: int = 0
+    verify_prefix: bool = False
 
     def __post_init__(self) -> None:
+        if type(self.prefix_pages) is not int or self.prefix_pages not in (0, 40):
+            raise ValueError("prefix_pages must be 0 or 40")
+        if type(self.verify_prefix) is not bool or (
+            self.verify_prefix and not self.prefix_pages
+        ):
+            raise ValueError("verify_prefix requires enabled prefix storage")
         if (
             not self.prefill_host
             or not self.decode_host
@@ -95,6 +103,15 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     @classmethod
     def read(cls, path: str) -> RouterConfig:
         return msgspec.json.decode(Path(path).read_bytes(), type=cls)
+
+    def replicas(self) -> dict[str, int]:
+        enabled = 16 if self.prefix_pages else 0
+        return dict(
+            alive_main=16,
+            alive_index=enabled,
+            prefix_main=enabled,
+            prefix_index=enabled,
+        )
 
     def backend(self, role: str) -> str:
         host, port = (

@@ -11,7 +11,10 @@ import logging
 import time
 from collections import deque
 from collections.abc import Callable, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from sglang.srt.hardware_backend.npu.mempool.prefix import PrefixStore
 
 from .mempool_control import MempoolPDControl
 from .mempool_native_reservation import NativeReservations
@@ -34,6 +37,7 @@ class RouterShard:
         reply_to: str,
         page_size: int,
         bootstrap: tuple[str, int] | None = None,
+        prefix: PrefixStore | None = None,
     ) -> None:
         self.control, self.native, self.effect, self.reply_to = (
             control,
@@ -47,6 +51,7 @@ class RouterShard:
         self.req: Any = None
         self.sent_events: set[str] = set()
         self.bootstrap = bootstrap
+        self.prefix = prefix
         if type(page_size) is not int or page_size <= 0:
             raise ValueError("SR requires a positive token page_size")
         if any(
@@ -142,7 +147,9 @@ class RouterShard:
             state.transfer_ready,
         )
 
-    def execute(self, command: dict[str, Any], slot: int) -> dict[str, Any]:
+    def execute(
+        self, command: dict[str, Any], slot: int, prefix_pages: tuple[int, ...] = ()
+    ) -> dict[str, Any] | None:
         role, rank = self.control.local.role, self.control.local.tp_rank
         kind = command["kind"]
         result: dict[str, Any] = dict(rank=rank)
@@ -174,6 +181,10 @@ class RouterShard:
                     self._binding(command), slot
                 )
             self.identity = message.request
+            if self.prefix is not None:
+                self.prefix.begin_request(
+                    rid=request["rid"], slot=slot, tokens=request["prompt_tokens"]
+                )
             result["message"] = native_wire(message)
             result["slot"] = slot
             capacity = (
@@ -209,8 +220,17 @@ class RouterShard:
                 self.dispatch = command
             elif kind == "ready":
                 self.control.router_ready(self._binding(command))
+            elif kind == "admit":
+                receipt = self._admit(command=command, prefix_pages=prefix_pages)
+                if receipt is None:
+                    return None
+                result.update(receipt)
             elif kind == "free":
+                if self.prefix is not None:
+                    self.prefix.assert_source_releasable(command["rid"])
                 self.control.router_free(self.identity)
+                if self.prefix is not None:
+                    self.prefix.release_source(command["rid"])
                 result.update(freed=True, native_freed=True)
                 self.request = self.dispatch = self.identity = self.req = None
                 self.sent_events.clear()
@@ -227,6 +247,65 @@ class RouterShard:
             command["op_id"],
             len(self.control.available_slots()),
         )
+        return result
+
+    def _admit(
+        self, *, command: dict[str, Any], prefix_pages: tuple[int, ...]
+    ) -> dict[str, Any] | None:
+        """Copy only an identified P source whose native resources are gone."""
+        assert self.identity is not None and self.request is not None
+        role, rank = self.control.local.role, self.control.local.tp_rank
+        state = self.control.get_request(self.identity)
+        if (
+            role != "prefill"
+            or self.prefix is None
+            or state is None
+            or state.phase != "WAITING_DONE"
+            or state.p_slot is None
+            or "native_freed" not in self.sent_events
+        ):
+            raise ValueError("prefix admit requires completed P native cleanup")
+        sources, pages = command["sources"], command["source_pages"]
+        if [source["rank"] for source in sources] != list(range(16)):
+            raise ValueError("admit source is missing TP ranks")
+        capacity = self.control.local.layout.prompt_tokens // self.page_size
+        expected = dict(
+            rank=rank,
+            slot=state.p_slot.slot,
+            pages=[
+                dict(
+                    pool="alive_main",
+                    region=self.control.local.session,
+                    replica=rank,
+                    logical_page=state.p_slot.slot * capacity + page,
+                    page_size=self.page_size,
+                )
+                for page in pages
+            ],
+        )
+        if sources[rank] != expected or len(command["hashes"]) != len(pages):
+            raise ValueError("admit source differs from actual alive allocation")
+        receipt = self.prefix.admit(
+            rid=command["rid"],
+            op_id=command["op_id"],
+            slot=state.p_slot.slot,
+            prompt_tokens=self.request["prompt_tokens"],
+            source_pages=pages,
+            target_pages=list(prefix_pages),
+        )
+        if receipt is None:
+            return None
+        result = dict(rank=rank, **receipt)
+        result["pages"] = [
+            dict(
+                pool="prefix",
+                region=self.control.local.session,
+                replica=rank,
+                logical_page=page,
+                page_size=self.page_size,
+            )
+            for page in receipt["target_pages"]
+        ]
         return result
 
     def _binding(self, command: dict[str, Any]) -> MempoolMessage:
@@ -321,6 +400,7 @@ class MempoolSubrouter:
         self.pending: deque[dict[str, Any]] = deque()
         self.completed: dict[int, tuple[dict[str, Any], dict[str, Any]]] = {}
         self.last_op = 0
+        self._admit_pages: tuple[int, ...] | None = None
         self.fault: str | None = None
 
     def track(self, req: Any) -> None:
@@ -335,6 +415,7 @@ class MempoolSubrouter:
         registration = None
         state = None
         free: frozenset[int] = frozenset()
+        prefix_free: tuple[int, ...] = ()
         try:
             if leader:
                 incoming = self.receive()
@@ -347,6 +428,7 @@ class MempoolSubrouter:
             if not self.registered and control.peer is not None:
                 registration = self.registration()
             free = control.available_slots()
+            prefix_free = self.shard.prefix.free_pages if self.shard.prefix else ()
             state = self.shard.state()
         except Exception as exc:
             fault = str(exc)
@@ -355,6 +437,7 @@ class MempoolSubrouter:
                 incoming=incoming,
                 facts=list(facts),
                 free=free,
+                prefix_free=prefix_free,
                 state=state,
                 registration=registration,
                 fault=fault or self.fault or control.snapshot().protocol_fault,
@@ -375,6 +458,7 @@ class MempoolSubrouter:
                 )
             if any(
                 o["free"] != observations[0]["free"]
+                or o["prefix_free"] != observations[0]["prefix_free"]
                 or o["state"] != observations[0]["state"]
                 for o in observations
             ):
@@ -407,23 +491,24 @@ class MempoolSubrouter:
                     if old != command:
                         raise ValueError("conflicting duplicate Router command")
                     results["ack"] = result
-                    self.pending.popleft()
                 elif command["op_id"] <= self.last_op:
                     raise ValueError("stale Router operation")
                 elif command["kind"] != "free" or all(
                     f is not None and f.native_freed for f in common_facts
                 ):
-                    result = self.shard.execute(
-                        command, min(observations[0]["free"], default=-1)
+                    if command["kind"] == "admit" and self._admit_pages is None:
+                        count = len(command["source_pages"])
+                        self._admit_pages = observations[0]["prefix_free"][:count]
+                        if len(self._admit_pages) != count:
+                            raise RuntimeError(
+                                "prefix page reservation exceeds local capacity"
+                            )
+                    execution = self.shard.execute(
+                        command,
+                        min(observations[0]["free"], default=-1),
+                        self._admit_pages or (),
                     )
-                    self.completed[command["op_id"]] = (command, result)
-                    # Keep recent retries idempotent without retaining every
-                    # prompt and page table for the lifetime of the service.
-                    if len(self.completed) > 64:
-                        del self.completed[next(iter(self.completed))]
-                    self.last_op = command["op_id"]
-                    results["ack"] = result
-                    self.pending.popleft()
+                    results["ack"] = execution
             results["events"] = self.shard.advance(common_facts)
         except Exception as exc:
             results["error"] = str(exc)
@@ -442,12 +527,26 @@ class MempoolSubrouter:
                     )
                 )
             raise RuntimeError(f"SR fail-stop: {self.fault}")
+        acknowledged = command is not None and all(
+            r["ack"] is not None for r in committed
+        )
+        if acknowledged:
+            assert command is not None
+            if command["op_id"] not in self.completed:
+                self.completed[command["op_id"]] = copy.deepcopy(
+                    (command, results["ack"])
+                )
+            if len(self.completed) > 64:
+                del self.completed[next(iter(self.completed))]
+            self.last_op = max(self.last_op, command["op_id"])
+            self.pending.popleft()
+            self._admit_pages = None
         if not leader:
             return
         envelope = dict(run_id=self.run_id, role=control.local.role)
         if results["registration"] is not None:
             self.send(dict(envelope, kind="register", ranks=results["registration"]))
-        if results["ack"] is not None and command is not None:
+        if acknowledged and command is not None:
             self.send(
                 {
                     **command,

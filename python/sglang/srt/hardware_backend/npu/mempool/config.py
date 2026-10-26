@@ -147,6 +147,9 @@ class MempoolConfig(msgspec.Struct, frozen=True):
         kv_lora_rank: int,
         qk_rope_head_dim: int,
         dtype: str = "bfloat16",
+        prefix_pages: int = 0,
+        indexer_layers: int = 0,
+        index_head_dim: int = 0,
     ) -> PoolLayout:
         """Derive layer slabs from actual local layers and latent-plus-RoPE KV."""
         positive_int("kv_lora_rank", kv_lora_rank)
@@ -163,4 +166,32 @@ class MempoolConfig(msgspec.Struct, frozen=True):
             )
             for capacity in (self.prefill_capacity, self.decode_capacity)
         )
-        return PoolLayout(prompt=prompt, decode=decode)
+        if type(prefix_pages) is not int or prefix_pages < 0:
+            raise ValueError("prefix_pages must be a nonnegative integer")
+        if not prefix_pages:
+            return PoolLayout(prompt=prompt, decode=decode)
+        return PoolLayout(
+            prompt=prompt,
+            decode=decode,
+            prompt_index=KVLayout(
+                layers=indexer_layers,
+                slots=MEMPOOL_SLOTS,
+                tokens=self.prefill_capacity,
+                heads=1,
+                dim=index_head_dim,
+            ),
+            prefix_main=KVLayout(
+                layers=num_layers,
+                slots=prefix_pages,
+                tokens=self.page_size,
+                heads=1,
+                dim=prompt.dim,
+            ),
+            prefix_index=KVLayout(
+                layers=indexer_layers,
+                slots=prefix_pages,
+                tokens=self.page_size,
+                heads=1,
+                dim=index_head_dim,
+            ),
+        )

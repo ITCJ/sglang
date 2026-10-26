@@ -1,0 +1,1126 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="blueprint" data-mode="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Answer me with HTML 0.4.3">
+<title>Ticket02：prompt prefix 保存代码计划</title>
+<style>
+html[data-theme="blueprint"], html[data-theme="blueprint"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 0px;
+  --shadow: none;
+  --bw: 1.5px;
+  --head-font: var(--font-sans);
+  --bg: #f6f6f3;
+  --paper: #ffffff;
+  --ink: #16181d;
+  --ink-2: #4b5260;
+  --ink-3: #8b929e;
+  --line: #1d2026;
+  --line-2: #d6dae1;
+  --fill: #f3f5f8;
+  --accent: #1d5fbf;
+  --accent-bg: #e4ecf8;
+  --ok: #1d5fbf;
+  --ok-bg: #e4ecf8;
+  --err: #c62828;
+  --err-bg: #fbeaea;
+  --warn: #a8620a;
+  --warn-bg: #fdf3e2;
+  --head-bg: #16181d;
+  --head-fg: #ffffff;
+}
+html[data-theme="blueprint"][data-mode="dark"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="blueprint"][data-mode="auto"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+}
+
+html[data-theme="shadcn"], html[data-theme="shadcn"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 8px;
+  --shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --bw: 1px;
+  --head-font: var(--font-sans);
+  --bg: #fafafa;
+  --paper: #ffffff;
+  --ink: #09090b;
+  --ink-2: #71717a;
+  --ink-3: #a1a1aa;
+  --line: #e4e4e7;
+  --line-2: #f0f0f2;
+  --fill: #f4f4f5;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --ok: #16a34a;
+  --ok-bg: #f0fdf4;
+  --err: #dc2626;
+  --err-bg: #fef2f2;
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --head-bg: #18181b;
+  --head-fg: #fafafa;
+}
+html[data-theme="shadcn"][data-mode="dark"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="shadcn"][data-mode="auto"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+}
+
+/* Answer me with HTML base — 只引用主题变量，禁止写死颜色（主题 token 见 themes/index.js） */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd { font-family: var(--font-mono); }
+
+/* ── 工具栏 ─────────────────────────────── */
+.am-toolbar {
+  position: fixed; top: 12px; right: 12px; z-index: 10; display: flex; gap: 6px;
+}
+.am-btn {
+  font: 12px/1 var(--font-sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding: 7px 10px; cursor: pointer;
+}
+.am-btn:hover { border-color: var(--ink-3); }
+.am-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── 页头 ───────────────────────────────── */
+.am-head { margin: 0 0 20px; padding-right: 260px; }
+.am-head h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; }
+.am-sub { margin: 4px 0 0; color: var(--ink-2); }
+.am-head-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 12px; color: var(--ink-2); }
+.am-head-meta b { font-family: var(--font-mono); font-weight: 400; color: var(--ink-3); margin-right: 6px; }
+.am-intro { margin-top: 12px; max-width: 80ch; }
+
+/* ── sheet 图纸板 ────────────────────────── */
+.am-sheet { max-width: 1680px; margin: 0 auto; padding: 32px 28px 40px; }
+.am-frame { position: relative; }
+.am-grid {
+  display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 20px; align-items: start;
+}
+.am-ruler { display: none; }
+html[data-theme="blueprint"] .am-frame { border: 1px solid var(--line); padding: 30px; }
+html[data-theme="blueprint"] .am-frame::before {
+  content: ""; position: absolute; inset: 18px; border: 1px solid var(--line); pointer-events: none;
+}
+html[data-theme="blueprint"] .am-ruler {
+  display: flex; position: absolute; font: 10px/1 var(--font-mono); color: var(--ink-3);
+}
+.am-ruler span { flex: 1; display: flex; align-items: center; justify-content: center; }
+.am-ruler--top, .am-ruler--bottom { left: 18px; right: 18px; height: 18px; }
+.am-ruler--top { top: 0; }
+.am-ruler--bottom { bottom: 0; }
+.am-ruler--left, .am-ruler--right { top: 18px; bottom: 18px; width: 18px; flex-direction: column; }
+.am-ruler--left { left: 0; }
+.am-ruler--right { right: 0; }
+.am-ruler--top span + span, .am-ruler--bottom span + span { border-left: 1px solid var(--line); }
+.am-ruler--left span + span, .am-ruler--right span + span { border-top: 1px solid var(--line); }
+
+/* ── 面板 ───────────────────────────────── */
+.am-panel {
+  background: var(--paper); border: var(--bw) solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); min-width: 0; overflow: hidden;
+}
+.am-panel-head {
+  display: flex; align-items: stretch; gap: 0; border-bottom: var(--bw) solid var(--line); min-height: 34px;
+}
+.am-panel-id {
+  display: flex; align-items: center; justify-content: center; min-width: 34px; padding: 0 8px;
+  background: var(--head-bg); color: var(--head-fg); font-weight: 600; font-size: 14px;
+}
+html[data-theme="shadcn"] .am-panel-id { border-radius: 6px; min-width: 24px; height: 24px; margin: 9px 0 9px 14px; font-size: 12px; }
+html[data-theme="shadcn"] .am-panel-head { border-bottom-width: 1px; }
+.am-panel-head h2 { margin: 0; padding: 7px 12px; font-size: 15px; font-weight: 600; flex: 1; display: flex; align-items: center; }
+.am-panel-meta { align-self: center; padding: 0 12px; font: 11px/1.3 var(--font-mono); color: var(--ink-2); text-align: right; }
+.am-panel-body { padding: 14px 16px 16px; }
+.am-panel-body > * + * { margin-top: 12px; }
+
+/* ── Markdown 正文 ───────────────────────── */
+.am-md > :first-child { margin-top: 0; }
+.am-md > :last-child { margin-bottom: 0; }
+.am-md p { margin: 0 0 8px; }
+.am-md ul, .am-md ol { margin: 0 0 8px; padding-left: 20px; }
+.am-md li + li { margin-top: 3px; }
+.am-md h3, .am-md h4 { margin: 14px 0 6px; font-size: 13px; }
+.am-md a { color: var(--accent); }
+.am-md blockquote { margin: 0 0 8px; padding: 2px 12px; border-left: 3px solid var(--line-2); color: var(--ink-2); }
+.am-md :not(pre) > code { font-size: 0.9em; background: var(--fill); padding: 1px 5px; border-radius: 4px; }
+.am-md hr { border: 0; border-top: 1px solid var(--line-2); margin: 12px 0; }
+.am-md table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.am-md th {
+  text-align: left; font: 11px/1.3 var(--font-mono); color: var(--ink-2); font-weight: 400;
+  padding: 6px 10px; border-bottom: 1px solid var(--line-2);
+}
+.am-md td { padding: 7px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.am-md tbody tr:nth-child(even) td { background: var(--fill); }
+.am-table-wrap { overflow-x: auto; }
+.am-code {
+  margin: 0; padding: 12px 14px; background: var(--fill); border: 1px solid var(--line-2);
+  border-radius: var(--radius); overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+}
+
+/* ── 状态徽章 ok / no / warn ──────────────── */
+.am-status { white-space: nowrap; font-weight: 500; }
+.am-status--ok { color: var(--ok); }
+.am-status--no { color: var(--err); }
+.am-status--warn { color: var(--warn); }
+.am-status-icon { display: inline-block; width: 1.1em; font-weight: 700; }
+
+/* ── callout ─────────────────────────────── */
+.am-callout {
+  border: 1px solid var(--line-2); border-left: 3px solid var(--accent); background: var(--accent-bg);
+  padding: 10px 14px; border-radius: var(--radius);
+}
+.am-callout--ok { border-left-color: var(--ok); background: var(--ok-bg); }
+.am-callout--warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.am-callout--err { border-left-color: var(--err); background: var(--err-bg); }
+.am-callout-title { font-weight: 600; margin-bottom: 4px; }
+
+/* ── kv 标题栏格 ─────────────────────────── */
+.am-kv {
+  display: grid; grid-template-columns: repeat(var(--kv-cols, 2), minmax(0, 1fr)); margin: 0;
+  border-top: var(--bw) solid var(--line); border-left: var(--bw) solid var(--line);
+}
+.am-kv-cell { border-right: var(--bw) solid var(--line); border-bottom: var(--bw) solid var(--line); padding: 6px 10px 8px; min-width: 0; }
+.am-kv-cell--wide { grid-column: 1 / -1; }
+.am-kv dt { font: 11px/1.4 var(--font-mono); color: var(--ink-2); }
+.am-kv dd { margin: 2px 0 0; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.am-kv-cell--wide dd { font-size: 17px; font-weight: 600; }
+html[data-theme="shadcn"] .am-kv { border-color: var(--line); border-radius: var(--radius); overflow: hidden; }
+
+/* ── timeline ────────────────────────────── */
+.am-timeline { list-style: none; margin: 0; padding: 0; }
+.am-timeline--h { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); padding-top: 4px; }
+.am-timeline--h li { position: relative; text-align: center; padding: 0 6px; }
+.am-timeline--h li::before {
+  content: ""; position: absolute; top: 31px; left: 0; right: 0; border-top: var(--bw) solid var(--line);
+}
+.am-timeline--h li:first-child::before { left: 50%; }
+.am-timeline--h li:last-child::before { right: 50%; }
+.am-tl-when { display: block; font-size: 15px; font-weight: 500; height: 24px; }
+.am-tl-dot {
+  position: relative; display: block; width: 11px; height: 11px; margin: 2px auto 8px;
+  border: var(--bw) solid var(--line); border-radius: 50%; background: var(--paper);
+}
+.am-tl-item--hi .am-tl-dot { background: var(--accent); border-color: var(--accent); }
+.am-tl-title { display: block; font-size: 12.5px; font-weight: 500; }
+.am-tl-text { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.45; }
+.am-timeline--v li { position: relative; padding: 0 0 14px 22px; }
+.am-timeline--v li::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: -6px; border-left: var(--bw) solid var(--line-2); }
+.am-timeline--v li:last-child::before { display: none; }
+.am-timeline--v .am-tl-dot { position: absolute; left: 0; top: 4px; margin: 0; }
+.am-timeline--v .am-tl-when { display: inline; height: auto; font: 12px var(--font-mono); color: var(--ink-2); margin-right: 8px; }
+.am-timeline--v .am-tl-title { display: inline; font-size: 14px; }
+.am-timeline--v .am-tl-text { margin-top: 2px; }
+
+/* ── annot 句子标注 ──────────────────────── */
+.am-annot + .am-annot { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.am-annot-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.am-annot-meta { font: 11px var(--font-mono); font-weight: 400; color: var(--ink-2); }
+.am-annot-scroll { overflow-x: auto; }
+.am-annot-line {
+  position: relative; display: inline-block; white-space: pre; font: 14px/1.6 var(--font-mono);
+  padding-bottom: calc(var(--rows, 0) * 17px + 14px);
+}
+.am-annot-line--wrap { display: block; white-space: normal; padding-bottom: 10px; }
+.am-annot-line--wrap .am-seg { white-space: nowrap; }
+.am-seg { position: relative; }
+.am-seg::after {
+  content: ""; position: absolute; left: 1px; right: 1px; top: calc(100% + 1px); height: 5px;
+  border: 1px solid var(--accent); border-top: 0;
+}
+.am-seg-n {
+  position: absolute; left: 0; top: calc(100% + 8px + var(--row, 0) * 17px);
+  font: 11px/16px var(--font-sans); color: var(--accent); white-space: nowrap;
+}
+.am-seg--err { color: var(--err); }
+.am-seg--err::after { border-color: var(--err); }
+.am-seg--err .am-seg-n { color: var(--err); }
+.am-annot-caption { font-size: 12px; color: var(--ink-2); }
+
+/* ── limits 限值条 ───────────────────────── */
+.am-lim + .am-lim { margin-top: 14px; }
+.am-lim-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; margin-bottom: 4px; }
+.am-lim-val { font: 12px var(--font-mono); color: var(--accent); white-space: nowrap; }
+.am-lim-track { position: relative; height: 12px; border: 1px solid var(--line-2); background: var(--fill); border-radius: calc(var(--radius) / 2); }
+.am-lim-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-bg); border-right: 1px solid var(--accent); }
+.am-lim-mark { position: absolute; top: -4px; bottom: -4px; border-left: 2px solid var(--accent); }
+.am-lim.is-over .am-lim-fill { background: var(--err-bg); border-right-color: var(--err); }
+.am-lim.is-over .am-lim-val { color: var(--err); }
+.am-lim-ticks { position: relative; height: 16px; font: 10px/16px var(--font-mono); color: var(--ink-3); }
+.am-lim-ticks span { position: absolute; transform: translateX(-50%); }
+.am-lim-ticks span:first-child { transform: none; }
+.am-lim-note { font-size: 11px; color: var(--ink-2); margin-left: 6px; }
+
+/* ── tree 结构树 ─────────────────────────── */
+.am-tree { font-size: 13px; }
+.am-tree-root { display: flex; justify-content: center; position: relative; padding-bottom: 18px; }
+.am-tree-root::after { content: ""; position: absolute; bottom: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-root--solo { padding-bottom: 12px; }
+.am-tree-root--solo::after { display: none; }
+.am-tree-box {
+  border: var(--bw) solid var(--line); background: var(--paper); padding: 6px 14px; text-align: center;
+  border-radius: var(--radius); font-weight: 600;
+}
+.am-tree-box small { display: block; font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.am-tree-box--root { background: var(--accent-bg); font-size: 15px; padding: 8px 28px; }
+.am-tree-cols { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
+.am-tree-col { position: relative; padding: 18px 8px 0; min-width: 0; }
+.am-tree-col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; border-top: var(--bw) solid var(--line); }
+.am-tree-col:first-child::before { left: 50%; }
+.am-tree-col:last-child::before { right: 50%; }
+.am-tree-col::after { content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-list, .am-tree-list ul { list-style: none; margin: 0; padding: 0; }
+.am-tree-col > .am-tree-list { margin: 8px 0 0 14px; }
+.am-tree-list ul { margin-left: 16px; }
+.am-tree-list li { position: relative; padding: 3px 0 3px 18px; }
+.am-tree-list li::before { content: ""; position: absolute; left: 0; top: 0.95em; width: 12px; border-top: 1px solid var(--ink-3); }
+.am-tree-list li::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--ink-3); }
+.am-tree-list li:last-child::after { bottom: auto; height: 0.95em; }
+.am-tree-tag { font: 11px var(--font-mono); color: var(--ink-3); margin-right: 4px; }
+.am-tree code { font: 12px var(--font-mono); }
+.am-tree-sub { display: block; font-size: 11.5px; color: var(--ink-2); }
+.am-tree-hi > .am-tree-label { color: var(--accent); font-weight: 600; }
+
+/* ── 图（flow / sequence）───────────────── */
+.am-diagram { margin: 0; overflow-x: auto; text-align: center; }
+.am-diagram svg { max-width: 100%; height: auto; font-family: var(--font-sans); }
+.am-diagram text { fill: var(--ink); font-size: 13px; }
+.am-node-shape { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-node--hi .am-node-shape { fill: var(--accent-bg); stroke: var(--accent); }
+.am-node--hi text { fill: var(--accent); font-weight: 600; }
+.am-edge { fill: none; stroke: var(--ink-2); stroke-width: 1.3; }
+.am-edge--dashed { stroke-dasharray: 5 4; }
+.am-arrow { fill: var(--ink-2); }
+.am-edge-label rect { fill: var(--paper); }
+.am-diagram .am-edge-label text { fill: var(--accent); font-size: 11.5px; }
+.am-cluster { fill: var(--fill); stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 4 3; }
+.am-diagram .am-cluster-label { fill: var(--ink-2); font: 11px var(--font-mono); }
+.am-lifeline { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 4 4; }
+.am-actor { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-note { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 1; }
+.am-diagram .am-step { fill: var(--ink-3); font: 10px var(--font-mono); }
+
+/* ── doc 线性讲解 ────────────────────────── */
+.am-doc { max-width: 1120px; margin: 0 auto; padding: 40px 28px 64px; }
+.am-doc-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
+.am-doc-layout--notoc { grid-template-columns: minmax(0, 1fr); max-width: 860px; }
+.am-toc { position: sticky; top: 24px; font-size: 13px; }
+.am-toc a { display: block; color: var(--ink-2); text-decoration: none; padding: 4px 0 4px 10px; border-left: 2px solid var(--line-2); }
+.am-toc a:hover { color: var(--ink); border-left-color: var(--accent); }
+.am-doc-body > .am-panel + .am-panel { margin-top: 20px; }
+
+/* ── 响应式与打印 ─────────────────────────── */
+@media (max-width: 1100px) {
+  .am-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .am-grid > .am-panel { grid-column: auto !important; }
+  .am-grid > .am-panel.am-span-wide { grid-column: 1 / -1 !important; }
+}
+@media (max-width: 760px) {
+  .am-sheet, .am-doc { padding: 56px 12px 24px; }
+  .am-head { padding-right: 0; }
+  .am-grid { grid-template-columns: minmax(0, 1fr); }
+  .am-grid > .am-panel.am-span-wide { grid-column: auto !important; }
+  html[data-theme="blueprint"] .am-frame { padding: 0; border: 0; }
+  html[data-theme="blueprint"] .am-frame::before, html[data-theme="blueprint"] .am-ruler { display: none; }
+  .am-doc-layout { grid-template-columns: minmax(0, 1fr); }
+  .am-toc { position: static; }
+  .am-timeline--h { grid-template-columns: minmax(0, 1fr); }
+  .am-tree-cols { grid-template-columns: minmax(0, 1fr); }
+}
+.am-colophon { text-align: center; padding: 0 0 28px; font: 11px var(--font-mono); color: var(--ink-3); }
+
+@media print {
+  .am-toolbar { display: none; }
+  body { background: var(--paper); }
+  .am-panel { break-inside: avoid; box-shadow: none; }
+}
+.am-panel--bare { border: 0; background: transparent; box-shadow: none; }
+.am-panel--bare > .am-panel-body { padding: 0; }
+.am-panel--bare .am-kv { background: var(--paper); }
+
+</style>
+</head>
+<body>
+<div class="am-toolbar">
+<button class="am-btn" type="button" data-am="theme" data-labels="{&quot;blueprint&quot;:&quot;主题：图纸&quot;,&quot;shadcn&quot;:&quot;主题：卡片&quot;}">主题：图纸</button>
+<button class="am-btn" type="button" data-am="mode" data-labels="{&quot;auto&quot;:&quot;明暗：跟随系统&quot;,&quot;light&quot;:&quot;明暗：亮&quot;,&quot;dark&quot;:&quot;明暗：暗&quot;}">明暗：跟随系统</button>
+<button class="am-btn" type="button" data-am="copy" data-done="已复制 ✓">复制源稿</button>
+</div>
+<main class="am-doc">
+<header class="am-head"><h1>Ticket02：prompt prefix 保存代码计划</h1><p class="am-sub">在已验收 cold lifecycle 上增加 Index K 写回、独立 prefix 池与异步 admit</p><div class="am-head-meta"><span><b>date</b>2026-10-26</span><span><b>status</b>规划已执行；实现与 CPU 结果见 ticket02-delivery，NPU 待验收</span><span><b>baseline</b>7275f29a05 + 当前文档工作区</span></div><div class="am-intro am-md"><div class="am-md"><p><strong>预计修改 8 个现有功能文件，新增 1 个 prefix.py。</strong>
+这些功能文件全部位于 Ascend/NPU 目录。
+计划复用既有 attention hook、service 释放门控和原生 warmup。</p>
+<p>依据：<a href="issues/02-prompt-prefix-save.md">ticket02</a>、<a href="spec.md">规格</a>、
+<a href="ticket-plan.md">逐票规划</a>和<a href="../ascend-mempool/verification.md">硬件验收流程</a>。
+ticket01 已按用户确认关闭，验收版本为 <code>7275f29a05</code>。
+旧 ticket02 提交保持撤回；本文依据当前代码重新规划。
+下文记录实施前计划，字段、接口和命令的最终形式见交付说明。</p>
+<p><strong>2026-10-26 执行记录：</strong> 下文保留实施前规划。
+代码与 CPU 验证现已完成；实际文件、接口、命令和剩余项以
+<a href="ticket02-delivery.md">ticket02 交付说明</a>为准。</p>
+</div></div></header>
+<div class="am-doc-layout">
+<nav class="am-toc" aria-label="目录"><a href="#panel-A">A · 功能文件与建议 review 顺序</a><a href="#panel-B">B · 存储区域与容量</a><a href="#panel-C">C · 先让 Index K 成为可靠的保存源</a><a href="#panel-D">D · admit、publish 与 free 怎样接起来</a><a href="#panel-E">E · 测试修改与验收证据</a><a href="#panel-F">F · 实施切片与交付</a></nav><div class="am-doc-body">
+<section class="am-panel" id="panel-A">
+<header class="am-panel-head"><span class="am-panel-id">A</span><h2>功能文件与建议 review 顺序</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>路径前缀分别为 <code>python/sglang/srt/disaggregation/ascend/</code> 和
+<code>python/sglang/srt/hardware_backend/npu/mempool/</code>。
+下表只列功能文件；顺序先定义合同，再看存储、完成条件和请求编排。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>顺序</th>
+<th>文件</th>
+<th>具体修改与必要性</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td><a href="../../python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py">ascend/mempool_router_protocol.py</a></td>
+<td>增加 prefix 容量与显式内容验收配置；约定 admit 描述符和完成收据</td>
+</tr>
+<tr>
+<td>2</td>
+<td><a href="../../python/sglang/srt/hardware_backend/npu/mempool/layout.py">npu/mempool/layout.py</a></td>
+<td>定义 P alive Index K、prefix 主 KV、prefix Index K 三个区域及偏移；更新 probe 与贡献大小</td>
+</tr>
+<tr>
+<td>3</td>
+<td><a href="../../python/sglang/srt/hardware_backend/npu/mempool/config.py">npu/mempool/config.py</a></td>
+<td>扩展 make_mla_layout，根据实际模型几何和启用容量构造新增区域</td>
+</tr>
+<tr>
+<td>4</td>
+<td><a href="../../python/sglang/srt/hardware_backend/npu/mempool/manager.py">npu/mempool/manager.py</a></td>
+<td>扩展带区域偏移的 typed view；映射检查覆盖新增区域每层首尾</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>npu/mempool/prefix.py</code>（新增）</td>
+<td>集中处理本地 prefix 页占用、BM 到 BM 复制、设备事件及请求结束后的收据清理</td>
+</tr>
+<tr>
+<td>6</td>
+<td><a href="../../python/sglang/srt/hardware_backend/npu/mempool/runtime.py">npu/mempool/runtime.py</a></td>
+<td>在既有 write_layer 中写回真实请求 Index K；完成条件覆盖主 KV 和 Index K；启动时创建 prefix store</td>
+</tr>
+<tr>
+<td>7</td>
+<td><a href="../../python/sglang/srt/disaggregation/ascend/mempool_subrouter.py">ascend/mempool_subrouter.py</a></td>
+<td>执行异步 admit，统一目标页分配，汇总 TP16 完成；阻止过早 free</td>
+</tr>
+<tr>
+<td>8</td>
+<td><a href="../../python/sglang/srt/disaggregation/ascend/mempool_router.py">ascend/mempool_router.py</a></td>
+<td>保留 prefix 目录，选择缺失页，建立源锁，处理 admit ack、publish 和最终归还</td>
+</tr>
+<tr>
+<td>9</td>
+<td><a href="../../python/sglang/srt/disaggregation/ascend/mempool_router_transport.py">ascend/mempool_router_transport.py</a></td>
+<td>将 store 接到 SR；注册并校验真实区域、容量、副本与验收配置</td>
+</tr>
+</tbody></table></div>
+<p>拟增加 <code>prefix_pages=0</code> 默认值，保留已验收冷请求配置。
+ticket02 启用值为 40；当前固定规格只放行 0 或 40。
+拟增加 <code>verify_prefix=false</code>，内容验收模式显式开启。
+容量和验收配置通过现有 Router JSON 传入，保持原生 warmup 开启。</p>
+<p>目前没有需要修改公共功能代码的证据。
+已存在的接线可以覆盖新增行为：</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>现有接线</th>
+<th>如何复用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="../../python/sglang/srt/hardware_backend/npu/attention/ascend_backend.py:1353">Ascend forward_extend</a></td>
+<td>top-k 已经产生，此处的 runtime.write_layer 可以读取已写入原生池的 Index K</td>
+</tr>
+<tr>
+<td><a href="../../python/sglang/srt/hardware_backend/npu/memory_pool_npu.py:801">NPU Index K 读写接口</a></td>
+<td>使用 producer 层号及 out_cache_loc 读取真实物理 token 行</td>
+</tr>
+<tr>
+<td><a href="../../python/sglang/srt/disaggregation/ascend/mempool_service.py:480">service 完成观察</a></td>
+<td>继续通过 runtime.writes_done／prompt_ready 门控 native release</td>
+</tr>
+<tr>
+<td><a href="../../python/sglang/srt/disaggregation/ascend/mempool_service.py:682">service 空闲推进</a></td>
+<td>control 持有请求直到显式 free，期间 scheduler 继续推进 SR</td>
+</tr>
+</tbody></table></div>
+<p>因此预计无需改模型、公共 scheduler、native allocator 或 HTTP 启动代码。
+实施若发现新公共 hook 确有必要，先记录现有 hook 不足的代码证据，再收束改动。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-B">
+<header class="am-panel-head"><span class="am-panel-id">B</span><h2>存储区域与容量</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>保留 P／D 私有副本、layer-first、统一 B=128 和 alive 整槽分配。
+prefix 真正按页分配；主 KV 与 Index K 共用一组 prefix 页号。
+每份逻辑容量为 40 页，各 rank 的 16 份副本不叠加为 640 页内容。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>P 每 rank 区域</th>
+<th>几何</th>
+<th>Payload</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>现有 alive 主 KV</td>
+<td>78 层 × 16 槽 × 8192 token × 1152 B</td>
+<td>11232 MiB</td>
+</tr>
+<tr>
+<td>新增 alive Index K</td>
+<td>21 层 × 16 槽 × 8192 token × 256 B</td>
+<td>672 MiB</td>
+</tr>
+<tr>
+<td>新增 prefix 主 KV</td>
+<td>78 层 × 40 页 × 128 token × 1152 B</td>
+<td>438.75 MiB</td>
+</tr>
+<tr>
+<td>新增 prefix Index K</td>
+<td>21 层 × 40 页 × 128 token × 256 B</td>
+<td>26.25 MiB</td>
+</tr>
+</tbody></table></div>
+<p>P payload 合计 12369 MiB，probe 位于全部区域之后。
+按现有 1 GiB 分配对齐，P 从 11 GiB/rank 增为 13 GiB/rank。
+TP16 的 P BM 贡献为 <strong>208 GiB</strong>，D 仍为 <strong>16 GiB</strong>。
+这些是 BM 分配量，不包含模型、进程和验收参考缓冲。</p>
+<p>P/D 启动使用相同 PoolLayout 签名，包含 P 的新增区域。
+D 只贡献自己的生成主 KV 区域；不新增 D Index K DRAM 写回。
+注册分别报告全局布局和本侧实际区域，校验 TP16、容量与四类副本。</p>
+<p>runner 从同一布局计算容量，替换现有硬编码的 P 176 GiB 检查。
+实际 NUMA 页落点仍须单独取得硬件证据。</p>
+<p>复制复用现有 UniDexCopy 的双 raw-pointer 模式。
+本地<a href="../../../sgl-kernel-npu/csrc/sparsity_driven_kv_offload/unidex_copy/op_host/unidex_copy.cpp:50">算子实现</a>
+支持独立的 src_ptr／dst_ptr，并在当前 NPU stream 提交。</p>
+<p>worker 使用已验证的设备地址；Main 只处理不透明描述符。
+不通过 CPU 指针解引用 BM 设备映射。
+实际双指针复制内容与完成可见性由本票 NPU 验收验证。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-C">
+<header class="am-panel-head"><span class="am-panel-id">C</span><h2>先让 Index K 成为可靠的保存源</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>runtime 初始化时取得原生 NPU KV pool，并校验实际 producer 层列表。
+当前模型为 <code>(0, 1, 2, 6, 10, ..., 74)</code>，共 21 层，128 维 BF16、无 scale。
+<code>write_layer</code> 只对 producer 层新增 Index K 写回。</p>
+</div>
+<figure class="am-diagram am-flow"><svg viewBox="0 0 1735 63" width="1735" height="63" role="img" aria-label="流程图：原生IndexK写入、attention已有hook、runtime、P_alive、forward事件、完成收据、native释放门控" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am1-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><g></g><g><g data-step="0"><path class="am-edge" d="M136.1,31.5 L177.4,31.5 Q218.6,31.5 259.8,31.5 L301.1,31.5" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="160.1" y="22.5" width="117" height="18" rx="3"/><text x="218.6" y="31.5" text-anchor="middle" dominant-baseline="central">producer 已完成提交</text></g></g><g data-step="1"><path class="am-edge" d="M437.2,31.5 L486.5,31.5 Q535.8,31.5 585.1,31.5 L634.4,31.5" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="461.2" y="22.5" width="149.2" height="18" rx="3"/><text x="535.8" y="31.5" text-anchor="middle" dominant-baseline="central">真实绑定与 out_cache_loc</text></g></g><g data-step="2"><path class="am-edge" d="M707.9,31.5 L747.1,31.5 Q786.3,31.5 825.6,31.5 L864.8,31.5" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="731.9" y="22.5" width="108.9" height="18" rx="3"/><text x="786.3" y="31.5" text-anchor="middle" dominant-baseline="central">主KV及IndexK写回</text></g></g><g data-step="3"><path class="am-edge" d="M939.1,31.5 L976.6,31.5 Q1014.1,31.5 1051.6,31.5 L1089.1,31.5" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="963.1" y="22.5" width="102" height="18" rx="3"/><text x="1014.1" y="31.5" text-anchor="middle" dominant-baseline="central">两类写入均已提交</text></g></g><g data-step="4"><path class="am-edge" d="M1188.6,31.5 L1234.7,31.5 Q1280.8,31.5 1326.9,31.5 L1373.1,31.5" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="1212.6" y="22.5" width="136.5" height="18" rx="3"/><text x="1280.8" y="31.5" text-anchor="middle" dominant-baseline="central">事件完成且逐层计数正确</text></g></g><g data-step="5"><path class="am-edge" d="M1453.1,31.5 L1490.6,31.5 Q1528.1,31.5 1565.6,31.5 L1603.1,31.5" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="1477.1" y="22.5" width="102" height="18" rx="3"/><text x="1528.1" y="31.5" text-anchor="middle" dominant-baseline="central">仍需原生传输完成</text></g></g></g><g><g class="am-node am-node--rect" data-key="原生IndexK写入" data-step="0"><rect class="am-node-shape" x="14" y="14" width="122.1" height="35" rx="3"/><text x="75.1" y="31.5" text-anchor="middle" dominant-baseline="central">原生IndexK写入</text></g><g class="am-node am-node--rect" data-key="attention已有hook" data-step="0"><rect class="am-node-shape" x="301.1" y="14" width="136.2" height="35" rx="3"/><text x="369.2" y="31.5" text-anchor="middle" dominant-baseline="central">attention已有hook</text></g><g class="am-node am-node--rect" data-key="runtime" data-step="1"><rect class="am-node-shape" x="634.4" y="14" width="73.5" height="35" rx="3"/><text x="671.1" y="31.5" text-anchor="middle" dominant-baseline="central">runtime</text></g><g class="am-node am-node--rect" data-key="P_alive" data-step="2"><rect class="am-node-shape" x="864.8" y="14" width="74.3" height="35" rx="3"/><text x="901.9" y="31.5" text-anchor="middle" dominant-baseline="central">P_alive</text></g><g class="am-node am-node--rect" data-key="forward事件" data-step="3"><rect class="am-node-shape" x="1089.1" y="14" width="99.5" height="35" rx="3"/><text x="1138.8" y="31.5" text-anchor="middle" dominant-baseline="central">forward事件</text></g><g class="am-node am-node--rect" data-key="完成收据" data-step="4"><rect class="am-node-shape" x="1373.1" y="14" width="80" height="35" rx="3"/><text x="1413.1" y="31.5" text-anchor="middle" dominant-baseline="central">完成收据</text></g><g class="am-node am-node--rect" data-key="native释放门控" data-step="5"><rect class="am-node-shape" x="1603.1" y="14" width="117.4" height="35" rx="3"/><text x="1661.8" y="31.5" text-anchor="middle" dominant-baseline="central">native释放门控</text></g></g></svg></figure>
+<div class="am-md"><p>从原生池按真实 <code>out_cache_loc</code> gather，支持非连续物理行。
+沿用已有 row／slot／position 有效掩码，新增独立 Index K 计数。
+事件覆盖主 KV 与 Index K 的所有提交，并保留临时张量到设备完成。
+漏 producer、少写或无效位置不能发布完整 prompt ready。
+<code>writes_done</code> 和 <code>detach_row</code> 同时受两类写入完成约束。
+service 因而继续按既有条件释放 HBM／请求行。</p>
+<p>fake warmup 的预期写入为空，Graph padding 没有真实绑定。
+新增 Index K 路径必须跳过这些行，不读取无效物理地址。
+P native 释放之后，admit 只从 alive DRAM 读取。
+复制身份与完成收据按 rid／attempt／op_id 保留，独立于已归还请求行。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-D">
+<header class="am-panel-head"><span class="am-panel-id">D</span><h2>admit、publish 与 free 怎样接起来</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>Main 保留现有页哈希与命名空间种子。
+目录中同一哈希分别保存 alive 位置和 retained prefix 位置。
+位置分别记录状态、owner hold 和操作锁；新冷请求不能覆盖已有 ready prefix。
+父关系和 child_count 只随真实目录增删更新，重复冷算不重复增加。
+本票继续固定 <code>hit_len=0</code>。</p>
+</div>
+<figure class="am-diagram am-seq"><svg viewBox="0 0 1048 590" width="1048" height="590" role="img" aria-label="时序图：SR_D、Main、SR_P、P分片、两侧SR" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am2-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><line class="am-lifeline" x1="54" y1="42" x2="54" y2="586"/><g data-key="SR_D"><rect class="am-actor" x="12" y="8" width="84" height="34" rx="2"/><text x="54" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">SR_D</text></g><line class="am-lifeline" x1="296.3" y1="42" x2="296.3" y2="586"/><g data-key="Main"><rect class="am-actor" x="254.3" y="8" width="84" height="34" rx="2"/><text x="296.3" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">Main</text></g><line class="am-lifeline" x1="612.3" y1="42" x2="612.3" y2="586"/><g data-key="SR_P"><rect class="am-actor" x="570.3" y="8" width="84" height="34" rx="2"/><text x="612.3" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">SR_P</text></g><line class="am-lifeline" x1="881.6" y1="42" x2="881.6" y2="586"/><g data-key="P分片"><rect class="am-actor" x="839.6" y="8" width="84" height="34" rx="2"/><text x="881.6" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">P分片</text></g><line class="am-lifeline" x1="993.6" y1="42" x2="993.6" y2="586"/><g data-key="两侧SR"><rect class="am-actor" x="951.6" y="8" width="84" height="34" rx="2"/><text x="993.6" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">两侧SR</text></g><g data-step="0"><text x="175.1" y="70" text-anchor="middle">finished，D 已 drain 并清理 native</text><path class="am-edge" d="M54,80 L294.3,80" marker-end="url(#am2-arrow)"/><text class="am-step" x="60" y="74" text-anchor="start">1</text></g><g data-step="1"><text x="454.3" y="110" text-anchor="middle">native_freed，可先于 finished 到达</text><path class="am-edge" d="M612.3,120 L298.3,120" marker-end="url(#am2-arrow)"/><text class="am-step" x="606.3" y="114" text-anchor="end">2</text></g><g data-step="2"><text x="336.3" y="148" dominant-baseline="central">两项齐全，选择缺失页并保护源及父路径</text><path class="am-edge" d="M296.3,144 H326.3 V164 H298.3" marker-end="url(#am2-arrow)"/><text class="am-step" x="302.3" y="154" text-anchor="start">3</text></g><g data-step="3"><text x="454.3" y="198" text-anchor="middle">admit，携带请求身份、op_id 与源描述</text><text x="454.3" y="214" text-anchor="middle">符</text><path class="am-edge" d="M296.3,224 L610.3,224" marker-end="url(#am2-arrow)"/><text class="am-step" x="302.3" y="218" text-anchor="start">4</text></g><g data-step="4"><text x="746.9" y="254" text-anchor="middle">统一目标页号，提交主 KV 与 Index K 复</text><text x="746.9" y="270" text-anchor="middle">制</text><path class="am-edge" d="M612.3,280 L879.6,280" marker-end="url(#am2-arrow)"/><text class="am-step" x="618.3" y="274" text-anchor="start">5</text></g><g data-step="5"><text x="746.9" y="310" text-anchor="middle">各 rank 的目标可读收据</text><path class="am-edge am-edge--dashed" d="M881.6,320 L614.3,320" marker-end="url(#am2-arrow)"/><text class="am-step" x="875.6" y="314" text-anchor="end">6</text></g><g data-step="6"><text x="454.3" y="350" text-anchor="middle">收齐 TP16 后 admit_ack</text><path class="am-edge am-edge--dashed" d="M612.3,360 L298.3,360" marker-end="url(#am2-arrow)"/><text class="am-step" x="606.3" y="354" text-anchor="end">7</text></g><g data-step="7"><text x="336.3" y="388" dominant-baseline="central">校验收据，先父后子 publish，解除操作</text><text x="336.3" y="404" dominant-baseline="central">锁</text><path class="am-edge" d="M296.3,384 H326.3 V404 H298.3" marker-end="url(#am2-arrow)"/><text class="am-step" x="302.3" y="410" text-anchor="start">8</text></g><g data-step="8"><text x="644.9" y="450" text-anchor="middle">显式 free</text><path class="am-edge" d="M296.3,460 L991.6,460" marker-end="url(#am2-arrow)"/><text class="am-step" x="302.3" y="454" text-anchor="start">9</text></g><g data-step="9"><text x="644.9" y="490" text-anchor="middle">实际归还后 free_ack</text><path class="am-edge am-edge--dashed" d="M993.6,500 L298.3,500" marker-end="url(#am2-arrow)"/><text class="am-step" x="987.6" y="494" text-anchor="end">10</text></g><g data-step="10"><text x="336.3" y="528" dominant-baseline="central">alive 额度归零，prefix 保留，允许下一</text><text x="336.3" y="544" dominant-baseline="central">请求</text><path class="am-edge" d="M296.3,524 H326.3 V544 H298.3" marker-end="url(#am2-arrow)"/><text class="am-step" x="302.3" y="550" text-anchor="start">11</text></g></svg></figure>
+<div class="am-md"><p><strong>Main 的必要变化</strong></p>
+<ul>
+<li>finished 与 P native_freed 分别留证，两种到达顺序都可推进。</li>
+<li>finished 时归还已实际释放的 D 原生额度；alive 等独立 free_ack。</li>
+<li>跳过 ready prefix，容量不足时保留连续可发布范围，从尾部缩短。</li>
+<li>对待复制源先加锁，再撤 owner hold：源引用为 1 → 2 → 1 → 0。</li>
+<li>保护所需父路径；ack 后按父页先于子页的顺序发布。</li>
+<li>校验源绑定、目标页号、区域、rank、层覆盖和设备完成身份。</li>
+<li>相同 ack 幂等，冲突 ack fail-stop；每个 op_id 只解锁一次。</li>
+<li><code>_complete</code> 只要求请求资源归还，允许 prefix 继续占用页额度。</li>
+<li>保留 ready prefix 目录，清除本请求 alive 位置及无用节点。</li>
+</ul>
+<p>没有待保存页时直接进入既有显式释放路径。
+首版让两侧 alive 都在 admit 完成后 free，保持串行结束路径简单。
+请求结果返回及下一请求还须等待两侧 free_ack 与后端输出。
+Main trace 先记录收到的事件，再记录由它触发的命令，支持因果核对。</p>
+<p><strong>SR 与 prefix store 的必要变化</strong></p>
+<p><code>prefix.py</code> 集中管理页占用、操作状态、复制事件和目标可读收据。
+拟定小接口包括空闲页快照、幂等 admit/poll 和源释放检查。
+操作记录使用有名字段：请求身份、槽、源页、目标页、event、临时张量与收据。
+请求实际 free 后清理操作记录；已保存 prefix 页继续保留。</p>
+<p>每次 scheduler tick 仍使用现有两次 TP gather。
+第一次汇总包括空闲 prefix 页，协调者据此统一目标页号。
+各分片验证并占用同一页集合，随后各自提交本地复制。</p>
+<p>设备未完成返回 pending；已完成分片缓存收据，下一 tick 不重复复制。
+第二次 gather 只有收齐全部 rank 才共同移除队首命令并确认 op_id。
+rank 0 在此之后发送 admit_ack，避免快慢 rank 的 pending 队列分叉。</p>
+<p>free 在本地再次检查源没有未完成复制，然后调用现有 <code>control.router_free</code>。
+错误或超时保留 writing 目标和受保护源，沿用现有 fail-stop。
+本票不提供失败重试、evict、load_back 或 fill；后两项属于 ticket03。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-E">
+<header class="am-panel-head"><span class="am-panel-id">E</span><h2>测试修改与验收证据</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>测试沿用规格已经确认的接口，按行为逐条 red → green。
+CPU 只替换设备、传输和 collective 等外部条件。
+Main、SR、runtime、真实资源操作与完成判断使用生产代码。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>测试位置</th>
+<th>新增或扩展的行为</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>tests/unit/test_mempool_router.py</code></td>
+<td>持久目录、源锁、父路径、重复 ack、部分容量、满容量与输出等待</td>
+</tr>
+<tr>
+<td><code>tests/unit/test_mempool_subrouter.py</code></td>
+<td>延迟最后一个 rank，所有队列一致等待；未完成时不能 free；重复命令不重复复制</td>
+</tr>
+<tr>
+<td><code>tests/unit/test_mempool_min_service.py</code></td>
+<td>fake warmup → 真实请求 → native 先释放 → admit → alive free → prefix 留存</td>
+</tr>
+<tr>
+<td><code>tests/unit/test_runtime.py</code></td>
+<td>真实物理 Index K 索引、21 层完成条件、fake/padding 掩码和行复用</td>
+</tr>
+<tr>
+<td>新增 <code>tests/unit/test_prefix.py</code></td>
+<td>通过页操作接口检查真实内容、源与目标不别名、事件完成、重复操作及失败留存</td>
+</tr>
+<tr>
+<td>现有 layout／pool／config 测试</td>
+<td>新区域地址、probe、容量与映射检查；默认关闭配置兼容</td>
+</tr>
+<tr>
+<td>现有 entry／native hooks／HTTP 测试</td>
+<td>新模式编排与清理，warmup、真实预留拒绝及启动等待继续通过</td>
+</tr>
+</tbody></table></div>
+<p>以上路径均位于 <code>ascend-mempool-test/</code>。
+验收脚本预计修改 2 个文件、新增 1 个文件：</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>修改内容</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="../../ascend-mempool-test/scripts/run_mempool_min.py">scripts/run_mempool_min.py</a></td>
+<td>增加 prefix-acceptance 模式，生成并记录有效配置，复用双机启动、就绪、参考与清理</td>
+</tr>
+<tr>
+<td><a href="../../ascend-mempool-test/scripts/verify_mempool_min.py">scripts/verify_mempool_min.py</a></td>
+<td>复用 Graph、输出、释放和资源检查；按模式区分 alive 归零与 prefix 留存</td>
+</tr>
+<tr>
+<td>新增 <code>scripts/verify_mempool_prefix.py</code></td>
+<td>A/B/C/E 输入、prefix 内容和目录页号校验、事件顺序及报告完整性</td>
+</tr>
+</tbody></table></div>
+<p>拟使用 <code>--mode prefix-acceptance</code> 自动启用 40 页和内容验收。
+<code>--mode acceptance</code> 保留 ticket01 的冷请求验收含义。
+常驻 <code>--mode serve</code> 从 JSON 读取 prefix 配置，内容验收默认关闭。
+共享 shell 入口直接透传已有参数，预计无需修改。
+README 只补充新模式、容量、命令和回传材料。</p>
+<p><strong>内容验证链</strong></p>
+<p>验收模式逐层保存实际计算值的 CPU 参考，避免在 NPU 累积整段克隆。
+主 KV 按 compact 576 维规范化；Index K 按 producer 层和逻辑 token 排列。
+在以下三个时点逐逻辑 token 比较值，并记录 rank／层／页号：</p>
+<ol>
+<li>写回完成后，比较原始计算值与 alive 内容。</li>
+<li>P native 释放且 admit 完成后，比较 prefix 内容。</li>
+<li>alive 实际 free 后，再次读取并比较保留内容。</li>
+</ol>
+<p>验收参考只保留当前请求及已发布的 40 页，过期内容及时释放。
+逐值比较结果之外可记录逐页摘要，关联后续 C/E 的内容不变性。
+报告判定放在验收脚本，运行时只在显式验收模式采集所需内容与证据。
+该模式的额外读回和同步不用于性能结论，容量检查单列验证缓冲。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>冷算请求</th>
+<th>新增 prefix 页／份</th>
+<th>最终页数／份</th>
+<th>核对重点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>A：4096 token</td>
+<td>32</td>
+<td>32</td>
+<td>首次完整保存，释放后仍可读</td>
+</tr>
+<tr>
+<td>B：A 加 1024 token</td>
+<td>8</td>
+<td>40</td>
+<td>复用目录中的 32 页，只保存缺失部分</td>
+</tr>
+<tr>
+<td>C：与 A 相同</td>
+<td>0</td>
+<td>40</td>
+<td>不重复分配或写入</td>
+</tr>
+<tr>
+<td>E：不同的 4096 token</td>
+<td>0</td>
+<td>40</td>
+<td>满容量跳过，alive 槽复用和输出正确</td>
+</tr>
+</tbody></table></div>
+<p>四个请求都保持 hit_len=0，并比较各自完整冷算参考输出。
+CPU 另测剩余容量不足以容纳全部缺失页时的尾部缩短。
+证据负向测试包括缺 rank、错误页号、内容差异、过早 ack/free 和缺少完成记录。
+源槽必须与实际 alloc 对应，目标页必须与 publish 目录对应。
+失联或失败仍要求非零退出和本次进程清理，不制造 free_ack。
+硬件入口按每机一条命令交付，日志保存在 <code>/home/cryang/log/</code>。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-F">
+<header class="am-panel-head"><span class="am-panel-id">F</span><h2>实施切片与交付</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>以下是同一 ticket 内的连续实现切片，不新增依赖票。
+每片完成后立即更新<a href="target-alignment.md">进度页 D</a>，同步 Markdown/HTML。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>顺序</th>
+<th>行为切片</th>
+<th>完成判据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>Index K 写回并保持 warmup 隔离</td>
+<td>producer 完整写回后才可释放 native；fake 不建立绑定或改变计数</td>
+</tr>
+<tr>
+<td>2</td>
+<td>一个真实冷请求保存后释放</td>
+<td>全 TP 复制完成后 publish；native/alive 释放后 prefix 仍正确</td>
+</tr>
+<tr>
+<td>3</td>
+<td>重复保存、容量与故障</td>
+<td>32→40→40→40；部分容量缩短、迟到 rank、重复 ack 和 fail-stop 正确</td>
+</tr>
+<tr>
+<td>4</td>
+<td>同一入口的保存验收</td>
+<td>自动参考／目标、内容证据、输出、报告与自身进程清理齐全</td>
+</tr>
+<tr>
+<td>5</td>
+<td>全回归、两轴 review 与独立提交</td>
+<td>适用 CPU／静态检查通过，Standards 与 Spec 问题处理完毕</td>
+</tr>
+</tbody></table></div>
+<p>每片围绕可观察行为补一个失败测试，再完成对应最小改动。
+最终运行完整 CPU suite、strict mypy、仓库 lint/format、语法及 CLI 检查。
+本轮只阅读代码、核算容量和写计划，没有运行新增功能测试。</p>
+<p>交付时给出实际功能文件 review 顺序、改动理由及独立 ticket02 commit。
+如实际范围偏离 A 表，说明新增文件或公共代码改动的必要性。
+当前基线的用户文档改动保留，提交仅包含本票所需内容。
+用户完成本票 NPU 验收前，ticket02 保持 open，ticket03 继续等待。</p>
+</div></div>
+</section>
+</div>
+</div>
+</main>
+<footer class="am-colophon">Generated by Answer me with HTML 0.4.3 · 2026-10-26 14:20</footer>
+<textarea id="am-source" hidden readonly aria-hidden="true">---
+title: Ticket02：prompt prefix 保存代码计划
+subtitle: 在已验收 cold lifecycle 上增加 Index K 写回、独立 prefix 池与异步 admit
+template: doc
+theme: blueprint
+lang: zh
+date: 2026-10-26
+status: 规划已执行；实现与 CPU 结果见 ticket02-delivery，NPU 待验收
+baseline: 7275f29a05 + 当前文档工作区
+---
+
+**预计修改 8 个现有功能文件，新增 1 个 prefix.py。**
+这些功能文件全部位于 Ascend/NPU 目录。
+计划复用既有 attention hook、service 释放门控和原生 warmup。
+
+依据：[ticket02](issues/02-prompt-prefix-save.md)、[规格](spec.md)、
+[逐票规划](ticket-plan.md)和[硬件验收流程](../ascend-mempool/verification.md)。
+ticket01 已按用户确认关闭，验收版本为 `7275f29a05`。
+旧 ticket02 提交保持撤回；本文依据当前代码重新规划。
+下文记录实施前计划，字段、接口和命令的最终形式见交付说明。
+
+**2026-10-26 执行记录：** 下文保留实施前规划。
+代码与 CPU 验证现已完成；实际文件、接口、命令和剩余项以
+[ticket02 交付说明](ticket02-delivery.md)为准。
+
+## A 功能文件与建议 review 顺序
+
+路径前缀分别为 `python/sglang/srt/disaggregation/ascend/` 和
+`python/sglang/srt/hardware_backend/npu/mempool/`。
+下表只列功能文件；顺序先定义合同，再看存储、完成条件和请求编排。
+
+| 顺序 | 文件 | 具体修改与必要性 |
+|---|---|---|
+| 1 | [ascend/mempool_router_protocol.py](../../python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py) | 增加 prefix 容量与显式内容验收配置；约定 admit 描述符和完成收据 |
+| 2 | [npu/mempool/layout.py](../../python/sglang/srt/hardware_backend/npu/mempool/layout.py) | 定义 P alive Index K、prefix 主 KV、prefix Index K 三个区域及偏移；更新 probe 与贡献大小 |
+| 3 | [npu/mempool/config.py](../../python/sglang/srt/hardware_backend/npu/mempool/config.py) | 扩展 make_mla_layout，根据实际模型几何和启用容量构造新增区域 |
+| 4 | [npu/mempool/manager.py](../../python/sglang/srt/hardware_backend/npu/mempool/manager.py) | 扩展带区域偏移的 typed view；映射检查覆盖新增区域每层首尾 |
+| 5 | `npu/mempool/prefix.py`（新增） | 集中处理本地 prefix 页占用、BM 到 BM 复制、设备事件及请求结束后的收据清理 |
+| 6 | [npu/mempool/runtime.py](../../python/sglang/srt/hardware_backend/npu/mempool/runtime.py) | 在既有 write_layer 中写回真实请求 Index K；完成条件覆盖主 KV 和 Index K；启动时创建 prefix store |
+| 7 | [ascend/mempool_subrouter.py](../../python/sglang/srt/disaggregation/ascend/mempool_subrouter.py) | 执行异步 admit，统一目标页分配，汇总 TP16 完成；阻止过早 free |
+| 8 | [ascend/mempool_router.py](../../python/sglang/srt/disaggregation/ascend/mempool_router.py) | 保留 prefix 目录，选择缺失页，建立源锁，处理 admit ack、publish 和最终归还 |
+| 9 | [ascend/mempool_router_transport.py](../../python/sglang/srt/disaggregation/ascend/mempool_router_transport.py) | 将 store 接到 SR；注册并校验真实区域、容量、副本与验收配置 |
+
+拟增加 `prefix_pages=0` 默认值，保留已验收冷请求配置。
+ticket02 启用值为 40；当前固定规格只放行 0 或 40。
+拟增加 `verify_prefix=false`，内容验收模式显式开启。
+容量和验收配置通过现有 Router JSON 传入，保持原生 warmup 开启。
+
+目前没有需要修改公共功能代码的证据。
+已存在的接线可以覆盖新增行为：
+
+| 现有接线 | 如何复用 |
+|---|---|
+| [Ascend forward_extend](../../python/sglang/srt/hardware_backend/npu/attention/ascend_backend.py:1353) | top-k 已经产生，此处的 runtime.write_layer 可以读取已写入原生池的 Index K |
+| [NPU Index K 读写接口](../../python/sglang/srt/hardware_backend/npu/memory_pool_npu.py:801) | 使用 producer 层号及 out_cache_loc 读取真实物理 token 行 |
+| [service 完成观察](../../python/sglang/srt/disaggregation/ascend/mempool_service.py:480) | 继续通过 runtime.writes_done／prompt_ready 门控 native release |
+| [service 空闲推进](../../python/sglang/srt/disaggregation/ascend/mempool_service.py:682) | control 持有请求直到显式 free，期间 scheduler 继续推进 SR |
+
+因此预计无需改模型、公共 scheduler、native allocator 或 HTTP 启动代码。
+实施若发现新公共 hook 确有必要，先记录现有 hook 不足的代码证据，再收束改动。
+
+## B 存储区域与容量
+
+保留 P／D 私有副本、layer-first、统一 B=128 和 alive 整槽分配。
+prefix 真正按页分配；主 KV 与 Index K 共用一组 prefix 页号。
+每份逻辑容量为 40 页，各 rank 的 16 份副本不叠加为 640 页内容。
+
+| P 每 rank 区域 | 几何 | Payload |
+|---|---|---|
+| 现有 alive 主 KV | 78 层 × 16 槽 × 8192 token × 1152 B | 11232 MiB |
+| 新增 alive Index K | 21 层 × 16 槽 × 8192 token × 256 B | 672 MiB |
+| 新增 prefix 主 KV | 78 层 × 40 页 × 128 token × 1152 B | 438.75 MiB |
+| 新增 prefix Index K | 21 层 × 40 页 × 128 token × 256 B | 26.25 MiB |
+
+P payload 合计 12369 MiB，probe 位于全部区域之后。
+按现有 1 GiB 分配对齐，P 从 11 GiB/rank 增为 13 GiB/rank。
+TP16 的 P BM 贡献为 **208 GiB**，D 仍为 **16 GiB**。
+这些是 BM 分配量，不包含模型、进程和验收参考缓冲。
+
+P/D 启动使用相同 PoolLayout 签名，包含 P 的新增区域。
+D 只贡献自己的生成主 KV 区域；不新增 D Index K DRAM 写回。
+注册分别报告全局布局和本侧实际区域，校验 TP16、容量与四类副本。
+
+runner 从同一布局计算容量，替换现有硬编码的 P 176 GiB 检查。
+实际 NUMA 页落点仍须单独取得硬件证据。
+
+复制复用现有 UniDexCopy 的双 raw-pointer 模式。
+本地[算子实现](../../../sgl-kernel-npu/csrc/sparsity_driven_kv_offload/unidex_copy/op_host/unidex_copy.cpp:50)
+支持独立的 src_ptr／dst_ptr，并在当前 NPU stream 提交。
+
+worker 使用已验证的设备地址；Main 只处理不透明描述符。
+不通过 CPU 指针解引用 BM 设备映射。
+实际双指针复制内容与完成可见性由本票 NPU 验收验证。
+
+## C 先让 Index K 成为可靠的保存源
+
+runtime 初始化时取得原生 NPU KV pool，并校验实际 producer 层列表。
+当前模型为 `(0, 1, 2, 6, 10, ..., 74)`，共 21 层，128 维 BF16、无 scale。
+`write_layer` 只对 producer 层新增 Index K 写回。
+
+```flow LR
+原生IndexK写入 -&gt; attention已有hook: producer 已完成提交
+attention已有hook -&gt; runtime: 真实绑定与 out_cache_loc
+runtime -&gt; P_alive: 主KV及IndexK写回
+P_alive -&gt; forward事件: 两类写入均已提交
+forward事件 -&gt; 完成收据: 事件完成且逐层计数正确
+完成收据 -&gt; native释放门控: 仍需原生传输完成
+```
+
+从原生池按真实 `out_cache_loc` gather，支持非连续物理行。
+沿用已有 row／slot／position 有效掩码，新增独立 Index K 计数。
+事件覆盖主 KV 与 Index K 的所有提交，并保留临时张量到设备完成。
+漏 producer、少写或无效位置不能发布完整 prompt ready。
+`writes_done` 和 `detach_row` 同时受两类写入完成约束。
+service 因而继续按既有条件释放 HBM／请求行。
+
+fake warmup 的预期写入为空，Graph padding 没有真实绑定。
+新增 Index K 路径必须跳过这些行，不读取无效物理地址。
+P native 释放之后，admit 只从 alive DRAM 读取。
+复制身份与完成收据按 rid／attempt／op_id 保留，独立于已归还请求行。
+
+## D admit、publish 与 free 怎样接起来
+
+Main 保留现有页哈希与命名空间种子。
+目录中同一哈希分别保存 alive 位置和 retained prefix 位置。
+位置分别记录状态、owner hold 和操作锁；新冷请求不能覆盖已有 ready prefix。
+父关系和 child_count 只随真实目录增删更新，重复冷算不重复增加。
+本票继续固定 `hit_len=0`。
+
+```sequence num
+SR_D -&gt; Main: finished，D 已 drain 并清理 native
+SR_P -&gt; Main: native_freed，可先于 finished 到达
+Main -&gt; Main: 两项齐全，选择缺失页并保护源及父路径
+Main -&gt; SR_P: admit，携带请求身份、op_id 与源描述符
+SR_P -&gt; P分片: 统一目标页号，提交主 KV 与 Index K 复制
+P分片 --&gt; SR_P: 各 rank 的目标可读收据
+SR_P --&gt; Main: 收齐 TP16 后 admit_ack
+Main -&gt; Main: 校验收据，先父后子 publish，解除操作锁
+Main -&gt; 两侧SR: 显式 free
+两侧SR --&gt; Main: 实际归还后 free_ack
+Main -&gt; Main: alive 额度归零，prefix 保留，允许下一请求
+```
+
+**Main 的必要变化**
+
+- finished 与 P native_freed 分别留证，两种到达顺序都可推进。
+- finished 时归还已实际释放的 D 原生额度；alive 等独立 free_ack。
+- 跳过 ready prefix，容量不足时保留连续可发布范围，从尾部缩短。
+- 对待复制源先加锁，再撤 owner hold：源引用为 1 → 2 → 1 → 0。
+- 保护所需父路径；ack 后按父页先于子页的顺序发布。
+- 校验源绑定、目标页号、区域、rank、层覆盖和设备完成身份。
+- 相同 ack 幂等，冲突 ack fail-stop；每个 op_id 只解锁一次。
+- `_complete` 只要求请求资源归还，允许 prefix 继续占用页额度。
+- 保留 ready prefix 目录，清除本请求 alive 位置及无用节点。
+
+没有待保存页时直接进入既有显式释放路径。
+首版让两侧 alive 都在 admit 完成后 free，保持串行结束路径简单。
+请求结果返回及下一请求还须等待两侧 free_ack 与后端输出。
+Main trace 先记录收到的事件，再记录由它触发的命令，支持因果核对。
+
+**SR 与 prefix store 的必要变化**
+
+`prefix.py` 集中管理页占用、操作状态、复制事件和目标可读收据。
+拟定小接口包括空闲页快照、幂等 admit/poll 和源释放检查。
+操作记录使用有名字段：请求身份、槽、源页、目标页、event、临时张量与收据。
+请求实际 free 后清理操作记录；已保存 prefix 页继续保留。
+
+每次 scheduler tick 仍使用现有两次 TP gather。
+第一次汇总包括空闲 prefix 页，协调者据此统一目标页号。
+各分片验证并占用同一页集合，随后各自提交本地复制。
+
+设备未完成返回 pending；已完成分片缓存收据，下一 tick 不重复复制。
+第二次 gather 只有收齐全部 rank 才共同移除队首命令并确认 op_id。
+rank 0 在此之后发送 admit_ack，避免快慢 rank 的 pending 队列分叉。
+
+free 在本地再次检查源没有未完成复制，然后调用现有 `control.router_free`。
+错误或超时保留 writing 目标和受保护源，沿用现有 fail-stop。
+本票不提供失败重试、evict、load_back 或 fill；后两项属于 ticket03。
+
+## E 测试修改与验收证据
+
+测试沿用规格已经确认的接口，按行为逐条 red → green。
+CPU 只替换设备、传输和 collective 等外部条件。
+Main、SR、runtime、真实资源操作与完成判断使用生产代码。
+
+| 测试位置 | 新增或扩展的行为 |
+|---|---|
+| `tests/unit/test_mempool_router.py` | 持久目录、源锁、父路径、重复 ack、部分容量、满容量与输出等待 |
+| `tests/unit/test_mempool_subrouter.py` | 延迟最后一个 rank，所有队列一致等待；未完成时不能 free；重复命令不重复复制 |
+| `tests/unit/test_mempool_min_service.py` | fake warmup → 真实请求 → native 先释放 → admit → alive free → prefix 留存 |
+| `tests/unit/test_runtime.py` | 真实物理 Index K 索引、21 层完成条件、fake/padding 掩码和行复用 |
+| 新增 `tests/unit/test_prefix.py` | 通过页操作接口检查真实内容、源与目标不别名、事件完成、重复操作及失败留存 |
+| 现有 layout／pool／config 测试 | 新区域地址、probe、容量与映射检查；默认关闭配置兼容 |
+| 现有 entry／native hooks／HTTP 测试 | 新模式编排与清理，warmup、真实预留拒绝及启动等待继续通过 |
+
+以上路径均位于 `ascend-mempool-test/`。
+验收脚本预计修改 2 个文件、新增 1 个文件：
+
+| 文件 | 修改内容 |
+|---|---|
+| [scripts/run_mempool_min.py](../../ascend-mempool-test/scripts/run_mempool_min.py) | 增加 prefix-acceptance 模式，生成并记录有效配置，复用双机启动、就绪、参考与清理 |
+| [scripts/verify_mempool_min.py](../../ascend-mempool-test/scripts/verify_mempool_min.py) | 复用 Graph、输出、释放和资源检查；按模式区分 alive 归零与 prefix 留存 |
+| 新增 `scripts/verify_mempool_prefix.py` | A/B/C/E 输入、prefix 内容和目录页号校验、事件顺序及报告完整性 |
+
+拟使用 `--mode prefix-acceptance` 自动启用 40 页和内容验收。
+`--mode acceptance` 保留 ticket01 的冷请求验收含义。
+常驻 `--mode serve` 从 JSON 读取 prefix 配置，内容验收默认关闭。
+共享 shell 入口直接透传已有参数，预计无需修改。
+README 只补充新模式、容量、命令和回传材料。
+
+**内容验证链**
+
+验收模式逐层保存实际计算值的 CPU 参考，避免在 NPU 累积整段克隆。
+主 KV 按 compact 576 维规范化；Index K 按 producer 层和逻辑 token 排列。
+在以下三个时点逐逻辑 token 比较值，并记录 rank／层／页号：
+
+1. 写回完成后，比较原始计算值与 alive 内容。
+2. P native 释放且 admit 完成后，比较 prefix 内容。
+3. alive 实际 free 后，再次读取并比较保留内容。
+
+验收参考只保留当前请求及已发布的 40 页，过期内容及时释放。
+逐值比较结果之外可记录逐页摘要，关联后续 C/E 的内容不变性。
+报告判定放在验收脚本，运行时只在显式验收模式采集所需内容与证据。
+该模式的额外读回和同步不用于性能结论，容量检查单列验证缓冲。
+
+| 冷算请求 | 新增 prefix 页／份 | 最终页数／份 | 核对重点 |
+|---|---|---|---|
+| A：4096 token | 32 | 32 | 首次完整保存，释放后仍可读 |
+| B：A 加 1024 token | 8 | 40 | 复用目录中的 32 页，只保存缺失部分 |
+| C：与 A 相同 | 0 | 40 | 不重复分配或写入 |
+| E：不同的 4096 token | 0 | 40 | 满容量跳过，alive 槽复用和输出正确 |
+
+四个请求都保持 hit_len=0，并比较各自完整冷算参考输出。
+CPU 另测剩余容量不足以容纳全部缺失页时的尾部缩短。
+证据负向测试包括缺 rank、错误页号、内容差异、过早 ack/free 和缺少完成记录。
+源槽必须与实际 alloc 对应，目标页必须与 publish 目录对应。
+失联或失败仍要求非零退出和本次进程清理，不制造 free_ack。
+硬件入口按每机一条命令交付，日志保存在 `/home/cryang/log/`。
+
+## F 实施切片与交付
+
+以下是同一 ticket 内的连续实现切片，不新增依赖票。
+每片完成后立即更新[进度页 D](target-alignment.md)，同步 Markdown/HTML。
+
+| 顺序 | 行为切片 | 完成判据 |
+|---|---|---|
+| 1 | Index K 写回并保持 warmup 隔离 | producer 完整写回后才可释放 native；fake 不建立绑定或改变计数 |
+| 2 | 一个真实冷请求保存后释放 | 全 TP 复制完成后 publish；native/alive 释放后 prefix 仍正确 |
+| 3 | 重复保存、容量与故障 | 32→40→40→40；部分容量缩短、迟到 rank、重复 ack 和 fail-stop 正确 |
+| 4 | 同一入口的保存验收 | 自动参考／目标、内容证据、输出、报告与自身进程清理齐全 |
+| 5 | 全回归、两轴 review 与独立提交 | 适用 CPU／静态检查通过，Standards 与 Spec 问题处理完毕 |
+
+每片围绕可观察行为补一个失败测试，再完成对应最小改动。
+最终运行完整 CPU suite、strict mypy、仓库 lint/format、语法及 CLI 检查。
+本轮只阅读代码、核算容量和写计划，没有运行新增功能测试。
+
+交付时给出实际功能文件 review 顺序、改动理由及独立 ticket02 commit。
+如实际范围偏离 A 表，说明新增文件或公共代码改动的必要性。
+当前基线的用户文档改动保留，提交仅包含本票所需内容。
+用户完成本票 NPU 验收前，ticket02 保持 open，ticket03 继续等待。
+</textarea>
+<script>
+(() => {
+  const root = document.documentElement;
+  const cycle = (list, cur) => list[(list.indexOf(cur) + 1) % list.length];
+  const label = (btn, value) => {
+    const map = JSON.parse(btn.dataset.labels || '{}');
+    btn.textContent = map[value] || value;
+  };
+  const bind = (name, attr, values) => {
+    const btn = document.querySelector(`[data-am="${name}"]`);
+    if (!btn) return;
+    label(btn, root.getAttribute(attr));
+    btn.addEventListener('click', () => {
+      const next = cycle(values, root.getAttribute(attr));
+      root.setAttribute(attr, next);
+      label(btn, next);
+    });
+  };
+  bind('theme', 'data-theme', ['blueprint', 'shadcn']);
+  bind('mode', 'data-mode', ['auto', 'light', 'dark']);
+
+  const copyBtn = document.querySelector('[data-am="copy"]');
+  copyBtn?.addEventListener('click', async () => {
+    const text = document.getElementById('am-source').value;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = Object.assign(document.createElement('textarea'), { value: text });
+      document.body.append(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    const original = copyBtn.textContent;
+    copyBtn.textContent = copyBtn.dataset.done;
+    setTimeout(() => { copyBtn.textContent = original; }, 1400);
+  });
+})();
+</script>
+</body>
+</html>

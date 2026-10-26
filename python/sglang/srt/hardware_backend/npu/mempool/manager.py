@@ -420,11 +420,11 @@ class MempoolKVManager:
             if not device_va:
                 self._mapping_pending = f"missing_rank={rank} gva={gva:#x} offset=0"
                 return None
-            layout = self.layout.layout_for_rank(rank)
             offsets = {self.layout.contribution_bytes(rank) - 1}
-            for layer in range(layout.layers):
-                offsets.add(layer * layout.layer_bytes)
-                offsets.add((layer + 1) * layout.layer_bytes - 1)
+            for base, layout in self.layout.regions(rank).values():
+                for layer in range(layout.layers):
+                    offsets.add(base + layer * layout.layer_bytes)
+                    offsets.add(base + (layer + 1) * layout.layer_bytes - 1)
             for offset in offsets:
                 mapped = self._handle.gva_to_va(
                     gva + offset, self._bm.BmMemType.LOCAL_DEVICE
@@ -439,11 +439,13 @@ class MempoolKVManager:
             bases[rank] = gva, device_va
         return bases
 
-    def view(self, rank: int, layer: int) -> MempoolKVView:
+    def view(
+        self, rank: int, layer: int, *, region: str = "alive_main"
+    ) -> MempoolKVView:
         """Return a typed layer view that keeps its owning pool alive."""
-        layout = self.layout.layout_for_rank(rank)
+        offset, layout = self.layout.regions(rank)[region]
         check_index("layer", layer, layout.layers)
-        return MempoolKVView(self, rank, layer, layout)
+        return MempoolKVView(self, rank, layer, layout, offset)
 
     def bases(self, rank: int) -> tuple[int, int]:
         """Return this process's verified GVA and NPU base for a pool rank."""
@@ -524,6 +526,7 @@ class MempoolKVView(msgspec.Struct, frozen=True):
     rank: int
     layer: int
     layout: KVLayout
+    region_offset: int = 0
 
     @property
     def shape(self) -> tuple[int, int, int, int]:
@@ -538,24 +541,32 @@ class MempoolKVView(msgspec.Struct, frozen=True):
     @property
     def gva_base(self) -> int:
         """Return the layer's GVA for SDK operations."""
-        return self.owner.bases(self.rank)[0] + self.layer * self.layout.layer_bytes
+        return (
+            self.owner.bases(self.rank)[0]
+            + self.region_offset
+            + self.layer * self.layout.layer_bytes
+        )
 
     @property
     def device_base(self) -> int:
         """Return the stable layer address used by this process's NPU kernels."""
-        return self.owner.bases(self.rank)[1] + self.layer * self.layout.layer_bytes
+        return (
+            self.owner.bases(self.rank)[1]
+            + self.region_offset
+            + self.layer * self.layout.layer_bytes
+        )
 
     def element_gva(self, slot: int, token: int, head: int = 0, column: int = 0) -> int:
         """Resolve a checked logical element to its SDK GVA."""
         offset = self.layout.byte_offset(self.layer, slot, token, head, column)
-        return self.owner.bases(self.rank)[0] + offset
+        return self.owner.bases(self.rank)[0] + self.region_offset + offset
 
     def element_device_ptr(
         self, slot: int, token: int, head: int = 0, column: int = 0
     ) -> int:
         """Resolve a checked logical element to its local NPU address."""
         offset = self.layout.byte_offset(self.layer, slot, token, head, column)
-        return self.owner.bases(self.rank)[1] + offset
+        return self.owner.bases(self.rank)[1] + self.region_offset + offset
 
     def write_rows(self, slot: int, token: int, values: Any) -> None:
         """Synchronously stage contiguous local KV rows outside Graph capture."""

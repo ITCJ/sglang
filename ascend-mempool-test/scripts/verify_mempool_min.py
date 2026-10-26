@@ -93,6 +93,7 @@ def check_target(
     page_size: int,
     prompt_capacity: int,
     decode_capacity: int,
+    prefix: bool = False,
 ) -> dict[str, Any]:
     """Require per-rank Graph, transfer, completion and explicit release evidence."""
     ranks = set(range(16))
@@ -184,11 +185,16 @@ def check_target(
     previous: dict[tuple[str, int], int] = {}
     for index, (snapshot, case) in enumerate(zip(snapshots, cases)):
         check_pages(snapshot, case, page_size, prompt_capacity, decode_capacity)
-        if snapshot["fault"] or snapshot["active"] is not None or snapshot["directory"]:
+        if (
+            snapshot["fault"]
+            or snapshot["active"] is not None
+            or (snapshot["directory"] and not prefix)
+        ):
             raise ValueError("request returned before directory/resources were cleared")
         if any(
             v["free"] != v["total"] or v["outstanding"] != 0
-            for v in snapshot["ledger"].values()
+            for name, v in snapshot["ledger"].items()
+            if not (prefix and name == "p_prefix")
         ):
             raise ValueError("resource ledger did not return to its initial values")
         done = snapshot["completed"][-1]

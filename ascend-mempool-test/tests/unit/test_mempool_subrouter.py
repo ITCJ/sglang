@@ -16,6 +16,105 @@ from ascend_mempool_pd.mempool_tick import RequestObservation
 
 
 class TestSubrouter(unittest.TestCase):
+    def test_admit_waits_for_last_rank_before_any_queue_advances_or_source_frees(self):
+        import test_prefix as prefix_fixture
+
+        stores, events = [], []
+        for tick in self.ticks["prefill"]:
+            helper = prefix_fixture.TestPrefixStore()
+            self.addCleanup(helper.doCleanups)
+            store, _, _, device_events = helper.make_store(
+                pages=40, page_size=128, prompt_capacity=8192
+            )
+            tick.shard.prefix = store
+            stores.append(store)
+            events.append(device_events)
+        d = self.command("decode", "alloc", request=self.request)
+        p = self.command("prefill", "alloc", request=self.request, bindings=d["ranks"])
+        d = self.command(
+            "decode", "dispatch", request=self.request, bindings=p["ranks"]
+        )
+        self.command("prefill", "dispatch", request=self.request, bindings=d["ranks"])
+        facts = [
+            [
+                RequestObservation(
+                    1,
+                    128,
+                    4,
+                    100,
+                    attempt="attempt",
+                    prompt_ready=True,
+                    writes_done=True,
+                )
+            ]
+            for _ in range(16)
+        ]
+        self.advance("prefill", facts)
+        self.advance("prefill", facts)
+        facts = [
+            [
+                RequestObservation(
+                    1,
+                    128,
+                    4,
+                    100,
+                    attempt="attempt",
+                    prompt_ready=True,
+                    writes_done=True,
+                    native_freed=True,
+                )
+            ]
+            for _ in range(16)
+        ]
+        self.advance("prefill", facts)
+        self.op += 1
+        command = dict(
+            run_id="cpu",
+            role="prefill",
+            kind="admit",
+            rid="r1",
+            room=1,
+            attempt="attempt",
+            op_id=self.op,
+            source_pages=[0],
+            hashes=["h0"],
+            sources=[
+                dict(rank=r["rank"], slot=r["slot"], pages=r["pages"][:1])
+                for r in p["ranks"]
+            ],
+        )
+        self.commands["prefill"].append(command)
+        self.advance("prefill", facts)
+        for rank_events in events[:15]:
+            rank_events[-1].done = True
+        self.advance("prefill", facts)
+        self.assertFalse(
+            any(m["kind"] == "admit_ack" for m in self.messages["prefill"])
+        )
+        self.assertTrue(all(len(t.pending) == 1 for t in self.ticks["prefill"]))
+        self.assertTrue(
+            all(len(c.available_slots()) == 15 for c in self.controls["prefill"])
+        )
+        self.assertTrue(
+            all(store.free_pages == tuple(range(1, 40)) for store in stores)
+        )
+        events[15][-1].done = True
+        self.advance("prefill", facts)
+        ack = next(m for m in self.messages["prefill"] if m["kind"] == "admit_ack")
+        self.assertEqual(len(ack["ranks"]), 16)
+        self.assertTrue(
+            all(r["readable"] and r["target_pages"] == [0] for r in ack["ranks"])
+        )
+        self.assertTrue(all(not t.pending for t in self.ticks["prefill"]))
+        self.commands["prefill"].append(dict(command, kind="free", op_id=self.op + 1))
+        self.advance("prefill", facts)
+        self.assertTrue(
+            all(len(c.available_slots()) == 16 for c in self.controls["prefill"])
+        )
+        self.assertTrue(
+            all(store.free_pages == tuple(range(1, 40)) for store in stores)
+        )
+
     def setUp(self):
         self.controls, self.ticks, self.effects = {}, {}, {}
         self.commands, self.messages = (

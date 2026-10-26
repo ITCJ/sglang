@@ -23,6 +23,31 @@ When implementing, handing off, or closing an Ascend mempool ticket, read
 `.scratch/ascend-mempool/verification.md` for stage review and user-run NPU
 verification. Hardware acceptance gates ticket closure and dependent work.
 
+### Ascend implementation and review
+
+Keep Ascend feature changes in `ascend/` or `npu/` directories where possible.
+For every functional change outside those directories, document why it is needed
+and why an Ascend/NPU hook cannot provide the behavior. On delivery, list the
+functional source files in the order the user should review them, with each
+file's purpose; exclude tests and README/explanatory files from that list.
+This reading order supplements the skills' Standards and Spec code reviews.
+
+If the user explicitly authorizes implementation before a dependency's NPU
+acceptance, record the exception and preserve separate commits for hardware
+verification. Keep each ticket open until its own NPU acceptance is confirmed;
+the exception applies only to the work the user authorized.
+
+### mempool-min progress (temporary)
+
+For Ascend NPU mempool-min work, read section D of
+`.scratch/mempool-min/target-alignment.html`; the user uses it to review progress
+and which design requirements are implemented. After every implementation step,
+immediately update section D in `.scratch/mempool-min/target-alignment.md` and
+regenerate the HTML. Record completed work, remaining work, and validation status,
+distinguishing implementation from user-accepted NPU verification. This rule
+applies only to mempool-min and may be removed after the user confirms acceptance
+of the complete feature.
+
 ### Autonomous tests
 
 Deliver future tests through a self-running entry point that automates setup,

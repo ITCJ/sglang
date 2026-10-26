@@ -103,9 +103,15 @@ class MainRouter:
             decode_capacity=self.config.decode_capacity,
             page_size=self.config.page_size,
             hbm_page_size=self.config.page_size,
-            replicas=dict(alive_main=16, alive_index=0, prefix_main=0, prefix_index=0),
+            replicas=self.config.replicas(),
             graph=role == "decode",
         )
+        if self.config.prefix_pages:
+            expected.update(
+                prefix_pages=self.config.prefix_pages if role == "prefill" else 0,
+                local_dram_bytes=(13 if role == "prefill" else 1) * 2**30,
+                verify_prefix=self.config.verify_prefix,
+            )
         for rank in ranks:
             if any(rank.get(k) != v for k, v in expected.items()):
                 raise ValueError("SR registered incompatible ticket01 capabilities")
@@ -156,6 +162,8 @@ class MainRouter:
                 d_hbm=Quota(min(r["hbm_pages"] for r in d)),
                 d_rows=Quota(min(r["request_rows"] for r in d)),
             )
+            if self.config.prefix_pages:
+                self.ledger["p_prefix"] = Quota(self.config.prefix_pages)
 
     def submit(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not self.ready:
@@ -248,17 +256,26 @@ class MainRouter:
             result=None,
             started=self.clock(),
             trace=[],
+            admit=None,
+            admit_complete=not bool(self.config.prefix_pages),
+            save_planned=False,
         )
         parent = None
         for hash_value in hashes:
-            if parent is not None:
-                self.directory[parent]["child_count"] += 1
-            self.directory[hash_value] = dict(
-                parent_hash=parent,
-                child_count=0,
+            if hash_value not in self.directory:
+                if parent is not None:
+                    self.directory[parent]["child_count"] += 1
+                self.directory[hash_value] = dict(
+                    parent_hash=parent, child_count=0, prefix=None
+                )
+            node = self.directory[hash_value]
+            if node["parent_hash"] != parent:
+                raise RuntimeError("page hash has a conflicting parent")
+            node.update(
                 state="writing",
                 owner=request["rid"],
                 lock_ref=1,
+                source_ops=[],
                 locations=[],
             )
             parent = hash_value
@@ -300,6 +317,7 @@ class MainRouter:
                     "dispatch",
                     "free_acks",
                     "trace",
+                    "admit",
                 )
             }
             active["rid"] = self.active["request"]["rid"]
@@ -375,6 +393,7 @@ class MainRouter:
                 if previous != message:
                     raise ValueError("conflicting completion event")
                 return
+        active["trace"].append(dict(kind=kind, role=role, op_id=message["op_id"]))
         if kind == "alloc_ack":
             capacity = (
                 self.config.prompt_capacity
@@ -425,8 +444,8 @@ class MainRouter:
                 or len(active["dispatch"]) != 2
             ):
                 raise ValueError("prompt became ready before both dispatches")
-            for entry in self.directory.values():
-                entry["state"] = "ready"
+            for hash_value in active["hashes"]:
+                self.directory[hash_value]["state"] = "ready"
             self._command("decode", "ready", bindings=ranks)
         elif kind == "ready_ack":
             active["phase"] = "decoding"
@@ -442,13 +461,16 @@ class MainRouter:
                 raise ValueError(
                     "finished arrived before D readiness/drain/native cleanup"
                 )
-            active["phase"] = "freeing"
+            active["phase"] = "saving" if self.config.prefix_pages else "freeing"
             for key in ("d_hbm", "d_rows"):
                 self.ledger[key].change(-active["needed"][key])
-            for entry in self.directory.values():
-                entry["state"], entry["lock_ref"] = "draining", 0
-            for side in ROLES:
-                self._command(side, "free")
+            if not self.config.prefix_pages:
+                for entry in self.directory.values():
+                    entry["state"], entry["lock_ref"] = "draining", 0
+                for side in ROLES:
+                    self._command(side, "free")
+        elif kind == "admit_ack":
+            self._publish_prefix(command, ranks)
         elif kind == "free_ack":
             if active["phase"] != "freeing" or not all(
                 r["freed"] and r["native_freed"] for r in ranks
@@ -457,13 +479,17 @@ class MainRouter:
             key = "p_alive" if role == "prefill" else "d_alive"
             self.ledger[key].change(-active["needed"][key])
             active["free_acks"].append(role)
+            if role == "prefill":
+                for hash_value in active["hashes"]:
+                    self.directory[hash_value].update(
+                        state="freed", owner=None, locations=[]
+                    )
         else:
             raise ValueError(f"unsupported SR event {kind}")
         if kind.endswith("_ack"):
             operation["ack"] = copy.deepcopy(message)
         else:
             active["events"][f"{role}:{kind}"] = copy.deepcopy(message)
-        active["trace"].append(dict(kind=kind, role=role, op_id=message["op_id"]))
         logger.info(
             "mempool_router event=%s role=%s rid=%s op_id=%s",
             kind,
@@ -471,7 +497,155 @@ class MainRouter:
             message["rid"],
             message["op_id"],
         )
+        if active["phase"] == "saving" and not active["save_planned"]:
+            self._plan_save()
         self._complete()
+
+    def _plan_save(self) -> None:
+        active = self.active
+        assert active is not None
+        if "prefill:native_freed" not in active["events"]:
+            return
+        active["save_planned"] = True
+        missing = [
+            i
+            for i, value in enumerate(active["hashes"])
+            if self.directory[value]["prefix"] is None
+        ]
+        pages = missing[: self.ledger["p_prefix"].snapshot()["free"]]
+        if pages:
+            op_id = self.next_op + 1
+            hashes = [active["hashes"][page] for page in pages]
+            parents = [
+                value
+                for value in active["hashes"][: pages[-1]]
+                if self.directory[value]["prefix"] is not None
+            ]
+            for value in parents:
+                prefix = self.directory[value]["prefix"]
+                if prefix["state"] != "ready":
+                    raise RuntimeError("admit parent is not ready")
+                prefix["lock_ops"].append(op_id)
+            for value in hashes:
+                node = self.directory[value]
+                node["lock_ref"] += 1
+                node["source_ops"].append(op_id)
+                node["prefix"] = dict(
+                    state="writing", op_id=op_id, locations=[], lock_ops=[]
+                )
+            self.ledger["p_prefix"].change(len(pages))
+            active["admit"] = dict(op_id=op_id, hashes=hashes, parents=parents)
+            active["trace"].append(
+                dict(kind="source_protect", role="prefill", op_id=op_id)
+            )
+            self._command(
+                "prefill",
+                "admit",
+                source_pages=pages,
+                hashes=hashes,
+                sources=[
+                    dict(
+                        rank=rank["rank"],
+                        slot=rank["slot"],
+                        pages=[rank["pages"][page] for page in pages],
+                    )
+                    for rank in active["allocations"]["prefill"]
+                ],
+            )
+        for value in active["hashes"]:
+            node = self.directory[value]
+            node["owner"] = None
+            node["lock_ref"] -= 1
+            if not node["lock_ref"]:
+                node["state"] = "draining"
+        active["trace"].append(
+            dict(
+                kind="owner_release",
+                role="prefill",
+                op_id=active["admit"]["op_id"] if pages else None,
+            )
+        )
+        if not pages:
+            active["admit_complete"] = True
+            self._free_after_save()
+
+    def _publish_prefix(
+        self, command: dict[str, Any], ranks: list[dict[str, Any]]
+    ) -> None:
+        active = self.active
+        if active is None or active["phase"] != "saving" or active["admit"] is None:
+            raise ValueError("prefix ack has no planned save")
+        admit = active["admit"]
+        if command["role"] != "prefill" or admit["op_id"] != command["op_id"]:
+            raise ValueError("prefix ack differs from planned save")
+        targets = ranks[0]["target_pages"]
+        if (
+            len(targets) != len(command["source_pages"])
+            or len(set(targets)) != len(targets)
+            or any(
+                type(page) is not int or not 0 <= page < self.config.prefix_pages
+                for page in targets
+            )
+        ):
+            raise ValueError("prefix ack has invalid target pages")
+        occupied = {
+            node["prefix"]["locations"][0]["logical_page"]
+            for node in self.directory.values()
+            if node["prefix"] is not None and node["prefix"]["state"] == "ready"
+        }
+        if occupied.intersection(targets):
+            raise ValueError("prefix ack aliases a retained page")
+        for rank, receipt in enumerate(ranks):
+            expected_pages = [
+                dict(
+                    pool="prefix",
+                    region=self.registrations["prefill"]["ranks"][rank]["session"],
+                    replica=rank,
+                    logical_page=page,
+                    page_size=self.config.page_size,
+                )
+                for page in targets
+            ]
+            if (
+                receipt.get("readable") is not True
+                or receipt.get("main_layers") != 78
+                or receipt.get("index_layers") != len(PRODUCERS)
+                or receipt.get("source_pages") != command["source_pages"]
+                or receipt.get("slot") != active["allocations"]["prefill"][rank]["slot"]
+                or receipt.get("target_pages") != targets
+                or receipt.get("pages") != expected_pages
+            ):
+                raise ValueError("prefix ack lacks matching source/target completion")
+        for index, value in enumerate(admit["hashes"]):
+            node = self.directory[value]
+            parent = node["parent_hash"]
+            if (
+                parent is not None
+                and self.directory[parent]["prefix"]["state"] != "ready"
+            ):
+                raise ValueError("prefix child cannot publish before parent")
+            node["prefix"].update(
+                state="ready", locations=[rank["pages"][index] for rank in ranks]
+            )
+            node["source_ops"].remove(command["op_id"])
+            node["lock_ref"] -= 1
+            node["state"] = "draining"
+            active["trace"].append(
+                dict(kind="publish", role="prefill", op_id=command["op_id"], hash=value)
+            )
+        for value in admit["parents"]:
+            self.directory[value]["prefix"]["lock_ops"].remove(command["op_id"])
+        active["admit_complete"] = True
+        self._free_after_save()
+
+    def _free_after_save(self) -> None:
+        active = self.active
+        assert active is not None
+        if any(self.directory[value]["lock_ref"] for value in active["hashes"]):
+            raise RuntimeError("alive source remains protected")
+        active["phase"] = "freeing"
+        for side in ROLES:
+            self._command(side, "free")
 
     def backend_result(self, rid: str, result: dict[str, Any]) -> None:
         if self.active is None or self.active["request"]["rid"] != rid:
@@ -486,9 +660,10 @@ class MainRouter:
             or active is None
             or len(active["free_acks"]) != 2
             or active["result"] is None
+            or not active["admit_complete"]
         ):
             return
-        if any(q.outstanding for q in self.ledger.values()):
+        if any(q.outstanding for name, q in self.ledger.items() if name != "p_prefix"):
             raise RuntimeError("completed request left outstanding quota")
         self.history.append(
             dict(
@@ -498,6 +673,12 @@ class MainRouter:
                 allocations=active["allocations"],
                 events=active["events"],
                 trace=active["trace"],
+                hit_len=active["request"]["hit_len"],
+                admit=(
+                    copy.deepcopy(self.operations[active["admit"]["op_id"]])
+                    if active["admit"] is not None
+                    else None
+                ),
             )
         )
         # Bound replay receipts during persistent serving, together with the
@@ -508,7 +689,13 @@ class MainRouter:
             for op_id, op in self.operations.items()
             if op["command"]["rid"] in retained
         }
-        self.directory.clear()
+        for value in reversed(active["hashes"]):
+            node = self.directory[value]
+            if node["prefix"] is None and not node["child_count"]:
+                parent = node["parent_hash"]
+                del self.directory[value]
+                if parent is not None:
+                    self.directory[parent]["child_count"] -= 1
         self.active = None
 
     def fail(self, reason: str) -> None:

@@ -1,0 +1,89 @@
+{
+  "date": "2026-10-26",
+  "baseline": "7275f29a05c9a7b6ed2902a27f5a5702564bb6f0",
+  "branch": "cryang/dev/mempool-min",
+  "cpu": {
+    "status": "passed",
+    "tests": 437,
+    "seconds": 35.966,
+    "log": "full-cpu-final.log",
+    "initial_failure": "requests absent from local test PYTHONPATH; restored cached dependency and reran full suite",
+    "review_regression_tests": 42,
+    "review_regression_log": "review-fixes-tests.log"
+  },
+  "static": {
+    "status": "passed",
+    "strict_mypy_files": 13,
+    "python39_ast_files": 21,
+    "ruff_files": 21,
+    "isort_files": 21,
+    "cli_descriptions": 6,
+    "shell_syntax": [
+      "run_service.sh",
+      "run_mempool_min.sh"
+    ],
+    "diff_check": "passed"
+  },
+  "review": {
+    "standards": {
+      "remaining": 0,
+      "resolved": [
+        "extract SR admit branch",
+        "keyword arguments for new data/interface calls"
+      ]
+    },
+    "spec": {
+      "remaining": 0,
+      "resolved": [
+        "reject short prefix page descriptor receipts"
+      ]
+    }
+  },
+  "code": {
+    "functional_files": [
+      "python/sglang/srt/disaggregation/ascend/mempool_router.py",
+      "python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py",
+      "python/sglang/srt/disaggregation/ascend/mempool_router_transport.py",
+      "python/sglang/srt/disaggregation/ascend/mempool_subrouter.py",
+      "python/sglang/srt/hardware_backend/npu/mempool/config.py",
+      "python/sglang/srt/hardware_backend/npu/mempool/layout.py",
+      "python/sglang/srt/hardware_backend/npu/mempool/manager.py",
+      "python/sglang/srt/hardware_backend/npu/mempool/runtime.py",
+      "python/sglang/srt/hardware_backend/npu/mempool/prefix.py"
+    ],
+    "mainline_functional_changes": [],
+    "sha256": {
+      "ascend-mempool-test/scripts/run_mempool_min.py": "130d74bc0a79f466f1ca8bcefe4a1d871ecdd7ef0f4caa2dfe16f4dedde47c24",
+      "ascend-mempool-test/scripts/verify_mempool_min.py": "be8ef9800f4e85c662a18a1d18701dd69647af9b6fd8ed9e83dbf1a22f465df5",
+      "ascend-mempool-test/tests/unit/test_layout.py": "55bb060f17ac7db9fd7c8c6cb296b192c46b333a6efdfc8f488cc7fc4c73787b",
+      "ascend-mempool-test/tests/unit/test_mempool_min_entry.py": "027c26c9dbed048aaf5ea954acdf043e0cb3af0d84bc21e7cecb02ea3f6b51b9",
+      "ascend-mempool-test/tests/unit/test_mempool_min_service.py": "ed152ae804cab0c4b9501c2c50a98b35d11587ba204bc58d81c7ba486873f7a9",
+      "ascend-mempool-test/tests/unit/test_mempool_router.py": "bd41f3af509298eb34ba0643d0474f5dfcdb72a991c3ddf15d1b9c1cc5af2771",
+      "ascend-mempool-test/tests/unit/test_mempool_subrouter.py": "34bffa0742160cf349bc284c06e489aa9ad315a5d21120d6f90064584b2ed78b",
+      "ascend-mempool-test/tests/unit/test_pool.py": "dc1b99b7573b6e1c456088f5aceeb871b112227a87e862a4ab9b08a91dd5ab87",
+      "ascend-mempool-test/tests/unit/test_runtime.py": "0424e2bcb11905ceb0cde91a61fddf8abebe25f92ee5eb64bb0954306cb60ec6",
+      "python/sglang/srt/disaggregation/ascend/mempool_router.py": "8cc2f6ffc004fe2d2f16b8eb25a074ff94db436a7d9b441f6552c200a92fd151",
+      "python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py": "f020a88cf4338d3c381b66ee690ec6edf731c748d3dbba31d5f02833065b56b7",
+      "python/sglang/srt/disaggregation/ascend/mempool_router_transport.py": "33c777b411823122a0bd3a169128434bb3626cf37d482bddc915dff56e73de3f",
+      "python/sglang/srt/disaggregation/ascend/mempool_subrouter.py": "9b37b37a202b92264e79ca39a450928a88db2e8cf4ef101f6863760f848a1868",
+      "python/sglang/srt/hardware_backend/npu/mempool/config.py": "3f5b2d147d823d5a4038174e52fc2adbbf68306c84467e3032e66b07a139558f",
+      "python/sglang/srt/hardware_backend/npu/mempool/layout.py": "0d4a464c99eeeda2e578831f081f34bcc536ce1676d08a48d45d113fb79aa3e8",
+      "python/sglang/srt/hardware_backend/npu/mempool/manager.py": "772993cc2798deb86aaa50efc5462e9bf01a8b6a1968813a9e0a20737efb9eb2",
+      "python/sglang/srt/hardware_backend/npu/mempool/runtime.py": "d5b173592c2c010a88d118a0e74d20f04241bf04d44303cfe48f71b6f5715d51",
+      "python/sglang/srt/hardware_backend/npu/mempool/prefix.py": "7dcd1a61b3c051af51a74ce8296f181dd6d4065ca6884b93b85103306122ed8e",
+      "ascend-mempool-test/scripts/verify_mempool_prefix.py": "d80eb11a10302f6b46f8a860e31be3b3530843cc9990807ca379808ab3ff1e4f",
+      "ascend-mempool-test/tests/unit/test_prefix.py": "c3c4c6932ae0a4f0adb066132660f75df7b1b8ea5daccf500292b09d653288c5",
+      "ascend-mempool-test/tests/unit/test_mempool_prefix_evidence.py": "66c410100c9f518e6018ee34d836a076fadc97c41e5c7ba2e5f54e0a1146159b"
+    }
+  },
+  "hardware": {
+    "status": "not run",
+    "executor": "user",
+    "user_accepted": false,
+    "ticket02": "open",
+    "ticket03": "blocked pending ticket02 acceptance",
+    "entry": "run_mempool_min.sh --mode prefix-acceptance",
+    "coverage": "cold save; hit_len=0; A/B/C/E pages 32/40/40/40",
+    "numa_page_placement": "not verified"
+  }
+}

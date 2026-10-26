@@ -7,14 +7,17 @@
 重复保存与容量不足均按目录和账本处理。
 
 **Blocked by:** [01：真实冷请求与显式释放复用](01-cold-request-lifecycle.md)。
-该票完成实现 review、用户 NPU 验收并关闭后才可开始。
+该票已于 2026-10-26 经用户确认 NPU 验收成功并关闭，前置条件已满足。
 
-**Status:** ready-for-agent
+**Status:** needs-info
 
 **State:** open
 
 **本轮依据：** 2026-10-23 用户确认[四票详细回顾](../stage-0-ticket-review.md)，
 要求按该内容重新拆票。本票在已验收冷请求链上增加保存，不消费 prefix 命中。
+2026-10-26 复核基线为 `7275f29a05`；旧 ticket02 实现已撤回，从该基线重写。
+功能范围与依赖顺序不变，沿用[规划中的 warmup 回归约束](../ticket-plan.md#warmup-regression)。
+具体文件职责、复制完成协议与测试安排见[代码修改计划](../ticket-02-implementation-plan.md)。
 
 ## 运行范围
 
@@ -108,8 +111,8 @@ freed 状态；完成收据按 rid／op_id 独立存活，不能依赖已释放�
   提供保存阶段的测试与独立报告。
 - [ ] 保持 01 的真实冷请求输出、D 三条件门控、显式释放、Graph 和真实串行约束；
   直接复用同一启动入口，注册如实启用新增区域并检查实际容量。
-- [ ] 每次实现后立即更新目标页 D 的代码进度与验证状态，并同步 Markdown／HTML。
-- [ ] 完成本票适用的 CPU／静态检查和自运行测试入口，并记录实际结果与未执行项。
+- [x] 每次实现后立即更新目标页 D 的代码进度与验证状态，并同步 Markdown／HTML。
+- [x] 完成本票适用的 CPU／静态检查和自运行测试入口，并记录实际结果与未执行项。
 - [ ] 用户完成本票要求的 NPU 验收，核对实现和证据并确认可以关闭。
 
 ## 范围边界
@@ -118,6 +121,9 @@ freed 状态；完成收据按 rid／op_id 独立存活，不能依赖已释放�
 
 ## Verification
 
+- 保留已验收的原生 fake warmup：启用 prefix 后，P/D warmup 完成仍不占 Router
+  额度、不写 alive／prefix、不产生 admit／publish；随后真实冷请求正常保存和释放。
+  真实请求缺少预留、fake/real 混批仍严格拒绝；新增 Index K 写回只接纳有效真实绑定。
 - CPU 覆盖“先保护源、再解除 owner hold”、父页发布顺序、延迟一个 rank、重复 ack、
   部分容量缩短、满容量跳过以及错误／超时。测试检查源仍受保护和账本的真实变化。
 - NPU 在 P native 已释放后执行保存，并在 alive 实际归还后核对 prefix 的逻辑内容。
@@ -170,3 +176,39 @@ freed 状态；完成收据按 rid／op_id 独立存活，不能依赖已释放�
 - 原提交保留在本地恢复引用，未推送到远端，不作为当前实现或验收依据。
 - 先完成 ticket01 的 warmup 适配和 NPU 验收，再基于稳定基线重写 ticket02。
 - State 保持 open，全部硬件验收项未通过；此前提前实施授权不继续生效。
+
+### 2026-10-26：ticket01 已验收，复核后保持保存范围
+
+- 用户确认 ticket01 验收成功，01 已关闭；本票从 `7275f29a05` 已验收基线重写。
+- warmup 改动未改变真实请求的保存源、生命周期或页模型，02–04 无需重新拆分。
+  新增 warmup 隔离回归要求见 Verification，03／04 沿用任务索引中的共同约束。
+- 本轮只核对规划与前置状态，没有恢复旧实现或开始新实现。
+  State 保持 open，新增行为的 CPU／NPU 验证仍待实现后执行。
+
+### 2026-10-26：用户授权重新实现，形成代码修改计划
+
+- 用户要求“接下来可以开始重新实现ticket02了，规划一下代码修改”。已基于当前
+  `7275f29a05` 调用链形成[实施计划](../ticket-02-implementation-plan.md)与
+  [HTML](../ticket-02-implementation-plan.html)，本轮尚未修改功能代码。
+- 预计修改 8 个现有功能文件、新增 `npu/mempool/prefix.py`，均位于 Ascend/NPU。
+  复用既有 attention hook、service 完成条件、原生 warmup 和公共分配入口。
+- 关键工作包括 Index K 写回完成门控、持久 prefix 目录和异步 admit 的全 TP 确认。
+  P BM 分配按现有对齐为 13 GiB/rank、TP16 共 208 GiB；测试入口同步容量检查。
+- 测试沿用已确认接口，按行为切片 red → green；交付前执行 CPU／静态检查及两轴 review。
+  用户 NPU 验收后才关闭本票，03 继续保留依赖门控。
+
+### 2026-10-26：按用户 $implement 授权完成重写，CPU 通过
+
+- 基于已验收 ticket01 `7275f29a05` 实现；8 个既有功能文件与 1 个新增文件均在
+  Ascend/NPU。新增 P alive Index K、40 页 prefix、全 TP admit、目录保留与显式 free。
+- 旧 ticket02 提交未恢复；复用当前 attention/service/warmup 接线，没有主线功能改动。
+- 完整 CPU 套件 437/437 通过，35.966 秒；首次全量缺本地 requests 依赖，
+  补回已有缓存路径后完整重跑通过。13 个源/脚本 strict mypy、21 个 Python 文件
+  lint/format/isort/Python3.9 AST 检查通过；验收 checker 拆分后定向测试通过。
+- 自运行 `--mode prefix-acceptance` 已就绪：独立参考、A/B/C/E 冷算、TP16 逐值内容、
+  实际槽页/回执/目录关联、32→40→40→40、故障与进程清理。
+  [交付说明](../ticket02-delivery.md)包含功能 review 顺序和两机命令。
+- Standards/Spec 最终复核均为 0 项剩余发现。两项可读性建议已整改；
+  验收描述符短列表问题经 red→green 修复。整改后相关 42 项定向测试及类型检查通过。
+- 尚未执行本票 NPU 验收，功能硬件项保持未勾选。
+  Status=needs-info 表示等待用户 NPU 报告；State 保持 open，03 不解锁。

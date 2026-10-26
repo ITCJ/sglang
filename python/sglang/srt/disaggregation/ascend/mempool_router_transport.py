@@ -106,6 +106,26 @@ def attach_subrouter(
     )
     if native is not None:
         rows.mempool_reservations = native
+    prefix = getattr(runtime, "prefix_store", None)
+    if config.prefix_pages:
+        layout = runtime.manager.layout
+        if (
+            layout.prefix_main is None
+            or layout.prefix_index is None
+            or layout.prompt_index is None
+            or layout.prefix_main.slots != config.prefix_pages
+            or layout.prefix_main.tokens != config.page_size
+            or (
+                role == "prefill"
+                and (prefix is None or prefix.verify != config.verify_prefix)
+            )
+            or (role == "decode" and prefix is not None)
+        ):
+            raise ValueError("Router prefix regions differ from initialized storage")
+    elif prefix is not None:
+        raise ValueError(
+            "Router prefix is disabled but worker allocated prefix storage"
+        )
     shard = RouterShard(
         control,
         native=native,
@@ -113,6 +133,7 @@ def attach_subrouter(
         reply_to=service.tick.reply_to,
         page_size=config.page_size,
         bootstrap=(config.prefill_host, config.bootstrap_port),
+        prefix=prefix,
     )
     connection = (
         SRConnection(config.control_endpoint, role, control.local.session)
@@ -145,9 +166,17 @@ def attach_subrouter(
         ),
         numa_node=runtime.manager.numa_node,
         numa_placement_verified=False,
-        replicas=dict(alive_main=16, alive_index=0, prefix_main=0, prefix_index=0),
+        replicas=config.replicas(),
         graph=not args.disable_cuda_graph,
     )
+    if config.prefix_pages:
+        registration.update(
+            prefix_pages=config.prefix_pages if role == "prefill" else 0,
+            local_dram_bytes=runtime.manager.layout.contribution_bytes(
+                runtime.manager.rank
+            ),
+            verify_prefix=config.verify_prefix,
+        )
 
     def registered() -> dict[str, Any]:
         if control.peer is None:
