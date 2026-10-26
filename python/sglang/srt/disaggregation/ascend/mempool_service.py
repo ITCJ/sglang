@@ -45,6 +45,7 @@ class _Request(msgspec.Struct):
     cancel: bool = False
     native_wait: Any = None
     cancelled_at: float | None = None
+    reported_progress: tuple[int, bool, bool] | None = None
 
 
 class MempoolPDService:
@@ -404,6 +405,13 @@ class MempoolPDService:
                     slot=lease.slot,
                     prompt_tokens=state.prompt_limit,
                     prompt_slot=state.p_slot.slot if state.p_slot is not None else None,
+                    start_position=(
+                        self.subrouter.shard.request["hit_len"]
+                        if self.subrouter is not None
+                        and self.subrouter.shard.request is not None
+                        and self.control.local.role == "prefill"
+                        else 0
+                    ),
                 )
             self.runtime.assert_bound(row, record.binding)
             if batch.forward_mode.is_decode():
@@ -520,8 +528,8 @@ class MempoolPDService:
                 record.receipt is not None
                 and record.receipt.completed == len(record.req.origin_input_ids)
             )
-            if row is not None and self.control.local.role == "prefill":
-                prompt_ready = self.runtime.prompt_ready(row)
+            if self.control.local.role == "prefill":
+                prompt_ready = self._prefill_ready(record, row, done)
             facts.append(
                 RequestObservation(
                     room,
@@ -554,6 +562,59 @@ class MempoolPDService:
                 )
             )
         return facts
+
+    def _prefill_ready(self, record: _Request, row: int | None, done: bool) -> bool:
+        """Join independent alive ranges, including after native row detachment."""
+        binding = (
+            record.binding
+            if row is not None
+            else (record.receipt.binding if record.receipt is not None else None)
+        )
+        start, end = (0, 0)
+        if row is not None:
+            start, end = self.runtime.written_range(row)
+        elif record.receipt is not None:
+            start = record.receipt.binding.write_start
+            end = start + record.receipt.completed
+        shard = self.subrouter.shard if self.subrouter is not None else None
+        hit = (
+            shard.request["hit_len"]
+            if shard is not None and shard.request is not None
+            else 0
+        )
+        filled = not hit or (shard is not None and shard.fill_complete)
+        ready = end if filled else 0
+        prompt_ready = done and ready == len(record.req.origin_input_ids)
+        if hit:
+            progress = (end - start, bool(filled), record.native_freed)
+            if progress != record.reported_progress:
+                logger.info(
+                    "mempool prefix_progress data=%s",
+                    json.dumps(
+                        dict(
+                            rid=record.req.rid,
+                            room=record.req.bootstrap_room,
+                            rank=self.control.local.tp_rank,
+                            hit_len=hit,
+                            suffix_start=hit,
+                            suffix_completed=end - start,
+                            fill_complete=bool(filled),
+                            ready_tokens=(hit + end - start if filled else 0),
+                            native_freed=record.native_freed,
+                        ),
+                        sort_keys=True,
+                    ),
+                )
+                record.reported_progress = progress
+            if (
+                prompt_ready
+                and binding is not None
+                and self.runtime.prefix_store is not None
+            ):
+                self.runtime.prefix_store.verify_alive(
+                    slot=binding.slot, tokens=len(record.req.origin_input_ids)
+                )
+        return prompt_ready
 
     def advance(self) -> None:
         """Run one complete scheduler tick, preserving faults for same-side consensus."""
@@ -670,6 +731,8 @@ class MempoolPDService:
                     record.receipt.completed,
                 )
             self._native_release(record.req, record.is_insert)
+            if self.subrouter is not None and self.subrouter.shard.restore is not None:
+                self.subrouter.shard.restore.native_released(record.req)
             record.native_freed = True
             logger.info(
                 "mempool native_free role=%s rank=%s room=%s attempt=%s",

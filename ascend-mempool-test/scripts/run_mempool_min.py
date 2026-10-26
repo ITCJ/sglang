@@ -25,6 +25,7 @@ sys.path.insert(0, str(REPO / "ascend-mempool-test/src"))
 import msgspec
 import verify_mempool_min
 import verify_mempool_prefix
+import verify_mempool_reuse
 import verify_service
 from run_ticket10 import (
     available_port,
@@ -89,7 +90,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--role", choices=("prefill", "decode"), required=True)
     parser.add_argument(
-        "--mode", choices=("serve", "acceptance", "prefix-acceptance"), required=True
+        "--mode",
+        choices=("serve", "acceptance", "prefix-acceptance", "reuse-acceptance"),
+        required=True,
     )
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
@@ -205,7 +208,9 @@ class Runner:
             status="running",
             role=args.role,
             mode=args.mode,
-            coverage="ticket02 cold prefix save"
+            coverage="ticket03 prefix restore and suffix"
+            if config.match_prefix
+            else "ticket02 cold prefix save"
             if config.prefix_pages
             else "ticket01 cold requests only",
             user_accepted=False,
@@ -660,17 +665,20 @@ class Runner:
                                 indexer_layer_ids=verify_mempool_min.PRODUCERS,
                                 graph=True,
                                 expected_zero_decode=(
-                                    0 if self.args.mode == "prefix-acceptance" else None
+                                    0 if self.config.prefix_pages else None
                                 ),
                             )
                         )
                         if target and self.config.prefix_pages:
-                            evidence["prefix"] = verify_mempool_prefix.check_prefix(
+                            check = (
+                                verify_mempool_reuse.check_reuse
+                                if self.config.match_prefix
+                                else verify_mempool_prefix.check_prefix
+                            )
+                            evidence["prefix"] = check(
                                 root / "prefill.log", snapshots, self.cases
                             )
-                            evidence["coverage"] = (
-                                "ticket02 cold prefix save; no prefix hits"
-                            )
+                            evidence["coverage"] = self.report["coverage"]
                         break
                     except (ValueError, RuntimeError, KeyError):
                         if time.monotonic() >= deadline:
@@ -703,11 +711,13 @@ class Runner:
 
     def run(self) -> None:
         self.preflight()
-        if self.args.mode in ("acceptance", "prefix-acceptance"):
+        if self.args.mode != "serve":
             self.components()
             if self.is_p:
                 fixtures = (
-                    verify_mempool_prefix
+                    verify_mempool_reuse
+                    if self.config.match_prefix
+                    else verify_mempool_prefix
                     if self.config.prefix_pages
                     else verify_mempool_min
                 )
@@ -733,8 +743,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     config = RouterConfig.read(str(args.config))
     root = args.log_root / args.run_id / args.role
     requested = msgspec.to_builtins(config)
-    if args.mode == "prefix-acceptance":
-        config = msgspec.structs.replace(config, prefix_pages=40, verify_prefix=True)
+    if args.mode in ("prefix-acceptance", "reuse-acceptance"):
+        config = msgspec.structs.replace(
+            config,
+            prefix_pages=40,
+            verify_prefix=True,
+            match_prefix=args.mode == "reuse-acceptance",
+        )
     elif args.mode == "acceptance" and config.prefix_pages:
         raise ValueError(
             "ticket01 acceptance requires prefix_pages=0; use prefix-acceptance"
@@ -749,16 +764,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                     config=msgspec.to_builtins(config),
                     logs=str(root),
                     memory_budget=memory_budget(config, args.role),
+                    acceptance_controls=(
+                        "one skipped allocator page; fill submitted after native_freed"
+                        if config.match_prefix and config.verify_prefix
+                        else "none"
+                    ),
                     stages=[
                         "paired preflight",
                         "P-only/D-only/mixed NPU fetch",
-                        "formal reference A/B/C/E"
+                        "formal reference A/B/C"
+                        if config.match_prefix
+                        else "formal reference A/B/C/E"
                         if config.prefix_pages
                         else "formal reference 4096+128",
                         "Main/SR target and cleanup",
                         "timeout/fail-stop and paired cleanup",
                     ]
-                    if args.mode in ("acceptance", "prefix-acceptance")
+                    if args.mode != "serve"
                     else ["paired preflight", "Main and P/D persistent services"],
                     service_command=[
                         "bash",

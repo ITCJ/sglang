@@ -9,9 +9,13 @@ D 生成；输出等于各自冷算参考，释放和再次保存仍正确。
 **Blocked by:** [02：请求结束后保存 prompt 到 prefix](02-prompt-prefix-save.md)。
 该票完成实现 review、用户 NPU 验收并关闭后才可开始。
 
-**Status:** ready-for-agent
+**Status:** needs-info
 
 **State:** open
+
+**实施授权：** 2026-10-26 用户在核对范围后明确要求 `$implement 开始实现ticket03`。
+02 自动化 NPU 报告已通过但尚待关闭确认；本次授权仅允许先实施 03，
+不代替 02 的关闭确认或 03 自身 NPU 验收，也不解锁 04。
 
 **本轮依据：** 2026-10-23 用户确认[四票详细回顾](../stage-0-ticket-review.md)，
 要求按该内容重新拆票。本票直接消费 02 已验证的真实保存数据，同时完成部分命中与
@@ -117,8 +121,8 @@ P alive 每次占 S_P/B=64 页整槽额度，D alive 占 S_D/B=1 页整槽额度
 - [ ] 同一启动入口自动生成独立冷算参考与真实保存来源，运行 A／B／C 并保存
   hit_len、prefix_indices、两段进度、完整输出和复制证据；保留 01／02 的释放、
   账本、真实串行与满容量行为。
-- [ ] 每次实现后立即更新目标页 D 的代码进度与验证状态，并同步 Markdown／HTML。
-- [ ] 完成本票适用的 CPU／静态检查和自运行测试入口，并记录实际结果与未执行项。
+- [x] 每次实现后立即更新目标页 D 的代码进度与验证状态，并同步 Markdown／HTML。
+- [x] 完成本票适用的 CPU／静态检查和自运行测试入口，并记录实际结果与未执行项。
 - [ ] 用户完成本票要求的 NPU 验收，核对实现和证据并确认可以关闭。
 
 ## 范围边界
@@ -153,6 +157,35 @@ P alive 每次占 S_P/B=64 页整槽额度，D alive 占 S_D/B=1 页整槽额度
   复制方向和完整页边界接续，不能由 02 保存通过或历史组件报告替代验收。
 
 ## Comments
+
+### 2026-10-26：实现与 CPU 验证交付，等待用户执行 NPU 验收
+
+- 已实现连续 ready 前缀匹配、真实 allocator load_back、flat/NZ MLA 布局、
+  独立 fill、suffix 从零计数、全 TP 联合 ready 与 P native 提前释放。
+- 实际 Req/extend/ChunkCache 方法验证 C 的 31 页恢复、最后一页计算和整行归还。
+  缺 rank、错误索引、未完成读、提前 ready 均 fail-stop 并保留资源。
+- 一键入口新增 `--mode reuse-acceptance`，自动独立冷算参考与 A/B/C 目标组；
+  逐 rank 核对内容和索引，完整 output IDs 必须相等，保留 D Graph、释放与超时检查。
+- 验收模式明确注入非连续原生映射和 native_freed 后再提交 fill，便于证明独立释放。
+  普通 serve 且 verify_prefix=false 不注入；未将这种控制解释为性能重叠证据。
+- Mac 最终完整 CPU 453/453 通过（38.513 秒）；12 模块 strict mypy、23 Python 文件
+  lint/format/isort/Python3.9 AST 通过。review 修正后定向回归及完整套件再次通过。
+- Standards / Spec 最终均为 0 项未解决发现；Standards 的 1 项进度摘要问题已修复。
+  [检查与 review 记录](../verification/ticket03-cpu-20261026/checks.json)保留本轮证据。
+  [交付说明](../ticket03-delivery.md)给出
+  功能源码阅读顺序、所有权/同步条件、每机一条命令与日志回传清单。
+- 本机未执行 NPU，本票硬件验收全部保留。State=open，等待用户执行 NPU 验收；
+  不代替 02 关闭确认，不解锁 04。硬件修正另行提交。
+
+### 2026-10-26：用户授权实施 ticket03
+
+- 实施基线为 `87157b7365`，保留现有未提交文档和证据。
+- 按用户本轮明确指令实施 03；记录 02 尚未关闭的例外，不修改 02 验收状态。
+- 测试沿用本票已约定的 service／TP tick、原生分配、NPU 复制适配器和
+  双机自运行入口边界。以这些已批准边界执行 TDD，不另加测试门槛。
+- 依次实现复制与原生映射、Main／SR 命中协议、后缀进度及就绪／释放、
+  自运行命中验收。每步立即更新目标页 D；实现完成后进行两轴 review。
+- 03 实现与后续硬件修正保留独立提交，State 保持 open，硬件由用户执行。
 
 ### 2026-10-23：按已批准拆分发布
 

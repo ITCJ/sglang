@@ -7,6 +7,7 @@ import hashlib
 import importlib
 import json
 import logging
+from contextlib import nullcontext
 from typing import Any, Callable
 
 import msgspec
@@ -40,6 +41,19 @@ class _Admit(msgspec.Struct):
     receipt: dict[str, Any] | None = None
 
 
+class _Read(msgspec.Struct):
+    rid: str
+    op_id: int
+    kind: str
+    source_pages: tuple[int, ...]
+    slot: int
+    indices: Tensor | None = None
+    pool: Any = None
+    event: Any = None
+    retained: list[Tensor] = msgspec.field(default_factory=list)
+    receipt: dict[str, Any] | None = None
+
+
 class PrefixStore:
     """Own P's local page reservations and copies, with receipts after NPU completion."""
 
@@ -65,6 +79,9 @@ class PrefixStore:
         self._event_factory = event_factory or (lambda: torch.npu.Event())
         self._free = set(range(layout.slots))
         self._operations: dict[int, _Admit] = {}
+        self._reads: dict[int, _Read] = {}
+        self._ready: set[int] = set()
+        self._read_stream: Any = None
         self._fault: str | None = None
         self._dtype = torch.empty(1, dtype=torch.bfloat16, device="cpu")
         # Acceptance-only CPU references: one current request plus retained pages.
@@ -130,7 +147,319 @@ class PrefixStore:
                 index_layers=index.layers,
             )
             operation.retained.clear()
+            self._ready.update(target_pages)
         return copy.deepcopy(operation.receipt)
+
+    def _read_context(self) -> Any:
+        if torch.device(self.device).type == "cpu":
+            return nullcontext()
+        if self._read_stream is None:
+            self._read_stream = torch.npu.Stream()
+        self._read_stream.wait_stream(torch.npu.current_stream())
+        return torch.npu.stream(self._read_stream)
+
+    def fill(
+        self, *, rid: str, op_id: int, slot: int, source_pages: list[int]
+    ) -> dict[str, Any] | None:
+        """Copy retained pages into this request's alive on an independent stream."""
+        return self._read(_Read(rid, op_id, "fill", tuple(source_pages), slot))
+
+    def load_back(
+        self,
+        *,
+        rid: str,
+        op_id: int,
+        slot: int,
+        source_pages: list[int],
+        indices: Tensor,
+        pool: Any,
+    ) -> dict[str, Any] | None:
+        """Restore both MLA parts and Index K at allocator-owned token indices."""
+        return self._read(
+            _Read(rid, op_id, "load_back", tuple(source_pages), slot, indices, pool)
+        )
+
+    def _read(self, candidate: _Read) -> dict[str, Any] | None:
+        if self._fault is not None:
+            raise RuntimeError(f"prefix store fault: {self._fault}")
+        rid, op_id, slot, source_pages = (
+            candidate.rid,
+            candidate.op_id,
+            candidate.slot,
+            candidate.source_pages,
+        )
+        operation = self._reads.get(op_id)
+        if operation is None:
+            positive_int("op_id", op_id)
+            check_index("target slot", slot, self.manager.layout.prompt.slots)
+            if (
+                not rid
+                or not source_pages
+                or len(set(source_pages)) != len(source_pages)
+                or any(type(p) is not int or p not in self._ready for p in source_pages)
+                or len(source_pages) * self.page_size
+                > self.manager.layout.prompt.tokens
+                or op_id in self._operations
+            ):
+                raise ValueError("prefix read requires unique ready source pages")
+            self._reads[op_id] = operation = candidate
+            try:
+                with self._read_context():
+                    if operation.kind == "fill":
+                        self._submit_fill(operation)
+                    else:
+                        self._submit_load_back(operation)
+            except Exception as exc:
+                self._fault = str(exc)
+                raise
+        elif (
+            any(
+                getattr(operation, key) != getattr(candidate, key)
+                for key in ("rid", "kind", "source_pages", "slot")
+            )
+            or operation.indices is not candidate.indices
+            or operation.pool is not candidate.pool
+        ):
+            raise ValueError("conflicting duplicate prefix read")
+        if operation.receipt is None:
+            if not operation.event.query():
+                return None
+            main, index = (
+                self.manager.layout.prefix_main,
+                self.manager.layout.prefix_index,
+            )
+            assert main is not None and index is not None
+            if self.verify:
+                self._verify_read(operation)
+            operation.receipt = dict(
+                readable=True,
+                slot=slot,
+                source_pages=list(source_pages),
+                tokens=len(source_pages) * self.page_size,
+                main_layers=main.layers,
+                index_layers=index.layers,
+            )
+            if operation.indices is not None:
+                operation.receipt["prefix_indices"] = operation.indices.cpu().tolist()
+            operation.retained.clear()
+        return copy.deepcopy(operation.receipt)
+
+    def _verify_read(self, operation: _Read) -> None:
+        source = self._source
+        if source is None or (source.rid, source.slot) != (
+            operation.rid,
+            operation.slot,
+        ):
+            raise RuntimeError("prefix read has no matching content reference")
+        references = {
+            logical: self._saved[page]
+            for logical, page in enumerate(operation.source_pages)
+        }
+        if operation.kind == "fill":
+            first = operation.slot * (
+                self.manager.layout.prompt.tokens // self.page_size
+            )
+            actual = self._check_pages(
+                "alive", {first + p: ref for p, ref in references.items()}
+            )
+            # References come from A's original computed values, never B's destination.
+            for logical, reference in references.items():
+                for (region, layer), expected in reference.items():
+                    self.capture_source(
+                        region,
+                        layer,
+                        expected,
+                        torch.full((self.page_size,), operation.slot),
+                        torch.arange(
+                            logical * self.page_size, (logical + 1) * self.page_size
+                        ),
+                        torch.ones(self.page_size, dtype=torch.bool),
+                    )
+            self._report(
+                "fill",
+                source,
+                operation.op_id,
+                list(operation.source_pages),
+                {str(int(p) - first): digest for p, digest in actual.items()},
+            )
+            return
+        pool, indices = operation.pool, operation.indices
+        assert indices is not None
+        actual_pages: dict[int, dict[tuple[str, int], Tensor]] = {
+            p: {} for p in references
+        }
+        for region, layer in references[0]:
+            expected = torch.cat([ref[region, layer] for ref in references.values()])
+            if region == "main":
+                native_k, native_rope = pool.get_mla_kv_rows(
+                    pool.start_layer + layer, indices
+                )
+                k, rope = native_k.cpu(), native_rope.cpu()
+                if not torch.equal(
+                    k, expected[..., : pool.kv_lora_rank]
+                ) or not torch.equal(rope, expected[..., pool.kv_lora_rank :]):
+                    raise RuntimeError("load_back native main KV content mismatch")
+                values = torch.cat((k, rope), dim=-1)
+            else:
+                values = (
+                    pool.get_index_k_buffer(pool.indexer_layer_ids[layer])
+                    .reshape(-1, 1, pool.index_head_dim)
+                    .index_select(0, indices)
+                    .cpu()
+                )
+                if not torch.equal(values, expected):
+                    raise RuntimeError("load_back native Index K content mismatch")
+            for logical in references:
+                actual_pages[logical][region, layer] = values[
+                    logical * self.page_size : (logical + 1) * self.page_size
+                ]
+        digests = {}
+        for logical, page in actual_pages.items():
+            digest = hashlib.sha256()
+            for _, values in sorted(page.items()):
+                digest.update(values.contiguous().view(torch.uint8).numpy().tobytes())
+            digests[str(logical)] = digest.hexdigest()
+        self._report(
+            "load_back",
+            source,
+            operation.op_id,
+            list(operation.source_pages),
+            digests,
+            prefix_indices=indices.cpu().tolist(),
+            parts=[pool.kv_lora_rank, pool.qk_rope_head_dim],
+        )
+
+    def _submit_load_back(self, operation: _Read) -> None:
+        indices, pool = operation.indices, operation.pool
+        main, index = self.manager.layout.prefix_main, self.manager.layout.prefix_index
+        assert main is not None and index is not None and indices is not None
+        count = len(operation.source_pages) * self.page_size
+        if (
+            indices.ndim != 1
+            or indices.dtype != torch.int64
+            or indices.numel() != count
+            or indices.device != torch.device(self.device)
+            or pool.page_size != self.page_size
+            or pool.layer_num != main.layers
+            or pool.kv_lora_rank + pool.qk_rope_head_dim != main.dim
+            or len(pool.indexer_layer_ids) != index.layers
+            or pool.index_head_dim != index.dim
+            or pool.index_k_scale_buffer is not None
+        ):
+            raise ValueError("native prefix geometry differs from saved pages")
+        pages = indices.cpu().reshape(-1, self.page_size)
+        if (
+            bool((pages < self.page_size).any())
+            or pages[:, 0].unique().numel() != pages.shape[0]
+            or bool((pages[:, 0] % self.page_size != 0).any())
+            or not torch.equal(
+                pages - pages[:, :1], torch.arange(self.page_size).expand_as(pages)
+            )
+        ):
+            raise ValueError("native prefix requires complete unique allocator pages")
+        offsets = torch.arange(self.page_size, dtype=torch.int64, device=self.device)
+        source = torch.tensor(
+            operation.source_pages, dtype=torch.int64, device=self.device
+        )
+        source = (source[:, None] * self.page_size + offsets).flatten()
+        target = torch.arange(count, dtype=torch.int64, device=self.device)
+        valid = torch.ones_like(source, dtype=torch.bool)
+        operation.retained.extend((source, target, valid, indices))
+        for region, layout in (("main", main), ("index", index)):
+            staging = torch.empty(
+                (count, 1, layout.dim), dtype=torch.bfloat16, device=self.device
+            )
+            operation.retained.append(staging)
+            for layer in range(layout.layers):
+                view = self.manager.view(0, layer, region="prefix_" + region)
+                self._copy(
+                    self._dtype,
+                    staging,
+                    source,
+                    target,
+                    valid,
+                    layout.slots * layout.tokens,
+                    count,
+                    layout.row_bytes,
+                    count,
+                    48,
+                    view.device_base,
+                    None,
+                )
+                if region == "main":
+                    model_layer = pool.start_layer + layer
+                    for buffer, dim in (
+                        (pool.get_key_buffer(model_layer), pool.kv_lora_rank),
+                        (pool.get_value_buffer(model_layer), pool.qk_rope_head_dim),
+                    ):
+                        if (
+                            buffer.dtype != staging.dtype
+                            or int(pages.max()) >= buffer.numel() // dim
+                        ):
+                            raise ValueError(
+                                "native prefix indices exceed the destination buffer"
+                            )
+                    pool.set_mla_kv_rows(
+                        model_layer,
+                        indices,
+                        staging[..., : pool.kv_lora_rank].contiguous(),
+                        staging[..., pool.kv_lora_rank :].contiguous(),
+                    )
+                else:
+                    self._scatter(
+                        pool.get_index_k_buffer(pool.indexer_layer_ids[layer]),
+                        indices,
+                        staging,
+                        pages,
+                    )
+        operation.event = self._event_factory()
+        operation.event.record()
+
+    @staticmethod
+    def _scatter(
+        destination: Tensor, indices: Tensor, values: Tensor, pages: Tensor
+    ) -> None:
+        target = destination.view(-1, 1, values.shape[-1])
+        if destination.dtype != values.dtype or int(pages.max()) >= target.shape[0]:
+            raise ValueError("native prefix indices exceed the destination buffer")
+        if destination.device.type == "cpu":
+            target.index_copy_(0, indices, values)
+        else:
+            importlib.import_module("torch_npu").npu_scatter_nd_update_(
+                target, indices.view(-1, 1), values.contiguous()
+            )
+
+    def _submit_fill(self, operation: _Read) -> None:
+        offsets = torch.arange(self.page_size, dtype=torch.int64, device=self.device)
+        pages = torch.tensor(
+            operation.source_pages, dtype=torch.int64, device=self.device
+        )
+        source = (pages[:, None] * self.page_size + offsets).flatten()
+        target = torch.arange(source.numel(), dtype=torch.int64, device=self.device)
+        target += operation.slot * self.manager.layout.prompt.tokens
+        valid = torch.ones_like(source, dtype=torch.bool)
+        operation.retained.extend((source, target, valid))
+        for region in ("main", "index"):
+            _, layout = self.manager.layout.regions(0)["prefix_" + region]
+            for layer in range(layout.layers):
+                src = self.manager.view(0, layer, region="prefix_" + region)
+                dst = self.manager.view(0, layer, region="alive_" + region)
+                self._copy(
+                    self._dtype,
+                    self._dtype,
+                    source,
+                    target,
+                    valid,
+                    src.layout.slots * src.layout.tokens,
+                    dst.layout.slots * dst.layout.tokens,
+                    src.layout.row_bytes,
+                    source.numel(),
+                    48,
+                    src.device_base,
+                    dst.device_base,
+                )
+        operation.event = self._event_factory()
+        operation.event.record()
 
     def _validate(self, operation: _Admit) -> None:
         positive_int("op_id", operation.op_id)
@@ -198,9 +527,13 @@ class PrefixStore:
         operation.event.record()
 
     def assert_source_releasable(self, rid: str) -> None:
+        operations: tuple[_Admit | _Read, ...] = (
+            *self._operations.values(),
+            *self._reads.values(),
+        )
         if self._fault is not None or any(
             operation.rid == rid and operation.receipt is None
-            for operation in self._operations.values()
+            for operation in operations
         ):
             raise RuntimeError("prefix source has pending or failed copies")
 
@@ -217,6 +550,11 @@ class PrefixStore:
         self._operations = {
             op_id: operation
             for op_id, operation in self._operations.items()
+            if operation.rid != rid
+        }
+        self._reads = {
+            op_id: operation
+            for op_id, operation in self._reads.items()
             if operation.rid != rid
         }
 
@@ -295,13 +633,14 @@ class PrefixStore:
             digests[str(page)] = digest.hexdigest()
         return digests
 
-    def verify_alive(self, slot: int, tokens: int) -> None:
+    def verify_alive(self, slot: int, tokens: int, *, start: int = 0) -> None:
         if not self.verify:
             return
         source = self._source
         if source is None or source.slot != slot:
             raise RuntimeError("prefix verification has no matching source slot")
-        if tokens != source.tokens or source.verified:
+        end = start + tokens
+        if end != source.tokens or source.verified:
             return
         main, index = self.manager.layout.prefix_main, self.manager.layout.prefix_index
         assert main is not None and index is not None
@@ -311,7 +650,7 @@ class PrefixStore:
             for layer in range(count)
         }
         if set(source.values) != required or any(
-            not bool(mask.all()) for mask in source.coverage.values()
+            not bool(mask[start:end].all()) for mask in source.coverage.values()
         ):
             raise RuntimeError("prefix reference is missing source layers/tokens")
         pages = {
@@ -319,7 +658,7 @@ class PrefixStore:
                 key: values[page * self.page_size : (page + 1) * self.page_size]
                 for key, values in source.values.items()
             }
-            for page in range(tokens // self.page_size)
+            for page in range(start // self.page_size, end // self.page_size)
         }
         digests = self._check_pages("alive", pages)
         # Report logical source pages; physical slot remains explicit.
@@ -329,8 +668,14 @@ class PrefixStore:
             ): digest
             for page, digest in digests.items()
         }
-        source.verified = True
-        self._report("alive", source, 0, list(range(tokens // self.page_size)), logical)
+        source.verified = start == 0
+        self._report(
+            "suffix" if start else "alive",
+            source,
+            0,
+            list(range(start // self.page_size, end // self.page_size)),
+            logical,
+        )
 
     def _verify_admit(self, operation: _Admit) -> None:
         source = self._source
@@ -361,6 +706,7 @@ class PrefixStore:
         op_id: int,
         source_pages: list[int],
         pages: dict[str, str],
+        **evidence: Any,
     ) -> None:
         main, index = self.manager.layout.prefix_main, self.manager.layout.prefix_index
         assert main is not None and index is not None
@@ -379,6 +725,7 @@ class PrefixStore:
                     index_layers=index.layers,
                     page_size=self.page_size,
                     pages=pages,
+                    **evidence,
                 ),
                 sort_keys=True,
             ),

@@ -12,8 +12,9 @@ from typing import Any, Iterator, Optional, Protocol
 
 import msgspec
 import torch
-from sglang.srt.hardware_backend.npu.kv_rows import derive_kv_rows
 from torch import Tensor
+
+from sglang.srt.hardware_backend.npu.kv_rows import derive_kv_rows
 
 from .config import MempoolConfig
 from .copy import KVFetch
@@ -58,6 +59,7 @@ class KVRowBinding(msgspec.Struct, frozen=True, eq=False):
     slot: int
     prompt_tokens: int
     prompt_slot: Optional[int] = None
+    write_start: int = 0
 
 
 class KVWriteReceipt(msgspec.Struct, frozen=True):
@@ -106,6 +108,7 @@ class _Completion(msgspec.Struct):
     sources: Optional[Tensor] = None
     index_snapshot: Optional[Tensor] = None
     retained: tuple[Tensor, ...] = ()
+    range_errors: Optional[Tensor] = None
 
 
 class MempoolRuntime:
@@ -163,6 +166,9 @@ class MempoolRuntime:
         self.row_prompt_len = torch.full_like(self.row_slot, -1)
         self.row_prompt_slot = torch.full_like(self.row_slot, -1)
         self.row_decode_len = torch.zeros_like(self.row_slot)
+        self.row_write_start = torch.zeros_like(self.row_slot)
+        self.row_write_end = torch.zeros_like(self.row_slot)
+        self._range_errors = torch.zeros_like(self.row_slot)
         if fetch_enabled and manager.rank != 1:
             raise ValueError("BM fetch requires decode rank")
         self._fetch = (
@@ -276,6 +282,7 @@ class MempoolRuntime:
         slot: int,
         prompt_tokens: int,
         prompt_slot: Optional[int] = None,
+        start_position: int = 0,
     ) -> KVRowBinding:
         """Install an approved allocation and return its local attachment identity."""
         if self.fault is not None:
@@ -287,6 +294,12 @@ class MempoolRuntime:
         positive_int("prompt_tokens", prompt_tokens)
         if prompt_tokens > self.manager.layout.prompt.tokens:
             raise ValueError("prompt length exceeds P mempool capacity")
+        if (
+            type(start_position) is not int
+            or not 0 <= start_position < prompt_tokens
+            or (self.manager.rank == 1 and start_position != 0)
+        ):
+            raise ValueError("invalid prefill write range")
         if self.manager.rank == 1:
             if prompt_slot is None:
                 raise ValueError("decode requires the approved prompt slot")
@@ -295,7 +308,13 @@ class MempoolRuntime:
             raise RuntimeError("request row is already bound or in-flight")
         if any(binding.attachment.slot == slot for binding in self._bindings.values()):
             raise RuntimeError("mempool slot is already bound")
-        attachment = KVRowBinding(req_pool_idx, slot, prompt_tokens, prompt_slot)
+        attachment = KVRowBinding(
+            req_pool_idx,
+            slot,
+            prompt_tokens,
+            prompt_slot,
+            prompt_tokens if self.manager.rank == 1 else start_position,
+        )
         self._bindings[req_pool_idx] = _Binding(attachment)
         self.row_slot[req_pool_idx] = slot
         self.row_prompt_len[req_pool_idx] = prompt_tokens
@@ -303,6 +322,7 @@ class MempoolRuntime:
             prompt_slot if prompt_slot is not None else -1
         )
         self.row_decode_len[req_pool_idx] = 0
+        self._range_errors[req_pool_idx] = 0
         self._write_counts[:, slot].zero_()
         self._slot_totals[slot] = 0
         if self._index_counts is not None:
@@ -391,9 +411,7 @@ class MempoolRuntime:
         """Return the next contiguous write coordinate for an approved attachment."""
         self.assert_bound(binding.req_pool_idx, binding)
         progress = self._bindings[binding.req_pool_idx]
-        return progress.submitted + (
-            binding.prompt_tokens if self.manager.rank == 1 else 0
-        )
+        return progress.submitted + binding.write_start
 
     def begin_forward(
         self,
@@ -430,7 +448,7 @@ class MempoolRuntime:
             binding = self._bindings.get(write.req_pool_idx)
             if binding is None:
                 raise RuntimeError("real forward request has no mempool binding")
-            base = binding.attachment.prompt_tokens if self.manager.rank == 1 else 0
+            base = binding.attachment.write_start
             if write.start_position != base + binding.submitted:
                 raise ValueError(
                     "expected writes must continue the submitted KV prefix"
@@ -438,12 +456,18 @@ class MempoolRuntime:
             limit = (
                 self.layout.tokens
                 if self.manager.rank == 1
-                else binding.attachment.prompt_tokens
+                else binding.attachment.prompt_tokens - base
             )
             if binding.submitted + write.rows > limit:
                 raise ValueError("expected writes exceed request KV capacity")
         if self._binding_update is not None:
             self._wait_event(self._binding_update)
+        if self.manager.rank == 0:
+            for write in writes:
+                self.row_write_start[write.req_pool_idx] = write.start_position
+                self.row_write_end[write.req_pool_idx] = (
+                    write.start_position + write.rows
+                )
         if self._fetch_checks is not None:
             self._fetch_checks.zero_()
         if self._fetch_sources is not None:
@@ -511,6 +535,12 @@ class MempoolRuntime:
             )
         if self.manager.rank == 0:
             valid = valid & (positions < prompt)
+            if active.writes:
+                in_range = (positions >= self.row_write_start[safe_req]) & (
+                    positions < self.row_write_end[safe_req]
+                )
+                self._range_errors.scatter_add_(0, safe_req, (valid & ~in_range).long())
+                valid = valid & in_range
         self._writers[layer].write(
             values, slots=slots, positions=local_pos, valid=valid
         )
@@ -733,6 +763,7 @@ class MempoolRuntime:
         index_snapshot = (
             self._index_counts.clone() if self._index_counts is not None else None
         )
+        range_errors = self._range_errors.clone() if self.manager.rank == 0 else None
         event = self._event_factory()
         event.record()
         self._pending.append(
@@ -747,6 +778,7 @@ class MempoolRuntime:
                 sources,
                 index_snapshot,
                 tuple(active.retained),
+                range_errors,
             )
         )
         self._active = None
@@ -756,6 +788,9 @@ class MempoolRuntime:
         completed = []
         while self._pending and self._pending[0].event.query():
             item = self._pending[0]
+            if item.range_errors is not None and bool(item.range_errors.cpu().any()):
+                self.fault = "mempool write range/counts differ from expected rows"
+                raise RuntimeError(self.fault)
             counts = item.snapshot.cpu().tolist()
             if any(tuple(layer) != item.slot_totals for layer in counts):
                 self.fault = "mempool valid write counts differ from expected rows"
@@ -785,7 +820,9 @@ class MempoolRuntime:
                 progress = self._bindings[row]
                 if self.prefix_store is not None:
                     self.prefix_store.verify_alive(
-                        slot=progress.attachment.slot, tokens=total
+                        slot=progress.attachment.slot,
+                        tokens=total,
+                        start=progress.attachment.write_start,
                     )
                 progress.completed = total
                 progress.forwards += 1
@@ -800,6 +837,11 @@ class MempoolRuntime:
     def written_tokens(self, req_pool_idx: int) -> int:
         """Return locally completed KV rows, distinct from generated tokens."""
         return self._bindings[req_pool_idx].completed
+
+    def written_range(self, req_pool_idx: int) -> tuple[int, int]:
+        binding = self._bindings[req_pool_idx]
+        start = binding.attachment.write_start
+        return start, start + binding.completed
 
     def writes_done(self, req_pool_idx: int) -> bool:
         """Check local completion only; remote visibility/drain are caller duties."""
@@ -816,6 +858,7 @@ class MempoolRuntime:
         binding = self._bindings[req_pool_idx]
         return (
             self.writes_done(req_pool_idx)
+            and binding.attachment.write_start == 0
             and binding.completed == binding.attachment.prompt_tokens
         )
 

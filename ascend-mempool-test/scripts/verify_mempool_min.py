@@ -204,7 +204,7 @@ def check_target(
         for side in ("prefill", "decode"):
             if trace.index(("decode", "finished")) >= trace.index((side, "free_ack")):
                 raise ValueError("alive freed before D finished")
-        if case["name"].startswith("cold") and trace.index(
+        if (prefix or case["name"].startswith("cold")) and trace.index(
             ("prefill", "native_freed")
         ) >= trace.index(("decode", "finished")):
             raise ValueError(
@@ -250,7 +250,7 @@ def check_target(
                 raise ValueError("P/D source evidence was not captured")
             source_rows["prompt"] += data["prompt_bm_rows"]
             source_rows["decode"] += data["decode_bm_rows"]
-            if case["name"].startswith("cold") and data["forwards"] < 1:
+            if (prefix or case["name"].startswith("cold")) and data["forwards"] < 1:
                 raise ValueError("cold request never executed decode")
             if case["name"] == "first-token" and data["forwards"] != 0:
                 raise ValueError("max_new_tokens=1 unexpectedly executed decode")

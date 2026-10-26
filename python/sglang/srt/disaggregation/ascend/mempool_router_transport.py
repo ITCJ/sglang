@@ -15,6 +15,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from .mempool_native_reservation import NativeReservations
+from .mempool_prefill_restore import PrefillRestore, install_prefill_cache
 from .mempool_router import MainRouter, RequestRejected
 from .mempool_router_protocol import CONFIG_ENV, RUN_ENV, RouterConfig, model_digest
 from .mempool_subrouter import MempoolSubrouter, RouterShard
@@ -126,6 +127,14 @@ def attach_subrouter(
         raise ValueError(
             "Router prefix is disabled but worker allocated prefix storage"
         )
+    restore = None
+    if config.match_prefix and role == "prefill":
+        if prefix is None:
+            raise ValueError("prefix restore requires local storage")
+        restore = PrefillRestore(
+            allocator, prefix, verify_boundaries=config.verify_prefix
+        )
+        install_prefill_cache(scheduler, restore)
     shard = RouterShard(
         control,
         native=native,
@@ -134,6 +143,7 @@ def attach_subrouter(
         page_size=config.page_size,
         bootstrap=(config.prefill_host, config.bootstrap_port),
         prefix=prefix,
+        restore=restore,
     )
     connection = (
         SRConnection(config.control_endpoint, role, control.local.session)
@@ -177,6 +187,8 @@ def attach_subrouter(
             ),
             verify_prefix=config.verify_prefix,
         )
+    if config.match_prefix:
+        registration["match_prefix"] = True
 
     def registered() -> dict[str, Any]:
         if control.peer is None:

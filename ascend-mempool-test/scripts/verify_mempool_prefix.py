@@ -268,6 +268,7 @@ def check_rank(
     free_op: int,
     published: list[dict[str, Any]],
     retained: dict[str, str],
+    restored: bool = False,
 ) -> None:
     done = snapshot["completed"][-1]
     rid, room = done["rid"], done["room"]
@@ -280,6 +281,10 @@ def check_rank(
     retained_line, saved = reports.content(stage="retained", **identity)
     expected_sources = list(range(prompt_tokens // 128))
     free = reports.events.get((rid, rank, "free"), [])
+    native_line = reports.native.get((rank, room), -1)
+    alive_native_order = (
+        native_line < alive_line if restored else alive_line < native_line
+    )
     if (
         set(alive["pages"]) != set(map(str, expected_sources))
         or alive["source_pages"] != expected_sources
@@ -288,10 +293,9 @@ def check_rank(
         or saved["source_pages"]
         or len(free) != 1
         or int(free[0][1]["op_id"]) != free_op
-        or not alive_line
-        < reports.native.get((rank, room), -1)
-        < retained_line
-        < free[0][0]
+        or native_line < 0
+        or not alive_native_order
+        or not max(alive_line, native_line) < retained_line < free[0][0]
     ):
         raise ValueError(
             "content evidence is incomplete or crosses the release boundary"

@@ -1,8 +1,10 @@
 """Exercise prefix storage through mapped copies and controllable device events."""
 
 import unittest
+from types import SimpleNamespace
 
 import torch
+from test_mempool_native_prefix import native_methods
 from test_pool import FakeBM
 from test_runtime import ManualEvent
 
@@ -48,6 +50,169 @@ class MappedCopy:
 
 
 class TestPrefixStore(unittest.TestCase):
+    def test_reuse_evidence_joins_saved_prefix_and_computed_suffix_after_native_release(
+        self,
+    ):
+        store, manager, kernel, events = self.make_store(verify=True)
+        store.begin_request("A", 3, 4)
+        for region, layers in (("main", 2), ("index", 1)):
+            for layer in range(layers):
+                target = kernel.buffers[
+                    manager.view(0, layer, region="alive_" + region).device_base
+                ]
+                values = torch.full_like(target[3, :4], 17 + layer)
+                store.capture_source(
+                    region,
+                    layer,
+                    values,
+                    torch.full((4,), 3),
+                    torch.arange(4),
+                    torch.ones(4, dtype=torch.bool),
+                )
+                target[3, :4] = values
+        store.verify_alive(3, 4)
+        save = dict(
+            rid="A",
+            op_id=1,
+            slot=3,
+            prompt_tokens=4,
+            source_pages=[0, 1],
+            target_pages=[2, 0],
+        )
+        store.admit(**save)
+        events[-1].done = True
+        store.admit(**save)
+        store.release_source("A")
+        store.begin_request("B", 5, 6)
+        fill = dict(rid="B", op_id=2, slot=5, source_pages=[2, 0])
+        store.fill(**fill)
+        for region, layers in (("main", 2), ("index", 1)):
+            for layer in range(layers):
+                target = kernel.buffers[
+                    manager.view(0, layer, region="alive_" + region).device_base
+                ]
+                values = torch.full_like(target[5, 4:6], 91 + layer)
+                store.capture_source(
+                    region,
+                    layer,
+                    values,
+                    torch.full((2,), 5),
+                    torch.arange(4, 6),
+                    torch.ones(2, dtype=torch.bool),
+                )
+                target[5, 4:6] = values
+        with self.assertLogs("ascend_mempool.prefix", level="INFO") as logs:
+            store.verify_alive(5, 2, start=4)
+            # Native buffers can now be gone; fill uses retained prefix references.
+            events[-1].done = True
+            store.fill(**fill)
+            store.verify_alive(5, 6)
+        self.assertEqual(len(logs.output), 3)
+        store.release_source("B")
+
+    def test_load_back_restores_split_native_buffers_at_discontiguous_token_indices(
+        self,
+    ):
+        store, manager, kernel, events = self.make_store()
+        for region, layers in (("main", 2), ("index", 1)):
+            for layer in range(layers):
+                values = kernel.buffers[
+                    manager.view(0, layer, region="alive_" + region).device_base
+                ]
+                values[3, :4] = (
+                    torch.arange(4 * values.shape[-1]).reshape(4, 1, -1) + layer * 20
+                )
+        save = dict(
+            rid="A",
+            op_id=1,
+            slot=3,
+            prompt_tokens=4,
+            source_pages=[0, 1],
+            target_pages=[2, 0],
+        )
+        store.admit(**save)
+        events[-1].done = True
+        store.admit(**save)
+        store.release_source("A")
+        k = torch.full((2, 10, 1, 2), -9, dtype=torch.bfloat16)
+        rope = torch.full_like(k, -9)
+        index = torch.full((10, 1, 2), -9, dtype=torch.bfloat16)
+        pool = SimpleNamespace(
+            start_layer=4,
+            layer_num=2,
+            kv_lora_rank=2,
+            qk_rope_head_dim=2,
+            page_size=2,
+            indexer_layer_ids=(4,),
+            index_head_dim=2,
+            index_k_scale_buffer=None,
+            get_key_buffer=lambda layer: k[layer - 4],
+            get_value_buffer=lambda layer: rope[layer - 4],
+            get_index_k_buffer=lambda layer: index,
+        )
+        indices = torch.tensor([6, 7, 2, 3])
+        pool = native_methods(pool)
+        read = dict(
+            rid="B", op_id=2, slot=5, source_pages=[2, 0], indices=indices, pool=pool
+        )
+        self.assertIsNone(store.load_back(**read))
+        with self.assertRaisesRegex(RuntimeError, "pending"):
+            store.release_source("B")
+        events[-1].done = True
+        receipt = store.load_back(**read)
+        self.assertEqual(receipt["prefix_indices"], [6, 7, 2, 3])
+        self.assertEqual(receipt["tokens"], 4)
+        self.assertEqual(k[0, indices, 0].tolist(), [[0, 1], [4, 5], [8, 9], [12, 13]])
+        self.assertEqual(
+            rope[0, indices, 0].tolist(), [[2, 3], [6, 7], [10, 11], [14, 15]]
+        )
+        self.assertEqual(index[indices, 0].tolist(), [[0, 1], [2, 3], [4, 5], [6, 7]])
+        self.assertTrue(torch.all(k[:, [0, 1, 4, 5, 8, 9]] == -9))
+        self.assertEqual(store.load_back(**read), receipt)
+        store.release_source("B")
+
+    def test_fill_reads_saved_pages_into_a_new_alive_slot_and_waits_for_completion(
+        self,
+    ):
+        store, manager, kernel, events = self.make_store()
+        for region, layers in (("main", 2), ("index", 1)):
+            for layer in range(layers):
+                alive = kernel.buffers[
+                    manager.view(0, layer, region="alive_" + region).device_base
+                ]
+                alive[3, :2] = 11 + layer
+                alive[3, 2:4] = 21 + layer
+        save = dict(
+            rid="A",
+            op_id=1,
+            slot=3,
+            prompt_tokens=4,
+            source_pages=[0, 1],
+            target_pages=[2, 0],
+        )
+        self.assertIsNone(store.admit(**save))
+        events[-1].done = True
+        store.admit(**save)
+        store.release_source("A")
+        fill = dict(rid="B", op_id=2, slot=5, source_pages=[2, 0])
+        self.assertIsNone(store.fill(**fill))
+        with self.assertRaisesRegex(RuntimeError, "pending"):
+            store.release_source("B")
+        events[-1].done = True
+        receipt = store.fill(**fill)
+        self.assertEqual(receipt["tokens"], 4)
+        self.assertEqual(store.fill(**fill), receipt)
+        for region, layers in (("main", 2), ("index", 1)):
+            for layer in range(layers):
+                alive = kernel.buffers[
+                    manager.view(0, layer, region="alive_" + region).device_base
+                ]
+                self.assertTrue(torch.all(alive[5, :2] == 11 + layer))
+                self.assertTrue(torch.all(alive[5, 2:4] == 21 + layer))
+                self.assertTrue(torch.all(alive[5, 4:] == -99))
+        store.release_source("B")
+        self.assertEqual(store.free_pages, (1,))
+
     def make_store(self, *, pages=3, verify=False, page_size=2, prompt_capacity=8):
         layout = MempoolConfig(
             prefill_capacity=prompt_capacity,

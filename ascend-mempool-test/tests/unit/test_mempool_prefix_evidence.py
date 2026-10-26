@@ -11,20 +11,54 @@ import verify_mempool_prefix as verifier
 
 
 class TestPrefixEvidence(unittest.TestCase):
-    def evidence(self):
+    def evidence(self, *, reuse=False):
         system = fixture.TestPrefixMainRouter()
         system.setUp()
         snapshots, cases, lines = [], [], []
         retained = [{} for _ in range(16)]
-        for index, (tokens, added, total) in enumerate(
-            (
-                ([7] * 4096, 32, 32),
-                ([7] * 4096 + [8] * 1024, 8, 40),
-                ([7] * 4096, 0, 40),
-                ([9] * 4096, 0, 40),
-            )
-        ):
-            request = system.finish_inference(tokens)
+        scenarios = (
+            ([7] * 4096, 32, 32),
+            ([7] * 4096 + [8] * 1024, 8, 40),
+            ([7] * 4096, 0, 40),
+            ([9] * 4096, 0, 40),
+        )
+        if reuse:
+            from msgspec.structs import replace
+
+            system.main.config = replace(system.main.config, match_prefix=True)
+            scenarios = scenarios[:3]
+        for index, (tokens, added, total) in enumerate(scenarios):
+            request, p_dispatch, d_dispatch = system.start_inference(tokens)
+            hit = request["hit_len"]
+            indices = [
+                p * 128 + t for p in range(1, 2 * (hit // 128), 2) for t in range(128)
+            ]
+            if hit:
+                load = system.main.outbox.popleft()
+
+                def read_receipt(rank):
+                    return dict(
+                        slot=5,
+                        readable=True,
+                        tokens=hit,
+                        source_pages=list(range(hit // 128)),
+                        main_layers=78,
+                        index_layers=21,
+                    )
+
+                system.ack(
+                    load, lambda rank: dict(read_receipt(rank), prefix_indices=indices)
+                )
+                fill = system.main.outbox.popleft()
+                system.main.receive(
+                    dict(
+                        p_dispatch,
+                        kind="native_freed",
+                        ranks=[dict(rank=r, native_freed=True) for r in range(16)],
+                    )
+                )
+                system.ack(fill, read_receipt)
+            system.finish_started(request, p_dispatch, d_dispatch)
             command = system.main.outbox.popleft() if added else None
             if command:
                 system.main.receive(
@@ -32,7 +66,12 @@ class TestPrefixEvidence(unittest.TestCase):
                 )
             system.free()
             snapshots.append(system.main.status())
-            cases.append(dict(name="cold-prefix-" + "abce"[index], input_ids=tokens))
+            cases.append(
+                dict(
+                    name=("reuse-prefix-" if reuse else "cold-prefix-") + "abce"[index],
+                    input_ids=tokens,
+                )
+            )
             for rank in range(16):
                 base = dict(
                     rank=rank,
@@ -48,7 +87,7 @@ class TestPrefixEvidence(unittest.TestCase):
                     for page in range(len(tokens) // 128)
                 }
 
-                def report(stage, op_id, source_pages, pages):
+                def report(stage, op_id, source_pages, pages, **evidence):
                     lines.append(
                         "mempool prefix_content data="
                         + json.dumps(
@@ -58,14 +97,66 @@ class TestPrefixEvidence(unittest.TestCase):
                                 op_id=op_id,
                                 source_pages=source_pages,
                                 pages=pages,
+                                **evidence,
                             )
                         )
                     )
 
-                report("alive", 0, list(range(len(tokens) // 128)), source)
+                if hit:
+                    prefix_values = {
+                        str(p): retained[rank][str(p)] for p in range(hit // 128)
+                    }
+                    report(
+                        "load_back",
+                        load["op_id"],
+                        list(range(hit // 128)),
+                        prefix_values,
+                        prefix_indices=indices,
+                        parts=[512, 64],
+                    )
+                    lines.append(
+                        f"mempool sr role=prefill rank={rank} event=load_back rid={request['rid']} op_id={load['op_id']}"
+                    )
+                    report(
+                        "suffix",
+                        0,
+                        list(range(hit // 128, len(tokens) // 128)),
+                        {p: v for p, v in source.items() if int(p) >= hit // 128},
+                    )
+                else:
+                    report("alive", 0, list(range(len(tokens) // 128)), source)
                 lines.append(
                     f"mempool native_free role=prefill rank={rank} room={request['room']}"
                 )
+                if hit:
+
+                    def progress(filled):
+                        lines.append(
+                            "mempool prefix_progress data="
+                            + json.dumps(
+                                dict(
+                                    rid=request["rid"],
+                                    room=request["room"],
+                                    rank=rank,
+                                    hit_len=hit,
+                                    suffix_start=hit,
+                                    suffix_completed=len(tokens) - hit,
+                                    native_freed=True,
+                                    fill_complete=filled,
+                                    ready_tokens=len(tokens) if filled else 0,
+                                )
+                            )
+                        )
+
+                    progress(False)
+                    report(
+                        "fill", fill["op_id"], list(range(hit // 128)), prefix_values
+                    )
+                    lines.append(
+                        f"mempool sr role=prefill rank={rank} event=fill rid={request['rid']} op_id={fill['op_id']}"
+                    )
+                    progress(True)
+                    report("alive", 0, list(range(len(tokens) // 128)), source)
                 if command:
                     saved = {
                         str(page): source[str(page)]

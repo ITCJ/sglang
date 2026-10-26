@@ -968,6 +968,16 @@ class NPUMLATokenToKVPool(MLATokenToKVPool):
             cache_k = cache_k.view(self.store_dtype)
             cache_v = cache_v.view(self.store_dtype)
 
+        self.set_mla_kv_rows(layer_id, loc, cache_k, cache_v)
+
+    def set_mla_kv_rows(
+        self,
+        layer_id: int,
+        loc: torch.Tensor,
+        cache_k: torch.Tensor,
+        cache_v: torch.Tensor,
+    ) -> None:
+        """Write MLA rows using the pool's physical flat or NZ layout."""
         if self.use_fia_nz:
             self._set_fia_nz_kv_buffer(layer_id, loc, cache_k, cache_v)
             return
@@ -983,6 +993,24 @@ class NPUMLATokenToKVPool(MLATokenToKVPool):
             ),
             loc.view(-1, 1),
             cache_v.view(-1, 1, self.qk_rope_head_dim),
+        )
+
+    def get_mla_kv_rows(
+        self, layer_id: int, loc: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Read logical token rows for prefix verification, including NZ storage."""
+
+        def gather(buffer: torch.Tensor, dim: int) -> torch.Tensor:
+            if self.use_fia_nz:
+                tiles = buffer.view(-1, dim // 16, self.page_size, 16)
+                return tiles.permute(0, 2, 1, 3)[
+                    loc // self.page_size, loc % self.page_size
+                ].reshape(-1, 1, dim)
+            return buffer.view(-1, 1, dim).index_select(0, loc)
+
+        return (
+            gather(self.get_key_buffer(layer_id), self.kv_lora_rank),
+            gather(self.get_value_buffer(layer_id), self.qk_rope_head_dim),
         )
 
     def _set_fia_nz_kv_buffer(

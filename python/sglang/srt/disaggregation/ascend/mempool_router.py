@@ -112,6 +112,8 @@ class MainRouter:
                 local_dram_bytes=(13 if role == "prefill" else 1) * 2**30,
                 verify_prefix=self.config.verify_prefix,
             )
+        if self.config.match_prefix:
+            expected["match_prefix"] = True
         for rank in ranks:
             if any(rank.get(k) != v for k, v in expected.items()):
                 raise ValueError("SR registered incompatible ticket01 capabilities")
@@ -239,7 +241,7 @@ class MainRouter:
             prompt_tokens=len(tokens),
             max_new_tokens=new,
             ignore_eos=sampling.get("ignore_eos", False),
-            hit_len=0,
+            hit_len=self._match_prefix(hashes),
             page_size=page_size,
         )
         for key, n in needed.items():
@@ -259,6 +261,7 @@ class MainRouter:
             admit=None,
             admit_complete=not bool(self.config.prefix_pages),
             save_planned=False,
+            reads={},
         )
         parent = None
         for hash_value in hashes:
@@ -283,6 +286,97 @@ class MainRouter:
         # slot and signs the complete pair. Main never chooses either slot.
         self._command("decode", "alloc", request=request)
         return request
+
+    def _match_prefix(self, hashes: list[str]) -> int:
+        """Use only the continuous retained path, leaving the final page to compute."""
+        count = 0
+        if self.config.match_prefix:
+            for value in hashes[:-1]:
+                prefix = self.directory.get(value, {}).get("prefix")
+                if prefix is None or prefix["state"] != "ready":
+                    break
+                if len(prefix["locations"]) != 16:
+                    raise RuntimeError("ready prefix lacks required replicas")
+                count += 1
+        return count * self.config.page_size
+
+    def _plan_read(self, kind: str) -> None:
+        active = self.active
+        assert active is not None
+        hit = active["request"]["hit_len"]
+        hashes = active["hashes"][: hit // self.config.page_size]
+        op_id = self.next_op + 1
+        for value in hashes:
+            prefix = self.directory[value]["prefix"]
+            if prefix["state"] != "ready":
+                raise RuntimeError("prefix source is no longer ready")
+            prefix["lock_ops"].append(op_id)
+        active["reads"][kind] = op_id
+        active["trace"].append(dict(kind="prefix_protect", role="prefill", op_id=op_id))
+        self._command(
+            "prefill",
+            kind,
+            hit_len=hit,
+            sources=[
+                dict(
+                    rank=rank["rank"],
+                    slot=rank["slot"],
+                    pages=[
+                        self.directory[value]["prefix"]["locations"][rank["rank"]]
+                        for value in hashes
+                    ],
+                )
+                for rank in active["allocations"]["prefill"]
+            ],
+        )
+
+    def _read_ack(self, command: dict[str, Any], ranks: list[dict[str, Any]]) -> None:
+        active = self.active
+        assert active is not None
+        kind, hit = command["kind"], command["hit_len"]
+        if (
+            command["role"] != "prefill"
+            or active["reads"].get(kind) != command["op_id"]
+        ):
+            raise ValueError("prefix completion has no planned operation")
+        for rank, receipt in enumerate(ranks):
+            source = command["sources"][rank]
+            if (
+                receipt.get("readable") is not True
+                or receipt.get("tokens") != hit
+                or receipt.get("slot") != source["slot"]
+                or receipt.get("source_pages")
+                != [p["logical_page"] for p in source["pages"]]
+                or receipt.get("main_layers") != 78
+                or receipt.get("index_layers") != len(PRODUCERS)
+            ):
+                raise ValueError(
+                    "prefix completion differs from source/target contract"
+                )
+            if kind == "load_back":
+                indices = receipt.get("prefix_indices", [])
+                size = self.config.page_size
+                if (
+                    len(indices) != hit
+                    or len(set(indices)) != hit
+                    or any(type(i) is not int or i < size for i in indices)
+                    or any(indices[i] % size for i in range(0, hit, size))
+                    or any(
+                        indices[i] != indices[i // size * size] + i % size
+                        for i in range(hit)
+                    )
+                ):
+                    raise ValueError("load_back lacks complete native token indices")
+        if kind == "load_back":
+            # Protect the next read before releasing this operation's source hold.
+            self._plan_read("fill")
+            active["phase"] = "running"
+            self.launches.append(active["request"])
+        for value in active["hashes"][: hit // self.config.page_size]:
+            self.directory[value]["prefix"]["lock_ops"].remove(command["op_id"])
+        active["trace"].append(
+            dict(kind="prefix_unprotect", role="prefill", op_id=command["op_id"])
+        )
 
     def _command(self, role: str, kind: str, **data: Any) -> None:
         if self.fault or self.active is None:
@@ -435,8 +529,14 @@ class MainRouter:
                     "prefill", "dispatch", request=active["request"], bindings=ranks
                 )
             else:
-                active["phase"] = "running"
-                self.launches.append(active["request"])
+                if active["request"]["hit_len"]:
+                    active["phase"] = "restoring"
+                    self._plan_read("load_back")
+                else:
+                    active["phase"] = "running"
+                    self.launches.append(active["request"])
+        elif kind in ("load_back_ack", "fill_ack"):
+            self._read_ack(command, ranks)
         elif kind == "ready_tokens":
             if (
                 role != "prefill"
@@ -444,6 +544,11 @@ class MainRouter:
                 or len(active["dispatch"]) != 2
             ):
                 raise ValueError("prompt became ready before both dispatches")
+            if active["request"]["hit_len"] and (
+                "fill" not in active["reads"]
+                or self.operations[active["reads"]["fill"]]["ack"] is None
+            ):
+                raise ValueError("prompt became ready before all fill replicas")
             for hash_value in active["hashes"]:
                 self.directory[hash_value]["state"] = "ready"
             self._command("decode", "ready", bindings=ranks)
@@ -674,6 +779,10 @@ class MainRouter:
                 events=active["events"],
                 trace=active["trace"],
                 hit_len=active["request"]["hit_len"],
+                reads={
+                    kind: copy.deepcopy(self.operations[op])
+                    for kind, op in active["reads"].items()
+                },
                 admit=(
                     copy.deepcopy(self.operations[active["admit"]["op_id"]])
                     if active["admit"] is not None

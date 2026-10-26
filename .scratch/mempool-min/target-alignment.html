@@ -430,7 +430,7 @@ html[data-theme="shadcn"] .am-kv { border-color: var(--line); border-radius: var
 <button class="am-btn" type="button" data-am="copy" data-done="已复制 ✓">复制源稿</button>
 </div>
 <main class="am-doc">
-<header class="am-head"><h1>mempool-min：实现目标对齐核对</h1><p class="am-sub">以 syncfile 现行文字为依据，区分阶段 0 与后续目标</p><div class="am-head-meta"><span><b>date</b>2026-10-26</span><span><b>status</b>ticket01 已关闭；ticket02 重写实现、CPU 与 review 完成，NPU 待验收</span></div><div class="am-intro am-md"><div class="am-md"><p><strong>当前四票与 sparse 阶段 0 一致，但没有覆盖后续全部目标。</strong>
+<header class="am-head"><h1>mempool-min：实现目标对齐核对</h1><p class="am-sub">以 syncfile 现行文字为依据，区分阶段 0 与后续目标</p><div class="am-head-meta"><span><b>date</b>2026-10-26</span><span><b>status</b>ticket01 已关闭；02 待关闭确认；03 实现与 CPU 回归通过，待 NPU 验收</span></div><div class="am-intro am-md"><div class="am-md"><p><strong>当前四票与 sparse 阶段 0 一致，但没有覆盖后续全部目标。</strong>
 alive 整槽分配和私有副本都有阶段 0 的明确依据。
 K1 共享、真正的 alive 页分配及 dense 集成仍须承接。
 此前说明没有充分区分阶段终点与整体目标。</p>
@@ -506,7 +506,8 @@ K1 共享、真正的 alive 页分配及 dense 集成仍须承接。
 <p>这是文档范围核对，不代表这些设计已经实现。
 2026-10-24统一页决定取代此前的64/128分离；本轮已修正现行正文和ticket01代码。
 HTTP/ZMQ、原生预留和冷请求已通过 ticket01 用户 NPU 验收。
-prefix 保存已由 ticket02 实现并通过 CPU 验证，NPU 待验收；命中恢复仍待 ticket03。</p>
+prefix 保存已由 ticket02 实现并通过 CPU 与自动化 NPU 验收。
+ticket03 已实现命中恢复与后缀计算，CPU 回归通过，NPU 尚未执行。</p>
 </div></div>
 </section>
 <section class="am-panel" id="panel-B">
@@ -635,7 +636,51 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 </section>
 <section class="am-panel" id="panel-D">
 <header class="am-panel-head"><span class="am-panel-id">D</span><h2>名称、验收与实施票怎样对应</h2></header>
-<div class="am-panel-body"><div class="am-md"><p><strong>2026-10-26 ticket02 重写：reference 修复完成 CPU 全回归与两轴 review。</strong></p>
+<div class="am-panel-body"><div class="am-md"><p><strong>2026-10-26 ticket03：第 16 步：实现交付就绪。</strong></p>
+<p>最终完整 CPU 回归 453/453 通过（38.513 秒）。Standards / Spec 两轴最终均为 0 项未解决发现；进度摘要问题和两处完成边界修正已验证。</p>
+<p>源码阅读顺序、所有权、双机 reuse-acceptance 命令及回传材料已整理到 ticket03-delivery。</p>
+<p>03 保持 needs-info/open，等待用户执行本票 NPU 内容、完整输出、D Graph 和释放验收。
+02 关闭确认独立保留，04 未解锁；后续硬件修正另行提交。</p>
+<p><strong>2026-10-26 ticket03：第 15 步：review 中修正完成边界。</strong></p>
+<p>范围错误快照已移到设备完成事件之前，保证收据覆盖全部验证数据。命中证据检查允许快 rank 在等待慢 rank 时重复返回同一操作的本地完成记录；Main 的 ack 与解锁仍必须各一次。新增回归先失败后通过。
+继续两轴 review；NPU 仍待用户执行。</p>
+<p><strong>2026-10-26 ticket03：第 14 步：完整 CPU 回归通过。</strong></p>
+<p>完整 CPU 套件 453/453 通过（38.884 秒）。12 个功能/验收模块 strict mypy 通过，23 个修改或新增 Python 文件 lint、format、isort 与 Python 3.9 AST 通过。恢复失败和提前 ready 的负向测试确认保留账本与来源锁。
+实现与自运行入口已齐备；正在进行 Standards / Spec 两轴 review。NPU 尚未执行，03 保持 open，04 未解锁。</p>
+<p><strong>2026-10-26 ticket03：第 13 步：原生接口集成检查。</strong></p>
+<p>CPU 使用真实 Req 匹配、alloc_for_extend、行映射写入和 ChunkCache 清理方法，验证 C 的 3968 个恢复索引接续 128 个新算位置。31 个恢复页与最后新页均由原生清理归还，无重复释放。
+已完成此集成检查；完整 CPU 回归、两轴 review 和用户 NPU 验收仍待完成。</p>
+<p><strong>2026-10-26 ticket03：第 12 步：双机自运行命中入口。</strong></p>
+<p>run_mempool_min.py 新增 reuse-acceptance，自动启动独立 A/B/C 冷算参考和命中目标组。两组完整 output IDs 必须相等。
+入口检查 16 ranks 内容、真实后缀计数、D Graph、账本和释放，保留超时 fail-stop 与自身进程清理。
+入口本地 CPU 测试已验证三条真实 decode 参考及模式配置；NPU 尚未执行，仍需用户每机一条命令运行。实现待完整回归与两轴 review。</p>
+<p><strong>2026-10-26 ticket03：第 11 步：命中证据核验。</strong></p>
+<p>新增 A/B/C 命中证据检查，逐 rank 关联原始 prefix 内容、真实恢复索引、fill、后缀和 alive；要求保护/解锁 op_id 独立且完成顺序正确。CPU 证据测试通过，并拒绝缺 rank、连续地址伪造、错误内容和提前 ready 等损坏记录。
+硬件证据尚未生成；下一步接入自运行入口。</p>
+<p><strong>2026-10-26 ticket03：第 10 步：验收边界控制。</strong></p>
+<p>verify_prefix 且 match_prefix 的验收模式通过原生 allocator 分配真实索引，主动留出一页。全 TP 发布 P native_freed 后才提交 fill。正常服务不注入延迟。CPU 分配、service 与 TP tick 的 9 项测试通过，验证后缀先完成仍不能提前 ready。
+这些控制用于 NPU 验收可重复地覆盖非连续映射和先释放后 fill；不是 NPU 已通过证据。</p>
+<p><strong>2026-10-26 ticket03：第 9 步：原生 HBM 布局适配。</strong></p>
+<p>load_back 已通过原生 MLA 池接口恢复 K/rope，支持普通布局与 FIA NZ 布局。CPU 测试用实际原生索引验证非连续页地址、512/64 拆分和 NZ 物理布局；相关 17 项测试通过。
+NPU 验证尚未执行；后续补齐 ticket03 一键验收入口及源码审查。</p>
+<p><strong>2026-10-26 ticket03：第 8 步，service 联合就绪与启动安装完成。</strong></p>
+<p>service 已合并 fill 和后缀真实完成，原生 row detach 后仍保留后缀范围收据。CPU 测试实际清空 native 缓冲后继续完成 fill，确认此前不发布 ready；相关 service 14项通过。生产启动按 match_prefix 安装 Ascend ChunkCache 适配器。尚需原生接口集成负向检查、命中自运行入口及完整 review。NPU 未执行。</p>
+<p><strong>2026-10-26 ticket03：第 7 步，两段内容证据通过 CPU 验证。</strong></p>
+<p>验收模式分别核对 fill 和 suffix，最终用 A 的原始保存值与 B 的新算值核对完整 alive。load_back 内容检查按原生索引比较主 KV 两部分及 Index K，并记录实际 prefix_indices。prefix 7项通过；生产 service 联合就绪和 NPU 入口尚待接线。NPU 未执行。</p>
+<p><strong>2026-10-26 ticket03：第 6 步，后缀独立范围和真实写回计数通过 CPU 验证。</strong></p>
+<p>runtime 用 write_start 标识后缀起点，submitted／completed 仍从零累计真实写入。设备范围检查拒绝错位或额外行，detach 后保留范围与完成收据。runtime／prefix 共25项通过，含修复首轮额外行检查回归。service 两段就绪、生产接线和验收报告仍待完成。NPU 未执行。</p>
+<p><strong>2026-10-26 ticket03：第 5 步，全 TP 恢复与 fill 协调通过 CPU 验证。</strong></p>
+<p>SR 已接入两种复制操作，校验实际来源、请求绑定与统一页。TP16 行为测试覆盖最后 rank 延迟：完成前不发恢复／fill ack，也不发布 ready；native release 可以独立推进。SR 与原生适配器共8项通过。service 后缀进度、生产启动安装和 NPU 内容验收仍待完成。NPU 未执行。</p>
+<p><strong>2026-10-26 ticket03：第 4 步，原生恢复所有权适配器通过 CPU 验证。</strong></p>
+<p>新增 PrefillRestore，按实际 allocator 分配命中段，并通过 ChunkCache 接口交给原生 extend；恢复页归本请求所有。C 的31页非连续恢复与后续一页分配测试先失败后通过。SR／service 安装、实际原生释放集成与设备验收仍待完成。NPU 未执行。</p>
+<p><strong>2026-10-26 ticket03：第 3 步，Main 命中与恢复计划通过 CPU 验证。</strong></p>
+<p>Main 新增 match_prefix 开关，B／C 分别命中4096／3968，仍预留完整请求额度。load_back 与 fill 各自保护来源并按真实 ack 解锁；恢复 ack 后才发 fill 和启动模型请求。完整 ready 必须已有全 rank fill 回执；结束只增缺失页。</p>
+<p>Router 16 项通过。SR 执行、原生索引接线、后缀计数和 NPU 入口仍待完成。NPU 未执行。</p>
+<p><strong>2026-10-26 ticket03：第 2 步，load_back 复制适配器通过 CPU 验证。</strong></p>
+<p>新增 prefix → 原生 HBM 主 KV 两部分与 Index K 恢复，使用逐 token 索引并检查完整页、非连续分配和目标边界。新增测试先失败后通过，prefix 6 项通过。复制回执等待设备完成；原生 allocator 接线、Main／SR、后缀就绪与 NPU 内容证据仍待完成。NPU 未执行。</p>
+<p><strong>2026-10-26 ticket03：第 1 步，fill 复制适配器通过 CPU 验证。</strong></p>
+<p>新增 prefix → 新请求 P alive 的主 KV／Index K 复制，使用独立 NPU stream 和真实事件回执；pending 时禁止归还请求来源。保存后再填入另一槽的行为测试先失败后通过，prefix 文件 5 项通过。load_back、命中协议、原生映射、后缀就绪和自运行验收仍待实现；NPU 未执行。用户已明确授权实施 03，02 仍待关闭确认，例外仅限 03。</p>
+<p><strong>2026-10-26 ticket02 重写：reference 修复完成 CPU 全回归与两轴 review。</strong></p>
 <p>本次完整 CPU 套件 440/440 通过，36.115 秒；2 个验收脚本 strict mypy、4 个修改 Python 文件 lint/format/isort/Python3.9 AST 通过。Standards / Spec 均为 0 项发现。</p>
 <p>修复仅调整 reference 的请求完成计数合同，生产功能源码未改。已更新交付命令，31/32 复用既有配置并使用 ticket02-002 重跑；保留 ticket02-001 日志。本票 NPU 尚未验收，02 保持 open，03 继续等待。</p>
 <p><strong>2026-10-26 ticket02 重写：reference 计数合同负向验证通过。</strong></p>
@@ -875,7 +920,7 @@ K1 是原文的共享接入标记，不代表“阶段 1”。
 <tbody><tr>
 <td>基础请求流程（阶段 0）</td>
 <td>mempool-min 01 → 02 → 03 → 04</td>
-<td>01 用户验收并关闭；02 已实现待 NPU 验收；03–04 待实现与验收</td>
+<td>01 已关闭；02 待关闭确认；03 实现/CPU 通过，待 NPU；04 待实施</td>
 </tr>
 <tr>
 <td>共享存储接入（K1）</td>
@@ -932,15 +977,15 @@ K1 是原文的共享接入标记，不代表“阶段 1”。
 </tr>
 <tr>
 <td><a href="issues/02-prompt-prefix-save.md">02 prompt 保存</a></td>
-<td>Index K 写回、40 页 prefix、异步 admit/publish、内容验收入口；9 个 Ascend/NPU 功能文件</td>
-<td>功能实现与 review 完成；NPU 验收待完成</td>
-<td>CPU 437 项与整改后 42 项通过；两轴 review 剩余 0 项；用户 NPU 未验收，保持 open</td>
+<td>Index K 写回、40 页 prefix、异步 admit/publish；用户回传双机 NPU 验收通过</td>
+<td>功能与自动化验收完成；等待用户确认关闭</td>
+<td>87157b7365、ticket02-002；CPU 440 项、两轴 review 与 NPU 报告通过；NUMA 落点未验证，State=open</td>
 </tr>
 <tr>
 <td><a href="issues/03-prefix-restore-and-suffix.md">03 命中恢复与后缀</a></td>
-<td>规格、回顾确认及重编实施票</td>
-<td>load_back、fill、两段就绪与实际尾页接续</td>
-<td>CPU／NPU 新行为未验收；等待 02 关闭</td>
+<td>load_back、fill、后缀独立计数、联合 ready、真实尾页接续；reuse-acceptance 入口</td>
+<td>用户 NPU 内容/推理/释放验收</td>
+<td>CPU 453 项、两轴 review 通过；用户明确授权先实施 03，02 关闭确认仍保留；State=open</td>
 </tr>
 <tr>
 <td><a href="issues/04-full-demo-acceptance.md">04 完整自运行验收</a></td>
@@ -1032,7 +1077,7 @@ CPU及静态检查证据见<a href="unified-page-size-change.html">本轮改动�
 </div>
 </div>
 </main>
-<footer class="am-colophon">Generated by Answer me with HTML 0.4.3 · 2026-10-26 15:42</footer>
+<footer class="am-colophon">Generated by Answer me with HTML 0.4.3 · 2026-10-26 18:42</footer>
 <textarea id="am-source" hidden readonly aria-hidden="true">---
 title: mempool-min：实现目标对齐核对
 subtitle: 以 syncfile 现行文字为依据，区分阶段 0 与后续目标
@@ -1040,7 +1085,7 @@ template: doc
 theme: blueprint
 lang: zh
 date: 2026-10-26
-status: ticket01 已关闭；ticket02 重写实现、CPU 与 review 完成，NPU 待验收
+status: ticket01 已关闭；02 待关闭确认；03 实现与 CPU 回归通过，待 NPU 验收
 ---
 
 **当前四票与 sparse 阶段 0 一致，但没有覆盖后续全部目标。**
@@ -1071,7 +1116,8 @@ K1 共享、真正的 alive 页分配及 dense 集成仍须承接。
 这是文档范围核对，不代表这些设计已经实现。
 2026-10-24统一页决定取代此前的64/128分离；本轮已修正现行正文和ticket01代码。
 HTTP/ZMQ、原生预留和冷请求已通过 ticket01 用户 NPU 验收。
-prefix 保存已由 ticket02 实现并通过 CPU 验证，NPU 待验收；命中恢复仍待 ticket03。
+prefix 保存已由 ticket02 实现并通过 CPU 与自动化 NPU 验收。
+ticket03 已实现命中恢复与后缀计算，CPU 回归通过，NPU 尚未执行。
 
 ## B 最小空闲 slot 0 与 page 的关系
 
@@ -1135,6 +1181,86 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 共享后分片解析组映射；Router 仍只处理逻辑位置和不透明描述符。
 
 ## D 名称、验收与实施票怎样对应
+
+**2026-10-26 ticket03：第 16 步：实现交付就绪。**
+
+最终完整 CPU 回归 453/453 通过（38.513 秒）。Standards / Spec 两轴最终均为 0 项未解决发现；进度摘要问题和两处完成边界修正已验证。
+
+源码阅读顺序、所有权、双机 reuse-acceptance 命令及回传材料已整理到 ticket03-delivery。
+
+03 保持 needs-info/open，等待用户执行本票 NPU 内容、完整输出、D Graph 和释放验收。
+02 关闭确认独立保留，04 未解锁；后续硬件修正另行提交。
+
+**2026-10-26 ticket03：第 15 步：review 中修正完成边界。**
+
+范围错误快照已移到设备完成事件之前，保证收据覆盖全部验证数据。命中证据检查允许快 rank 在等待慢 rank 时重复返回同一操作的本地完成记录；Main 的 ack 与解锁仍必须各一次。新增回归先失败后通过。
+继续两轴 review；NPU 仍待用户执行。
+
+**2026-10-26 ticket03：第 14 步：完整 CPU 回归通过。**
+
+完整 CPU 套件 453/453 通过（38.884 秒）。12 个功能/验收模块 strict mypy 通过，23 个修改或新增 Python 文件 lint、format、isort 与 Python 3.9 AST 通过。恢复失败和提前 ready 的负向测试确认保留账本与来源锁。
+实现与自运行入口已齐备；正在进行 Standards / Spec 两轴 review。NPU 尚未执行，03 保持 open，04 未解锁。
+
+**2026-10-26 ticket03：第 13 步：原生接口集成检查。**
+
+CPU 使用真实 Req 匹配、alloc_for_extend、行映射写入和 ChunkCache 清理方法，验证 C 的 3968 个恢复索引接续 128 个新算位置。31 个恢复页与最后新页均由原生清理归还，无重复释放。
+已完成此集成检查；完整 CPU 回归、两轴 review 和用户 NPU 验收仍待完成。
+
+**2026-10-26 ticket03：第 12 步：双机自运行命中入口。**
+
+run_mempool_min.py 新增 reuse-acceptance，自动启动独立 A/B/C 冷算参考和命中目标组。两组完整 output IDs 必须相等。
+入口检查 16 ranks 内容、真实后缀计数、D Graph、账本和释放，保留超时 fail-stop 与自身进程清理。
+入口本地 CPU 测试已验证三条真实 decode 参考及模式配置；NPU 尚未执行，仍需用户每机一条命令运行。实现待完整回归与两轴 review。
+
+**2026-10-26 ticket03：第 11 步：命中证据核验。**
+
+新增 A/B/C 命中证据检查，逐 rank 关联原始 prefix 内容、真实恢复索引、fill、后缀和 alive；要求保护/解锁 op_id 独立且完成顺序正确。CPU 证据测试通过，并拒绝缺 rank、连续地址伪造、错误内容和提前 ready 等损坏记录。
+硬件证据尚未生成；下一步接入自运行入口。
+
+**2026-10-26 ticket03：第 10 步：验收边界控制。**
+
+verify_prefix 且 match_prefix 的验收模式通过原生 allocator 分配真实索引，主动留出一页。全 TP 发布 P native_freed 后才提交 fill。正常服务不注入延迟。CPU 分配、service 与 TP tick 的 9 项测试通过，验证后缀先完成仍不能提前 ready。
+这些控制用于 NPU 验收可重复地覆盖非连续映射和先释放后 fill；不是 NPU 已通过证据。
+
+**2026-10-26 ticket03：第 9 步：原生 HBM 布局适配。**
+
+load_back 已通过原生 MLA 池接口恢复 K/rope，支持普通布局与 FIA NZ 布局。CPU 测试用实际原生索引验证非连续页地址、512/64 拆分和 NZ 物理布局；相关 17 项测试通过。
+NPU 验证尚未执行；后续补齐 ticket03 一键验收入口及源码审查。
+
+**2026-10-26 ticket03：第 8 步，service 联合就绪与启动安装完成。**
+
+service 已合并 fill 和后缀真实完成，原生 row detach 后仍保留后缀范围收据。CPU 测试实际清空 native 缓冲后继续完成 fill，确认此前不发布 ready；相关 service 14项通过。生产启动按 match_prefix 安装 Ascend ChunkCache 适配器。尚需原生接口集成负向检查、命中自运行入口及完整 review。NPU 未执行。
+
+**2026-10-26 ticket03：第 7 步，两段内容证据通过 CPU 验证。**
+
+验收模式分别核对 fill 和 suffix，最终用 A 的原始保存值与 B 的新算值核对完整 alive。load_back 内容检查按原生索引比较主 KV 两部分及 Index K，并记录实际 prefix_indices。prefix 7项通过；生产 service 联合就绪和 NPU 入口尚待接线。NPU 未执行。
+
+**2026-10-26 ticket03：第 6 步，后缀独立范围和真实写回计数通过 CPU 验证。**
+
+runtime 用 write_start 标识后缀起点，submitted／completed 仍从零累计真实写入。设备范围检查拒绝错位或额外行，detach 后保留范围与完成收据。runtime／prefix 共25项通过，含修复首轮额外行检查回归。service 两段就绪、生产接线和验收报告仍待完成。NPU 未执行。
+
+**2026-10-26 ticket03：第 5 步，全 TP 恢复与 fill 协调通过 CPU 验证。**
+
+SR 已接入两种复制操作，校验实际来源、请求绑定与统一页。TP16 行为测试覆盖最后 rank 延迟：完成前不发恢复／fill ack，也不发布 ready；native release 可以独立推进。SR 与原生适配器共8项通过。service 后缀进度、生产启动安装和 NPU 内容验收仍待完成。NPU 未执行。
+
+**2026-10-26 ticket03：第 4 步，原生恢复所有权适配器通过 CPU 验证。**
+
+新增 PrefillRestore，按实际 allocator 分配命中段，并通过 ChunkCache 接口交给原生 extend；恢复页归本请求所有。C 的31页非连续恢复与后续一页分配测试先失败后通过。SR／service 安装、实际原生释放集成与设备验收仍待完成。NPU 未执行。
+
+**2026-10-26 ticket03：第 3 步，Main 命中与恢复计划通过 CPU 验证。**
+
+Main 新增 match_prefix 开关，B／C 分别命中4096／3968，仍预留完整请求额度。load_back 与 fill 各自保护来源并按真实 ack 解锁；恢复 ack 后才发 fill 和启动模型请求。完整 ready 必须已有全 rank fill 回执；结束只增缺失页。
+
+Router 16 项通过。SR 执行、原生索引接线、后缀计数和 NPU 入口仍待完成。NPU 未执行。
+
+**2026-10-26 ticket03：第 2 步，load_back 复制适配器通过 CPU 验证。**
+
+新增 prefix → 原生 HBM 主 KV 两部分与 Index K 恢复，使用逐 token 索引并检查完整页、非连续分配和目标边界。新增测试先失败后通过，prefix 6 项通过。复制回执等待设备完成；原生 allocator 接线、Main／SR、后缀就绪与 NPU 内容证据仍待完成。NPU 未执行。
+
+**2026-10-26 ticket03：第 1 步，fill 复制适配器通过 CPU 验证。**
+
+新增 prefix → 新请求 P alive 的主 KV／Index K 复制，使用独立 NPU stream 和真实事件回执；pending 时禁止归还请求来源。保存后再填入另一槽的行为测试先失败后通过，prefix 文件 5 项通过。load_back、命中协议、原生映射、后缀就绪和自运行验收仍待实现；NPU 未执行。用户已明确授权实施 03，02 仍待关闭确认，例外仅限 03。
+
 
 **2026-10-26 ticket02 重写：reference 修复完成 CPU 全回归与两轴 review。**
 
@@ -1427,7 +1553,7 @@ K1 是原文的共享接入标记，不代表“阶段 1”。
 
 | 功能名称（原文标记） | 当前本地承接 | 状态与边界 |
 |---|---|---|
-| 基础请求流程（阶段 0） | mempool-min 01 → 02 → 03 → 04 | 01 用户验收并关闭；02 已实现待 NPU 验收；03–04 待实现与验收 |
+| 基础请求流程（阶段 0） | mempool-min 01 → 02 → 03 → 04 | 01 已关闭；02 待关闭确认；03 实现/CPU 通过，待 NPU；04 待实施 |
 | 共享存储接入（K1） | 旧 NUMA 共享 02 有部分相关范围 | 尚无覆盖完整共享接入的新控制路径集成票 |
 | 远端 prefix 与布局调整（阶段 1） | 本 feature 尚未拆票 | 包含 page-first |
 | 分块与流水（阶段 2） | 本 feature 尚未拆票 | 包含逐 chunk 推进、提前首 token |
@@ -1448,8 +1574,8 @@ ticket01 已经用户确认 NPU 验收并关闭；02–04 保持 open。
 | Ticket | 已完成 | 待实现的主要行为 | 验证状态与进入条件 |
 |---|---|---|---|
 | [01 冷请求与显式释放](issues/01-cold-request-lifecycle.md) | 冷请求、统一页、原生 warmup；CPU、双轴 review 与用户 NPU 验收 | 本票已关闭 | 7275f29a05：自动化验收通过，2026-10-26 用户确认；user_accepted=true |
-| [02 prompt 保存](issues/02-prompt-prefix-save.md) | Index K 写回、40 页 prefix、异步 admit/publish、内容验收入口；9 个 Ascend/NPU 功能文件 | 功能实现与 review 完成；NPU 验收待完成 | CPU 437 项与整改后 42 项通过；两轴 review 剩余 0 项；用户 NPU 未验收，保持 open |
-| [03 命中恢复与后缀](issues/03-prefix-restore-and-suffix.md) | 规格、回顾确认及重编实施票 | load_back、fill、两段就绪与实际尾页接续 | CPU／NPU 新行为未验收；等待 02 关闭 |
+| [02 prompt 保存](issues/02-prompt-prefix-save.md) | Index K 写回、40 页 prefix、异步 admit/publish；用户回传双机 NPU 验收通过 | 功能与自动化验收完成；等待用户确认关闭 | 87157b7365、ticket02-002；CPU 440 项、两轴 review 与 NPU 报告通过；NUMA 落点未验证，State=open |
+| [03 命中恢复与后缀](issues/03-prefix-restore-and-suffix.md) | load_back、fill、后缀独立计数、联合 ready、真实尾页接续；reuse-acceptance 入口 | 用户 NPU 内容/推理/释放验收 | CPU 453 项、两轴 review 通过；用户明确授权先实施 03，02 关闭确认仍保留；State=open |
 | [04 完整自运行验收](issues/04-full-demo-acceptance.md) | 规格、回顾确认及重编实施票 | 独立参考组、A/B/C/E、V1–V10 与报告整合 | 完整验收未执行；等待 03 关闭 |
 
 每次实现后立即更新本表，分别记录代码、CPU 检查与用户 NPU 验收。

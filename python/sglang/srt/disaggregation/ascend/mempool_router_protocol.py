@@ -42,8 +42,13 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     startup_timeout: float = 7200.0
     prefix_pages: int = 0
     verify_prefix: bool = False
+    match_prefix: bool = False
 
     def __post_init__(self) -> None:
+        if type(self.match_prefix) is not bool or (
+            self.match_prefix and not self.prefix_pages
+        ):
+            raise ValueError("match_prefix requires enabled prefix storage")
         if type(self.prefix_pages) is not int or self.prefix_pages not in (0, 40):
             raise ValueError("prefix_pages must be 0 or 40")
         if type(self.verify_prefix) is not bool or (

@@ -170,8 +170,14 @@ class TestPreflightIdentity(unittest.TestCase):
 
 class TestMinRunner(unittest.TestCase):
     def test_prefix_reference_accepts_four_real_decode_requests_through_runner(self):
+        self.check_reference("prefix-acceptance", "abce", (4096, 5120, 4096, 4096))
+
+    def test_reuse_reference_accepts_three_real_decode_requests_through_runner(self):
+        self.check_reference("reuse-acceptance", "abc", (4096, 5120, 4096))
+
+    def check_reference(self, mode, names, lengths):
         logs = service_logs(
-            (127, 127, 127, 127), layers=78, indexer_layer_ids=verifier.PRODUCERS
+            (127,) * len(names), layers=78, indexer_layer_ids=verifier.PRODUCERS
         )
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -188,7 +194,7 @@ class TestMinRunner(unittest.TestCase):
             )
             args = SimpleNamespace(
                 role="prefill",
-                mode="prefix-acceptance",
+                mode=mode,
                 config=root / "config.json",
                 run_id="cpu",
             )
@@ -205,7 +211,7 @@ class TestMinRunner(unittest.TestCase):
                         ignore_eos=True,
                     ),
                 )
-                for name, length in zip("abce", (4096, 5120, 4096, 4096))
+                for name, length in zip(names, lengths)
             ]
             results = [
                 dict(
@@ -249,7 +255,7 @@ class TestMinRunner(unittest.TestCase):
             ):
                 instance.stage(target=False)
             evidence = json.loads((stage / "evidence.json").read_text())
-            self.assertEqual(evidence["decode_requests"], 4)
+            self.assertEqual(evidence["decode_requests"], len(names))
             self.assertEqual(evidence["zero_decode_requests"], 0)
             self.assertEqual(instance.reference, results)
             self.assertEqual(instance.report["stages"], ["reference"])
@@ -300,6 +306,34 @@ class TestMinRunner(unittest.TestCase):
             ],
             176 * 2**30,
         )
+
+    def test_reuse_entry_enables_hits_and_describes_boundary_controls(self):
+        config_path = (
+            Path(__file__).resolve().parents[2] / "configs/mempool-min.example.json"
+        )
+        for mode, match in (("prefix-acceptance", False), ("reuse-acceptance", True)):
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(
+                    runner.main(
+                        [
+                            "--role",
+                            "prefill",
+                            "--mode",
+                            mode,
+                            "--config",
+                            str(config_path),
+                            "--run-id",
+                            "reuse-describe",
+                            "--describe",
+                        ]
+                    ),
+                    0,
+                )
+            data = json.loads(output.getvalue())
+            self.assertEqual(data["config"]["match_prefix"], match)
+            if match:
+                self.assertIn("formal reference A/B/C", data["stages"])
+                self.assertIn("native_freed", data["acceptance_controls"])
 
     def test_paired_timeout_retains_quota_and_reaps_only_owned_children(self):
         now = [0.0]

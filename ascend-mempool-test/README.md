@@ -1,9 +1,14 @@
 # Ascend mempool 功能与服务测试
 
-mempool-min ticket02 的保存验收入口为 `run_mempool_min.sh --mode prefix-acceptance`。
+mempool-min ticket03 的命中验收入口为 `run_mempool_min.sh --mode reuse-acceptance`。
+它自动运行独立 A/B/C 冷算参考、真实保存/恢复/后缀计算和全量输出比较。
+代码阅读顺序、每机一条命令和验收边界控制见
+[ticket03 交付说明](../.scratch/mempool-min/ticket03-delivery.md)。本票保持 open，NPU 尚未执行。
+
+ticket02 的保存验收入口为 `run_mempool_min.sh --mode prefix-acceptance`。
 双机命令、容量、回传材料和功能代码 review 顺序见
 [ticket02 交付说明](../.scratch/mempool-min/ticket02-delivery.md)。
-ticket01 已由用户验收；ticket02 当前等待独立 NPU 验收。
+ticket01 已由用户验收；ticket02 自动化 NPU 报告已通过，待用户确认关闭。
 
 TP1/2/4 大块写入、sparse top-k=2048 同时读取及跨 NUMA 布局实验：
 [C/D 自运行矩阵](NUMA_CD.md)（Graph / block_dim 48，含进度和逐用例续跑）。

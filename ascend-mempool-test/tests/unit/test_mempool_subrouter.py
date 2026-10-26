@@ -16,6 +16,137 @@ from ascend_mempool_pd.mempool_tick import RequestObservation
 
 
 class TestSubrouter(unittest.TestCase):
+    def test_restore_and_fill_wait_for_last_rank_while_native_release_can_progress(
+        self,
+    ):
+        import test_prefix as prefix_fixture
+        import torch
+        from test_mempool_native_prefix import native_methods
+
+        from ascend_mempool_pd.mempool_prefill_restore import PrefillRestore
+
+        self.request.update(input_ids=[7] * 256, prompt_tokens=256, hit_len=128)
+        events = []
+        for tick in self.ticks["prefill"]:
+            helper = prefix_fixture.TestPrefixStore()
+            self.addCleanup(helper.doCleanups)
+            store, _, _, device_events = helper.make_store(
+                pages=40, page_size=128, prompt_capacity=8192
+            )
+            save = dict(
+                rid="A",
+                op_id=100,
+                slot=3,
+                prompt_tokens=128,
+                source_pages=[0],
+                target_pages=[0],
+            )
+            store.admit(**save)
+            device_events[-1].done = True
+            store.admit(**save)
+            store.release_source("A")
+            arrays = [torch.zeros((512, 1, 2), dtype=torch.bfloat16) for _ in range(5)]
+            pool = SimpleNamespace(
+                page_size=128,
+                start_layer=0,
+                layer_num=2,
+                kv_lora_rank=2,
+                qk_rope_head_dim=2,
+                indexer_layer_ids=(0,),
+                index_head_dim=2,
+                index_k_scale_buffer=None,
+                get_key_buffer=lambda i, a=arrays: a[i],
+                get_value_buffer=lambda i, a=arrays: a[2 + i],
+                get_index_k_buffer=lambda i, a=arrays: a[4],
+            )
+            pool = native_methods(pool)
+            pages = Pages()
+            pages.get_kvcache = lambda p=pool: p
+            tick.shard.prefix, tick.shard.restore = store, PrefillRestore(pages, store)
+            events.append(device_events)
+        d = self.command("decode", "alloc", request=self.request)
+        p = self.command("prefill", "alloc", request=self.request, bindings=d["ranks"])
+        d = self.command(
+            "decode", "dispatch", request=self.request, bindings=p["ranks"]
+        )
+        self.command("prefill", "dispatch", request=self.request, bindings=d["ranks"])
+        self.op += 1
+        command = dict(
+            run_id="cpu",
+            role="prefill",
+            kind="load_back",
+            op_id=self.op,
+            rid="r1",
+            room=1,
+            attempt="attempt",
+            hit_len=128,
+            sources=[
+                dict(
+                    rank=i,
+                    slot=r["slot"],
+                    pages=[
+                        dict(
+                            pool="prefix",
+                            region=f"p-{i}",
+                            replica=i,
+                            logical_page=0,
+                            page_size=128,
+                        )
+                    ],
+                )
+                for i, r in enumerate(p["ranks"])
+            ],
+        )
+        self.commands["prefill"].append(command)
+        self.advance("prefill")
+        for ev in events[:15]:
+            ev[-1].done = True
+        self.advance("prefill")
+        self.assertFalse(
+            any(m["kind"] == "load_back_ack" for m in self.messages["prefill"])
+        )
+        events[-1][-1].done = True
+        self.advance("prefill")
+        self.assertTrue(
+            any(m["kind"] == "load_back_ack" for m in self.messages["prefill"])
+        )
+        facts = [
+            [
+                RequestObservation(
+                    1,
+                    256,
+                    4,
+                    100,
+                    attempt="attempt",
+                    prompt_ready=True,
+                    writes_done=True,
+                    native_release=True,
+                )
+            ]
+            for _ in range(16)
+        ]
+        self.commands["prefill"].append(dict(command, kind="fill", op_id=self.op + 1))
+        self.advance("prefill", facts)
+        for ev in events[:15]:
+            ev[-1].done = True
+        self.advance("prefill", facts)
+        self.assertTrue(
+            all("native_release" in effects for effects in self.effects["prefill"])
+        )
+        self.assertFalse(
+            any(
+                m["kind"] in ("fill_ack", "ready_tokens")
+                for m in self.messages["prefill"]
+            )
+        )
+        events[-1][-1].done = True
+        self.advance("prefill", facts)
+        self.advance("prefill", facts)
+        self.assertTrue(any(m["kind"] == "fill_ack" for m in self.messages["prefill"]))
+        self.assertTrue(
+            any(m["kind"] == "ready_tokens" for m in self.messages["prefill"])
+        )
+
     def test_admit_waits_for_last_rank_before_any_queue_advances_or_source_frees(self):
         import test_prefix as prefix_fixture
 

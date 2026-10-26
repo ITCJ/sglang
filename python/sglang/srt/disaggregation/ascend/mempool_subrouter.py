@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 
 from .mempool_control import MempoolPDControl
 from .mempool_native_reservation import NativeReservations
+from .mempool_prefill_restore import PrefillRestore
 from .mempool_protocol import MempoolMessage, RequestIdentity
 from .mempool_router_protocol import native_message, native_wire
 from .mempool_tick import RequestObservation
@@ -38,6 +39,7 @@ class RouterShard:
         page_size: int,
         bootstrap: tuple[str, int] | None = None,
         prefix: PrefixStore | None = None,
+        restore: PrefillRestore | None = None,
     ) -> None:
         self.control, self.native, self.effect, self.reply_to = (
             control,
@@ -52,6 +54,8 @@ class RouterShard:
         self.sent_events: set[str] = set()
         self.bootstrap = bootstrap
         self.prefix = prefix
+        self.restore = restore
+        self.fill_complete = False
         if type(page_size) is not int or page_size <= 0:
             raise ValueError("SR requires a positive token page_size")
         if any(
@@ -185,6 +189,9 @@ class RouterShard:
                 self.prefix.begin_request(
                     rid=request["rid"], slot=slot, tokens=request["prompt_tokens"]
                 )
+            if self.restore is not None:
+                self.restore.begin_request(request, slot=slot)
+            self.fill_complete = request.get("hit_len", 0) == 0
             result["message"] = native_wire(message)
             result["slot"] = slot
             capacity = (
@@ -225,12 +232,19 @@ class RouterShard:
                 if receipt is None:
                     return None
                 result.update(receipt)
+            elif kind in ("load_back", "fill"):
+                receipt = self._prefix_read(command)
+                if receipt is None:
+                    return None
+                result.update(receipt)
             elif kind == "free":
                 if self.prefix is not None:
                     self.prefix.assert_source_releasable(command["rid"])
                 self.control.router_free(self.identity)
                 if self.prefix is not None:
                     self.prefix.release_source(command["rid"])
+                if self.restore is not None:
+                    self.restore.finish_request()
                 result.update(freed=True, native_freed=True)
                 self.request = self.dispatch = self.identity = self.req = None
                 self.sent_events.clear()
@@ -248,6 +262,62 @@ class RouterShard:
             len(self.control.available_slots()),
         )
         return result
+
+    def _prefix_read(self, command: dict[str, Any]) -> dict[str, Any] | None:
+        request, restore, prefix = self.request, self.restore, self.prefix
+        rank = self.control.local.tp_rank
+        state = self.control.get_request(self.identity) if self.identity else None
+        if (
+            self.control.local.role != "prefill"
+            or request is None
+            or restore is None
+            or prefix is None
+            or state is None
+            or state.p_slot is None
+            or command["hit_len"] != request["hit_len"]
+            or not request["hit_len"]
+            or [r["rank"] for r in command["sources"]] != list(range(16))
+        ):
+            raise ValueError("prefix read lacks its bound request and replicas")
+        source = command["sources"][rank]
+        pages = source["pages"]
+        if (
+            source["slot"] != state.p_slot.slot
+            or len(pages) * self.page_size != request["hit_len"]
+        ):
+            raise ValueError("prefix read target differs from this request's alive")
+        for page in pages:
+            if page != dict(
+                pool="prefix",
+                region=self.control.local.session,
+                replica=rank,
+                logical_page=page["logical_page"],
+                page_size=self.page_size,
+            ):
+                raise ValueError("prefix read source differs from local mapping")
+        source_pages = [p["logical_page"] for p in pages]
+        if command["kind"] == "load_back":
+            loaded: dict[str, Any] | None = restore.load_back(
+                op_id=command["op_id"], source_pages=source_pages
+            )
+            return loaded
+        if not restore.ready:
+            raise RuntimeError("fill cannot precede completed load_back")
+        # Acceptance forces the native-free-before-fill boundary on every rank.
+        # Main already protects these prefix sources while submission is delayed.
+        if restore.verify_boundaries and (
+            not restore.native_freed or "native_freed" not in self.sent_events
+        ):
+            return None
+        receipt: dict[str, Any] | None = prefix.fill(
+            rid=request["rid"],
+            op_id=command["op_id"],
+            slot=state.p_slot.slot,
+            source_pages=source_pages,
+        )
+        if receipt is not None:
+            self.fill_complete = True
+        return receipt
 
     def _admit(
         self, *, command: dict[str, Any], prefix_pages: tuple[int, ...]
@@ -323,7 +393,11 @@ class RouterShard:
         return message
 
     def advance(
-        self, facts: Sequence[RequestObservation | None]
+        self,
+        facts: Sequence[RequestObservation | None],
+        *,
+        restored: bool = True,
+        filled: bool = True,
     ) -> list[dict[str, Any]]:
         """Advance only facts agreed by all ranks; receipts outlive native rows."""
         if self.identity is None or self.dispatch is None:
@@ -345,9 +419,9 @@ class RouterShard:
         if any(f and f.cancel for f in facts):
             raise RuntimeError("Router request cancelled; fail-stop without freeing")
         if role == "prefill":
-            if state.phase == "BOUND" and present:
+            if state.phase == "BOUND" and present and restored:
                 self.control.start_prefill(self.identity)
-            elif state.phase == "PREFILLING" and all_fact("prompt_ready"):
+            elif state.phase == "PREFILLING" and all_fact("prompt_ready") and filled:
                 self.control.finish_prefill_writes(self.identity)
                 ready = self.control.publish_kv_ready(self.identity, state.prompt_limit)
                 events.append(event("ready_tokens", message=native_wire(ready)))
@@ -440,6 +514,8 @@ class MempoolSubrouter:
                 prefix_free=prefix_free,
                 state=state,
                 registration=registration,
+                restored=self.shard.restore is None or self.shard.restore.ready,
+                filled=self.shard.restore is None or self.shard.fill_complete,
                 fault=fault or self.fault or control.snapshot().protocol_fault,
             )
         )
@@ -509,7 +585,11 @@ class MempoolSubrouter:
                         self._admit_pages or (),
                     )
                     results["ack"] = execution
-            results["events"] = self.shard.advance(common_facts)
+            results["events"] = self.shard.advance(
+                common_facts,
+                restored=all(o["restored"] for o in observations),
+                filled=all(o["filled"] for o in observations),
+            )
         except Exception as exc:
             results["error"] = str(exc)
         committed = self.gather(results)

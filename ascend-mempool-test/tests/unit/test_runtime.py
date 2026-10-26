@@ -49,6 +49,26 @@ def prefill_batch(lengths=(2, 1), prefixes=(0, 0), rows=(1, 2)):
 class TestMempoolRuntime(unittest.TestCase):
     """Use real binding/index/counter logic with fake BM and device completion."""
 
+    def test_suffix_counts_only_computed_rows_and_retains_its_range_after_detach(self):
+        runtime, targets, events = self.make_runtime(rank=0, layers=1)
+        binding = runtime.bind(1, slot=3, prompt_tokens=6, start_position=4)
+        self.assertEqual(runtime.next_position(binding), 4)
+        self.assertEqual(runtime.written_tokens(1), 0)
+        with self.assertRaisesRegex(ValueError, "continue"):
+            runtime.begin_forward([KVWriteExpectation(1, 0, 2)])
+        runtime.begin_forward([KVWriteExpectation(1, 4, 2)])
+        k = torch.ones((2, 2), dtype=torch.bfloat16)
+        runtime.write_layer(5, k, k, prefill_batch((2,), (4,), (1,)))
+        runtime.end_forward()
+        self.assertEqual(runtime.written_range(1), (4, 4))
+        events[-1].done = True
+        runtime.poll_completed()
+        self.assertEqual(runtime.written_tokens(1), 2)
+        self.assertEqual(runtime.written_range(1), (4, 6))
+        self.assertFalse(runtime.prompt_ready(1))
+        receipt = runtime.detach_row(binding)
+        self.assertEqual((receipt.binding.write_start, receipt.completed), (4, 2))
+
     def test_index_writeback_uses_native_indices_and_survives_native_row_release(self):
         layout = MempoolConfig(
             prefill_capacity=8, decode_capacity=2, page_size=2

@@ -1,0 +1,63 @@
+{
+  "ticket": "mempool-min/03",
+  "date": "2026-10-26",
+  "base_commit": "87157b7365a78aa336d9558e1ce9f820bee2fdd4",
+  "cpu": {
+    "status": "passed",
+    "tests": 453,
+    "seconds": 38.513,
+    "command": "python3 /private/tmp/mempool-ticket03/run.py cpu-full -m unittest discover -s ascend-mempool-test/tests/unit -v",
+    "log": "cpu-unittest.txt"
+  },
+  "static": {
+    "status": "passed",
+    "strict_mypy_files": 12,
+    "mypy_python_target": "3.10",
+    "python39_ast_files": 23,
+    "lint_format_isort_files": 23,
+    "log": "static-checks.txt"
+  },
+  "review": {
+    "standards": {
+      "initial_findings": 1,
+      "resolved": 1,
+      "unresolved": 0
+    },
+    "spec": {
+      "unresolved": 0
+    },
+    "record": "review.md"
+  },
+  "npu": {
+    "executed": false,
+    "user_accepted": false,
+    "entry_mode": "reuse-acceptance",
+    "ticket_state": "open",
+    "downstream04_unlocked": false
+  },
+  "source_sha256": {
+    "ascend-mempool-test/scripts/run_mempool_min.py": "191b32eadc0f0826f2159de5faf3683b8318f66499006d33941e7f7000117b66",
+    "ascend-mempool-test/scripts/verify_mempool_min.py": "18013f3ad7357f9b0e6d1ac8b2f839064050fcf2a1cb9a7a4175df3b70362b36",
+    "ascend-mempool-test/scripts/verify_mempool_prefix.py": "a230b97e223f7d3c0e6e1d064a269853d60e68e0ed8ef8a2207fbc191227207c",
+    "ascend-mempool-test/scripts/verify_mempool_reuse.py": "6e2ba8ba122c5c9962259ea705254db4dfcf3c741e047a40c7ca51636b657f5d",
+    "ascend-mempool-test/tests/unit/test_mempool_min_entry.py": "57a208d77e0c44e21e11b0577456cd43d7740d543415257f49d55035a8715089",
+    "ascend-mempool-test/tests/unit/test_mempool_native_prefix.py": "4c93fe0ac03036d867798be89952ee5a7ab147fe400fe05f3c746e5bc9775e2a",
+    "ascend-mempool-test/tests/unit/test_mempool_prefix_evidence.py": "d6568bca53aefa230fd54d36927d2097bd90e13cbe17b92eab1203deecfd3025",
+    "ascend-mempool-test/tests/unit/test_mempool_prefix_restore.py": "294188d63079287cbfec4c4214737571045ec06340290032d234b35b096ccbb7",
+    "ascend-mempool-test/tests/unit/test_mempool_prefix_service.py": "bdc335a9b0c6c6fef3886959bb7234a5d710a851dd387b045137914b28e09db7",
+    "ascend-mempool-test/tests/unit/test_mempool_reuse_evidence.py": "fdcc170644c5922220ec401cb773784ff5234b670f899e6b28eab3d1a5ea4fec",
+    "ascend-mempool-test/tests/unit/test_mempool_router.py": "370895a366517974929110032be8f389dfffbd48a585eb84e5e895def3d45ca6",
+    "ascend-mempool-test/tests/unit/test_mempool_subrouter.py": "f63696886c4a4acd1365e48a255ad4519e16fc31dd0237c4861f6d4240fae283",
+    "ascend-mempool-test/tests/unit/test_prefix.py": "27ede452f39dfffa036577cd63d3af3dc34acaef45a16e59cd18614125751bf6",
+    "ascend-mempool-test/tests/unit/test_runtime.py": "aa2802c9983365d940acd8863f66c1cf8a4f4689553d4ec564734d00a33fab10",
+    "python/sglang/srt/disaggregation/ascend/mempool_prefill_restore.py": "e8410ae3217aa766b238073b2b8dbc117635d44e3391aff9e525ec5ed59bc94b",
+    "python/sglang/srt/disaggregation/ascend/mempool_router.py": "1c69143b87f488a89d983fc59e620b29b3a4b9067372011e99f44137f6c2ea3d",
+    "python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py": "ab7224010db6a8ad7428b25d0ccfe002747736b74d1f9c38715094ca17ebaefd",
+    "python/sglang/srt/disaggregation/ascend/mempool_router_transport.py": "f01199da0c0fffef8bd37014d1ea84824c63950671baf17d2d0be640fd584dae",
+    "python/sglang/srt/disaggregation/ascend/mempool_service.py": "47546a7643fa80b30387c676c98619d5bfb39782e2780b97b563382925493e1a",
+    "python/sglang/srt/disaggregation/ascend/mempool_subrouter.py": "0477d0deed8c8aee7e38e2e9b1b71b3ef560726151ffe98d5781b536c9282685",
+    "python/sglang/srt/hardware_backend/npu/memory_pool_npu.py": "f3d6ee25656e2c17fff497f2720c93d9f8b3ff592de1d9da561bfbdb87f36dba",
+    "python/sglang/srt/hardware_backend/npu/mempool/prefix.py": "cfc67f6dfd28ea355136c26f69e92c05dcb3dcfe1c76256f9b3260f7abe62cbd",
+    "python/sglang/srt/hardware_backend/npu/mempool/runtime.py": "ac9f4334dd8550074769717bcf2a1ced5821a3e1d22172eba39229afc7325459"
+  }
+}

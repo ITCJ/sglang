@@ -252,6 +252,128 @@ class TestMainRouter(unittest.TestCase):
 
 
 class TestPrefixMainRouter(unittest.TestCase):
+    def test_invalid_restore_and_early_ready_fail_stop_without_unlocking_sources(self):
+        from msgspec.structs import replace
+
+        for defect in (
+            "missing_rank",
+            "not_readable",
+            "page_numbers",
+            "wrong_slot",
+            "early_ready",
+        ):
+            with self.subTest(defect=defect):
+                self.setUp()
+                self.finish_inference()
+                save = self.main.outbox.popleft()
+                self.main.receive(self.admit_ack(save, list(range(32))))
+                self.free()
+                self.main.config = replace(self.main.config, match_prefix=True)
+                self.main.launches.clear()
+                _, dispatch, _ = self.start_inference([7] * 4096)
+                load = self.main.outbox.popleft()
+                before = self.main.status()
+                ack = dict(
+                    load,
+                    kind="load_back_ack",
+                    ranks=[
+                        dict(
+                            rank=r,
+                            readable=True,
+                            slot=5,
+                            tokens=3968,
+                            source_pages=list(range(31)),
+                            main_layers=78,
+                            index_layers=21,
+                            prefix_indices=list(range(128, 4096)),
+                        )
+                        for r in range(16)
+                    ],
+                )
+                if defect == "missing_rank":
+                    ack["ranks"].pop()
+                elif defect == "not_readable":
+                    ack["ranks"][-1]["readable"] = False
+                elif defect == "page_numbers":
+                    ack["ranks"][-1]["prefix_indices"] = list(range(1, 32))
+                elif defect == "wrong_slot":
+                    ack["ranks"][-1]["slot"] = 4
+                else:
+                    ack = dict(
+                        dispatch,
+                        kind="ready_tokens",
+                        ranks=[dict(rank=r) for r in range(16)],
+                    )
+                with self.assertRaises(ValueError):
+                    self.main.receive(ack)
+                self.assertIsNotNone(self.main.fault)
+                after = self.main.status()
+                self.assertEqual(after["ledger"], before["ledger"])
+                self.assertEqual(after["directory"], before["directory"])
+                self.assertFalse(self.main.outbox)
+                self.assertFalse(self.main.launches)
+
+    def test_match_restores_then_fills_with_separate_locks_and_full_budget(self):
+        self.finish_inference()
+        save = self.main.outbox.popleft()
+        self.main.receive(self.admit_ack(save, list(range(32))))
+        self.free()
+        from msgspec.structs import replace
+
+        self.main.config = replace(self.main.config, match_prefix=True)
+        self.main.launches.clear()
+        for tokens, expected in (([7] * 4096 + [8] * 1024, 4096), ([7] * 4096, 3968)):
+            req, p_dispatch, d_dispatch = self.start_inference(tokens)
+            self.assertEqual(req["hit_len"], expected)
+            self.assertEqual(self.main.ledger["p_alive"].outstanding, 64)
+            self.assertFalse(self.main.launches)
+            load = self.main.outbox.popleft()
+            self.assertEqual(load["kind"], "load_back")
+            hashes = list(self.main.directory)[: expected // 128]
+            self.assertTrue(
+                all(
+                    load["op_id"] in self.main.directory[h]["prefix"]["lock_ops"]
+                    for h in hashes
+                )
+            )
+            receipt = lambda rank: dict(
+                slot=5,
+                readable=True,
+                tokens=expected,
+                source_pages=list(range(expected // 128)),
+                main_layers=78,
+                index_layers=21,
+                prefix_indices=list(range(128, expected + 128)),
+            )
+            ack = self.ack(load, receipt)
+            self.main.receive(ack)
+            fill = self.main.outbox.popleft()
+            self.assertEqual(fill["kind"], "fill")
+            self.assertNotEqual(fill["op_id"], load["op_id"])
+            self.assertTrue(
+                all(
+                    self.main.directory[h]["prefix"]["lock_ops"] == [fill["op_id"]]
+                    for h in hashes
+                )
+            )
+            self.assertEqual(self.main.launches.pop()["rid"], req["rid"])
+            self.ack(
+                fill,
+                lambda rank: {
+                    k: v for k, v in receipt(rank).items() if k != "prefix_indices"
+                },
+            )
+            self.assertTrue(
+                all(not self.main.directory[h]["prefix"]["lock_ops"] for h in hashes)
+            )
+            self.finish_started(req, p_dispatch, d_dispatch)
+            if len(tokens) == 5120:
+                save = self.main.outbox.popleft()
+                self.assertEqual(save["source_pages"], list(range(32, 40)))
+                self.main.receive(self.admit_ack(save, list(range(32, 40))))
+            self.free()
+            self.assertEqual(self.main.ledger["p_prefix"].outstanding, 40)
+
     def setUp(self):
         self.main = MainRouter(
             RouterConfig("p", "d", "/model", prefix_pages=40),
@@ -283,7 +405,7 @@ class TestPrefixMainRouter(unittest.TestCase):
         self.main.receive(message)
         return message
 
-    def finish_inference(self, tokens=None, *, native_first=True):
+    def start_inference(self, tokens=None):
         data = payload()
         if tokens is not None:
             data["input_ids"] = tokens
@@ -317,6 +439,14 @@ class TestPrefixMainRouter(unittest.TestCase):
         self.ack(d_dispatch)
         p_dispatch = self.main.outbox.popleft()
         self.ack(p_dispatch)
+        return request, p_dispatch, d_dispatch
+
+    def finish_inference(self, tokens=None, *, native_first=True):
+        request, p_dispatch, d_dispatch = self.start_inference(tokens)
+        self.finish_started(request, p_dispatch, d_dispatch, native_first=native_first)
+        return request
+
+    def finish_started(self, request, p_dispatch, d_dispatch, *, native_first=True):
         self.main.receive(
             dict(
                 p_dispatch, kind="ready_tokens", ranks=[dict(rank=i) for i in range(16)]
