@@ -267,3 +267,31 @@ P alive 每次占 S_P/B=64 页整槽额度，D alive 占 S_D/B=1 页整槽额度
 本轮 B=128 示例保持请求长度与 5120-token prefix 容量；C 命中3968、重算128。
 统一公式与支持范围见 [讨论记录](../discussion.md)。本票保持 open；
 01 的 NPU 验收等待用户执行，02–04 的依赖门控保持不变。
+
+
+### 2026-10-27：独立 A/C 库存题语义 smoke
+
+用户要求像 ticket01 一样，在相邻 ascend-sglang-script 中分别启动 Router/P/D，
+再用请求脚本查看 A、C 的逻辑答案。该要求明确采用手动服务启动，客户端不接管服务进程。
+
+脚本仓库的 demo 配置改为 prefix_pages=40、match_prefix=true、verify_prefix=false。
+P eager、D Graph、page_size=128、SP/SD=8192/128 保留；不注入诊断或验收边界控制。
+请求脚本只发送同一库存题 A/C，完整问题和 chat template 保留，user 开头补空白到4096 token。
+关闭 thinking，greedy、自然 EOS、上限128。短字段输出适配预算，标准答案不会发送给模型。
+客户端核验实际命中0/3968、请求身份和资源释放，保存原始回答与状态，分别报告语义和IDs差异。
+格式无法解析、截断、错误答案及命中不符合预期均非零退出；A答案错误仍继续C供比较。
+
+8项CPU测试，三角色dry-run与5项负向启动检查通过。类型、lint、shell/Python3.9语法通过。
+Standards和Spec最终均0项。检查记录见 ../verification/ticket03-ac-client-20261027/。
+真实tokenizer和NPU语义输出尚未运行；本smoke不证明根因已修复，不代替严格全输出和生命周期验收。
+
+功能阅读顺序：glm52mempool-demo.json（prefix配置）、glm52mempool-demo.sh（worker）、
+router-mempool-demo.sh（独立Main）、mempool-demo-prompt.txt（题目）、request-mempool-demo.py（A/C请求和核对）。
+这些文件位于用户明确指定的外部启动脚本仓库。启动与HTTP客户端行为应在部署入口实现，
+无需且不适合通过模型内部Ascend/NPU hook实现。本次没有修改SGLang功能源码。
+
+用户ticket03-004回传首层attention同形状/尾页对照均一致，实际局部o_proj仅rank15有差异，
+首次在token4061；下一层输入从3968起不同，差异595969/786432元素，max_abs=0.00830078125，
+RMS=0.001003364915959537。归约、residual、归一化及MLP仍未分开定位，03保持open。
+
+独立脚本仓库提交：dada8eb（Add mempool A/C semantic smoke client）。

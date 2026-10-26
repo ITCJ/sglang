@@ -1,0 +1,25 @@
+router-mempool-demo.sh None 0
+prefix_pages=40 match_prefix=True verify_prefix=False
+Main: http://10.120.72.31:6699  SR: tcp://10.120.72.31:16700
+python3 -u -m sglang.srt.disaggregation.ascend.mempool_router --config /private/tmp/mempool-ac-20261027/pd-disaggregation/glm52mempool-demo.json --run-id ticket03-ac-001 
+
+glm52mempool-demo.sh 10.120.72.31 0
+role=prefill host=10.120.72.31 run_id=ticket03-ac-001 config=/private/tmp/mempool-ac-20261027/pd-disaggregation/glm52mempool-demo.json
+prefix_pages=40 match_prefix=True verify_prefix=False
+P=eager D=Graph(BS=16) warmup=enabled logs=/System/Volumes/Data/home/cryang/log/mempool-demo/ticket03-ac-001
+MEMPOOL=1 role=prefill mode=formal
+python3 -m sglang.launch_server --model-path /data_lib/data/models/GLM-5.2-w4a8 --tp 16 --base-gpu-id 0 --gpu-id-step 1 --trust-remote-code --attention-backend ascend --device npu --quantization modelslim --watchdog-timeout 9000 --mem-fraction-static 0.75 --context-length 8448 --disable-radix-cache --chunked-prefill-size -1 --max-prefill-tokens 8192 --enable-dp-attention --dp-size 1 --enable-dp-lm-head --max-running-requests 16 --prefill-max-requests 1 --disaggregation-transfer-backend ascend --disaggregation-mode prefill --nnodes 1 --node-rank 0 --moe-dense-tp-size 1 --moe-a2a-backend deepep --disable-shared-experts-fusion --load-balance-method round_robin --dtype bfloat16 --kv-cache-dtype bfloat16 --host 10.120.72.31 --port 8000 --disable-cuda-graph --disaggregation-bootstrap-port 8995 --deepep-mode normal --max-total-tokens 16384 --page-size 128 --dist-init-addr 10.120.72.31:10000 --mempool-prefill-host 10.120.72.31 --mempool-bootstrap-port 8995 --mempool-base-port 19000 --mempool-pool-id 104 --mempool-nic tcp://10.120.72.31:25670 --mempool-prefill-capacity 8192 --mempool-decode-capacity 128 --mempool-timeout 7200.0 
+
+glm52mempool-demo.sh 10.120.72.32 0
+role=decode host=10.120.72.32 run_id=ticket03-ac-001 config=/private/tmp/mempool-ac-20261027/pd-disaggregation/glm52mempool-demo.json
+prefix_pages=40 match_prefix=True verify_prefix=False
+P=eager D=Graph(BS=16) warmup=enabled logs=/System/Volumes/Data/home/cryang/log/mempool-demo/ticket03-ac-001
+MEMPOOL=1 role=decode mode=formal
+python3 -m sglang.launch_server --model-path /data_lib/data/models/GLM-5.2-w4a8 --tp 16 --base-gpu-id 0 --gpu-id-step 1 --trust-remote-code --attention-backend ascend --device npu --quantization modelslim --watchdog-timeout 9000 --mem-fraction-static 0.75 --context-length 8448 --disable-radix-cache --chunked-prefill-size -1 --max-prefill-tokens 8192 --enable-dp-attention --dp-size 1 --enable-dp-lm-head --max-running-requests 16 --prefill-max-requests 1 --disaggregation-transfer-backend ascend --disaggregation-mode decode --nnodes 1 --node-rank 0 --moe-dense-tp-size 1 --moe-a2a-backend deepep --disable-shared-experts-fusion --load-balance-method round_robin --dtype bfloat16 --kv-cache-dtype bfloat16 --host 10.120.72.32 --port 8001 --ep-size 16 --disaggregation-decode-extra-slots 0 --deepep-mode low_latency --cuda-graph-bs-decode 16 --max-total-tokens 16384 --page-size 128 --dist-init-addr 10.120.72.32:10000 --mempool-prefill-host 10.120.72.31 --mempool-bootstrap-port 8995 --mempool-base-port 19000 --mempool-pool-id 104 --mempool-nic tcp://10.120.72.32:25670 --mempool-prefill-capacity 8192 --mempool-decode-capacity 128 --mempool-timeout 7200.0 
+
+reject router-mempool-demo.sh RUN_ID
+reject router-mempool-demo.sh LOG_DIR
+reject glm52mempool-demo.sh RUN_ID
+reject glm52mempool-demo.sh LOG_DIR
+reject invalid host
+Python 3.9 syntax passed

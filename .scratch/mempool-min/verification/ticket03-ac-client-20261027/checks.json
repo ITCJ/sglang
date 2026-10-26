@@ -1,0 +1,29 @@
+{
+  "script_base": "42a1511",
+  "sglang_required": "f3e522f9b6",
+  "cpu_tests": 8,
+  "dry_runs": [
+    "Router",
+    "P eager",
+    "D Graph"
+  ],
+  "negative_launch_checks": 5,
+  "typecheck": "passed",
+  "lint": "passed",
+  "bash_syntax": "passed",
+  "python39_syntax": "passed",
+  "standards_findings": 0,
+  "spec_findings": 0,
+  "hardware": "not run",
+  "ticket03": "open",
+  "source_sha256": {
+    "pd-disaggregation/MEMPOOL_DEMO.md": "1a2fb93bc9a9ebe73c37746f114d5ae90e7833254f8483f55ae1580ce4eb95ae",
+    "pd-disaggregation/glm52mempool-demo.json": "9af4a240ff791026b3ef2a4d1d59778864a31f530a7b673a27a7dc56739157e4",
+    "pd-disaggregation/glm52mempool-demo.sh": "16b927b5b8b7ddcf24cb1a055d8adaf245142a1f802f432b18fb500e75f1142d",
+    "pd-disaggregation/mempool-demo-prompt.txt": "4b3fa95934a3d103aa72158dc0518b0137c558eb88547d8feeadb128b7d142bb",
+    "pd-disaggregation/request-mempool-demo.py": "593c64c826d1fce4bfbabd34daf24c03815c87d3f07ef3f6a57e27900ff8b103",
+    "pd-disaggregation/router-mempool-demo.sh": "a3567f70bb0d3365e4719091c0d2fd9085d690f393c2cf1eb12b56b0d2624689",
+    "pd-disaggregation/tests/test_mempool_demo_request.py": "5ad6561c3bfef4f07aa3f55afd0c09155598afc64f86f59ed57cda5892b3fa9a"
+  },
+  "script_commit": "dada8eb1b03b9d1d8a261e88827a6b8f74f0cbc9"
+}

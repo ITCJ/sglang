@@ -39,7 +39,9 @@ HTTP/ZMQ、原生预留和冷请求已通过 ticket01 用户 NPU 验收。
 prefix 保存已由 ticket02 实现并通过 CPU 与自动化 NPU 验收。
 
 ticket03 已实现命中恢复与后缀计算，CPU 回归通过。
-NPU 两轮在 C 的完整输出比较失败，首差已限制到第 0 层至第 1 层的计算。
+NPU 回传 001、002、004 均在 C 的完整输出比较失败。
+004 对照不支持首层 attention 仅随 query 长度变化而产生差异。
+下一层输入差异仍待定位；独立 A/C 库存题脚本已完成本机验证。
 
 ## B 最小空闲 slot 0 与 page 的关系
 
@@ -103,6 +105,33 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 共享后分片解析组映射；Router 仍只处理逻辑位置和不透明描述符。
 
 ## D 名称、验收与实施票怎样对应
+
+**2026-10-27 ticket03：第 27 步，独立 A/C 客户端本机验证完成。**
+
+8 项 CPU 客户端测试通过。P、D、Router dry-run、5 项启动参数负向检查通过。
+Python 类型、lint、3.9 语法与 shell 语法检查通过。Standards / Spec 两轴均为 0 项。
+
+按用户要求保留三个独立服务；客户端只负责就绪等待、请求与报告，不关闭这些进程。
+[检查记录](verification/ticket03-ac-client-20261027/checks.json)包含脚本摘要与验证边界。
+脚本仓库提交 dada8eb 包含独立启动和 A/C 客户端。
+真实 tokenizer 和 NPU 语义结果待用户运行。03 保持 needs-info/open，04 未解锁。
+
+**2026-10-27 ticket03：第 26 步，独立 A/C 语义 smoke 脚本已编写，待本机验证。**
+
+用户要求沿用 ticket01 的独立 Router、P、D 启动入口。脚本仓库 demo 配置开启 40 页 prefix 与 match_prefix。
+
+verify_prefix 关闭，保留正常恢复路径。客户端固定 4096 输入、自然 EOS、最多 128 输出，只发 A/C。
+同一请求重复发送，检查实际 hit_len 为 0/3968，并保存原始输出、答案核对、IDs 比较和 Router 状态。
+库存题用短字段回答以适配输出预算。格式无法解析、截断和计算错误分别记录。
+
+脚本正在临时目录验证，尚未安装或执行 NPU。03 保持 open，原严格验收标准不变。
+
+用户 ticket03-004 回传的首层同形状/尾页 attention 对照均一致。
+实际 A/C 只有少数 rank 的 Q/attention 有微小差异，top-k 集合一致但顺序不同。
+局部 o_proj 的首差在 token 4061；下一层输入从 3968 起不同，595969/786432 元素有差异。
+
+下一层输入 max_abs=0.00830078125、RMS=0.001003364915959537。归约、残差、归一化和 MLP 尚待区分。
+完整输出比较仍失败；本次语义 smoke 不代替根因诊断或 NPU 验收。
 
 **2026-10-26 ticket03：第 25 步，首层诊断交付完成 CPU 验证。**
 
@@ -579,7 +608,7 @@ ticket01 已经用户确认 NPU 验收并关闭；02–04 保持 open。
 |---|---|---|---|
 | [01 冷请求与显式释放](issues/01-cold-request-lifecycle.md) | 冷请求、统一页、原生 warmup；CPU、双轴 review 与用户 NPU 验收 | 本票已关闭 | 7275f29a05：自动化验收通过，2026-10-26 用户确认；user_accepted=true |
 | [02 prompt 保存](issues/02-prompt-prefix-save.md) | Index K 写回、40 页 prefix、异步 admit/publish；用户回传双机 NPU 验收通过 | 功能与自动化验收完成；等待用户确认关闭 | 87157b7365、ticket02-002；CPU 440 项、两轴 review 与 NPU 报告通过；NUMA 落点未验证，State=open |
-| [03 命中恢复与后缀](issues/03-prefix-restore-and-suffix.md) | 恢复、fill、后缀、提前释放已实现；首层诊断 CPU 464 项通过 | 用户运行 ticket03-003，随后完成 NPU 验收 | 两轮 C 输出失败；002 元数据与第 0 层 KV 相等，根因未知，State=open |
+| [03 命中恢复与后缀](issues/03-prefix-restore-and-suffix.md) | 首层诊断 CPU 464 项；独立 A/C 语义客户端 8 项通过 | 用户运行库存题 A/C，并继续定位层间差异 | 001/002/004 完整输出失败；根因未知，State=open |
 | [04 完整自运行验收](issues/04-full-demo-acceptance.md) | 规格、回顾确认及重编实施票 | 独立参考组、A/B/C/E、V1–V10 与报告整合 | 完整验收未执行；等待 03 关闭 |
 
 每次实现后立即更新本表，分别记录代码、CPU 检查与用户 NPU 验收。
