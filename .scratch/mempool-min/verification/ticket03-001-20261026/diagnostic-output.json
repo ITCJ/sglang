@@ -1,0 +1,270 @@
+{
+  "source": "user pasted diagnostic output",
+  "run_id": "ticket03-001",
+  "commit": "0308cd0814",
+  "output_comparisons": [
+    {
+      "case": "reuse-prefix-a",
+      "lengths": [
+        128,
+        128
+      ],
+      "first_difference": null
+    },
+    {
+      "case": "reuse-prefix-b",
+      "lengths": [
+        128,
+        128
+      ],
+      "first_difference": null
+    },
+    {
+      "case": "reuse-prefix-c",
+      "lengths": [
+        128,
+        128
+      ],
+      "first_difference": 15,
+      "window_start": 12,
+      "reference_window": [
+        448,
+        279,
+        1372,
+        624,
+        45975,
+        220,
+        99419,
+        488,
+        220,
+        99446,
+        13,
+        17815,
+        1172
+      ],
+      "target_window": [
+        448,
+        279,
+        1372,
+        13,
+        154842,
+        101961,
+        154827,
+        220,
+        16,
+        488,
+        220,
+        16,
+        284
+      ]
+    },
+    {
+      "case": "reference A vs C",
+      "lengths": [
+        128,
+        128
+      ],
+      "first_difference": null
+    },
+    {
+      "case": "target A vs C",
+      "lengths": [
+        128,
+        128
+      ],
+      "first_difference": 15
+    }
+  ],
+  "router": [
+    {
+      "rid": "ticket03-001-1",
+      "hit_len": 0,
+      "fault": null,
+      "prefix": {
+        "total": 40,
+        "outstanding": 32,
+        "free": 8
+      }
+    },
+    {
+      "rid": "ticket03-001-2",
+      "hit_len": 4096,
+      "fault": null,
+      "prefix": {
+        "total": 40,
+        "outstanding": 40,
+        "free": 0
+      }
+    },
+    {
+      "rid": "ticket03-001-3",
+      "hit_len": 3968,
+      "fault": null,
+      "prefix": {
+        "total": 40,
+        "outstanding": 40,
+        "free": 0
+      }
+    }
+  ],
+  "reuse_content_check": {
+    "status": "passed",
+    "hit_lengths": [
+      0,
+      4096,
+      3968
+    ],
+    "suffix_tokens": [
+      4096,
+      1024,
+      128
+    ],
+    "pages_per_request": [
+      32,
+      40,
+      40
+    ],
+    "ranks": 16,
+    "main_layers": 78,
+    "index_layers": 21,
+    "noncontiguous_native_mapping": true,
+    "native_free_before_fill": true,
+    "contents": "original saved prefix == restored native == fill; computed suffix == alive",
+    "acceptance_controls": "one skipped allocator page; fill submitted after native_freed"
+  },
+  "limitations": [
+    "Only the reported token window is captured; full 128-token sequences remain on NPU host.",
+    "The content checker compares each computed suffix to its own source, not cold A last-page values to reused C last-page values.",
+    "Replay below reproduces the captured equality failure, not NPU model computation."
+  ],
+  "alive_A_vs_C": [
+    {
+      "rank": 0,
+      "A_pages": 32,
+      "C_pages": 32,
+      "changed_pages": [
+        31
+      ]
+    },
+    {
+      "rank": 1,
+      "A_pages": 32,
+      "C_pages": 32,
+      "changed_pages": [
+        31
+      ]
+    },
+    {
+      "rank": 2,
+      "A_pages": 32,
+      "C_pages": 32,
+      "changed_pages": [
+        31
+      ]
+    },
+    {
+      "rank": 3,
+      "A_pages": 32,
+      "C_pages": 32,
+      "changed_pages": [
+        31
+      ]
+    },
+    {
+      "rank": 4,
+      "A_pages": 32,
+      "C_pages": 32,
+      "changed_pages": [
+        31
+      ]
+    },
+    {
+      "rank": 5,
+      "A_pages": 32,
+      "C_pages": 32,
+      "changed_pages": [
+        31
+      ]
+    },
+    {
+      "rank": 6,
+      "A_pages": 32,
+      "C_pages": 32,
+      "changed_pages": [
+        31
+      ]
+    },
+    {
+      "rank": 7,
+      "A_pages": 32,
+      "C_pages": 32,
+      "changed_pages": [
+        31
+      ]
+    },
+    {
+      "rank": 8,
+      "A_pages": 32,
+      "C_pages": 32,
+      "changed_pages": [
+        31
+      ]
+    },
+    {
+      "rank": 9,
+      "A_pages": 32,
+      "C_pages": 32,
+      "changed_pages": [
+        31
+      ]
+    },
+    {
+      "rank": 10,
+      "A_pages": 32,
+      "C_pages": 32,
+      "changed_pages": [
+        31
+      ]
+    },
+    {
+      "rank": 11,
+      "A_pages": 32,
+      "C_pages": 32,
+      "changed_pages": [
+        31
+      ]
+    },
+    {
+      "rank": 12,
+      "A_pages": 32,
+      "C_pages": 32,
+      "changed_pages": [
+        31
+      ]
+    },
+    {
+      "rank": 13,
+      "A_pages": 32,
+      "C_pages": 32,
+      "changed_pages": [
+        31
+      ]
+    },
+    {
+      "rank": 14,
+      "A_pages": 32,
+      "C_pages": 32,
+      "changed_pages": [
+        31
+      ]
+    },
+    {
+      "rank": 15,
+      "A_pages": 32,
+      "C_pages": 32,
+      "changed_pages": [
+        31
+      ]
+    }
+  ]
+}

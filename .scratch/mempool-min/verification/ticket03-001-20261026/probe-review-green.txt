@@ -1,0 +1,10 @@
+test_kernel_metadata_checks_positions_lengths_and_noncontiguous_mapping (test_mempool_reuse_probe.TestReuseProbe.test_kernel_metadata_checks_positions_lengths_and_noncontiguous_mapping) ... ok
+test_real_probe_records_produce_complete_copyable_summary (test_mempool_reuse_probe.TestReuseProbe.test_real_probe_records_produce_complete_copyable_summary) ... ok
+test_same_prompt_tail_comparison_survives_release_and_skips_other_inputs (test_mempool_reuse_probe.TestReuseProbe.test_same_prompt_tail_comparison_survives_release_and_skips_other_inputs) ... ok
+test_store_emits_comparison_only_after_full_alive_validation (test_mempool_reuse_probe.TestReuseProbe.test_store_emits_comparison_only_after_full_alive_validation) ... ok
+test_summary_marks_missing_layer_bad_metadata_and_broken_log (test_mempool_reuse_probe.TestReuseProbe.test_summary_marks_missing_layer_bad_metadata_and_broken_log) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.051s
+
+OK

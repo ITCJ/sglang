@@ -1247,6 +1247,19 @@ class AscendAttnBackend(AttentionBackend):
 
         if (
             is_prefill
+            and self.mempool_runtime is not None
+            and self.mempool_runtime.prefix_store is not None
+        ):
+            self.mempool_runtime.prefix_store.debug_forward(
+                forward_batch,
+                block_table=self.forward_metadata.block_tables,
+                query_lengths=actual_seq_qlen,
+                kv_lengths=actual_seq_lengths_kv,
+                pool=self.token_to_kv_pool,
+            )
+
+        if (
+            is_prefill
             and is_dsa_enable_prefill_cp()
             and forward_batch.attn_cp_metadata is not None
         ):

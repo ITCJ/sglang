@@ -1,0 +1,60 @@
+test_summary_marks_missing_layer_bad_metadata_and_broken_log (test_mempool_reuse_probe.TestReuseProbe.test_summary_marks_missing_layer_bad_metadata_and_broken_log) ...
+  test_summary_marks_missing_layer_bad_metadata_and_broken_log (test_mempool_reuse_probe.TestReuseProbe.test_summary_marks_missing_layer_bad_metadata_and_broken_log) (defect='no_baseline') ... FAIL
+  test_summary_marks_missing_layer_bad_metadata_and_broken_log (test_mempool_reuse_probe.TestReuseProbe.test_summary_marks_missing_layer_bad_metadata_and_broken_log) (defect='no_hash') ... FAIL
+  test_summary_marks_missing_layer_bad_metadata_and_broken_log (test_mempool_reuse_probe.TestReuseProbe.test_summary_marks_missing_layer_bad_metadata_and_broken_log) (defect='wrong_hash') ... FAIL
+  test_summary_marks_missing_layer_bad_metadata_and_broken_log (test_mempool_reuse_probe.TestReuseProbe.test_summary_marks_missing_layer_bad_metadata_and_broken_log) (defect='wrong_reference') ... FAIL
+  test_summary_marks_missing_layer_bad_metadata_and_broken_log (test_mempool_reuse_probe.TestReuseProbe.test_summary_marks_missing_layer_bad_metadata_and_broken_log) (defect='wrong_request') ... FAIL
+  test_summary_marks_missing_layer_bad_metadata_and_broken_log (test_mempool_reuse_probe.TestReuseProbe.test_summary_marks_missing_layer_bad_metadata_and_broken_log) (defect='missing_checks') ... FAIL
+
+======================================================================
+FAIL: test_summary_marks_missing_layer_bad_metadata_and_broken_log (test_mempool_reuse_probe.TestReuseProbe.test_summary_marks_missing_layer_bad_metadata_and_broken_log) (defect='no_baseline')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_reuse_probe.py", line 185, in test_summary_marks_missing_layer_bad_metadata_and_broken_log
+    self.assertFalse(result["complete"])
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_summary_marks_missing_layer_bad_metadata_and_broken_log (test_mempool_reuse_probe.TestReuseProbe.test_summary_marks_missing_layer_bad_metadata_and_broken_log) (defect='no_hash')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_reuse_probe.py", line 185, in test_summary_marks_missing_layer_bad_metadata_and_broken_log
+    self.assertFalse(result["complete"])
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_summary_marks_missing_layer_bad_metadata_and_broken_log (test_mempool_reuse_probe.TestReuseProbe.test_summary_marks_missing_layer_bad_metadata_and_broken_log) (defect='wrong_hash')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_reuse_probe.py", line 185, in test_summary_marks_missing_layer_bad_metadata_and_broken_log
+    self.assertFalse(result["complete"])
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_summary_marks_missing_layer_bad_metadata_and_broken_log (test_mempool_reuse_probe.TestReuseProbe.test_summary_marks_missing_layer_bad_metadata_and_broken_log) (defect='wrong_reference')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_reuse_probe.py", line 185, in test_summary_marks_missing_layer_bad_metadata_and_broken_log
+    self.assertFalse(result["complete"])
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_summary_marks_missing_layer_bad_metadata_and_broken_log (test_mempool_reuse_probe.TestReuseProbe.test_summary_marks_missing_layer_bad_metadata_and_broken_log) (defect='wrong_request')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_reuse_probe.py", line 185, in test_summary_marks_missing_layer_bad_metadata_and_broken_log
+    self.assertFalse(result["complete"])
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_summary_marks_missing_layer_bad_metadata_and_broken_log (test_mempool_reuse_probe.TestReuseProbe.test_summary_marks_missing_layer_bad_metadata_and_broken_log) (defect='missing_checks')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_reuse_probe.py", line 185, in test_summary_marks_missing_layer_bad_metadata_and_broken_log
+    self.assertFalse(result["complete"])
+AssertionError: True is not false
+
+----------------------------------------------------------------------
+Ran 1 test in 0.005s
+
+FAILED (failures=6)

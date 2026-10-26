@@ -1,0 +1,49 @@
+{
+  "ticket": "mempool-min/03",
+  "purpose": "temporary diagnosis; not a model-correctness fix",
+  "date": "2026-10-26",
+  "base_commit": "0308cd081418f6bf789f7cf5b623741d22965132",
+  "cpu": {
+    "status": "passed",
+    "tests": 459,
+    "seconds": 38.333,
+    "command": "python3 /private/tmp/mempool-ticket03/run.py reuse-probe-cpu-final -m unittest discover -s ascend-mempool-test/tests/unit -v",
+    "log": "probe-cpu-unittest.txt"
+  },
+  "static": {
+    "status": "passed",
+    "strict_mypy_modules": 5,
+    "python_target": "3.10",
+    "python39_ast_files": 8,
+    "lint_format_isort_files": 8,
+    "log": "probe-static.txt"
+  },
+  "review": {
+    "standards_unresolved": 0,
+    "spec_initial_findings": 1,
+    "spec_resolved": 1,
+    "spec_unresolved": 0,
+    "record": "probe-review.md"
+  },
+  "npu": {
+    "probe_executed": false,
+    "original_run": "ticket03-001",
+    "original_status": "failed",
+    "cause": "unknown",
+    "next_run": "ticket03-002",
+    "mode": "reuse-acceptance",
+    "additional_flag": "--diagnose-reuse",
+    "user_accepted": false,
+    "ticket_state": "open"
+  },
+  "source_sha256": {
+    "python/sglang/srt/hardware_backend/npu/mempool/debug_reuse.py": "0542ffadcd7e92b5c3fc55b58aac7279e9777693c9f473037db3c232ec0ce8ae",
+    "python/sglang/srt/hardware_backend/npu/mempool/prefix.py": "d0ef02de39b3a9aded90c7df76a632a264579bbd87906b50cb04ffa9047d7a43",
+    "python/sglang/srt/disaggregation/ascend/mempool_subrouter.py": "6c81c3e74812997bddb79b238ca7079b82478363af942189352e938cb662453a",
+    "python/sglang/srt/hardware_backend/npu/attention/ascend_backend.py": "953566b6d24ce83c2ac703fbc61a286dda4a490fafaa523707aa13b100429646",
+    "ascend-mempool-test/scripts/run_mempool_min.py": "dbf29203019410c55ba7556b1af846dad9d2624fbbe6ebba71f550e609c5a552",
+    "ascend-mempool-test/scripts/summarize_mempool_reuse.py": "90cb4e789aa7eda190ffaf637448f88f7ec7d23548264084e089de450f2b4e14",
+    "ascend-mempool-test/tests/unit/test_mempool_reuse_probe.py": "d798ae13ab23f4a6d4fd47c31c2eae4bf5dbc76b88901a869abc33342d0261fd",
+    "ascend-mempool-test/tests/unit/test_mempool_min_entry.py": "25f1fd34ae1a34b56a550da73e1be8315e3c01708d70717828abab35569f7a15"
+  }
+}

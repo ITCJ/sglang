@@ -158,6 +158,42 @@ P alive 每次占 S_P/B=64 页整槽额度，D alive 占 S_D/B=1 页整槽额度
 
 ## Comments
 
+### 2026-10-26：C 差异定位到重算尾页，交付临时探针供下一轮诊断
+
+- 用户回传 A/B 与参考完整输出相等；C 在 output[15] 首次不同，参考 624、目标 13。
+  冷算 A/C 全部相等，目标 A/C 在同一位置不同。
+- 用户离线运行 reuse 内容检查通过：16 rank、78 主层、21 Index 层，以及
+  非连续 native 映射、native_freed 后 fill 等边界。各 rank A/C 的前 31 页
+  alive 摘要相等，仅重算的第 31 页不同。
+- 这证明既有数据搬运检查通过，不能证明重算尾页与冷算数值等价。
+  最终综合 Graph/生命周期汇总及 timeout 检查仍未完成。根因尚未确定。
+- 增加 `--diagnose-reuse` 临时探针，保持相同 A/B/C 和严格输出断言。
+  仅 target P 记录实际 attention 长度、位置与页表，并逐层比较相同输入的尾页。
+  诊断保留一页 CPU 副本；对现有验证数据做统计，会增加 CPU 检查与同步开销，
+  不能用于性能结论。失败退出也打印简短结果并保存 reuse-diagnostic.json。
+- 功能接线全部在 Ascend/NPU；双机入口和离线摘要位于既有验收脚本目录，
+  需要服务外完成参数协调、进程退出后的日志收集，服务内 hook 无法替代。
+- 这是诊断交付，不是根因修复。Mac 测试验证探针，不复现 NPU 模型计算。
+  诊断开关默认关闭，`[DEBUG-ticket03-reuse]` 探针在确认修复后删除。
+  03 保持 needs-info/open；04 不解锁，未放宽输出比较。
+- 最终 CPU 回归 459/459 通过（38.333 秒），5 模块 strict mypy、8 文件
+  lint/format/isort/Python3.9 AST 通过。Standards 0 项；Spec 的摘要证据关联
+  问题经六个先红后绿反例修正，最终 0 项未解决。
+  [本轮检查](../verification/ticket03-001-20261026/probe-checks.json)与
+  [review](../verification/ticket03-001-20261026/probe-review.md)保留范围和限制。
+
+### 2026-10-26：ticket03-001 NPU 首轮失败，正在收集 C 的差异证据
+
+- 用户回传 31/32 终端截图，两侧均为 `0308cd0814`，使用 `reuse-acceptance`。
+  P 报 `reuse-prefix-c: full output IDs differ from formal reference`，D 报 peer failed。
+- 入口已进入 target；按执行顺序，A/B 的输出比较未触发错误。
+  C 在最终内容/生命周期汇总与 timeout 验收前退出，不能将这些项记为通过。
+- 已请求从本次保存的 responses/snapshots 提取首个差异位置、冷算 A/C 对比，
+  并离线执行现有 reuse 内容检查器。当前只有截图，尚无原始序列和 rank 收据。
+- [失败记录](../verification/ticket03-001-20261026/failure-record.json)区分观察、
+  依据代码的推断与未知项。未放宽完整输出比较，未修改功能代码或要求重跑模型。
+- State 保持 open，04 不解锁。待证据确认根因后独立提交修正与重测入口。
+
 ### 2026-10-26：实现与 CPU 验证交付，等待用户执行 NPU 验收
 
 - 已实现连续 ready 前缀匹配、真实 allocator load_back、flat/NZ MLA 布局、

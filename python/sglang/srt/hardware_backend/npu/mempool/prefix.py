@@ -7,6 +7,7 @@ import hashlib
 import importlib
 import json
 import logging
+import os
 from contextlib import nullcontext
 from typing import Any, Callable
 
@@ -14,6 +15,7 @@ import msgspec
 import torch
 from torch import Tensor
 
+from .debug_reuse import DEBUG_ENV, ReuseProbe
 from .layout import check_index, positive_int
 from .manager import MempoolKVManager
 
@@ -87,6 +89,11 @@ class PrefixStore:
         # Acceptance-only CPU references: one current request plus retained pages.
         self._source: _Source | None = None
         self._saved: dict[int, dict[tuple[str, int], Tensor]] = {}
+        self.debug_probe = (
+            ReuseProbe(page_size=page_size, rank=replica)
+            if verify and os.environ.get(DEBUG_ENV) == "1"
+            else None
+        )
 
     @property
     def free_pages(self) -> tuple[int, ...]:
@@ -558,11 +565,52 @@ class PrefixStore:
             if operation.rid != rid
         }
 
-    def begin_request(self, rid: str, slot: int, tokens: int) -> None:
+    def begin_request(
+        self,
+        rid: str,
+        slot: int,
+        tokens: int,
+        *,
+        input_ids: list[int] | None = None,
+        hit_len: int = 0,
+    ) -> None:
         if self.verify:
             if self._source is not None:
                 raise RuntimeError("prefix verification request was not released")
             self._source = _Source(rid=rid, slot=slot, tokens=tokens)
+            if self.debug_probe is not None:
+                if input_ids is None or len(input_ids) != tokens:
+                    raise ValueError("reuse probe requires the allocated input IDs")
+                self.debug_probe.begin_request(rid, input_ids, hit_len)
+
+    def debug_forward(
+        self,
+        batch: Any,
+        *,
+        block_table: Tensor,
+        query_lengths: Tensor,
+        kv_lengths: Tensor,
+        pool: Any,
+    ) -> None:
+        if self.debug_probe is None or self._source is None:
+            return
+        restored = next(
+            (
+                op.indices
+                for op in self._reads.values()
+                if op.rid == self._source.rid and op.kind == "load_back"
+            ),
+            None,
+        )
+        self.debug_probe.forward(
+            batch,
+            block_table=block_table,
+            query_lengths=query_lengths,
+            kv_lengths=kv_lengths,
+            restored_indices=restored,
+            indexer_layer_ids=pool.indexer_layer_ids,
+            start_layer=pool.start_layer,
+        )
 
     def capture_source(
         self,
@@ -676,6 +724,8 @@ class PrefixStore:
             list(range(start // self.page_size, end // self.page_size)),
             logical,
         )
+        if start == 0 and self.debug_probe is not None:
+            self.debug_probe.finish(source.values)
 
     def _verify_admit(self, operation: _Admit) -> None:
         source = self._source

@@ -1,0 +1,42 @@
+{
+  "ticket": "mempool-min/03",
+  "run_id": "ticket03-001",
+  "reported_date": "2026-10-26",
+  "source": "user-provided terminal screenshot and pasted diagnostic output",
+  "commit_shown_on_both_hosts": "0308cd0814",
+  "hosts": {
+    "prefill": "npu1-31",
+    "decode": "npu1-32"
+  },
+  "mode": "reuse-acceptance",
+  "config_path": "/home/cryang/mempool-min-ticket01-3132.json",
+  "status": "failed",
+  "failed_stage": "target",
+  "failed_case": "reuse-prefix-c",
+  "prefill_error": "ValueError: reuse-prefix-c: full output IDs differ from formal reference",
+  "decode_error": "RuntimeError: peer failed: reuse-prefix-c: full output IDs differ from formal reference",
+  "observed": [
+    "Both hosts show the expected implementation commit.",
+    "The runner reached target after fetch and reference stages.",
+    "The P runner stopped at C's strict full-output comparison.",
+    "User reports A and B full output IDs equal to their cold references; C first differs at output index 15 (reference 624, target 13).",
+    "User reports cold A and C full outputs are equal, while target A and C first differ at index 15.",
+    "The user-run offline reuse checker passed all 16 ranks, 78 main layers and 21 index layers, including noncontiguous native mapping and native-free-before-fill controls.",
+    "All ranks 0..15 report 32 alive pages for A/C; only logical page 31 differs. Earlier pages 0..30 match."
+  ],
+  "code_based_inferences": [
+    "Final combined target/Graph/resource checks and timeout acceptance did not run because C output comparison failed.",
+    "Known P-side content differences are confined to the recomputed final 128-token page; this does not establish why it differs.",
+    "The suffix content checker validates writeback against that request's own computed source, not numerical equivalence to cold A."
+  ],
+  "unknown": [
+    "First differing main/index layer and numerical size/structure of last-page differences.",
+    "Actual kernel-bound query/KV lengths, positions and block tables for C.",
+    "Exact cause, repeatability and whether additional D-side differences exist."
+  ],
+  "next_step": "Add opt-in bounded P-side diagnostics for kernel metadata and per-layer cold-A/reused-C tail comparison, then user reruns the unchanged strict acceptance.",
+  "log_root": "/home/cryang/log/mempool-min/ticket03-001/",
+  "raw_artifacts_received": false,
+  "user_accepted": false,
+  "ticket_state": "open"
+}

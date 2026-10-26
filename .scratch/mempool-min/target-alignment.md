@@ -5,7 +5,7 @@ template: doc
 theme: blueprint
 lang: zh
 date: 2026-10-26
-status: ticket01 已关闭；02 待关闭确认；03 实现与 CPU 回归通过，待 NPU 验收
+status: ticket01 已关闭；02 待关闭确认；03 NPU 首轮 C 输出不一致，正在诊断
 ---
 
 **当前四票与 sparse 阶段 0 一致，但没有覆盖后续全部目标。**
@@ -37,7 +37,9 @@ K1 共享、真正的 alive 页分配及 dense 集成仍须承接。
 2026-10-24统一页决定取代此前的64/128分离；本轮已修正现行正文和ticket01代码。
 HTTP/ZMQ、原生预留和冷请求已通过 ticket01 用户 NPU 验收。
 prefix 保存已由 ticket02 实现并通过 CPU 与自动化 NPU 验收。
-ticket03 已实现命中恢复与后缀计算，CPU 回归通过，NPU 尚未执行。
+
+ticket03 已实现命中恢复与后缀计算，CPU 回归通过。
+NPU 首轮 ticket03-001 在 C 的完整输出比较失败，正在收集差异证据。
 
 ## B 最小空闲 slot 0 与 page 的关系
 
@@ -101,6 +103,57 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 共享后分片解析组映射；Router 仍只处理逻辑位置和不透明描述符。
 
 ## D 名称、验收与实施票怎样对应
+
+**2026-10-26 ticket03：第 21 步，临时诊断交付完成 CPU 验证。**
+
+review 修正后完整 CPU 回归 459/459 通过（38.333 秒）；5 模块 strict mypy、8 文件静态检查通过。
+Standards 最终 0 项，Spec 的 1 项摘要关联问题已修复，最终 0 项未解决。
+双机入口可用 --diagnose-reuse 自动打印摘要；下一轮由用户运行 ticket03-002。
+
+这是诊断探针交付，未修复或复现 NPU 模型计算问题。03 保持 open，04 不解锁。
+[本轮检查](verification/ticket03-001-20261026/probe-checks.json)记录实际执行范围。
+
+**2026-10-26 ticket03：第 20 步，review 修正诊断证据关联。**
+
+摘要现在核对 A 的 baseline、A/C 完整输入摘要、C 的 rid/reference_rid 和全部元数据检查项。
+缺 baseline、缺/错输入摘要、错来源、错请求、缺检查项的六个反例先失败后通过。
+首次完整 CPU 回归 458/458 通过；此项 review 修正后还需回归，NPU 根因仍待诊断。
+
+**2026-10-26 ticket03：第 19 步，双机入口增加临时诊断开关。**
+
+reuse-acceptance 增加 --diagnose-reuse，只在 target 的 P 服务启用探针。
+两机身份校验包含开关；内存预检计入一页副本，失败清理后也生成 JSON 与终端摘要。
+严格输出比较和非零失败退出保留。入口与汇总器的 CPU 验证待完成，NPU 仍待用户重测。
+
+**2026-10-26 ticket03：第 18 步，临时诊断已接入 P 的实际计算路径。**
+
+显式诊断开关与 verify_prefix 同时开启时，记录实际 sparse attention 的 query/KV 长度、位置和完整页映射。
+从已验证的 computed-source CPU 数据取尾页，按相同完整输入逐层比较；普通路径默认关闭。
+
+16 项相关 CPU 检查通过；尚待自运行入口、汇总器与 NPU 实测，未认定模型根因。
+
+**2026-10-26 ticket03：第 17 步，临时诊断比较器已实现。**
+
+新增默认关闭的尾页比较器，保留首个冷算 prompt 的一页 CPU 副本。
+只比较相同完整输入；记录每层差异数量、最大绝对差和 RMS，并核对位置与页映射。
+两项 CPU 诊断测试先失败后通过；它们验证诊断器，不代表 NPU 模型问题已复现或修复。
+
+该步仅覆盖诊断比较器；完整输出相等的标准保持不变。
+
+**2026-10-26 ticket03：首轮 NPU 失败，差异已定位到 C 重算尾页。**
+
+用户回传 31/32 截图，commit=0308cd0814、run-id=ticket03-001。
+入口进入 target 后，在 reuse-prefix-c 的严格输出比较处退出；D 收到 peer failed。
+用户回传 A/B 完整输出相等，C 从 output[15] 开始不同；冷算 A/C 完全一致。
+
+离线 reuse 内容检查通过：16 rank、78 主层、21 Index 层、真实非连续恢复与提前释放。
+各 rank 的 A/C alive 都有 32 页，仅第 31 页不同；该页是 C 重算的最后 128 token。
+suffix 检查证明写回等于本次计算源，不能证明与冷算值相等。
+最终综合 Graph/生命周期汇总及 timeout 验收未完成。
+
+根因仍未确定，需补充算子元数据与逐层差异幅度。未放宽完整输出比较。
+[失败记录](verification/ticket03-001-20261026/failure-record.json)保留用户反馈与未知项。
+03 继续 needs-info/open，04 不解锁。
 
 **2026-10-26 ticket03：第 16 步：实现交付就绪。**
 
@@ -473,7 +526,7 @@ K1 是原文的共享接入标记，不代表“阶段 1”。
 
 | 功能名称（原文标记） | 当前本地承接 | 状态与边界 |
 |---|---|---|
-| 基础请求流程（阶段 0） | mempool-min 01 → 02 → 03 → 04 | 01 已关闭；02 待关闭确认；03 实现/CPU 通过，待 NPU；04 待实施 |
+| 基础请求流程（阶段 0） | mempool-min 01 → 02 → 03 → 04 | 01 已关闭；02 待关闭确认；03 NPU 首轮 C 输出不一致，正在诊断；04 待实施 |
 | 共享存储接入（K1） | 旧 NUMA 共享 02 有部分相关范围 | 尚无覆盖完整共享接入的新控制路径集成票 |
 | 远端 prefix 与布局调整（阶段 1） | 本 feature 尚未拆票 | 包含 page-first |
 | 分块与流水（阶段 2） | 本 feature 尚未拆票 | 包含逐 chunk 推进、提前首 token |
@@ -495,7 +548,7 @@ ticket01 已经用户确认 NPU 验收并关闭；02–04 保持 open。
 |---|---|---|---|
 | [01 冷请求与显式释放](issues/01-cold-request-lifecycle.md) | 冷请求、统一页、原生 warmup；CPU、双轴 review 与用户 NPU 验收 | 本票已关闭 | 7275f29a05：自动化验收通过，2026-10-26 用户确认；user_accepted=true |
 | [02 prompt 保存](issues/02-prompt-prefix-save.md) | Index K 写回、40 页 prefix、异步 admit/publish；用户回传双机 NPU 验收通过 | 功能与自动化验收完成；等待用户确认关闭 | 87157b7365、ticket02-002；CPU 440 项、两轴 review 与 NPU 报告通过；NUMA 落点未验证，State=open |
-| [03 命中恢复与后缀](issues/03-prefix-restore-and-suffix.md) | load_back、fill、后缀独立计数、联合 ready、真实尾页接续；reuse-acceptance 入口 | 用户 NPU 内容/推理/释放验收 | CPU 453 项、两轴 review 通过；用户明确授权先实施 03，02 关闭确认仍保留；State=open |
+| [03 命中恢复与后缀](issues/03-prefix-restore-and-suffix.md) | 恢复、fill、后缀、提前释放已实现；临时逐层诊断入口就绪 | 用户运行 ticket03-002 定位 C 尾页差异，随后完成本票 NPU 验收 | 诊断 CPU 459 项通过；0308cd0814 / ticket03-001 输出失败；根因未知，State=open |
 | [04 完整自运行验收](issues/04-full-demo-acceptance.md) | 规格、回顾确认及重编实施票 | 独立参考组、A/B/C/E、V1–V10 与报告整合 | 完整验收未执行；等待 03 关闭 |
 
 每次实现后立即更新本表，分别记录代码、CPU 检查与用户 NPU 验收。

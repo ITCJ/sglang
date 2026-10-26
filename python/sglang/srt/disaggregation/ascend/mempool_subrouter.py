@@ -187,7 +187,11 @@ class RouterShard:
             self.identity = message.request
             if self.prefix is not None:
                 self.prefix.begin_request(
-                    rid=request["rid"], slot=slot, tokens=request["prompt_tokens"]
+                    rid=request["rid"],
+                    slot=slot,
+                    tokens=request["prompt_tokens"],
+                    input_ids=request["input_ids"],
+                    hit_len=request.get("hit_len", 0),
                 )
             if self.restore is not None:
                 self.restore.begin_request(request, slot=slot)

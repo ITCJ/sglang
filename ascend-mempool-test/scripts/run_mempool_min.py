@@ -23,6 +23,7 @@ REPO = SCRIPTS.parents[1]
 sys.path.insert(0, str(REPO / "ascend-mempool-test/src"))
 
 import msgspec
+import summarize_mempool_reuse
 import verify_mempool_min
 import verify_mempool_prefix
 import verify_mempool_reuse
@@ -51,6 +52,8 @@ else:
         RUN_ENV,
         RouterConfig,
     )
+
+REUSE_DEBUG_ENV = "SGLANG_NPU_MEMPOOL_DEBUG_REUSE"
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -100,7 +103,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--log-root", type=Path, default=Path("/home/cryang/log/mempool-min")
     )
     parser.add_argument("--describe", action="store_true")
+    parser.add_argument(
+        "--diagnose-reuse",
+        action="store_true",
+        help="temporarily compare P-side cold/reused tails and kernel metadata",
+    )
     args = parser.parse_args(argv)
+    if args.diagnose_reuse and args.mode != "reuse-acceptance":
+        parser.error("--diagnose-reuse requires --mode reuse-acceptance")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", args.run_id):
         parser.error("run-id must be a simple new directory name")
     if not args.log_root.resolve().is_relative_to(Path("/home/cryang/log").resolve()):
@@ -116,6 +126,7 @@ def service_environment(
     for name in (
         CONFIG_ENV,
         RUN_ENV,
+        REUSE_DEBUG_ENV,
         "http_proxy",
         "https_proxy",
         "HTTP_PROXY",
@@ -147,10 +158,14 @@ def service_environment(
     )
     if target:
         env[CONFIG_ENV], env[RUN_ENV] = str(args.config), args.run_id
+        if getattr(args, "diagnose_reuse", False) and args.role == "prefill":
+            env[REUSE_DEBUG_ENV] = "1"
     return env
 
 
-def memory_budget(config: RouterConfig, role: str) -> dict[str, int]:
+def memory_budget(
+    config: RouterConfig, role: str, *, diagnose_reuse: bool = False
+) -> dict[str, int]:
     layout = MempoolConfig(
         prefill_capacity=config.prompt_capacity,
         decode_capacity=config.decode_capacity,
@@ -178,6 +193,12 @@ def memory_budget(config: RouterConfig, role: str) -> dict[str, int]:
         ) // layout.prompt.slots
         references += layout.prefix_main.total_bytes + layout.prefix_index.total_bytes
         scratch = 2 * config.prompt_capacity * layout.prompt.row_bytes
+        if diagnose_reuse:
+            # One cloned cold tail page per rank; reductions use bounded CPU scratch.
+            references += config.page_size * (
+                layout.prompt.layers * layout.prompt.row_bytes
+                + layout.prompt_index.layers * layout.prompt_index.row_bytes
+            )
         verification = 16 * ((references + scratch + 2**30 - 1) // 2**30) * 2**30
     return dict(
         bm_bytes=bm, verification_bytes=verification, required_bytes=bm + verification
@@ -246,6 +267,7 @@ class Runner:
         identity = dict(
             run_id=self.args.run_id,
             mode=self.args.mode,
+            diagnose_reuse=getattr(self.args, "diagnose_reuse", False),
             # Peer sends JSON, which turns tuple fields such as numa_nodes into
             # lists. Compare the same wire representation on both sides.
             config=json.loads(msgspec.json.encode(self.config)),
@@ -291,7 +313,11 @@ class Runner:
         if match is None:
             raise ValueError("/proc/meminfo does not report MemAvailable")
         available = int(match.group(1)) * 1024
-        budget = memory_budget(self.config, self.args.role)
+        budget = memory_budget(
+            self.config,
+            self.args.role,
+            diagnose_reuse=getattr(self.args, "diagnose_reuse", False),
+        )
         self.report["memory_budget"] = budget
         write_json(self.root / "memory-budget.json", budget)
         required = budget["required_bytes"]
@@ -763,7 +789,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                     mode=args.mode,
                     config=msgspec.to_builtins(config),
                     logs=str(root),
-                    memory_budget=memory_budget(config, args.role),
+                    memory_budget=memory_budget(
+                        config, args.role, diagnose_reuse=args.diagnose_reuse
+                    ),
+                    diagnose_reuse=args.diagnose_reuse,
                     acceptance_controls=(
                         "one skipped allocator page; fill submitted after native_freed"
                         if config.match_prefix and config.verify_prefix
@@ -803,6 +832,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             "PAGE_SIZE",
                             "MAX_TOTAL_TOKENS",
                             "SKIP_SERVER_WARMUP",
+                            REUSE_DEBUG_ENV,
                         )
                     },
                 ),
@@ -846,6 +876,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(report["error"], file=sys.stderr)
         return 1
     finally:
+        if args.diagnose_reuse and args.role == "prefill":
+            try:
+                diagnosis = summarize_mempool_reuse.summarize(
+                    root / "target" / "prefill.log"
+                )
+                write_json(root / "target" / "reuse-diagnostic.json", diagnosis)
+                report["reuse_diagnostic"] = diagnosis
+                summarize_mempool_reuse.print_summary(diagnosis)
+            except Exception as exc:
+                # Preserve the original acceptance failure even if collection fails.
+                report["reuse_diagnostic"] = dict(error=f"{type(exc).__name__}: {exc}")
         write_json(root / "summary.json", report)
         if args.role == "prefill":
             write_json(root.parent / "summary.json", report)
