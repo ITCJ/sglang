@@ -1,0 +1,26 @@
+{
+  "run": "ticket03-ac-002",
+  "source": "user-provided session summary; remote artifacts not downloaded",
+  "coverage": "semantic smoke only",
+  "status": "passed",
+  "hit_lengths": [
+    0,
+    3968
+  ],
+  "token_ids_equal": true,
+  "logically_equal": true,
+  "first_output_difference": null,
+  "answer": {
+    "after_take": 14,
+    "after_add": 18,
+    "enough": "no",
+    "shortage": 2,
+    "final": 18
+  },
+  "date": "2026-10-27",
+  "remote_results": "/home/cryang/log/mempool-demo/ticket03-ac-002/ac/",
+  "script_commit": "7cbb61b",
+  "full_acceptance": false,
+  "ticket_state": "open",
+  "downstream04_unlocked": false
+}
