@@ -22,7 +22,8 @@
       "run_service.sh",
       "run_mempool_min.sh"
     ],
-    "diff_check": "passed"
+    "diff_check": "passed",
+    "log_normalization": "Trailing whitespace stripped from the expected-failure log; outcomes unchanged"
   },
   "review": {
     "standards": {
