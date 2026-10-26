@@ -3,7 +3,12 @@
 mempool-min ticket03 的命中验收入口为 `run_mempool_min.sh --mode reuse-acceptance`。
 它自动运行独立 A/B/C 冷算参考、真实保存/恢复/后缀计算和全量输出比较。
 代码阅读顺序、每机一条命令和验收边界控制见
-[ticket03 交付说明](../.scratch/mempool-min/ticket03-delivery.md)。本票保持 open，NPU 尚未执行。
+[ticket03 交付说明](../.scratch/mempool-min/ticket03-delivery.md)。本票保持 open，原始 C 输出分叉待定位。
+
+原始 ABC 普通恢复对照使用 `--mode reuse-diagnostic --replay-run ticket03-004`。
+它保留内容校验与探针，默认关闭强制非连续页和延迟 fill，两项可分别启用。
+双机命令与回传材料见 [ticket03-005 诊断说明](../.scratch/mempool-min/ticket03-normal-abc.md)。
+诊断通过不代替完整验收。
 
 ticket02 的保存验收入口为 `run_mempool_min.sh --mode prefix-acceptance`。
 双机命令、容量、回传材料和功能代码 review 顺序见

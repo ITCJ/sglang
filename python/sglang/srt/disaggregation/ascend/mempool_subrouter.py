@@ -309,7 +309,7 @@ class RouterShard:
             raise RuntimeError("fill cannot precede completed load_back")
         # Acceptance forces the native-free-before-fill boundary on every rank.
         # Main already protects these prefix sources while submission is delayed.
-        if restore.verify_boundaries and (
+        if restore.delay_fill and (
             not restore.native_freed or "native_freed" not in self.sent_events
         ):
             return None

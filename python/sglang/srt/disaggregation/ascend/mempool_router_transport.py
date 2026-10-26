@@ -132,7 +132,10 @@ def attach_subrouter(
         if prefix is None:
             raise ValueError("prefix restore requires local storage")
         restore = PrefillRestore(
-            allocator, prefix, verify_boundaries=config.verify_prefix
+            allocator,
+            prefix,
+            force_noncontiguous=config.force_noncontiguous_restore,
+            delay_fill=config.delay_prefix_fill,
         )
         install_prefill_cache(scheduler, restore)
     shard = RouterShard(
@@ -188,7 +191,11 @@ def attach_subrouter(
             verify_prefix=config.verify_prefix,
         )
     if config.match_prefix:
-        registration["match_prefix"] = True
+        registration.update(
+            match_prefix=True,
+            force_noncontiguous_restore=config.force_noncontiguous_restore,
+            delay_prefix_fill=config.delay_prefix_fill,
+        )
 
     def registered() -> dict[str, Any]:
         if control.peer is None:

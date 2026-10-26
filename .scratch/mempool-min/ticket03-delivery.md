@@ -5,8 +5,14 @@ template: doc
 theme: blueprint
 lang: zh
 date: 2026-10-26
-status: 首层诊断 CPU 464 项通过；NPU 两轮 C 输出失败，根因待定位
+status: 原始 C 输出分叉待定位；普通 ABC 对照等待用户运行
 ---
+
+**下一轮是 ticket03-005-normal-abc。**
+原始 ABC、ignore_eos=true、固定128输出、内容检查和探针均保留；
+普通恢复默认关闭两项独立边界控制，复用 ticket03-004 保存请求。
+运行命令、报告和本轮功能阅读顺序见 [普通 ABC 对照](ticket03-normal-abc.md)。
+本轮只作诊断；下文早期命令与 CPU 数字为各轮历史记录。
 
 **ticket03 已实现 B 命中 4096、C 命中 3968，只计算各自后缀。**
 源为 A 真实保存的 prefix，仍是 P 每个 TP rank 一份。
@@ -150,7 +156,9 @@ P eager，D Graph，默认页大小仅支持 128；输入为 token IDs，greedy�
 验收模式主动留出一个 allocator 页，确保测试真实非连续恢复映射。
 它还把 fill 提交延迟到全 TP 的 native_freed 发布之后。
 日志必须证明此时 suffix 已完成、ready_tokens 仍为 0。
-这些是明确的验收控制；普通 `serve` 且 `verify_prefix=false` 不注入。
+
+这些是明确的验收控制；普通 `serve` 默认关闭两项，独立于 `verify_prefix`。
+普通路径即使开启内容校验，也不会因此强制非连续页或延迟 fill。
 报告保留这些控制，不声称已验证无注入服务的重叠性能。
 
 每个 rank 核对 78 层主 KV 的两部分，以及 21 层 Index K。

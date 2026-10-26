@@ -313,3 +313,21 @@ request-mempool-demo.py（再读标准答案与解析）。HTTP客户端与题�
 未修改SGLang功能源码；新题硬件待用户运行，03保持open，原严格验收标准不变。
 
 脚本仓库提交：7cbb61b（Simplify mempool A/C prompt to pencil arithmetic）。
+
+### 2026-10-27：简单题通过与原始 ABC 普通恢复对照
+
+用户确认 ticket03-ac-002：after_take=14、after_add=18、enough=no、shortage=2、final=18。
+A/C 均正常结束、语义正确，实际命中0/3968；token_ids_equal=true、first_output_difference=null。
+这是用户回传的语义 smoke；没有推断原始 ABC 已通过，State 仍 open、04 不解锁。
+[回传记录](../verification/ticket03-ac-002-20261027/user-results.json)单独提交为0745deb337。
+
+用户明确要求准备 ticket03-005-normal-abc，复用004保存的原始IDs和sampling，保留ABC顺序。
+原始用例已关闭 thinking；明确保持 ignore_eos=true、固定128输出，与自然EOS语义题区分。
+本轮将 verify_prefix 与强制非连续页、延迟fill拆开，普通恢复关闭后两项，内容/探针继续开启。
+严格输出、命中0/4096/3968、占用32/40/40检查保留，自动采集与清理，两机各一条命令。
+输出失败仍收齐ABC证据；结果标为诊断，不注入超时故障，不替代原完整边界验收。
+
+实现与功能文件阅读顺序见 [普通 ABC 对照交付](../ticket03-normal-abc.md)。
+Mac 本机验证和两轴审核记录见 ../verification/ticket03-normal-abc-20261027/。
+472项CPU回归、9模块strict mypy和16文件静态/3.9语法通过；Standards与Spec均0项未解决。
+等待用户执行NPU对照；若通过再分别开启两项控制，尚未认定任何根因或放宽输出要求。

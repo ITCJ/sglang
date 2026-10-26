@@ -1,0 +1,120 @@
+test_describe_keeps_verification_and_independent_controls (test_mempool_reuse_diagnostic.TestReuseDiagnostic.test_describe_keeps_verification_and_independent_controls) ... usage: python -m unittest [-h] --role {prefill,decode} --mode
+                          {serve,acceptance,prefix-acceptance,reuse-acceptance}
+                          --config CONFIG --run-id RUN_ID
+                          [--log-root LOG_ROOT] [--describe]
+                          [--diagnose-reuse]
+python -m unittest: error: argument --mode: invalid choice: 'reuse-diagnostic' (choose from serve, acceptance, prefix-acceptance, reuse-acceptance)
+
+  test_describe_keeps_verification_and_independent_controls (test_mempool_reuse_diagnostic.TestReuseDiagnostic.test_describe_keeps_verification_and_independent_controls) (noncontiguous=False, delayed=False) ... ERROR
+test_describe_keeps_verification_and_independent_controls (test_mempool_reuse_diagnostic.TestReuseDiagnostic.test_describe_keeps_verification_and_independent_controls) ... ERROR
+test_replay_rejects_sampling_drift_and_identity_drift (test_mempool_reuse_diagnostic.TestReuseDiagnostic.test_replay_rejects_sampling_drift_and_identity_drift) ... ERROR
+test_source_preserves_payloads_and_rejects_changed_saved_requests (test_mempool_reuse_diagnostic.TestReuseDiagnostic.test_source_preserves_payloads_and_rejects_changed_saved_requests) ... ERROR
+test_native_can_free_after_suffix_while_fill_still_blocks_ready (test_mempool_prefix_service.TestPrefixService.test_native_can_free_after_suffix_while_fill_still_blocks_ready) ... ERROR
+test_verified_fill_can_complete_before_native_free (test_mempool_prefix_service.TestPrefixService.test_verified_fill_can_complete_before_native_free) ... ERROR
+
+======================================================================
+ERROR: test_describe_keeps_verification_and_independent_controls (test_mempool_reuse_diagnostic.TestReuseDiagnostic.test_describe_keeps_verification_and_independent_controls) (noncontiguous=False, delayed=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/argparse.py", line 1943, in _parse_known_args2
+    namespace, args = self._parse_known_args(args, namespace, intermixed)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/argparse.py", line 2184, in _parse_known_args
+    start_index = consume_optional(start_index)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/argparse.py", line 2113, in consume_optional
+    take_action(action, args, option_string)
+  File "/Users/hibikid/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/argparse.py", line 2003, in take_action
+    argument_values = self._get_values(action, argument_strings)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/argparse.py", line 2514, in _get_values
+    self._check_value(action, value)
+  File "/Users/hibikid/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/argparse.py", line 2573, in _check_value
+    raise ArgumentError(action, msg % args)
+argparse.ArgumentError: argument --mode: invalid choice: 'reuse-diagnostic' (choose from serve, acceptance, prefix-acceptance, reuse-acceptance)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_reuse_diagnostic.py", line 28, in test_describe_keeps_verification_and_independent_controls
+    self.assertEqual(runner.main(command), 0)
+                     ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/scripts/run_mempool_min.py", line 769, in main
+    args = parse_args(argv)
+           ^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/scripts/run_mempool_min.py", line 111, in parse_args
+    args = parser.parse_args(argv)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/argparse.py", line 1904, in parse_args
+    args, argv = self.parse_known_args(args, namespace)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/argparse.py", line 1914, in parse_known_args
+    return self._parse_known_args2(args, namespace, intermixed=False)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/argparse.py", line 1945, in _parse_known_args2
+    self.error(str(err))
+  File "/Users/hibikid/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/argparse.py", line 2650, in error
+    self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+  File "/Users/hibikid/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/argparse.py", line 2637, in exit
+    _sys.exit(status)
+SystemExit: 2
+
+======================================================================
+ERROR: test_describe_keeps_verification_and_independent_controls (test_mempool_reuse_diagnostic.TestReuseDiagnostic.test_describe_keeps_verification_and_independent_controls)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_reuse_diagnostic.py", line 29, in test_describe_keeps_verification_and_independent_controls
+    report = json.loads(output.getvalue())
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/json/decoder.py", line 338, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/json/decoder.py", line 356, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+======================================================================
+ERROR: test_replay_rejects_sampling_drift_and_identity_drift (test_mempool_reuse_diagnostic.TestReuseDiagnostic.test_replay_rejects_sampling_drift_and_identity_drift)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_reuse_diagnostic.py", line 80, in test_replay_rejects_sampling_drift_and_identity_drift
+    import replay_mempool_reuse as replay
+ModuleNotFoundError: No module named 'replay_mempool_reuse'
+
+======================================================================
+ERROR: test_source_preserves_payloads_and_rejects_changed_saved_requests (test_mempool_reuse_diagnostic.TestReuseDiagnostic.test_source_preserves_payloads_and_rejects_changed_saved_requests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_reuse_diagnostic.py", line 64, in test_source_preserves_payloads_and_rejects_changed_saved_requests
+    import replay_mempool_reuse as replay
+ModuleNotFoundError: No module named 'replay_mempool_reuse'
+
+======================================================================
+ERROR: test_native_can_free_after_suffix_while_fill_still_blocks_ready (test_mempool_prefix_service.TestPrefixService.test_native_can_free_after_suffix_while_fill_still_blocks_ready)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_prefix_service.py", line 23, in test_native_can_free_after_suffix_while_fill_still_blocks_ready
+    self.exercise_fill(delayed=True)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_prefix_service.py", line 79, in exercise_fill
+    restore = PrefillRestore(allocator, store, delay_fill=delayed)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: PrefillRestore.__init__() got an unexpected keyword argument 'delay_fill'
+
+======================================================================
+ERROR: test_verified_fill_can_complete_before_native_free (test_mempool_prefix_service.TestPrefixService.test_verified_fill_can_complete_before_native_free)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_prefix_service.py", line 26, in test_verified_fill_can_complete_before_native_free
+    self.exercise_fill(delayed=False)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_prefix_service.py", line 79, in exercise_fill
+    restore = PrefillRestore(allocator, store, delay_fill=delayed)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: PrefillRestore.__init__() got an unexpected keyword argument 'delay_fill'
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.037s
+
+FAILED (errors=6)

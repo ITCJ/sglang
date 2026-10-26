@@ -23,6 +23,7 @@ REPO = SCRIPTS.parents[1]
 sys.path.insert(0, str(REPO / "ascend-mempool-test/src"))
 
 import msgspec
+import replay_mempool_reuse as replay
 import summarize_mempool_reuse
 import verify_mempool_min
 import verify_mempool_prefix
@@ -94,7 +95,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--role", choices=("prefill", "decode"), required=True)
     parser.add_argument(
         "--mode",
-        choices=("serve", "acceptance", "prefix-acceptance", "reuse-acceptance"),
+        choices=(
+            "serve",
+            "acceptance",
+            "prefix-acceptance",
+            "reuse-acceptance",
+            "reuse-diagnostic",
+        ),
         required=True,
     )
     parser.add_argument("--config", type=Path, required=True)
@@ -104,13 +111,34 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--describe", action="store_true")
     parser.add_argument(
+        "--replay-run",
+        help="existing run whose saved ABC payloads are replayed exactly",
+    )
+    parser.add_argument("--force-noncontiguous-restore", action="store_true")
+    parser.add_argument("--delay-prefix-fill", action="store_true")
+    parser.add_argument(
         "--diagnose-reuse",
         action="store_true",
         help="temporarily compare P-side cold/reused tails and kernel metadata",
     )
     args = parser.parse_args(argv)
-    if args.diagnose_reuse and args.mode != "reuse-acceptance":
-        parser.error("--diagnose-reuse requires --mode reuse-acceptance")
+    if args.diagnose_reuse and args.mode not in (
+        "reuse-acceptance",
+        "reuse-diagnostic",
+    ):
+        parser.error("--diagnose-reuse requires a reuse mode")
+    if args.mode == "reuse-diagnostic":
+        args.diagnose_reuse = True
+        if not args.replay_run or not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", args.replay_run
+        ):
+            parser.error(
+                "reuse-diagnostic requires --replay-run with a simple directory name"
+            )
+        if args.replay_run == args.run_id:
+            parser.error("diagnostic replay requires a new run-id")
+    elif args.replay_run or args.force_noncontiguous_restore or args.delay_prefix_fill:
+        parser.error("replay and independent controls require --mode reuse-diagnostic")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", args.run_id):
         parser.error("run-id must be a simple new directory name")
     if not args.log_root.resolve().is_relative_to(Path("/home/cryang/log").resolve()):
@@ -225,6 +253,7 @@ class Runner:
     ) -> None:
         self.args, self.config, self.peer, self.root = args, config, peer, root
         self.is_p = args.role == "prefill"
+        self.diagnostic = args.mode == "reuse-diagnostic"
         self.host = config.prefill_host if self.is_p else config.decode_host
         self.report: dict[str, Any] = dict(
             status="running",
@@ -240,6 +269,46 @@ class Runner:
         )
         self.cases: list[dict[str, Any]] = []
         self.reference: list[dict[str, Any]] = []
+        if self.diagnostic:
+            self.report.update(
+                purpose=replay.PURPOSE,
+                full_acceptance=False,
+                controls={key: getattr(config, key) for key in replay.CONTROLS},
+            )
+
+    def replay_source(self, identity: dict[str, Any]) -> None:
+        source_root = self.args.log_root / self.args.replay_run
+        local = replay.load_source(source_root, self.args.role)
+        replay.validate_identity(local["identity"], identity)
+        cases = local.pop("cases")
+        local["payload_sha256"] = replay.payload_digest(cases) if self.is_p else None
+        self.peer.send("replay-source", value=local)
+        remote = self.peer.expect("replay-source")["value"]
+        if local["identity"] != remote["identity"]:
+            raise ValueError("P/D saved source identities differ")
+        case_file = self.root / "cases.json"
+        if self.is_p:
+            write_json(case_file, cases)
+            send_log(self.peer, case_file)
+        else:
+            receive_log(self.peer, case_file)
+            cases = json.loads(case_file.read_text())
+        self.cases = cases
+        replay.validate_cases(self.cases)
+        digest = replay.payload_digest(self.cases)
+        if digest != (local if self.is_p else remote)["payload_sha256"]:
+            raise ValueError("replayed payload changed during peer transfer")
+        provenance = dict(
+            purpose=replay.PURPOSE,
+            source_run=self.args.replay_run,
+            source_root=str(source_root),
+            source_identity=local["identity"],
+            payload_sha256=digest,
+            files_sha256={**local["files_sha256"], **remote["files_sha256"]},
+            retokenized=False,
+        )
+        write_json(self.root / "replay-source.json", provenance)
+        self.report["replay_source"] = provenance
 
     def preflight(self) -> None:
         if self.config.interface not in {name for _, name in socket.if_nameindex()}:
@@ -269,6 +338,7 @@ class Runner:
             run_id=self.args.run_id,
             mode=self.args.mode,
             diagnose_reuse=getattr(self.args, "diagnose_reuse", False),
+            replay_run=getattr(self.args, "replay_run", None),
             # Peer sends JSON, which turns tuple fields such as numa_nodes into
             # lists. Compare the same wire representation on both sides.
             config=json.loads(msgspec.json.encode(self.config)),
@@ -308,6 +378,8 @@ class Runner:
             raise ValueError(
                 f"P/D identity mismatch: {fields}; see {self.root / 'identity-diff.json'}"
             )
+        if self.diagnostic:
+            self.replay_source(identity)
         meminfo = Path("/proc/meminfo").read_text()
         (self.root / "meminfo.txt").write_text(meminfo)
         match = re.search(r"^MemAvailable:\s+(\d+)", meminfo, re.M)
@@ -663,9 +735,18 @@ class Runner:
                         target
                         and result["output_ids"] != self.reference[index]["output_ids"]
                     ):
-                        raise ValueError(
-                            f"{case['name']}: full output IDs differ from formal reference"
-                        )
+                        if not self.diagnostic:
+                            raise ValueError(
+                                f"{case['name']}: full output IDs differ from formal reference"
+                            )
+                if target and self.diagnostic:
+                    self.report["output_comparison"] = replay.compare_outputs(
+                        self.cases, self.reference, results
+                    )
+                    write_json(
+                        root / "output-comparison.json",
+                        self.report["output_comparison"],
+                    )
                 deadline = time.monotonic() + 60
                 while True:
                     watch()
@@ -697,14 +778,18 @@ class Runner:
                             )
                         )
                         if target and self.config.prefix_pages:
-                            check = (
-                                verify_mempool_reuse.check_reuse
-                                if self.config.match_prefix
-                                else verify_mempool_prefix.check_prefix
-                            )
-                            evidence["prefix"] = check(
-                                root / "prefill.log", snapshots, self.cases
-                            )
+                            if self.config.match_prefix:
+                                evidence["prefix"] = verify_mempool_reuse.check_reuse(
+                                    root / "prefill.log",
+                                    snapshots,
+                                    self.cases,
+                                    force_noncontiguous=self.config.force_noncontiguous_restore,
+                                    delay_fill=self.config.delay_prefix_fill,
+                                )
+                            else:
+                                evidence["prefix"] = verify_mempool_prefix.check_prefix(
+                                    root / "prefill.log", snapshots, self.cases
+                                )
                             evidence["coverage"] = self.report["coverage"]
                         break
                     except (ValueError, RuntimeError, KeyError):
@@ -712,6 +797,8 @@ class Runner:
                             raise
                         time.sleep(1)
                 write_json(root / "evidence.json", evidence)
+                if target and self.diagnostic:
+                    self.report["target_evidence"] = evidence
                 if not target:
                     self.reference = results
                 self.peer.send("stage-control", action="done")
@@ -729,18 +816,68 @@ class Runner:
                     (root / f"{role}-normal.log").write_bytes(
                         (root / f"{role}.log").read_bytes()
                     )
-                self.timeout_case(jobs, server, root, base)
+                if not self.diagnostic:
+                    self.timeout_case(jobs, server, root, base)
         self.peer.barrier(name + "-stopped")
-        if target:
+        if target and not self.diagnostic:
             self.final_timeout_evidence(root)
         self.report["stages"].append(name)
         write_json(self.root / "summary.json", self.report)
+        if target and self.diagnostic:
+            self.finish_diagnostic(root)
+
+    def finish_diagnostic(self, root: Path) -> None:
+        # Called after both owned service groups have stopped, including when
+        # output IDs differ. Preserve independent content and probe evidence.
+        if self.is_p:
+            diagnosis = summarize_mempool_reuse.summarize(root / "prefill.log")
+            write_json(root / "reuse-diagnostic.json", diagnosis)
+            probes_ok = diagnosis["complete"] and all(
+                row["identity_ok"]
+                and row["metadata_ok"]
+                and not row["nonfinite"]
+                and all(
+                    not point["nonfinite"]
+                    for point in row["operators"]["checkpoints"].values()
+                )
+                and all(
+                    not point["nonfinite"]
+                    for point in row["operators"]["replays"].values()
+                )
+                for row in diagnosis["ranks"]
+            )
+            outputs = self.report["output_comparison"]
+            result = dict(
+                purpose=replay.PURPOSE,
+                full_acceptance=False,
+                status="passed"
+                if probes_ok and all(c["equal"] for c in outputs)
+                else "failed",
+                output_comparison=outputs,
+                probes_ok=probes_ok,
+                controls=self.report["controls"],
+                target_evidence=self.report["target_evidence"],
+                paired_process_cleanup="passed; both owned groups stopped",
+                timeout_injection="not part of this diagnostic comparison",
+            )
+            self.peer.send("diagnostic-result", value=result)
+        else:
+            result = self.peer.expect("diagnostic-result")["value"]
+        self.report.update(result)
+        write_json(root / "diagnostic-comparison.json", result)
+        print("REUSE_COMPARISON " + json.dumps(result), flush=True)
+        self.peer.barrier("diagnostic-result-saved")
+        if result["status"] != "passed":
+            failed = [c["name"] for c in result["output_comparison"] if not c["equal"]]
+            raise ValueError(
+                f"diagnostic comparison failed: output mismatches={failed}; probes_ok={result['probes_ok']}"
+            )
 
     def run(self) -> None:
         self.preflight()
         if self.args.mode != "serve":
             self.components()
-            if self.is_p:
+            if self.is_p and not self.diagnostic:
                 fixtures = (
                     verify_mempool_reuse
                     if self.config.match_prefix
@@ -770,12 +907,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     config = RouterConfig.read(str(args.config))
     root = args.log_root / args.run_id / args.role
     requested = msgspec.to_builtins(config)
-    if args.mode in ("prefix-acceptance", "reuse-acceptance"):
+    if args.mode in ("prefix-acceptance", "reuse-acceptance", "reuse-diagnostic"):
         config = msgspec.structs.replace(
             config,
             prefix_pages=40,
             verify_prefix=True,
-            match_prefix=args.mode == "reuse-acceptance",
+            match_prefix=args.mode != "prefix-acceptance",
+            force_noncontiguous_restore=args.mode == "reuse-acceptance"
+            or args.force_noncontiguous_restore,
+            delay_prefix_fill=args.mode == "reuse-acceptance" or args.delay_prefix_fill,
         )
     elif args.mode == "acceptance" and config.prefix_pages:
         raise ValueError(
@@ -794,11 +934,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                         config, args.role, diagnose_reuse=args.diagnose_reuse
                     ),
                     diagnose_reuse=args.diagnose_reuse,
-                    acceptance_controls=(
-                        "one skipped allocator page; fill submitted after native_freed"
-                        if config.match_prefix and config.verify_prefix
-                        else "none"
-                    ),
+                    replay_run=args.replay_run,
+                    purpose=replay.PURPOSE
+                    if args.mode == "reuse-diagnostic"
+                    else args.mode,
+                    acceptance_controls={
+                        key: getattr(config, key) for key in replay.CONTROLS
+                    },
                     stages=[
                         "paired preflight",
                         "P-only/D-only/mixed NPU fetch",
@@ -808,7 +950,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                         if config.prefix_pages
                         else "formal reference 4096+128",
                         "Main/SR target and cleanup",
-                        "timeout/fail-stop and paired cleanup",
+                        "strict ABC diagnostic verdict; not full acceptance"
+                        if args.mode == "reuse-diagnostic"
+                        else "timeout/fail-stop and paired cleanup",
                     ]
                     if args.mode != "serve"
                     else ["paired preflight", "Main and P/D persistent services"],

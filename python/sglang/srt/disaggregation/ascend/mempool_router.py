@@ -113,7 +113,11 @@ class MainRouter:
                 verify_prefix=self.config.verify_prefix,
             )
         if self.config.match_prefix:
-            expected["match_prefix"] = True
+            expected.update(
+                match_prefix=True,
+                force_noncontiguous_restore=self.config.force_noncontiguous_restore,
+                delay_prefix_fill=self.config.delay_prefix_fill,
+            )
         for rank in ranks:
             if any(rank.get(k) != v for k, v in expected.items()):
                 raise ValueError("SR registered incompatible ticket01 capabilities")

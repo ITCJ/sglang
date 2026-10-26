@@ -20,6 +20,12 @@ from ascend_mempool_pd.mempool_subrouter import MempoolSubrouter, RouterShard
 
 class TestPrefixService(unittest.TestCase):
     def test_native_can_free_after_suffix_while_fill_still_blocks_ready(self):
+        self.exercise_fill(delayed=True)
+
+    def test_verified_fill_can_complete_before_native_free(self):
+        self.exercise_fill(delayed=False)
+
+    def exercise_fill(self, *, delayed):
         helper = test_prefix.TestPrefixStore()
         self.addCleanup(helper.doCleanups)
         store, manager, copy, events = helper.make_store(verify=True)
@@ -70,7 +76,7 @@ class TestPrefixService(unittest.TestCase):
         allocator = SimpleNamespace(
             page_size=2, alloc=lambda n: torch.tensor([2, 3]), get_kvcache=lambda: pool
         )
-        restore = PrefillRestore(allocator, store, verify_boundaries=True)
+        restore = PrefillRestore(allocator, store, delay_fill=delayed)
 
         def event():
             e = ManualEvent()
@@ -195,7 +201,13 @@ class TestPrefixService(unittest.TestCase):
         fill = command("fill", 4, hit_len=2, sources=sources)
         before_fill = len(events)
         shard.execute(fill, 0)
-        self.assertEqual(len(events), before_fill)
+        self.assertEqual(len(events), before_fill + (0 if delayed else 1))
+        if not delayed:
+            self.assertFalse(restore.native_freed)
+            events[-1].done = True
+            shard.execute(fill, 0)
+            self.assertTrue(shard.fill_complete)
+            early_fill_event = events[-1]
         req = test_pd_service.TestMempoolPDService.request(1, 1)
         req.rid, req.origin_input_ids, req.output_ids = "B", [7, 8, 9, 10], []
         req.sampling_params = SimpleNamespace(
@@ -222,11 +234,15 @@ class TestPrefixService(unittest.TestCase):
         service.advance()
         self.assertEqual(freed, ["B"])
         self.assertTrue(restore.native_freed)
-        self.assertFalse(any(m["kind"] == "ready_tokens" for m in messages))
+        self.assertEqual(
+            any(m["kind"] == "ready_tokens" for m in messages), not delayed
+        )
         service.advance()  # Publish native_freed before submitting the delayed fill.
+        before_fill_retry = len(events)
         shard.execute(fill, 0)
-        fill_event = events[-1]
-        self.assertFalse(fill_event.done)
+        self.assertEqual(len(events), before_fill_retry + int(delayed))
+        fill_event = events[-1] if delayed else early_fill_event
+        self.assertEqual(fill_event.done, not delayed)
         fill_event.done = True
         shard.execute(fill, 0)
         service.advance()

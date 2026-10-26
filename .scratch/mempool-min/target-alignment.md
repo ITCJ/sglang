@@ -107,6 +107,37 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 
 ## D 名称、验收与实施票怎样对应
 
+**2026-10-27 ticket03：第 32 步，普通 ABC 对照本机验证通过。**
+
+472 项 CPU 回归通过；9 个功能模块 strict mypy、16 个 Python 文件静态与3.9语法通过。
+新增覆盖原请求跨端分块传输、四种控制组合、提前fill、错误内容/命中/占用、输出失败后的清理。
+
+[双机命令和功能源码阅读顺序](ticket03-normal-abc.md)已就绪；Standards / Spec 均 0 项未解决。
+检查与审核记录见 [验证目录](verification/ticket03-normal-abc-20261027/checks.json)。
+NPU 未运行，03 保持 open；普通对照即使通过，也不代替包含两项边界与超时的完整验收。
+
+**2026-10-27 ticket03：第 31 步，接入普通 ABC 诊断对照入口。**
+
+reuse-diagnostic 从旧运行的 cases、responses、identity 读取并交叉核对原始请求。
+不重新分词；保留 ABC、ignore_eos=true、固定 128 输出、模型容量与原有探针。
+普通恢复默认关闭两项边界控制；完整 reuse-acceptance 仍强制开启两项。
+
+内容检查允许正常 fill 先完成，继续核对 16 rank、99 层内容、命中及占用。
+输出不同时继续收集证据，在两侧清理后返回失败；本轮不注入超时故障。
+42 项定向 CPU 检查通过，含跨端分块传输、四种控制组合与失败后完整采集、清理。
+尚待全量 CPU 回归与两轴审核，未运行 NPU；结果只作诊断，不替代完整验收。
+
+**2026-10-27 ticket03：第 30 步，拆分内容校验与边界控制。**
+
+新增 force_noncontiguous_restore、delay_prefix_fill 两个独立开关，默认关闭。
+verify_prefix 只控制内容校验；恢复分配和 fill 调度分别读取独立开关。
+Main 核对每个 rank 注册的开关，避免两侧配置不一致。
+普通 ABC 对照入口和证据检查仍待接入；新增 CPU 用例已先失败，尚待完整验证。
+
+用户已确认 ticket03-ac-002 简单题 A/C 均答对、命中 0/3968，完整 IDs 相同。
+该 [语义 smoke 回传](verification/ticket03-ac-002-20261027/user-results.json)已单独提交0745deb337。
+原始 ABC 完整输出仍失败，03 保持 open，04 未解锁。
+
 **2026-10-27 ticket03：第 29 步，简单铅笔题客户端验证完成。**
 
 8项CPU检查、类型、lint和Python3.9语法通过。Standards / Spec均0项。

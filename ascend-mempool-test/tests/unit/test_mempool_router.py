@@ -45,6 +45,8 @@ def registration(role):
                     "prefix_index": 0,
                 },
                 graph=role == "decode",
+                force_noncontiguous_restore=False,
+                delay_prefix_fill=False,
             )
             for rank in range(16)
         ],
@@ -59,6 +61,25 @@ def payload(tokens=4096, new_tokens=128):
 
 
 class TestMainRouter(unittest.TestCase):
+    def test_boundary_controls_require_matching_and_all_rank_agreement(self):
+        from msgspec.structs import replace
+
+        system = TestPrefixMainRouter()
+        system.setUp()
+        for field in ("force_noncontiguous_restore", "delay_prefix_fill"):
+            with self.subTest(field=field):
+                with self.assertRaises(ValueError):
+                    RouterConfig("p", "d", "/model", **{field: True})
+                config = replace(system.main.config, match_prefix=True, **{field: True})
+                for role in ("prefill", "decode"):
+                    value = deepcopy(system.main.registrations[role])
+                    for rank in value["ranks"]:
+                        rank.update(match_prefix=True, **{field: True})
+                    MainRouter(config, "cpu").register(value)
+                    value["ranks"][15][field] = False
+                    with self.assertRaisesRegex(ValueError, "incompatible"):
+                        MainRouter(config, "cpu").register(value)
+
     def setUp(self):
         self.main = MainRouter(
             RouterConfig("p", "d", "/model"),

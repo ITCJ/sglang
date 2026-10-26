@@ -369,7 +369,10 @@ class TestMinRunner(unittest.TestCase):
             self.assertEqual(data["config"]["match_prefix"], match)
             if match:
                 self.assertIn("formal reference A/B/C", data["stages"])
-                self.assertIn("native_freed", data["acceptance_controls"])
+                self.assertEqual(
+                    data["acceptance_controls"],
+                    dict(force_noncontiguous_restore=True, delay_prefix_fill=True),
+                )
 
     def test_paired_timeout_retains_quota_and_reaps_only_owned_children(self):
         now = [0.0]

@@ -20,10 +20,16 @@ class PrefillRestore:
     """
 
     def __init__(
-        self, allocator: Any, store: PrefixStore, *, verify_boundaries: bool = False
+        self,
+        allocator: Any,
+        store: PrefixStore,
+        *,
+        force_noncontiguous: bool = False,
+        delay_fill: bool = False,
     ) -> None:
         self.allocator, self.store = allocator, store
-        self.verify_boundaries = verify_boundaries
+        self.force_noncontiguous = force_noncontiguous
+        self.delay_fill = delay_fill
         self.request: dict[str, Any] | None = None
         self.slot = -1
         self.indices: torch.Tensor | None = None
@@ -54,7 +60,7 @@ class PrefillRestore:
             # No synthetic address is introduced; normal serving allocates once.
             gap = (
                 self.allocator.page_size
-                if self.verify_boundaries
+                if self.force_noncontiguous
                 and request["hit_len"] > self.allocator.page_size
                 else 0
             )
