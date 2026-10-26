@@ -1,0 +1,27 @@
+{
+  "provenance": "User-pasted terminal output; raw remote files not read",
+  "run_id": "ticket03-ac-001",
+  "script_expected": "dada8eb",
+  "remote_git_sha_in_paste": false,
+  "input_tokens": 4096,
+  "input_sha256": "e5459cb563b6a1a4ed0c7169088474a8cd0cd801117aba3e64224eedcdc714a7",
+  "A": {
+    "hit_len": 0,
+    "answer": "incorrect",
+    "finish": "stop",
+    "text": "before=110,60,37\naccept=O1,O2,O4\nreject=O3,O5\nafter=35,0,12\nbuy=45,50,0\nreason=O3:C;O5:A"
+  },
+  "C": {
+    "hit_len": 3968,
+    "answer": "incorrect",
+    "finish": "stop",
+    "text": "before=110,60,37\naccept=O1,O2,O4\nreject=O3,O5\nafter=35,0,12\nbuy=45,50,0\nreason=O3:C;O5:A"
+  },
+  "status": "failed",
+  "coverage": "inventory A/C semantic smoke only",
+  "ticket_acceptance": false,
+  "token_ids_equal": true,
+  "first_output_difference": null,
+  "logically_equal": true,
+  "inference": "No observed reuse output difference on this prompt; both answers incorrect, root cause and strict ticket acceptance unresolved"
+}

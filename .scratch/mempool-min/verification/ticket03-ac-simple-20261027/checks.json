@@ -1,0 +1,17 @@
+{
+  "script_base": "dada8eb",
+  "cpu_tests": 8,
+  "typecheck": "passed",
+  "lint": "passed",
+  "python39_syntax": "passed",
+  "standards_findings": 0,
+  "spec_findings": 0,
+  "hardware": "not run",
+  "source_sha256": {
+    "pd-disaggregation/mempool-demo-prompt.txt": "272b4a5e6a60484def1283a4488592f30b2e61ea9dfcc466089abd531f8d01c2",
+    "pd-disaggregation/request-mempool-demo.py": "8646b11b106b1a59d30333b2a655f9ddd3d93d21001df3faf3bd51468d2239d8",
+    "pd-disaggregation/MEMPOOL_DEMO.md": "9f9ec115ea53f989cd1b145809597deda17d609a18c206314da48902b6bea10c",
+    "pd-disaggregation/tests/test_mempool_demo_request.py": "69492884b6a70764d50898fd0a1d48a896e62cd3da18bf510bb7069c0db0ed8c"
+  },
+  "script_commit": "7cbb61bbe80a8d12b91f467447a5161b8f0a231b"
+}

@@ -295,3 +295,21 @@ router-mempool-demo.sh（独立Main）、mempool-demo-prompt.txt（题目）、r
 RMS=0.001003364915959537。归约、residual、归一化及MLP仍未分开定位，03保持open。
 
 独立脚本仓库提交：dada8eb（Add mempool A/C semantic smoke client）。
+
+
+### 2026-10-27：库存题实机回传与简单铅笔题
+
+用户回传 ticket03-ac-001：A/C 的 hit_len 分别为0/3968，均正常stop，完整output IDs相同。
+两者都错误接受O2，语义检查failed；这不等于复用引起输出分叉，也不能解释原合成prompt差异。
+原始贴文转录见 ../verification/ticket03-ac-001-20261027/user-results.json。
+
+用户要求下一题简单些。默认prompt改为20支铅笔取走6、放入4，再判断能否取走20；不足则不取。
+标准答案after_take=14、after_add=18、enough=no、shortage=2、final=18。
+请求脚本同步简化五字段解析，独立答案fixture的8项CPU检查、mypy、lint、3.9语法通过。
+Standards和Spec均0项。保留4096input/128output、实际命中0/3968与原文/状态保存。
+
+改动仅位于用户指定的外部脚本仓库：mempool-demo-prompt.txt（先读题目），
+request-mempool-demo.py（再读标准答案与解析）。HTTP客户端与题目不属于模型hook。
+未修改SGLang功能源码；新题硬件待用户运行，03保持open，原严格验收标准不变。
+
+脚本仓库提交：7cbb61b（Simplify mempool A/C prompt to pencil arithmetic）。
