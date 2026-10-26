@@ -5,7 +5,7 @@ template: doc
 theme: blueprint
 lang: zh
 date: 2026-10-26
-status: CPU 453 项通过；NPU 首轮 C 输出不一致，正在诊断
+status: 首层诊断 CPU 464 项通过；NPU 两轮 C 输出失败，根因待定位
 ---
 
 **ticket03 已实现 B 命中 4096、C 命中 3968，只计算各自后缀。**
@@ -26,28 +26,34 @@ target 的 C 完整输出与冷算参考不一致，P 退出，D 收到 peer fai
 该页为重算尾页，尚未区分元数据错误与计算数值差异，保留严格比较。
 [失败记录](verification/ticket03-001-20261026/failure-record.json)保留观察与未知项。
 
-**临时诊断重测：** 两机更新代码后，使用原命令增加 --diagnose-reuse，
-run-id 改为 ticket03-002。仍由用户在 31 执行 prefill、32 执行 decode。
-即使 C 再次输出不一致，P 终端也会打印 REUSE_DIAGNOSTIC 和 16 条 REUSE_RANK。
+**ticket03-002 已回传：** 16 rank 的身份与元数据通过，第 0 层主 KV/Index K 相等。
+从第 1 层开始出现差异；无非有限值，所有 rank 的首差统计相同。
+当前范围为第 0 层 KV 生成后到第 1 层 KV 生成前，尚未确认具体算子或可接受容限。
+
+**首层诊断重测：** 两机更新代码后，保留 --diagnose-reuse，run-id 改为 ticket03-003。
+仍由用户在 31 执行 prefill、32 执行 decode。失败退出仍自动打印结果。
+本轮回传 REUSE_DIAGNOSTIC、16 条 REUSE_OPERATORS 和错误信息。
 
 复制这些行与错误即可；完整 JSON 保存在 prefill/target/reuse-diagnostic.json。
 这轮用于定位根因，不能据此关闭 ticket03 或确认数值误差可接受。
 
-诊断交付最终 CPU 459/459 通过，5 模块 strict mypy、8 文件静态检查通过。
-Standards/Spec 最终均为 0 项未解决；Spec 中摘要关联问题已由六个反例验证修正。
-NPU 尚未运行本轮探针，详见[检查记录](verification/ticket03-001-20261026/probe-checks.json)。
+前一轮诊断 CPU 459/459 通过；[原检查记录](verification/ticket03-001-20261026/probe-checks.json)保留。
+本轮首层诊断 CPU 464/464、4 模块 strict mypy、7 文件静态检查通过。
+Standards / Spec 均为 0 项未解决；[本轮记录](verification/ticket03-002-20261026/checks.json)保留范围。
+用户 NPU 尚未运行本轮首层对照，不能将 CPU 结果记为模型精度修复。
 
 本轮新增/修改的功能源码阅读顺序如下，不含测试和说明文件：
 
 | 顺序 | 功能文件 | 阅读目的 |
 |---|---|---|
-| 1 | [npu/mempool/debug_reuse.py](../../python/sglang/srt/hardware_backend/npu/mempool/debug_reuse.py) | 临时探针：核对真实元数据，只比较相同输入，保留首个冷算的一页 CPU 副本 |
-| 2 | [npu/mempool/prefix.py](../../python/sglang/srt/hardware_backend/npu/mempool/prefix.py) | 默认关闭；在完整 alive 内容校验后统计逐层尾页差异 |
-| 3 | [ascend/mempool_subrouter.py](../../python/sglang/srt/disaggregation/ascend/mempool_subrouter.py) | 将已分配请求的输入身份和 hit_len 传给探针 |
-| 4 | [npu/attention/ascend_backend.py](../../python/sglang/srt/hardware_backend/npu/attention/ascend_backend.py) | 在 P 的 sparse attention 调用前观察实际长度与页表 |
+| 1 | [npu/mempool/debug_reuse.py](../../python/sglang/srt/hardware_backend/npu/mempool/debug_reuse.py) | 有界 CPU 检查点；同形状重复、尾页 query 和 C 对照；模型沿用原始输出 |
+| 2 | [npu/mempool/prefix.py](../../python/sglang/srt/hardware_backend/npu/mempool/prefix.py) | 只为已分配的真实 P 请求启用诊断，warmup/释放后不采样 |
+| 3 | [npu/attention/ascend_backend.py](../../python/sglang/srt/hardware_backend/npu/attention/ascend_backend.py) | 把首层原始 sparse attention 参数与输出交给探针 |
+| 4 | [npu/modules/deepseek_v2_attention_mla_npu.py](../../python/sglang/srt/hardware_backend/npu/modules/deepseek_v2_attention_mla_npu.py) | 记录第 0 层输入/两段输出投影，以及第 1 层输入 |
 
 验收入口和离线摘要脚本需要在服务外协调开关、收集退出日志，故位于既有测试目录。
-探针会增加同步和 CPU 检查开销，不用于性能结论；确认根因并验收修复后删除。
+探针会增加同步、两次首层 attention 调用和临时 HBM 分配，不用于性能结论。
+CPU 检查点每 rank 上限 64 MiB，确认根因并验收修复后删除。
 
 ## A 功能代码阅读顺序
 

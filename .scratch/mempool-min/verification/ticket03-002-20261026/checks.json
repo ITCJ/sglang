@@ -1,0 +1,46 @@
+{
+  "ticket": "mempool-min/03",
+  "purpose": "first-layer diagnostic, not a model correctness fix",
+  "date": "2026-10-26",
+  "base_commit": "8579aa2bab2e523780f971744001e691985682e8",
+  "cpu": {
+    "status": "passed",
+    "tests": 464,
+    "seconds": 38.537,
+    "command": "python3 /private/tmp/mempool-ticket03/run.py layer0-cpu-full -m unittest discover -s ascend-mempool-test/tests/unit -v",
+    "log": "cpu-unittest.txt"
+  },
+  "static": {
+    "status": "passed",
+    "strict_mypy_modules": 4,
+    "python_target": "3.10",
+    "python39_ast_files": 7,
+    "lint_format_isort_files": 7,
+    "log": "static-checks.txt"
+  },
+  "review": {
+    "standards_unresolved": 0,
+    "spec_unresolved": 0,
+    "record": "review.md"
+  },
+  "npu": {
+    "new_probe_executed": false,
+    "reported_run": "ticket03-002",
+    "reported_status": "failed",
+    "cause": "unknown",
+    "next_run": "ticket03-003",
+    "mode": "reuse-acceptance",
+    "flag": "--diagnose-reuse",
+    "user_accepted": false,
+    "ticket_state": "open"
+  },
+  "source_sha256": {
+    "python/sglang/srt/hardware_backend/npu/mempool/debug_reuse.py": "bae90205a791d5af594332318f2f9cc1dcf73c70d5996fa3b6937d74a3b85b45",
+    "python/sglang/srt/hardware_backend/npu/mempool/prefix.py": "898253daf07ccf6ed978cb6010a009735751e6273ae3343d771ccf4fe82553f9",
+    "python/sglang/srt/hardware_backend/npu/attention/ascend_backend.py": "f387d529b9c76b51708124a6ccca3fdff79efe0428c83c7f4747c84306078d54",
+    "python/sglang/srt/hardware_backend/npu/modules/deepseek_v2_attention_mla_npu.py": "29aead7745bc39023299bda289d5eb66bd4939eea91f4f321baa32f9a31a7d85",
+    "ascend-mempool-test/scripts/run_mempool_min.py": "4cb0e8769663dab9e3bf13bf7041768cef4111dadc3e6670a27349dbfd8c3643",
+    "ascend-mempool-test/scripts/summarize_mempool_reuse.py": "677204a8e8f8e399e3da5f218a58b754f01fa253ecc00ea40d558cd1fb989701",
+    "ascend-mempool-test/tests/unit/test_mempool_reuse_probe.py": "0b9d72cfa7b8a57bb07e1face61a7d169dfc737cd79fdac49f8f24e2d7f297c8"
+  }
+}

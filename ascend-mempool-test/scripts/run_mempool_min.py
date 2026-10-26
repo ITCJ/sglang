@@ -199,6 +199,7 @@ def memory_budget(
                 layout.prompt.layers * layout.prompt.row_bytes
                 + layout.prompt_index.layers * layout.prompt_index.row_bytes
             )
+            references += 64 * 2**20  # Bounded layer-0 CPU checkpoints per rank.
         verification = 16 * ((references + scratch + 2**30 - 1) // 2**30) * 2**30
     return dict(
         bm_bytes=bm, verification_bytes=verification, required_bytes=bm + verification

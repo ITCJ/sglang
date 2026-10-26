@@ -5,7 +5,7 @@ template: doc
 theme: blueprint
 lang: zh
 date: 2026-10-26
-status: ticket01 已关闭；02 待关闭确认；03 NPU 首轮 C 输出不一致，正在诊断
+status: ticket01 已关闭；02 待关闭确认；03 两轮 C 输出失败，正在定位首层计算
 ---
 
 **当前四票与 sparse 阶段 0 一致，但没有覆盖后续全部目标。**
@@ -39,7 +39,7 @@ HTTP/ZMQ、原生预留和冷请求已通过 ticket01 用户 NPU 验收。
 prefix 保存已由 ticket02 实现并通过 CPU 与自动化 NPU 验收。
 
 ticket03 已实现命中恢复与后缀计算，CPU 回归通过。
-NPU 首轮 ticket03-001 在 C 的完整输出比较失败，正在收集差异证据。
+NPU 两轮在 C 的完整输出比较失败，首差已限制到第 0 层至第 1 层的计算。
 
 ## B 最小空闲 slot 0 与 page 的关系
 
@@ -103,6 +103,37 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 共享后分片解析组映射；Router 仍只处理逻辑位置和不透明描述符。
 
 ## D 名称、验收与实施票怎样对应
+
+**2026-10-26 ticket03：第 25 步，首层诊断交付完成 CPU 验证。**
+
+完整 CPU 回归 464/464 通过（38.537 秒），4 模块 strict mypy、7 文件静态检查通过。
+Standards / Spec 均为 0 项未解决；真实 Ascend prepare/core/attention 接线与原输出保留已复核。
+用户下一轮运行 ticket03-003、--diagnose-reuse，回传 REUSE_OPERATORS 与错误。
+
+[检查记录](verification/ticket03-002-20261026/checks.json)区分 CPU 诊断验证和待运行 NPU 对照。
+模型根因尚未确定，严格完整输出验收继续失败；03 保持 open，04 不解锁。
+
+**2026-10-26 ticket03：第 24 步，首层诊断摘要与内存预检已接入。**
+
+摘要区分 prefix 内容证据与首层算子证据，缺检查点、重复或串错请求时不标记完整。
+终端新增 REUSE_OPERATORS；保留每个 rank 的检查点与三个算子对照结果。
+额外 CPU 检查点限制为每 rank 64 MiB，内存预检计入该上限。新摘要回归与完整验证待完成。
+
+**2026-10-26 ticket03：第 23 步，首层探针已接入真实 Ascend 计算路径。**
+
+检查点覆盖第 0 层输入、query/RoPE、top-k 顺序/集合、attention、两段输出投影和第 1 层输入。
+原始 attention 返回值保留；仅冷算 A 的第 0 层运行两次额外算子对照，C 与该尾页对照比较。
+全部接线位于 Ascend/NPU，默认关闭。实际调用链 CPU 验证与摘要接线待完成，NPU 尚未重测。
+
+**2026-10-26 ticket03：第 22 步，首层计算诊断器已实现，接线待完成。**
+
+ticket03-002 用户回传完整诊断：16 rank 身份/位置/长度/页表均通过，第 0 层 KV 一致。
+主层 1 起 77 层、Index 层 1 起 20 层不同，无非有限值；各 rank 首差统计相同。
+[回传记录](verification/ticket03-002-20261026/record.json)保留原值与推断范围。
+
+新增首层 query/top-k/输出检查点，以及同形状重复和最后一页 query 的算子对照。
+只保存 CPU 尾页，额外算子结果不送入模型。7 项诊断 CPU 测试通过，服务接线仍待完成。
+该测试验证诊断器，未在 Mac 复现 NPU 模型根因；完整输出失败与 open 状态保留。
 
 **2026-10-26 ticket03：第 21 步，临时诊断交付完成 CPU 验证。**
 
@@ -526,7 +557,7 @@ K1 是原文的共享接入标记，不代表“阶段 1”。
 
 | 功能名称（原文标记） | 当前本地承接 | 状态与边界 |
 |---|---|---|
-| 基础请求流程（阶段 0） | mempool-min 01 → 02 → 03 → 04 | 01 已关闭；02 待关闭确认；03 NPU 首轮 C 输出不一致，正在诊断；04 待实施 |
+| 基础请求流程（阶段 0） | mempool-min 01 → 02 → 03 → 04 | 01 已关闭；02 待关闭确认；03 两轮 C 输出失败，待首层诊断；04 待实施 |
 | 共享存储接入（K1） | 旧 NUMA 共享 02 有部分相关范围 | 尚无覆盖完整共享接入的新控制路径集成票 |
 | 远端 prefix 与布局调整（阶段 1） | 本 feature 尚未拆票 | 包含 page-first |
 | 分块与流水（阶段 2） | 本 feature 尚未拆票 | 包含逐 chunk 推进、提前首 token |
@@ -548,7 +579,7 @@ ticket01 已经用户确认 NPU 验收并关闭；02–04 保持 open。
 |---|---|---|---|
 | [01 冷请求与显式释放](issues/01-cold-request-lifecycle.md) | 冷请求、统一页、原生 warmup；CPU、双轴 review 与用户 NPU 验收 | 本票已关闭 | 7275f29a05：自动化验收通过，2026-10-26 用户确认；user_accepted=true |
 | [02 prompt 保存](issues/02-prompt-prefix-save.md) | Index K 写回、40 页 prefix、异步 admit/publish；用户回传双机 NPU 验收通过 | 功能与自动化验收完成；等待用户确认关闭 | 87157b7365、ticket02-002；CPU 440 项、两轴 review 与 NPU 报告通过；NUMA 落点未验证，State=open |
-| [03 命中恢复与后缀](issues/03-prefix-restore-and-suffix.md) | 恢复、fill、后缀、提前释放已实现；临时逐层诊断入口就绪 | 用户运行 ticket03-002 定位 C 尾页差异，随后完成本票 NPU 验收 | 诊断 CPU 459 项通过；0308cd0814 / ticket03-001 输出失败；根因未知，State=open |
+| [03 命中恢复与后缀](issues/03-prefix-restore-and-suffix.md) | 恢复、fill、后缀、提前释放已实现；首层诊断 CPU 464 项通过 | 用户运行 ticket03-003，随后完成 NPU 验收 | 两轮 C 输出失败；002 元数据与第 0 层 KV 相等，根因未知，State=open |
 | [04 完整自运行验收](issues/04-full-demo-acceptance.md) | 规格、回顾确认及重编实施票 | 独立参考组、A/B/C/E、V1–V10 与报告整合 | 完整验收未执行；等待 03 关闭 |
 
 每次实现后立即更新本表，分别记录代码、CPU 检查与用户 NPU 验收。

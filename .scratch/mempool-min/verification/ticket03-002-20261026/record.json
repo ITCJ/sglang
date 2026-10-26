@@ -1,0 +1,604 @@
+{
+  "run_id": "ticket03-002",
+  "source": "user-pasted P terminal output",
+  "mode": "reuse-acceptance",
+  "diagnose_reuse": true,
+  "expected_commit": "8579aa2bab",
+  "git_sha_in_paste": false,
+  "status": "failed",
+  "error": "ValueError: reuse-prefix-c: full output IDs differ from formal reference",
+  "diagnostic": {
+    "complete": true,
+    "parse_errors": 0,
+    "ranks": [
+      {
+        "rank": 0,
+        "complete": true,
+        "identity_ok": true,
+        "metadata_ok": true,
+        "failed_checks": {},
+        "changed_main_layers": 77,
+        "changed_index_layers": 20,
+        "nonfinite": 0,
+        "first_main": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 43936,
+          "elements": 73728,
+          "max_abs": 0.03125,
+          "rms": 0.0050276098772883415,
+          "first_difference": [
+            3968,
+            0,
+            0
+          ]
+        },
+        "first_index": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 4124,
+          "elements": 16384,
+          "max_abs": 0.0625,
+          "rms": 0.0031052138656377792,
+          "first_difference": [
+            3968,
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "rank": 1,
+        "complete": true,
+        "identity_ok": true,
+        "metadata_ok": true,
+        "failed_checks": {},
+        "changed_main_layers": 77,
+        "changed_index_layers": 20,
+        "nonfinite": 0,
+        "first_main": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 43936,
+          "elements": 73728,
+          "max_abs": 0.03125,
+          "rms": 0.0050276098772883415,
+          "first_difference": [
+            3968,
+            0,
+            0
+          ]
+        },
+        "first_index": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 4124,
+          "elements": 16384,
+          "max_abs": 0.0625,
+          "rms": 0.0031052138656377792,
+          "first_difference": [
+            3968,
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "rank": 2,
+        "complete": true,
+        "identity_ok": true,
+        "metadata_ok": true,
+        "failed_checks": {},
+        "changed_main_layers": 77,
+        "changed_index_layers": 20,
+        "nonfinite": 0,
+        "first_main": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 43936,
+          "elements": 73728,
+          "max_abs": 0.03125,
+          "rms": 0.0050276098772883415,
+          "first_difference": [
+            3968,
+            0,
+            0
+          ]
+        },
+        "first_index": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 4124,
+          "elements": 16384,
+          "max_abs": 0.0625,
+          "rms": 0.0031052138656377792,
+          "first_difference": [
+            3968,
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "rank": 3,
+        "complete": true,
+        "identity_ok": true,
+        "metadata_ok": true,
+        "failed_checks": {},
+        "changed_main_layers": 77,
+        "changed_index_layers": 20,
+        "nonfinite": 0,
+        "first_main": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 43936,
+          "elements": 73728,
+          "max_abs": 0.03125,
+          "rms": 0.0050276098772883415,
+          "first_difference": [
+            3968,
+            0,
+            0
+          ]
+        },
+        "first_index": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 4124,
+          "elements": 16384,
+          "max_abs": 0.0625,
+          "rms": 0.0031052138656377792,
+          "first_difference": [
+            3968,
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "rank": 4,
+        "complete": true,
+        "identity_ok": true,
+        "metadata_ok": true,
+        "failed_checks": {},
+        "changed_main_layers": 77,
+        "changed_index_layers": 20,
+        "nonfinite": 0,
+        "first_main": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 43936,
+          "elements": 73728,
+          "max_abs": 0.03125,
+          "rms": 0.0050276098772883415,
+          "first_difference": [
+            3968,
+            0,
+            0
+          ]
+        },
+        "first_index": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 4124,
+          "elements": 16384,
+          "max_abs": 0.0625,
+          "rms": 0.0031052138656377792,
+          "first_difference": [
+            3968,
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "rank": 5,
+        "complete": true,
+        "identity_ok": true,
+        "metadata_ok": true,
+        "failed_checks": {},
+        "changed_main_layers": 77,
+        "changed_index_layers": 20,
+        "nonfinite": 0,
+        "first_main": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 43936,
+          "elements": 73728,
+          "max_abs": 0.03125,
+          "rms": 0.0050276098772883415,
+          "first_difference": [
+            3968,
+            0,
+            0
+          ]
+        },
+        "first_index": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 4124,
+          "elements": 16384,
+          "max_abs": 0.0625,
+          "rms": 0.0031052138656377792,
+          "first_difference": [
+            3968,
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "rank": 6,
+        "complete": true,
+        "identity_ok": true,
+        "metadata_ok": true,
+        "failed_checks": {},
+        "changed_main_layers": 77,
+        "changed_index_layers": 20,
+        "nonfinite": 0,
+        "first_main": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 43936,
+          "elements": 73728,
+          "max_abs": 0.03125,
+          "rms": 0.0050276098772883415,
+          "first_difference": [
+            3968,
+            0,
+            0
+          ]
+        },
+        "first_index": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 4124,
+          "elements": 16384,
+          "max_abs": 0.0625,
+          "rms": 0.0031052138656377792,
+          "first_difference": [
+            3968,
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "rank": 7,
+        "complete": true,
+        "identity_ok": true,
+        "metadata_ok": true,
+        "failed_checks": {},
+        "changed_main_layers": 77,
+        "changed_index_layers": 20,
+        "nonfinite": 0,
+        "first_main": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 43936,
+          "elements": 73728,
+          "max_abs": 0.03125,
+          "rms": 0.0050276098772883415,
+          "first_difference": [
+            3968,
+            0,
+            0
+          ]
+        },
+        "first_index": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 4124,
+          "elements": 16384,
+          "max_abs": 0.0625,
+          "rms": 0.0031052138656377792,
+          "first_difference": [
+            3968,
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "rank": 8,
+        "complete": true,
+        "identity_ok": true,
+        "metadata_ok": true,
+        "failed_checks": {},
+        "changed_main_layers": 77,
+        "changed_index_layers": 20,
+        "nonfinite": 0,
+        "first_main": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 43936,
+          "elements": 73728,
+          "max_abs": 0.03125,
+          "rms": 0.0050276098772883415,
+          "first_difference": [
+            3968,
+            0,
+            0
+          ]
+        },
+        "first_index": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 4124,
+          "elements": 16384,
+          "max_abs": 0.0625,
+          "rms": 0.0031052138656377792,
+          "first_difference": [
+            3968,
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "rank": 9,
+        "complete": true,
+        "identity_ok": true,
+        "metadata_ok": true,
+        "failed_checks": {},
+        "changed_main_layers": 77,
+        "changed_index_layers": 20,
+        "nonfinite": 0,
+        "first_main": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 43936,
+          "elements": 73728,
+          "max_abs": 0.03125,
+          "rms": 0.0050276098772883415,
+          "first_difference": [
+            3968,
+            0,
+            0
+          ]
+        },
+        "first_index": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 4124,
+          "elements": 16384,
+          "max_abs": 0.0625,
+          "rms": 0.0031052138656377792,
+          "first_difference": [
+            3968,
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "rank": 10,
+        "complete": true,
+        "identity_ok": true,
+        "metadata_ok": true,
+        "failed_checks": {},
+        "changed_main_layers": 77,
+        "changed_index_layers": 20,
+        "nonfinite": 0,
+        "first_main": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 43936,
+          "elements": 73728,
+          "max_abs": 0.03125,
+          "rms": 0.0050276098772883415,
+          "first_difference": [
+            3968,
+            0,
+            0
+          ]
+        },
+        "first_index": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 4124,
+          "elements": 16384,
+          "max_abs": 0.0625,
+          "rms": 0.0031052138656377792,
+          "first_difference": [
+            3968,
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "rank": 11,
+        "complete": true,
+        "identity_ok": true,
+        "metadata_ok": true,
+        "failed_checks": {},
+        "changed_main_layers": 77,
+        "changed_index_layers": 20,
+        "nonfinite": 0,
+        "first_main": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 43936,
+          "elements": 73728,
+          "max_abs": 0.03125,
+          "rms": 0.0050276098772883415,
+          "first_difference": [
+            3968,
+            0,
+            0
+          ]
+        },
+        "first_index": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 4124,
+          "elements": 16384,
+          "max_abs": 0.0625,
+          "rms": 0.0031052138656377792,
+          "first_difference": [
+            3968,
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "rank": 12,
+        "complete": true,
+        "identity_ok": true,
+        "metadata_ok": true,
+        "failed_checks": {},
+        "changed_main_layers": 77,
+        "changed_index_layers": 20,
+        "nonfinite": 0,
+        "first_main": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 43936,
+          "elements": 73728,
+          "max_abs": 0.03125,
+          "rms": 0.0050276098772883415,
+          "first_difference": [
+            3968,
+            0,
+            0
+          ]
+        },
+        "first_index": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 4124,
+          "elements": 16384,
+          "max_abs": 0.0625,
+          "rms": 0.0031052138656377792,
+          "first_difference": [
+            3968,
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "rank": 13,
+        "complete": true,
+        "identity_ok": true,
+        "metadata_ok": true,
+        "failed_checks": {},
+        "changed_main_layers": 77,
+        "changed_index_layers": 20,
+        "nonfinite": 0,
+        "first_main": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 43936,
+          "elements": 73728,
+          "max_abs": 0.03125,
+          "rms": 0.0050276098772883415,
+          "first_difference": [
+            3968,
+            0,
+            0
+          ]
+        },
+        "first_index": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 4124,
+          "elements": 16384,
+          "max_abs": 0.0625,
+          "rms": 0.0031052138656377792,
+          "first_difference": [
+            3968,
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "rank": 14,
+        "complete": true,
+        "identity_ok": true,
+        "metadata_ok": true,
+        "failed_checks": {},
+        "changed_main_layers": 77,
+        "changed_index_layers": 20,
+        "nonfinite": 0,
+        "first_main": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 43936,
+          "elements": 73728,
+          "max_abs": 0.03125,
+          "rms": 0.0050276098772883415,
+          "first_difference": [
+            3968,
+            0,
+            0
+          ]
+        },
+        "first_index": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 4124,
+          "elements": 16384,
+          "max_abs": 0.0625,
+          "rms": 0.0031052138656377792,
+          "first_difference": [
+            3968,
+            0,
+            1
+          ]
+        }
+      },
+      {
+        "rank": 15,
+        "complete": true,
+        "identity_ok": true,
+        "metadata_ok": true,
+        "failed_checks": {},
+        "changed_main_layers": 77,
+        "changed_index_layers": 20,
+        "nonfinite": 0,
+        "first_main": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 43936,
+          "elements": 73728,
+          "max_abs": 0.03125,
+          "rms": 0.0050276098772883415,
+          "first_difference": [
+            3968,
+            0,
+            0
+          ]
+        },
+        "first_index": {
+          "layer": 1,
+          "model_layer": 1,
+          "changed": 4124,
+          "elements": 16384,
+          "max_abs": 0.0625,
+          "rms": 0.0031052138656377792,
+          "first_difference": [
+            3968,
+            0,
+            1
+          ]
+        }
+      }
+    ]
+  },
+  "inferences": [
+    "The same C full-output failure occurred on a second NPU run; this paste does not locate its first output-token mismatch.",
+    "All reported request identity, query/KV lengths, positions and native block-map checks passed.",
+    "Cold A and reused C tail main/index layer 0 agree; main layers 1..77 and remaining index layers differ.",
+    "The first known difference is after layer 0 KV generation and by layer 1 KV generation; layer 0 query/top-k, attention, output projection and the layer transition remain candidates."
+  ],
+  "limits": [
+    "No raw operator tensors or full logs received.",
+    "Small absolute BF16 differences do not establish acceptable accuracy or a root cause.",
+    "Final strict output acceptance remains failed; ticket03 stays open and ticket04 blocked."
+  ],
+  "next_step": "Observe first-layer attention inputs/outputs and projection/layer transition; compare full-query and tail-query operator calls with identical tail inputs."
+}

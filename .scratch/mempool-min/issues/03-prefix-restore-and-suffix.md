@@ -158,6 +158,28 @@ P alive 每次占 S_P/B=64 页整槽额度，D alive 占 S_D/B=1 页整槽额度
 
 ## Comments
 
+### 2026-10-26：ticket03-002 复现 C 失败，扩大首层诊断
+
+- 用户回传 P 终端：C 完整输出仍与参考不等，REUSE_DIAGNOSTIC complete=true、
+  parse_errors=0。16 rank 均 identity_ok/metadata_ok，无 failed_checks。
+- 第 0 层主 KV 与 Index K 相等；主层 1–77、其余 20 个 Index 层不同。
+  各 rank 的首差统计完全一致：主层 1 有 43936/73728 个元素不同，max_abs=0.03125、
+  RMS=0.0050276098772883415；Index 层 1 有 4124/16384 个不同，max_abs=0.0625、
+  RMS=0.0031052138656377792。无非有限值。原值见[记录](../verification/ticket03-002-20261026/record.json)。
+- 现有证据把首差限制在第 0 层 KV 生成后至第 1 层 KV 生成前，不能据此接受数值误差。
+  本轮增加第 0 层输入/query/top-k/attention/两段投影及第 1 层输入的尾页比较。
+- 同一冷算 A 的首层额外运行两次 sparse attention：原样重复，以及相同尾页 query、
+  RoPE、top-k 和完整 KV 下只把 query 数改为 128。额外结果不进入模型；
+  C 的实际 attention 输出再与 A 的尾页对照比较。用于区分算子不稳定和计算形状影响。
+- 保留默认关闭、只 target P 和严格完整输出断言。仅相同完整输入比较；
+  CPU 检查点限每 rank 64 MiB，预检计入。摘要要求检查点、算子对照和请求关联完整。
+  这会增加同步、计算与临时 HBM 分配，不能用作性能测试。
+- 服务改动均在 Ascend/NPU；服务外验收入口需要预算预检与日志收集，仍在既有测试目录。
+  下一轮 run-id=ticket03-003，由用户执行。03 保持 open、04 阻塞；这是诊断，尚非修复。
+- 最终完整 CPU 464/464 通过（38.537 秒），4 模块 strict mypy、7 文件
+  lint/format/isort/Python3.9 AST 通过；Standards / Spec 均 0 项未解决。
+  [检查记录](../verification/ticket03-002-20261026/checks.json)保存源码哈希、命令和限制。
+
 ### 2026-10-26：C 差异定位到重算尾页，交付临时探针供下一轮诊断
 
 - 用户回传 A/B 与参考完整输出相等；C 在 output[15] 首次不同，参考 624、目标 13。

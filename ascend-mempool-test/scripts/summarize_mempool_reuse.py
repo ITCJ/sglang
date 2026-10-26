@@ -20,6 +20,62 @@ REQUIRED_CHECKS = {
     "block_table",
     "unique_indices",
 }
+CHECKPOINTS = (
+    "layer0.input",
+    "layer0.query",
+    "layer0.query_rope",
+    "layer0.topk",
+    "layer0.topk_set",
+    "layer0.attention",
+    "layer0.value_projection",
+    "layer0.output_projection",
+    "layer1.input",
+)
+
+
+def operator_summary(
+    rows: list[dict[str, Any]], cold_rid: str | None, reused_rid: str | None
+) -> dict[str, Any]:
+    cold = [r for r in rows if r["stage"] == "checkpoint_baseline"]
+    compared = [r for r in rows if r["stage"] == "checkpoint"]
+    replays = [r for r in rows if r["stage"] == "attention_replay"]
+    errors = [r for r in rows if r["stage"] == "checkpoint_error"]
+    names_ok = sorted(r["name"] for r in cold) == sorted(CHECKPOINTS) and sorted(
+        r["name"] for r in compared
+    ) == sorted(CHECKPOINTS)
+    replay_names = ("same_shape", "tail_query", "C_vs_A_tail")
+    replay_ok = sorted(r["name"] for r in replays) == sorted(replay_names) and all(
+        r.get("rid") == (reused_rid if r["name"] == "C_vs_A_tail" else cold_rid)
+        and r.get("reference_rid") == cold_rid
+        for r in replays
+    )
+    identity_ok = (
+        bool(cold_rid and reused_rid)
+        and all(r["rid"] == cold_rid for r in cold)
+        and all(
+            r["rid"] == reused_rid and r.get("reference_rid") == cold_rid
+            for r in compared
+        )
+    )
+    complete = names_ok and replay_ok and identity_ok and not errors
+    by_name = {r["name"]: r for r in compared}
+    return dict(
+        complete=complete,
+        errors=errors,
+        missing_cold=sorted(set(CHECKPOINTS) - {r["name"] for r in cold}),
+        missing_reused=sorted(set(CHECKPOINTS) - set(by_name)),
+        checkpoints=by_name,
+        replays={r["name"]: r for r in replays},
+        first_changed=next(
+            (
+                name
+                for name in CHECKPOINTS
+                if name in by_name
+                and (by_name[name]["changed"] or by_name[name]["nonfinite"])
+            ),
+            None,
+        ),
+    )
 
 
 def summarize(path: Path, *, ranks: int = 16) -> dict[str, Any]:
@@ -93,10 +149,17 @@ def summarize(path: Path, *, ranks: int = 16) -> dict[str, Any]:
             and [r["layer"] for r in main] == list(range(78))
             and [r["layer"] for r in index] == list(range(21))
         )
+        operators = operator_summary(
+            local,
+            forwards[0]["rid"] if forward_identity else None,
+            forwards[2]["rid"] if forward_identity else None,
+        )
         summaries.append(
             dict(
                 rank=rank,
-                complete=complete,
+                complete=complete and operators["complete"],
+                prefix_complete=complete,
+                operators=operators,
                 identity_ok=identity_ok,
                 metadata_ok=forward_identity and checks_complete and not failed_checks,
                 failed_checks=failed_checks,
@@ -115,6 +178,8 @@ def summarize(path: Path, *, ranks: int = 16) -> dict[str, Any]:
     return dict(
         purpose="diagnostic only; strict output acceptance is unchanged",
         complete=not parse_errors and all(r["complete"] for r in summaries),
+        prefix_complete=not parse_errors
+        and all(r["prefix_complete"] for r in summaries),
         parse_errors=parse_errors,
         ranks=summaries,
     )
@@ -124,7 +189,11 @@ def print_summary(report: dict[str, Any]) -> None:
     print(
         "REUSE_DIAGNOSTIC "
         + json.dumps(
-            dict(complete=report["complete"], parse_errors=report["parse_errors"])
+            dict(
+                complete=report["complete"],
+                prefix_complete=report["prefix_complete"],
+                parse_errors=report["parse_errors"],
+            )
         ),
         flush=True,
     )
@@ -161,6 +230,41 @@ def print_summary(report: dict[str, Any]) -> None:
                 }
             )
         print("REUSE_RANK " + json.dumps(compact), flush=True)
+    # Each rank has independent shards; retain every rank's operator result.
+    for row in report["ranks"]:
+        operators = row["operators"]
+        compact = dict(
+            rank=row["rank"],
+            complete=operators["complete"],
+            first_changed=operators["first_changed"],
+            missing_cold=operators["missing_cold"],
+            missing_reused=operators["missing_reused"],
+            errors=operators["errors"],
+        )
+        compact["changed"] = {
+            name: data["changed"] for name, data in operators["checkpoints"].items()
+        }
+        first = operators["checkpoints"].get(operators["first_changed"])
+        compact["first"] = (
+            None
+            if first is None
+            else {
+                key: first[key]
+                for key in (
+                    "elements",
+                    "changed",
+                    "nonfinite",
+                    "max_abs",
+                    "rms",
+                    "first_difference",
+                )
+            }
+        )
+        compact["replays"] = {
+            name: {key: data[key] for key in ("changed", "nonfinite", "max_abs", "rms")}
+            for name, data in operators["replays"].items()
+        }
+        print("REUSE_OPERATORS " + json.dumps(compact), flush=True)
 
 
 if __name__ == "__main__":

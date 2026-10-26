@@ -612,6 +612,20 @@ class PrefixStore:
             start_layer=pool.start_layer,
         )
 
+    def debug_checkpoint(self, layer: int, name: str, value: Tensor) -> None:
+        if self.debug_probe is not None and self._source is not None:
+            self.debug_probe.checkpoint(f"layer{layer}.{name}", value)
+
+    def debug_attention(
+        self,
+        layer: int,
+        kwargs: dict[str, Any],
+        output: Tensor,
+        call: Callable[..., Any],
+    ) -> None:
+        if layer == 0 and self.debug_probe is not None and self._source is not None:
+            self.debug_probe.inspect_attention(kwargs, output, call)
+
     def capture_source(
         self,
         region: str,

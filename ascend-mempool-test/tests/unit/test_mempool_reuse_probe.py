@@ -13,11 +13,197 @@ from unittest.mock import patch
 import summarize_mempool_reuse
 import test_prefix as prefix_fixture
 import torch
+from test_native_release import load_functions, load_methods
 
 from ascend_mempool.debug_reuse import DEBUG_ENV, ReuseProbe
 
 
 class TestReuseProbe(unittest.TestCase):
+    def test_actual_ascend_attention_and_projection_keep_original_output(self):
+        fixture = prefix_fixture.TestPrefixStore()
+        self.addCleanup(fixture.doCleanups)
+        with patch.dict("os.environ", {DEBUG_ENV: "1"}):
+            store, _, _, _ = fixture.make_store(verify=True)
+        store.begin_request("A", 3, 4, input_ids=[1, 2, 3, 4])
+        calls = []
+
+        def kernel(**kw):
+            calls.append(kw["query"].shape[0])
+            return kw["query"] + kw["query"].shape[0], None, None
+
+        npu = SimpleNamespace(
+            npu_sparse_flash_attention=kernel,
+            npu_transpose_batchmatmul=lambda x, *a, **kw: x.clone(),
+        )
+        backend_type = load_methods(
+            "hardware_backend/npu/attention/ascend_backend.py",
+            "AscendAttnBackend",
+            {"forward_sparse"},
+            dict(
+                torch=torch,
+                torch_npu=npu,
+                is_dsa_enable_prefill_cp=lambda: False,
+                _expand_dsa_sparse_indices=lambda x: x,
+            ),
+            standalone=True,
+        )
+        backend = backend_type()
+        backend.mempool_runtime = SimpleNamespace(prefix_store=store)
+        backend.kv_lora_rank = backend.qk_rope_head_dim = 2
+        backend.kv_cache_dtype = torch.bfloat16
+        backend._pad_topk_indices = lambda x, n: x
+        backend.token_to_kv_pool = SimpleNamespace(
+            set_kv_buffer=lambda *a: None,
+            get_kv_buffer=lambda layer: (torch.zeros(8, 1, 2), torch.zeros(8, 1, 2)),
+            indexer_layer_ids=[0],
+            start_layer=0,
+        )
+        backend.forward_metadata = SimpleNamespace(
+            actual_seq_lengths_q=None,
+            actual_seq_lengths_kv=None,
+            seq_lens_cpu_int=torch.tensor([4]),
+            block_tables=torch.tensor([[1, 3]]),
+        )
+        mode = SimpleNamespace(
+            is_extend=lambda: True,
+            is_draft_extend_v2=lambda: False,
+            is_target_verify=lambda: False,
+            is_extend_without_speculative=lambda: True,
+        )
+        batch = SimpleNamespace(
+            forward_mode=mode,
+            extend_seq_lens=torch.tensor([4]),
+            extend_prefix_lens=torch.tensor([0]),
+            positions=torch.arange(4),
+            input_ids=torch.tensor([1, 2, 3, 4]),
+            out_cache_loc=torch.tensor([2, 3, 6, 7]),
+        )
+        layer = SimpleNamespace(layer_id=0, tp_k_head_num=1, scaling=0.5)
+        model = SimpleNamespace(
+            layer_id=0,
+            num_local_heads=2,
+            kv_lora_rank=2,
+            v_head_dim=2,
+            w_vc=None,
+            next_skip_topk=False,
+            o_proj=lambda x: (x + 10, None),
+        )
+        model.attn_mqa = lambda q, k, v, b, **kw: backend.forward_sparse(
+            q, k, v, layer, b, **kw
+        )
+        namespace = dict(
+            torch=torch,
+            torch_npu=npu,
+            _is_npu_arch35=False,
+            get_attn_backend=lambda: backend,
+        )
+        load_functions(
+            "hardware_backend/npu/modules/deepseek_v2_attention_mla_npu.py",
+            {"forward_dsa_core_npu", "_reuse_checkpoint"},
+            namespace,
+        )
+        q = torch.zeros(4, 2, 2)
+        k = torch.zeros(4, 1, 2)
+        with self.assertLogs("ascend_mempool.debug_reuse", level="INFO") as logs:
+            result, _ = namespace["forward_dsa_core_npu"](
+                model,
+                q,
+                k,
+                q,
+                k,
+                torch.zeros(4, 1, 2, dtype=torch.int32),
+                batch,
+                None,
+                batch.positions,
+                False,
+            )
+        self.assertEqual(calls, [4, 4, 2])
+        self.assertTrue(torch.equal(result, torch.full((4, 4), 14.0)))
+        names = {r.get("name") for r in self.records(logs)}
+        self.assertTrue(
+            {"layer0.value_projection", "layer0.output_projection", "tail_query"}
+            <= names
+        )
+
+    def test_checkpoints_compare_identical_tail_and_keep_topk_order_separate(self):
+        probe = ReuseProbe(page_size=2, rank=0)
+        cold = torch.arange(16).reshape(4, 2, 2).float()
+        topk = torch.tensor([[0, 1], [1, 0], [0, 2], [3, 1]])
+        probe.begin_request("A", [1, 2, 3, 4], 0)
+        with self.assertLogs("ascend_mempool.debug_reuse", level="INFO"):
+            probe.checkpoint("layer0.query", cold)
+            probe.checkpoint("layer0.topk", topk)
+            probe.checkpoint("layer0.topk_set", topk.sort(dim=-1).values)
+        current = cold[-2:].clone()
+        cold.zero_()
+        probe.begin_request("B", [1, 2, 9, 9], 2)
+        with self.assertNoLogs("ascend_mempool.debug_reuse", level="INFO"):
+            probe.checkpoint("layer0.query", current + 1)
+        probe.begin_request("C", [1, 2, 3, 4], 2)
+        with self.assertLogs("ascend_mempool.debug_reuse", level="INFO") as logs:
+            probe.checkpoint("layer0.query", current)
+            probe.checkpoint("layer0.topk", topk[-2:].flip(-1))
+            probe.checkpoint("layer0.topk_set", topk[-2:].flip(-1).sort(dim=-1).values)
+        rows = {r["name"]: r for r in self.records(logs)}
+        self.assertEqual(rows["layer0.query"]["changed"], 0)
+        self.assertEqual(rows["layer0.topk"]["changed"], 4)
+        self.assertEqual(rows["layer0.topk_set"]["changed"], 0)
+        self.assertTrue(all(r["reference_rid"] == "A" for r in rows.values()))
+
+    def test_attention_replay_preserves_model_output_and_changes_only_query_extent(
+        self,
+    ):
+        probe = ReuseProbe(page_size=2, rank=0)
+        probe.begin_request("A", [1, 2, 3, 4], 0)
+        query = torch.arange(16).reshape(4, 2, 2).float()
+        kwargs = dict(
+            query=query,
+            query_rope=query.clone(),
+            key=torch.zeros(8, 1, 2),
+            value=torch.zeros(8, 1, 2),
+            key_rope=torch.zeros(8, 1, 2),
+            sparse_indices=torch.arange(8).reshape(4, 1, 2),
+            actual_seq_lengths_query=torch.tensor([4]),
+            actual_seq_lengths_kv=torch.tensor([4]),
+            block_table=torch.tensor([[1, 3]]),
+            layout_query="TND",
+            layout_kv="PA_BSND",
+            sparse_mode=3,
+            attention_mode=2,
+            scale_value=0.5,
+        )
+        calls = []
+
+        def kernel(**kw):
+            calls.append(kw)
+            # Shape-dependent output makes the diagnostic red without simulating the NPU bug.
+            return kw["query"] + kw["query"].shape[0], None, None
+
+        original = kernel(**kwargs)[0]
+        saved = original.clone()
+        with self.assertLogs("ascend_mempool.debug_reuse", level="INFO") as logs:
+            probe.inspect_attention(kwargs, original, kernel)
+        self.assertTrue(torch.equal(original, saved))
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(torch.equal(calls[-1]["query"], query[-2:]))
+        self.assertEqual(calls[-1]["actual_seq_lengths_query"].tolist(), [2])
+        for key in ("key", "value", "key_rope", "block_table", "actual_seq_lengths_kv"):
+            self.assertIs(calls[-1][key], kwargs[key])
+        replays = {
+            r["name"]: r for r in self.records(logs) if r["stage"] == "attention_replay"
+        }
+        self.assertEqual(replays["same_shape"]["changed"], 0)
+        self.assertEqual(replays["tail_query"]["max_abs"], 2)
+        probe.begin_request("C", [1, 2, 3, 4], 2)
+        tail_kwargs = calls[-1]
+        current = kernel(**tail_kwargs)[0]
+        with self.assertLogs("ascend_mempool.debug_reuse", level="INFO") as logs:
+            probe.inspect_attention(tail_kwargs, current, kernel)
+        replays = [r for r in self.records(logs) if r["stage"] == "attention_replay"]
+        self.assertEqual(replays[0]["name"], "C_vs_A_tail")
+        self.assertEqual(replays[0]["changed"], 0)
+        self.assertEqual(len(calls), 4)  # No extra model/kernel run during reused C.
+
     def test_real_probe_records_produce_complete_copyable_summary(self):
         probe = ReuseProbe(page_size=128, rank=0)
         with self.assertLogs("ascend_mempool.debug_reuse", level="INFO") as logs:
@@ -51,6 +237,28 @@ class TestReuseProbe(unittest.TestCase):
                 }
                 if rid == "C":
                     values["main", 2][-1, 0, 0] = 2
+                for name in (
+                    "layer0.input",
+                    "layer0.value_projection",
+                    "layer0.output_projection",
+                    "layer1.input",
+                ):
+                    probe.checkpoint(name, torch.ones(tokens - hit, 1, 2))
+                query = torch.ones(tokens - hit, 1, 2)
+                kwargs = dict(
+                    query=query,
+                    query_rope=query.clone(),
+                    sparse_indices=torch.zeros(tokens - hit, 1, 2, dtype=torch.int32),
+                    actual_seq_lengths_query=torch.tensor([tokens - hit]),
+                    actual_seq_lengths_kv=torch.tensor([tokens]),
+                    layout_query="TND",
+                    layout_kv="PA_BSND",
+                    sparse_mode=3,
+                    attention_mode=2,
+                )
+                probe.inspect_attention(
+                    kwargs, query, lambda **kw: (kw["query"].clone(), None, None)
+                )
                 probe.finish(values)
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "prefill.log"
@@ -61,7 +269,7 @@ class TestReuseProbe(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()) as output:
             summarize_mempool_reuse.print_summary(report)
         rows = output.getvalue().splitlines()
-        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(rows), 3)
         summary = json.loads(rows[1].split(" ", 1)[1])
         self.assertEqual(summary["first_main"]["layer"], 2)
         self.assertEqual(summary["first_main"]["max_abs"], 1)
@@ -232,9 +440,12 @@ class TestReuseProbe(unittest.TestCase):
                 return summarize_mempool_reuse.summarize(path, ranks=1)
 
             result = check(rows)
-            self.assertTrue(result["complete"])
+            self.assertTrue(result["prefix_complete"])
+            self.assertFalse(
+                result["complete"]
+            )  # Older logs lack the operator evidence.
             self.assertEqual(result["ranks"][0]["first_main"]["layer"], 2)
-            self.assertFalse(check(rows[:3] + rows[4:])["complete"])
+            self.assertFalse(check(rows[:3] + rows[4:])["prefix_complete"])
             for defect in (
                 "no_baseline",
                 "no_hash",
@@ -263,7 +474,7 @@ class TestReuseProbe(unittest.TestCase):
                                 )
                                 row[key] = "unrelated"
                     result = check(damaged)
-                    self.assertFalse(result["complete"])
+                    self.assertFalse(result["prefix_complete"])
                     if defect == "missing_checks":
                         self.assertFalse(result["ranks"][0]["metadata_ok"])
             rows[2]["checks"]["positions"] = False
@@ -272,6 +483,60 @@ class TestReuseProbe(unittest.TestCase):
             self.assertFalse(
                 summarize_mempool_reuse.summarize(path, ranks=1)["complete"]
             )
+
+    def test_operator_summary_rejects_missing_duplicate_or_cross_request_evidence(self):
+        rows = []
+        for name in summarize_mempool_reuse.CHECKPOINTS:
+            rows.extend(
+                [
+                    dict(stage="checkpoint_baseline", name=name, rid="A"),
+                    dict(
+                        stage="checkpoint",
+                        name=name,
+                        rid="C",
+                        reference_rid="A",
+                        changed=0,
+                        nonfinite=0,
+                    ),
+                ]
+            )
+        for name in ("same_shape", "tail_query", "C_vs_A_tail"):
+            rows.append(
+                dict(
+                    stage="attention_replay",
+                    name=name,
+                    rid="C" if name == "C_vs_A_tail" else "A",
+                    reference_rid="A",
+                )
+            )
+        check = lambda data: summarize_mempool_reuse.operator_summary(data, "A", "C")
+        self.assertTrue(check(rows)["complete"])
+        self.assertFalse(check(rows[1:])["complete"])
+        self.assertFalse(check(rows + [rows[0]])["complete"])
+        self.assertFalse(check(rows[:-1])["complete"])
+        for stage in ("checkpoint_baseline", "checkpoint", "attention_replay"):
+            damaged = copy.deepcopy(rows)
+            next(r for r in damaged if r["stage"] == stage)["rid"] = "wrong"
+            self.assertFalse(check(damaged)["complete"])
+
+    def test_checkpoint_budget_and_disabled_store_do_not_run_extra_kernels(self):
+        probe = ReuseProbe(page_size=2, rank=0)
+        probe.begin_request("A", [1, 2, 3, 4], 0)
+        with patch("ascend_mempool.debug_reuse.CHECKPOINT_BUDGET_BYTES", 4):
+            with self.assertRaisesRegex(RuntimeError, "budget"):
+                probe.checkpoint("layer0.input", torch.ones(4, 2))
+        fixture = prefix_fixture.TestPrefixStore()
+        self.addCleanup(fixture.doCleanups)
+        with patch.dict("os.environ", {DEBUG_ENV: "0"}):
+            store, _, _, _ = fixture.make_store(verify=True)
+        store.begin_request("A", 3, 4)
+
+        def unexpected(**kw):
+            self.fail("disabled diagnostic called a kernel")
+
+        with self.assertNoLogs("ascend_mempool.debug_reuse", level="INFO"):
+            store.debug_attention(0, {}, torch.zeros(4, 2), unexpected)
+            store.debug_checkpoint(0, "input", torch.zeros(4, 2))
 
 
 if __name__ == "__main__":

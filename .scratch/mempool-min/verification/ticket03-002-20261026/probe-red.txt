@@ -1,0 +1,25 @@
+test_checkpoints_compare_identical_tail_and_keep_topk_order_separate (test_mempool_reuse_probe.TestReuseProbe.test_checkpoints_compare_identical_tail_and_keep_topk_order_separate) ... ERROR
+test_attention_replay_preserves_model_output_and_changes_only_query_extent (test_mempool_reuse_probe.TestReuseProbe.test_attention_replay_preserves_model_output_and_changes_only_query_extent) ... ERROR
+
+======================================================================
+ERROR: test_checkpoints_compare_identical_tail_and_keep_topk_order_separate (test_mempool_reuse_probe.TestReuseProbe.test_checkpoints_compare_identical_tail_and_keep_topk_order_separate)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_reuse_probe.py", line 27, in test_checkpoints_compare_identical_tail_and_keep_topk_order_separate
+    probe.checkpoint("layer0.query", cold)
+    ^^^^^^^^^^^^^^^^
+AttributeError: 'ReuseProbe' object has no attribute 'checkpoint'
+
+======================================================================
+ERROR: test_attention_replay_preserves_model_output_and_changes_only_query_extent (test_mempool_reuse_probe.TestReuseProbe.test_attention_replay_preserves_model_output_and_changes_only_query_extent)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_reuse_probe.py", line 64, in test_attention_replay_preserves_model_output_and_changes_only_query_extent
+    probe.inspect_attention(kwargs, original, kernel)
+    ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'ReuseProbe' object has no attribute 'inspect_attention'
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.011s
+
+FAILED (errors=2)
