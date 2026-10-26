@@ -1,0 +1,16 @@
+test_accepts_complete_formal_graph_and_reused_slots (test_service_gate.TestServiceGate.test_accepts_complete_formal_graph_and_reused_slots) ... ok
+test_each_rank_must_finish_and_supply_real_graph_and_layer_evidence (test_service_gate.TestServiceGate.test_each_rank_must_finish_and_supply_real_graph_and_layer_evidence) ... ok
+test_eager_requires_zero_replays_and_all_layer_completion (test_service_gate.TestServiceGate.test_eager_requires_zero_replays_and_all_layer_completion) ... ok
+test_fault_or_partial_new_request_cannot_hide_behind_passes (test_service_gate.TestServiceGate.test_fault_or_partial_new_request_cannot_hide_behind_passes) ... ok
+test_indexer_layout_is_checked_separately_from_all_kv_layers (test_service_gate.TestServiceGate.test_indexer_layout_is_checked_separately_from_all_kv_layers) ... ok
+test_native_transfer_can_finish_before_bm_ready (test_service_gate.TestServiceGate.test_native_transfer_can_finish_before_bm_ready) ... ok
+test_prefill_native_release_can_precede_ready_publication (test_service_gate.TestServiceGate.test_prefill_native_release_can_precede_ready_publication) ... ok
+test_prefix_completion_policy_keeps_rank_graph_write_and_release_checks (test_service_gate.TestServiceGate.test_prefix_completion_policy_keeps_rank_graph_write_and_release_checks) ... ok
+test_prefix_reference_requires_exactly_four_real_decodes (test_service_gate.TestServiceGate.test_prefix_reference_requires_exactly_four_real_decodes) ... ok
+test_rejects_incomplete_or_contradictory_server_evidence (test_service_gate.TestServiceGate.test_rejects_incomplete_or_contradictory_server_evidence) ... ok
+test_rejects_misordered_prefill_binding_and_release (test_service_gate.TestServiceGate.test_rejects_misordered_prefill_binding_and_release) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.179s
+
+OK

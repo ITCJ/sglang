@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 import verify_service
 
 
-def service_logs():
+def service_logs(steps_by_request=(0, 3, 3), *, layers=2, indexer_layer_ids=(0, 1)):
     logs = {"prefill": [], "decode": []}
     for role, lines in logs.items():
         for rank in range(16):
@@ -24,10 +24,10 @@ def service_logs():
                 native_kv_bytes=100 if role == "prefill" else 0,
                 sparse_cache_bytes=100 if role == "decode" else 0,
                 index_k_bytes=100,
-                registered_index_k_entries=2,
+                registered_index_k_entries=len(indexer_layer_ids),
                 registered_main_kv_entries=0,
-                model_layers=2,
-                indexer_layer_ids=[0, 1],
+                model_layers=layers,
+                indexer_layer_ids=list(indexer_layer_ids),
             )
             lines.append(
                 f"mempool resources role={role} rank={rank} data={json.dumps(resources)}"
@@ -43,7 +43,7 @@ def service_logs():
                         f"mempool native_copy role={role} rank={rank} "
                         f"kind={kind} bytes=100 main_kv_bytes=0"
                     )
-            for room in range(1, 4):
+            for room, steps in enumerate(steps_by_request, 1):
                 identity = (
                     f"room={room} attempt=attempt{room} p_slot=0 "
                     f"p_generation={room} d_slot=1 d_generation={room}"
@@ -65,7 +65,6 @@ def service_logs():
                 for event in events:
                     lines.append(f"{prefix} {identity} event={event} free=15")
                 if role == "decode":
-                    steps = 0 if room == 1 else 3
                     report = dict(
                         status="completed" if steps else "zero_decode",
                         cancelled=False,
@@ -77,8 +76,8 @@ def service_logs():
                         replay_forwards=steps,
                         submitted_kv=steps,
                         written_kv=steps,
-                        layers=2,
-                        layer_checks=2 * steps,
+                        layers=layers,
+                        layer_checks=layers * steps,
                     )
                     lines.append(
                         f"mempool decode_completion role={role} rank={rank} {identity} "
@@ -104,15 +103,52 @@ def service_logs():
 
 
 class TestServiceGate(unittest.TestCase):
-    def check(self, logs, **kwargs):
+    def check(self, logs, *, requests=3, layers=2, **kwargs):
         with tempfile.TemporaryDirectory() as directory:
             paths = {}
             for role, content in logs.items():
                 paths[role] = Path(directory) / f"{role}.log"
                 paths[role].write_text(content)
             return verify_service.check_logs(
-                [paths["prefill"]], [paths["decode"]], requests=3, layers=2, **kwargs
+                [paths["prefill"]],
+                [paths["decode"]],
+                requests=requests,
+                layers=layers,
+                **kwargs,
             )
+
+    def test_prefix_reference_requires_exactly_four_real_decodes(self):
+        complete = service_logs((127, 127, 127, 127))
+        report = self.check(complete, requests=4, expected_zero_decode=0)
+        self.assertEqual(
+            (report["decode_requests"], report["zero_decode_requests"]), (4, 0)
+        )
+        with self.assertRaisesRegex(RuntimeError, "require zero-decode"):
+            self.check(complete, requests=4)
+        for steps in ((0, 127, 127, 127), (127, 127, 127), (127,) * 5):
+            with self.subTest(steps=steps), self.assertRaises(RuntimeError):
+                self.check(service_logs(steps), requests=4, expected_zero_decode=0)
+
+    def test_prefix_completion_policy_keeps_rank_graph_write_and_release_checks(self):
+        for before, after in (
+            (
+                "mempool decode_completion role=decode rank=15 room=4",
+                "missing completion",
+            ),
+            ("graph_replay device=npu:15", "missing replay"),
+            ('"layer_checks": 254', '"layer_checks": 253'),
+            ('"written_kv": 127', '"written_kv": 126'),
+            ('"drained": true', '"drained": false'),
+            ("event=RELEASE_ACK", "event=OTHER"),
+            ("free=16", "free=15"),
+        ):
+            with self.subTest(field=before):
+                logs = service_logs((127, 127, 127, 127))
+                logs["decode"] = logs["decode"].replace(
+                    before, after, -1 if before == "free=16" else 1
+                )
+                with self.assertRaises(RuntimeError):
+                    self.check(logs, requests=4, expected_zero_decode=0)
 
     def test_indexer_layout_is_checked_separately_from_all_kv_layers(self):
         logs = {

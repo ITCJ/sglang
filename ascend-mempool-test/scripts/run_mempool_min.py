@@ -659,6 +659,9 @@ class Runner:
                                 layers=78,
                                 indexer_layer_ids=verify_mempool_min.PRODUCERS,
                                 graph=True,
+                                expected_zero_decode=(
+                                    0 if self.args.mode == "prefix-acceptance" else None
+                                ),
                             )
                         )
                         if target and self.config.prefix_pages:

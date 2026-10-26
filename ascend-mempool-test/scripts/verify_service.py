@@ -75,10 +75,16 @@ def check_logs(
     layers: int = 78,
     indexer_layer_ids: Optional[list[int]] = None,
     graph: bool = True,
+    expected_zero_decode: Optional[int] = None,
 ) -> dict[str, Any]:
     """Require complete attempts, every TP rank and physical slot reuse."""
     if requests < 3 or layers < 1:
         raise ValueError("require at least 3 requests and a positive layer count")
+    if expected_zero_decode is not None and (
+        type(expected_zero_decode) is not int
+        or not 0 <= expected_zero_decode <= requests
+    ):
+        raise ValueError("expected_zero_decode must be within the request count")
     events: dict[tuple[str, int, int, str], list[str]] = {}
     leases: dict[tuple[str, int, int, str], tuple[int, ...]] = {}
     reports: dict[tuple[int, int, str], dict[str, Any]] = {}
@@ -267,8 +273,19 @@ def check_logs(
         if len(rank_statuses) != 1:
             raise RuntimeError(f"TP ranks disagree on request completion: room={room}")
         statuses[rank_statuses.pop()] += 1
-    if statuses["zero_decode"] < 1 or statuses["completed"] < 2:
-        raise RuntimeError("require zero-decode and at least two real decode requests")
+    if expected_zero_decode is None:
+        if statuses["zero_decode"] < 1 or statuses["completed"] < 2:
+            raise RuntimeError(
+                "require zero-decode and at least two real decode requests"
+            )
+    elif statuses != {
+        "zero_decode": expected_zero_decode,
+        "completed": requests - expected_zero_decode,
+    }:
+        raise RuntimeError(
+            f"decode completion counts differ from the test cases: {statuses}; "
+            f"expected zero_decode={expected_zero_decode}, completed={requests - expected_zero_decode}"
+        )
     if any(ranks != RANKS for ranks in reused.values()):
         raise RuntimeError("missing P/D physical slot reuse with new generations")
     return dict(

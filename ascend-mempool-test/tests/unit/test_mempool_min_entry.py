@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from test_mempool_router import payload, registration
+from test_service_gate import service_logs
 
 from ascend_mempool_pd.mempool_router import MainRouter, RequestRejected
 from ascend_mempool_pd.mempool_router_protocol import CONFIG_ENV, RouterConfig
@@ -168,6 +169,91 @@ class TestPreflightIdentity(unittest.TestCase):
 
 
 class TestMinRunner(unittest.TestCase):
+    def test_prefix_reference_accepts_four_real_decode_requests_through_runner(self):
+        logs = service_logs(
+            (127, 127, 127, 127), layers=78, indexer_layer_ids=verifier.PRODUCERS
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            stage = root / "reference"
+            stage.mkdir()
+            (stage / "prefill.log").write_text(logs["prefill"])
+            peer = SimpleNamespace(
+                barrier=lambda phase: None,
+                check=lambda: None,
+                send=lambda *args, **kwargs: None,
+            )
+            config = RouterConfig(
+                "p", "d", "/model", prefix_pages=40, verify_prefix=True
+            )
+            args = SimpleNamespace(
+                role="prefill",
+                mode="prefix-acceptance",
+                config=root / "config.json",
+                run_id="cpu",
+            )
+            instance = runner.Runner(args, config, peer, root)
+            instance.cases = [
+                dict(
+                    name="cold-prefix-" + name,
+                    input_ids=[7] * length,
+                    sampling_params=dict(
+                        temperature=0,
+                        top_k=1,
+                        top_p=1,
+                        max_new_tokens=128,
+                        ignore_eos=True,
+                    ),
+                )
+                for name, length in zip("abce", (4096, 5120, 4096, 4096))
+            ]
+            results = [
+                dict(
+                    output_ids=[1] * 128,
+                    meta_info=dict(
+                        prompt_tokens=len(case["input_ids"]), completion_tokens=128
+                    ),
+                )
+                for case in instance.cases
+            ]
+            popen = runner.subprocess.Popen
+
+            def launch(command, **kwargs):
+                # Replace only the external NPU/router programs; keep real child ownership/cleanup.
+                if command[0] == "bash" or "sglang_router.launch_router" in command:
+                    command = [sys.executable, "-c", "import time; time.sleep(90)"]
+                return popen(command, **kwargs)
+
+            now = [0]
+
+            def clock():
+                now[0] += 100
+                return now[0]
+
+            with (
+                patch.object(runner.subprocess, "Popen", side_effect=launch),
+                patch.object(
+                    runner, "wait_http", side_effect=lambda url, timeout, watch: watch()
+                ),
+                patch.object(runner, "request_json", side_effect=results),
+                patch.object(
+                    runner,
+                    "receive_log",
+                    side_effect=lambda peer, path: path.write_text(logs["decode"]),
+                ),
+                patch.object(
+                    runner,
+                    "time",
+                    SimpleNamespace(monotonic=clock, sleep=runner.time.sleep),
+                ),
+            ):
+                instance.stage(target=False)
+            evidence = json.loads((stage / "evidence.json").read_text())
+            self.assertEqual(evidence["decode_requests"], 4)
+            self.assertEqual(evidence["zero_decode_requests"], 0)
+            self.assertEqual(instance.reference, results)
+            self.assertEqual(instance.report["stages"], ["reference"])
+
     def test_prefix_acceptance_has_effective_config_and_layout_based_memory_budget(
         self,
     ):

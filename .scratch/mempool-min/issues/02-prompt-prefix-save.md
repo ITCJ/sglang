@@ -212,3 +212,21 @@ freed 状态；完成收据按 rid／op_id 独立存活，不能依赖已释放�
   验收描述符短列表问题经 red→green 修复。整改后相关 42 项定向测试及类型检查通过。
 - 尚未执行本票 NPU 验收，功能硬件项保持未勾选。
   Status=needs-info 表示等待用户 NPU 报告；State 保持 open，03 不解锁。
+
+### 2026-10-26：修复首轮 NPU reference 检查矩阵不匹配
+
+- 用户回传 31/32、run-id=`ticket02-001` 的控制台截图：reference 阶段报
+  `require zero-decode and at least two real decode requests`，D 收到 peer failed。
+  尚未进入 target；本次反馈不构成 prefix 硬件验收通过。
+- 根因是复用的 formal checker 无条件要求至少一个 zero-decode，而本票 A/B/C/E
+  都强制生成 128 token。CPU 通过真实 Runner.stage、checker 与进程清理复现相同异常。
+- `verify_service.py` 增加显式完成计数合同；`run_mempool_min.py` 仅在
+  prefix-acceptance 的 reference 传入 0 个 zero-decode，并要求准确 4 个 completed。
+  默认旧矩阵要求保留，全部 rank、Graph、写回、drain、释放和槽复用检查继续执行。
+- 本次修改 2 个验收脚本、2 个测试文件，无生产功能源码改动。CPU 完整套件
+  440/440 通过（36.115 秒），2 文件 strict mypy、4 文件 lint/format/isort/AST 通过。
+  Standards / Spec 分别复核，均为 0 项发现。
+- [检查记录](../verification/ticket02-reference-matrix-fix-20261026/checks.json)保存 red/green、
+  完整 CPU 日志与验证版本摘要。两机更新后使用已有
+  `/home/cryang/mempool-min-ticket01-3132.json`，换新 run-id=`ticket02-002` 重跑。
+  保留 `ticket02-001` 失败日志；NPU 重测仍待用户执行，02 保持 open。

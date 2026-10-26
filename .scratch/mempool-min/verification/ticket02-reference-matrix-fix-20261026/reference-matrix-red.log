@@ -1,0 +1,21 @@
+test_prefix_reference_accepts_four_real_decode_requests_through_runner (test_mempool_min_entry.TestMinRunner.test_prefix_reference_accepts_four_real_decode_requests_through_runner) ... START launcher pid=72982 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmprhd59mo0/reference/launcher.log
+START reference-router pid=72983 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmprhd59mo0/reference/reference-router.log
+ERROR
+
+======================================================================
+ERROR: test_prefix_reference_accepts_four_real_decode_requests_through_runner (test_mempool_min_entry.TestMinRunner.test_prefix_reference_accepts_four_real_decode_requests_through_runner)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 208, in test_prefix_reference_accepts_four_real_decode_requests_through_runner
+    instance.stage(target=False)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/scripts/run_mempool_min.py", line 655, in stage
+    else verify_service.check_logs(
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/scripts/verify_service.py", line 271, in check_logs
+    raise RuntimeError("require zero-decode and at least two real decode requests")
+RuntimeError: require zero-decode and at least two real decode requests
+
+----------------------------------------------------------------------
+Ran 1 test in 0.037s
+
+FAILED (errors=1)

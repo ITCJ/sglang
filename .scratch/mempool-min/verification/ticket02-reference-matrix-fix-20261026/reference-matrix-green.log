@@ -1,0 +1,17 @@
+test_prefix_reference_accepts_four_real_decode_requests_through_runner (test_mempool_min_entry.TestMinRunner.test_prefix_reference_accepts_four_real_decode_requests_through_runner) ... START launcher pid=73052 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpnfwons4v/reference/launcher.log
+START reference-router pid=73053 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpnfwons4v/reference/reference-router.log
+ok
+test_accepts_complete_formal_graph_and_reused_slots (test_service_gate.TestServiceGate.test_accepts_complete_formal_graph_and_reused_slots) ... ok
+test_each_rank_must_finish_and_supply_real_graph_and_layer_evidence (test_service_gate.TestServiceGate.test_each_rank_must_finish_and_supply_real_graph_and_layer_evidence) ... ok
+test_eager_requires_zero_replays_and_all_layer_completion (test_service_gate.TestServiceGate.test_eager_requires_zero_replays_and_all_layer_completion) ... ok
+test_fault_or_partial_new_request_cannot_hide_behind_passes (test_service_gate.TestServiceGate.test_fault_or_partial_new_request_cannot_hide_behind_passes) ... ok
+test_indexer_layout_is_checked_separately_from_all_kv_layers (test_service_gate.TestServiceGate.test_indexer_layout_is_checked_separately_from_all_kv_layers) ... ok
+test_native_transfer_can_finish_before_bm_ready (test_service_gate.TestServiceGate.test_native_transfer_can_finish_before_bm_ready) ... ok
+test_prefill_native_release_can_precede_ready_publication (test_service_gate.TestServiceGate.test_prefill_native_release_can_precede_ready_publication) ... ok
+test_rejects_incomplete_or_contradictory_server_evidence (test_service_gate.TestServiceGate.test_rejects_incomplete_or_contradictory_server_evidence) ... ok
+test_rejects_misordered_prefill_binding_and_release (test_service_gate.TestServiceGate.test_rejects_misordered_prefill_binding_and_release) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.150s
+
+OK

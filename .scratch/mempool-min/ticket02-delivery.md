@@ -5,13 +5,19 @@ template: doc
 theme: blueprint
 lang: zh
 date: 2026-10-26
-status: 实现完成；CPU 437 项通过；两轴 review 通过；NPU 待用户验收
+status: reference 检查修复；CPU 440 项通过；两轴 review 通过；NPU 待用户重测
 ---
 
 基于用户已验收的 ticket01 `7275f29a05` 重写。
 本票保存冷请求的 prompt 主 KV 和 Index K，所有请求仍为 `hit_len=0`。
 代码中没有恢复、fill、evict 或 prefix 命中行为；它们仍属后续票。
 ticket02 保持 open，ticket03 等待本票 NPU 验收。
+
+**2026-10-26 运行反馈修复：** `ticket02-001` 在 reference 阶段因旧检查器要求
+zero-decode 而退出，未进入 target。现已按 A/B/C/E 要求检查准确 4 个 completed、
+0 个 zero-decode，保留旧验收模式及所有设备证据检查。
+本次只修改验收脚本与测试，CPU 440/440、静态检查和两轴 review 通过。
+详见[修复检查记录](verification/ticket02-reference-matrix-fix-20261026/checks.json)。
 
 ## A 功能代码 review 顺序
 
@@ -75,12 +81,15 @@ warmup 保持原生本机路径，不建立 alive 绑定，也不触发 prefix �
 填写 P/D 地址、模型路径、网卡和 NUMA 节点。两侧内容必须一致。
 使用同一个全新 run-id；P 先启动，随后启动 D，后续步骤自动协调。
 
+31/32 可直接复用已通过 ticket01 的 `/home/cryang/mempool-min-ticket01-3132.json`。
+以下命令使用该配置与新的 `ticket02-002`，保留上轮失败日志；其他部署填写自己的配置路径。
+
 P 机：
 
 ```bash
 bash ascend-mempool-test/scripts/run_mempool_min.sh \
   --role prefill --mode prefix-acceptance \
-  --config mempool-min.json --run-id ticket02-001
+  --config /home/cryang/mempool-min-ticket01-3132.json --run-id ticket02-002
 ```
 
 D 机：
@@ -88,7 +97,7 @@ D 机：
 ```bash
 bash ascend-mempool-test/scripts/run_mempool_min.sh \
   --role decode --mode prefix-acceptance \
-  --config mempool-min.json --run-id ticket02-001
+  --config /home/cryang/mempool-min-ticket01-3132.json --run-id ticket02-002
 ```
 
 入口生成并保存有效 JSON：`prefix_pages=40`、`verify_prefix=true`。
@@ -117,7 +126,7 @@ CPU 参考只保留当前请求与已存 40 页；验收读回与同步不用于
 逐页摘要再关联实际 alloc 槽、admit 源页、目标页和 publish 目录。
 缺 rank、坏页号、内容差异、过早 ack/free、缺少完成记录或输出差异均失败退出。
 
-主报告：`/home/cryang/log/mempool-min/ticket02-001/summary.json`。
+主报告：`/home/cryang/log/mempool-min/ticket02-002/summary.json`。
 回传两端整个同名运行目录：有效配置、identity、memory-budget、cases、responses、
 snapshots、prefill/decode-normal.log、evidence.json、timeout 报告和最终清理日志。
 正常用例后会暂停自身 P workers，额外等待一次 operation_timeout（默认 600 秒）。

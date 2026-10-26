@@ -101,6 +101,24 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 
 ## D 名称、验收与实施票怎样对应
 
+**2026-10-26 ticket02 重写：reference 修复完成 CPU 全回归与两轴 review。**
+
+本次完整 CPU 套件 440/440 通过，36.115 秒；2 个验收脚本 strict mypy、4 个修改 Python 文件 lint/format/isort/Python3.9 AST 通过。Standards / Spec 均为 0 项发现。
+
+修复仅调整 reference 的请求完成计数合同，生产功能源码未改。已更新交付命令，31/32 复用既有配置并使用 ticket02-002 重跑；保留 ticket02-001 日志。本票 NPU 尚未验收，02 保持 open，03 继续等待。
+
+**2026-10-26 ticket02 重写：reference 计数合同负向验证通过。**
+
+prefix reference 正向回归通过，旧混合矩阵仍按原规则检查。新增负向用例确认意外 zero-decode、缺请求、多请求、缺 rank、Graph、写回、drain 与释放证据仍失败。11 项 service gate 检查及 2 文件 strict mypy 通过；完整 CPU 回归和两轴 review 进行中。
+
+本修复仅涉及验收脚本与测试，不修改 SGLang 功能源码。ticket02 保持 open，需用户换新 run-id 重跑 NPU。
+
+**2026-10-26 ticket02 重写：NPU 首轮 reference 误判修复。**
+
+用户回传 ticket02-001 在 reference 阶段报 require zero-decode and at least two real decode requests，尚未进入 target。CPU 用真实 runner 与完整四请求日志复现同一异常；问题是旧检查器无条件要求 zero-decode，与 A/B/C/E 四个真实 decode 不符。
+
+已让 prefix-acceptance 显式要求 0 个 zero-decode、4 个 completed；旧模式保留原要求。runner 回归及旧 service gate 共 10 项通过。负向回归、review 和推送仍待完成；本票 NPU 尚未验收。
+
 **2026-10-26 ticket02 重写：两轴 review 整改与复核完成。**
 
 Standards 两项可读性建议已处理：提取 SR admit 分支，新增布局及状态调用补参数名。验收 checker 的短页描述符问题经 red→green 修复。相关 42 项定向回归和 5 文件 strict mypy 通过。

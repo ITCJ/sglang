@@ -1,0 +1,51 @@
+{
+  "date": "2026-10-26",
+  "baseline": "7f0a214500",
+  "user_report": {
+    "source": "user screenshot, 31/32 console",
+    "run_id": "ticket02-001",
+    "stage": "reference",
+    "error": "require zero-decode and at least two real decode requests",
+    "target_started": false,
+    "full_hardware_logs_received": false
+  },
+  "cause": "The reference reused a mixed completion matrix requiring zero-decode; A/B/C/E all perform decode.",
+  "fix": {
+    "prefix_reference": "exactly 4 completed and 0 zero_decode",
+    "legacy_default": "at least 2 completed and at least 1 zero_decode",
+    "production_source_changes": []
+  },
+  "cpu": {
+    "status": "passed",
+    "tests": 440,
+    "seconds": 36.115,
+    "red": "reference-matrix-red.log",
+    "green": "reference-matrix-green.log",
+    "negative": "reference-negative-green.log",
+    "full": "reference-fix-full-cpu.log"
+  },
+  "static": {
+    "status": "passed",
+    "strict_mypy_files": 2,
+    "ruff_format_isort_ast_files": 4,
+    "python_ast_version": "3.9"
+  },
+  "review": {
+    "standards_remaining": 0,
+    "spec_remaining": 0
+  },
+  "sha256": {
+    "ascend-mempool-test/scripts/run_mempool_min.py": "d08040bf598ac32a3b4295ee3637c866ddadfed011bc27afefb51182a4ca8c40",
+    "ascend-mempool-test/scripts/verify_service.py": "28672f4dc0712545b8f6dcf73dec76a237b6e909847921ad582c77a83a52f7e0",
+    "ascend-mempool-test/tests/unit/test_mempool_min_entry.py": "ed6df59e0a210dd850ce4cc3a3efcb699bb6cefeb08c3c68ac41fc3d3f71af3e",
+    "ascend-mempool-test/tests/unit/test_service_gate.py": "59a5bab9ab64cda39978c148a162609aaa6f8d941d7d579d7a51eb65f03354d0"
+  },
+  "hardware": {
+    "status": "rerun pending",
+    "next_run_id": "ticket02-002",
+    "config": "/home/cryang/mempool-min-ticket01-3132.json",
+    "user_accepted": false,
+    "ticket02": "open",
+    "ticket03": "blocked"
+  }
+}
