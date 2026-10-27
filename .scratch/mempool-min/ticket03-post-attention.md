@@ -1,15 +1,16 @@
 ---
-title: Ticket03-006：归约、归一化与 MLP 对照
+title: Ticket03-007：修复配置摘要后重测三个边界
 subtitle: 同一轮检查三个边界、逻辑行映射和权重副本
 template: doc
 theme: blueprint
 lang: zh
 date: 2026-10-27
-status: CPU 验证与两轴审核通过；尚未运行本轮 NPU
+status: 配置摘要修复与两轴审核通过；等待007 NPU重测
 ---
 
 005 在取消强制非连续页和延迟 fill 后仍复现 C 的 output[15] 分叉。
-本轮继续重放004保存的原始ABC，新增首层后半段探针和同输入控制实验。
+006在首个A的_layer0_pre配置摘要中触发8MiB限制，没有得到算子对比结果。
+007修复该诊断工具问题，继续重放004保存的原始ABC与同一组控制实验。
 目标是区分通信、残差/归一化/MLP数值，以及逻辑行映射/副本问题。
 ticket03仍open，04未解锁；诊断不能代替严格NPU验收。
 
@@ -60,13 +61,13 @@ MLP控制始终使用同一份真实A归一化结果，因此不会被归约或�
 31，P：
 
 ```bash
-bash ascend-mempool-test/scripts/run_mempool_min.sh --role prefill --mode reuse-diagnostic --config /home/cryang/mempool-min-ticket01-3132.json --run-id ticket03-006-post-attention --replay-run ticket03-004 --diagnose-post-attention
+bash ascend-mempool-test/scripts/run_mempool_min.sh --role prefill --mode reuse-diagnostic --config /home/cryang/mempool-min-ticket01-3132.json --run-id ticket03-007-post-attention --replay-run ticket03-004 --diagnose-post-attention
 ```
 
 32，D：
 
 ```bash
-bash ascend-mempool-test/scripts/run_mempool_min.sh --role decode --mode reuse-diagnostic --config /home/cryang/mempool-min-ticket01-3132.json --run-id ticket03-006-post-attention --replay-run ticket03-004 --diagnose-post-attention
+bash ascend-mempool-test/scripts/run_mempool_min.sh --role decode --mode reuse-diagnostic --config /home/cryang/mempool-min-ticket01-3132.json --run-id ticket03-007-post-attention --replay-run ticket03-004 --diagnose-post-attention
 ```
 
 入口自动完成身份核对、预检、参考/目标启动、请求、检查、报告和双方自有进程清理。
@@ -77,9 +78,9 @@ bash ascend-mempool-test/scripts/run_mempool_min.sh --role decode --mode reuse-d
 
 终端回传 REUSE_COMPARISON、REUSE_POST、三条REUSE_POST_TOKEN，以及任何错误。
 
-原REUSE_RANK/REUSE_OPERATORS继续保留，用于核对006是否仍复现005的指纹。
+原REUSE_RANK/REUSE_OPERATORS继续保留，用于核对007是否仍复现005的指纹。
 
-日志根目录为 `/home/cryang/log/mempool-min/ticket03-006-post-attention/`。
+日志根目录为 `/home/cryang/log/mempool-min/ticket03-007-post-attention/`。
 P的target/post-attention.json保存完整逐行比较，target/post-attention/保存每rank的A/C快照。
 两机的diagnostic-comparison.json均含紧凑结论；P的summary.json保存收集状态。
 
@@ -107,9 +108,23 @@ complete只表示记录完整；checks_ok还要求映射、副本、有限值、
 
 ## F 验证状态
 
+006工具交付前的验证：
+
 482项CPU回归通过，4个功能模块strict mypy通过；新增测试用真实torch模块和线程化CPU集合操作，
 验证别名写入前快照、跨rank行对齐、独立形状差异、错误映射、权重scale变化和缺失记录失败。
 
-这是诊断工具验证，不是NPU数值复现；硬件根因仍待006实测。
+这是诊断工具验证，不是NPU数值复现；006随后在新探针内失败，原问题仍待定位。
 Standards/Spec最终均0项未解决；量化scheme宿主遗漏已修复并用反例复验。
-完整检查记录见[本轮验证目录](verification/ticket03-post-attention-20261027/checks.json)。
+原检查记录见[006工具验证目录](verification/ticket03-post-attention-20261027/checks.json)。
+
+007修复范围：配置Mapping改为分段规范JSON哈希，完整覆盖内容，记录编码总字节数。
+共享配置仅在一次manifest中复用摘要，A/C仍重新哈希；长字符串先切片再转义。
+同一错误的各rank合并显示，完整原始错误留在post-attention.json。
+
+487项完整CPU回归、15项定向检查、2功能模块strict mypy和3文件静态/3.9语法通过。
+Standards/Spec均0项未解决；007硬件尚未运行。
+[修复验证记录](verification/ticket03-config-digest-fix-20261027/checks.json)保留原异常复现及红绿结果。
+
+本次功能源码阅读顺序为debug_post_attention.py（配置完整摘要与暂存）、
+summarize_mempool_post_attention.py（错误汇总）；上面的安装与运行器功能保持此前实现。
+离线错误汇总在独立测试工具中读取服务退出后的文件，不能由模型内hook承担。

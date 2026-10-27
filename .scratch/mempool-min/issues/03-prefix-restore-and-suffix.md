@@ -362,3 +362,14 @@ ValueError: quantization settings exceed digest scratch budget。
 D报告服务退出137，当前贴文不能确认OOM或SIGKILL来源，清理成功也未得到本轮完整报告确认。
 [用户回传摘录](../verification/ticket03-006-20261027/user-results.json)单独保存；未取得远端完整文件。
 本轮没有评价原数值候选，03保持open，04不解锁。
+
+### 2026-10-27：修复大配置摘要，准备007重测
+
+本机以超过8MiB的ModelSlim全局描述复现同一异常：原实现先构造完整JSON，再错误限制总长度。
+改为分段哈希完整规范JSON，字符串先切片再转义，排序仅保留key引用；保留实际暂存预算。
+共享配置在一次manifest内去重，A/C之间重算；完整权重/scale与配置变更检测仍然保留。
+相同hook/错误按rank合并打印，完整每rank错误保留在报告，避免重复文本挤掉原因。
+大配置、Unicode大值、完整摘要/内存、共享与重新计算的CPU反例通过；487项完整回归、15项定向、
+2模块strict mypy及3文件静态/3.9语法通过，Standards/Spec均0项未解决。
+验证记录见 ../verification/ticket03-config-digest-fix-20261027/。
+下一轮使用新run-id ticket03-007-post-attention，沿用原始004请求和普通恢复，等待用户NPU重测。

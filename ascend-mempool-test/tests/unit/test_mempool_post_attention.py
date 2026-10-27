@@ -2,11 +2,13 @@
 
 import contextlib
 import copy
+import hashlib
 import io
 import json
 import os
 import tempfile
 import threading
+import tracemalloc
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -400,6 +402,145 @@ class TestPostAttention(unittest.TestCase):
         )
         layer.scheme.is_dynamic = False
         self.assertNotEqual(initial, state_manifest({"mlp": layer}))
+
+    def test_large_modelslim_description_is_hashed_completely_with_bounded_scratch(
+        self,
+    ):
+        from ascend_mempool.debug_post_attention import HASH_CHUNK_BYTES, state_manifest
+
+        # ModelSlim exposes a global, shared description even on a single layer.
+        description = {
+            f"model.layers.{i}.mlp.experts.0.gate_proj.weight": "W8A8_DYNAMIC" * 24
+            for i in range(40000)
+        }
+        encoded = json.dumps(description, sort_keys=True, allow_nan=False).encode()
+        self.assertGreater(len(encoded), HASH_CHUNK_BYTES)
+        expected = hashlib.sha256(encoded).hexdigest()
+        del encoded
+        layer = Projection()
+        layer.quant_method = SimpleNamespace(
+            quantization_config=SimpleNamespace(quant_description=description)
+        )
+        layer.scheme = SimpleNamespace(quant_config=description, is_dynamic=True)
+        tracemalloc.start()
+        try:
+            manifest = state_manifest({"mlp": layer})
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertLess(peak, HASH_CHUNK_BYTES)
+        self.assertEqual(
+            manifest["settings"]["mlp.scheme.quant_config"]["sha256"], expected
+        )
+        self.assertEqual(
+            manifest["settings"][
+                "mlp.quant_method.quantization_config.quant_description"
+            ]["sha256"],
+            expected,
+        )
+        # Changes beyond the old 8 MiB boundary must remain visible on the next call.
+        description["zz-last.weight"] = "W8A8"
+        changed = state_manifest({"mlp": layer})
+        self.assertNotEqual(
+            manifest["settings"]["mlp.scheme.quant_config"],
+            changed["settings"]["mlp.scheme.quant_config"],
+        )
+
+    def test_streamed_configuration_digest_matches_json_and_rejects_invalid_data(self):
+        from ascend_mempool.debug_post_attention import configuration_digest
+
+        cases = [
+            {
+                "z": [True, False, None, -3.25, 1e30, (1, 2)],
+                "a": {"中": 'x"\\\n\t\x00💡\ud800'},
+            },
+            {2: "two", 1: {False: "false", True: "true"}},
+            {None: [1, 2]},
+            {1.5: "fraction"},
+        ]
+        for value in cases:
+            with self.subTest(value=value):
+                encoded = json.dumps(value, sort_keys=True, allow_nan=False).encode()
+                result = configuration_digest(value)
+                self.assertEqual(result["sha256"], hashlib.sha256(encoded).hexdigest())
+                self.assertEqual(result["encoded_bytes"], len(encoded))
+                self.assertEqual(
+                    result, configuration_digest(dict(reversed(list(value.items()))))
+                )
+        cycle = {}
+        cycle["self"] = cycle
+        for value in ({"value": float("nan")}, {"value": float("inf")}, cycle):
+            with self.assertRaises(ValueError):
+                configuration_digest(value)
+        with self.assertRaises(TypeError):
+            configuration_digest({"tensor": torch.zeros(1)})
+
+    def test_single_large_unicode_value_is_escaped_in_bounded_pieces(self):
+        from ascend_mempool.debug_post_attention import (
+            HASH_CHUNK_BYTES,
+            configuration_digest,
+        )
+
+        value = {"large": '汉💡"\\\n' * 400000}
+        encoded = json.dumps(value, sort_keys=True, allow_nan=False).encode()
+        self.assertGreater(len(encoded), HASH_CHUNK_BYTES)
+        expected = hashlib.sha256(encoded).hexdigest()
+        del encoded
+        tracemalloc.start()
+        try:
+            result = configuration_digest(value)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(result["sha256"], expected)
+        self.assertLess(peak, HASH_CHUNK_BYTES)
+
+    def test_shared_configuration_is_rehashed_for_each_manifest(self):
+        from ascend_mempool import debug_post_attention as diagnostic
+
+        description = {"model.mlp.weight": "W8A8_DYNAMIC"}
+        layer = Projection()
+        layer.scheme = SimpleNamespace(quant_config=description)
+        layer.quant_method = SimpleNamespace(
+            quantization_config=SimpleNamespace(quant_description=description)
+        )
+        with patch.object(
+            diagnostic, "configuration_digest", wraps=diagnostic.configuration_digest
+        ) as digest:
+            first = diagnostic.state_manifest({"mlp": layer})
+            self.assertEqual(digest.call_count, 1)
+            description["model.mlp.weight"] = "W8A8"
+            second = diagnostic.state_manifest({"mlp": layer})
+            self.assertEqual(digest.call_count, 2)
+        self.assertNotEqual(first, second)
+
+    def test_repeated_rank_errors_remain_readable_without_losing_records(self):
+        import summarize_mempool_post_attention as summary
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for rank in range(16):
+                (root / f"error-rank{rank}.json").write_text(
+                    json.dumps(
+                        dict(
+                            rank=rank,
+                            rid="A",
+                            hook="_layer0_pre",
+                            error="ValueError: quantization settings exceed digest scratch budget",
+                        )
+                    )
+                )
+            report = summary.summarize(root)
+        self.assertFalse(report["complete"])
+        self.assertEqual(len(report["probe_errors"]), 16)
+        compact = summary.compact(report)
+        self.assertEqual(len(compact["errors"]), 1)
+        self.assertIn(
+            "ranks=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]",
+            compact["errors"][0],
+        )
+        self.assertTrue(compact["errors"][0].endswith("digest scratch budget"))
+        self.assertLess(len(json.dumps(compact)), 1000)
 
     def test_probe_rejects_unsupported_mlp_and_saves_hook_errors(self):
         from ascend_mempool.debug_post_attention import PostAttentionProbe

@@ -1,0 +1,20 @@
+test_cross_rank_controls_and_first_boundary (test_mempool_post_attention.TestPostAttention.test_cross_rank_controls_and_first_boundary) ... ok
+test_hooks_keep_original_outputs_and_capture_shape_replays (test_mempool_post_attention.TestPostAttention.test_hooks_keep_original_outputs_and_capture_shape_replays) ... ok
+test_large_modelslim_description_is_hashed_completely_with_bounded_scratch (test_mempool_post_attention.TestPostAttention.test_large_modelslim_description_is_hashed_completely_with_bounded_scratch) ... ok
+test_mapping_weight_and_coverage_failures_are_independent (test_mempool_post_attention.TestPostAttention.test_mapping_weight_and_coverage_failures_are_independent) ... ok
+test_missing_artifacts_cannot_produce_a_complete_diagnosis (test_mempool_post_attention.TestPostAttention.test_missing_artifacts_cannot_produce_a_complete_diagnosis) ... ok
+test_modelslim_layer_owned_scheme_and_kernel_are_compared (test_mempool_post_attention.TestPostAttention.test_modelslim_layer_owned_scheme_and_kernel_are_compared) ... ok
+test_probe_rejects_unsupported_mlp_and_saves_hook_errors (test_mempool_post_attention.TestPostAttention.test_probe_rejects_unsupported_mlp_and_saves_hook_errors) ... ok
+test_repeated_rank_errors_remain_readable_without_losing_records (test_mempool_post_attention.TestPostAttention.test_repeated_rank_errors_remain_readable_without_losing_records) ... ok
+test_shared_configuration_is_rehashed_for_each_manifest (test_mempool_post_attention.TestPostAttention.test_shared_configuration_is_rehashed_for_each_manifest) ... ok
+test_single_large_unicode_value_is_escaped_in_bounded_pieces (test_mempool_post_attention.TestPostAttention.test_single_large_unicode_value_is_escaped_in_bounded_pieces) ... ok
+test_state_digest_includes_scales_and_unregistered_tensors (test_mempool_post_attention.TestPostAttention.test_state_digest_includes_scales_and_unregistered_tensors) ... ok
+test_streamed_configuration_digest_matches_json_and_rejects_invalid_data (test_mempool_post_attention.TestPostAttention.test_streamed_configuration_digest_matches_json_and_rejects_invalid_data) ... ok
+test_tp16_4096_and_128_rows_preserve_logical_ownership (test_mempool_post_attention.TestPostAttention.test_tp16_4096_and_128_rows_preserve_logical_ownership) ... ok
+test_missing_post_records_fail_even_when_outputs_match (test_mempool_post_attention.TestPostRunner.test_missing_post_records_fail_even_when_outputs_match) ... ok
+test_scope_budget_and_command_contract (test_mempool_post_attention.TestPostRunner.test_scope_budget_and_command_contract) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 1.632s
+
+OK

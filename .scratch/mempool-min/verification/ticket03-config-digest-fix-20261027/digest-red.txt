@@ -1,0 +1,17 @@
+test_large_modelslim_description_is_hashed_completely_with_bounded_scratch (test_mempool_post_attention.TestPostAttention.test_large_modelslim_description_is_hashed_completely_with_bounded_scratch) ... ERROR
+
+======================================================================
+ERROR: test_large_modelslim_description_is_hashed_completely_with_bounded_scratch (test_mempool_post_attention.TestPostAttention.test_large_modelslim_description_is_hashed_completely_with_bounded_scratch)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_post_attention.py", line 420, in test_large_modelslim_description_is_hashed_completely_with_bounded_scratch
+    manifest = state_manifest({"mlp": layer})
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/python/sglang/srt/hardware_backend/npu/mempool/debug_post_attention.py", line 129, in state_manifest
+    raise ValueError(
+ValueError: quantization settings exceed digest scratch budget
+
+----------------------------------------------------------------------
+Ran 1 test in 0.106s
+
+FAILED (errors=1)

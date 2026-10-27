@@ -1,0 +1,64 @@
+{
+  "date": "2026-10-27",
+  "base": "7229eb70f083aeb944ced23c986be86f66f33ac3",
+  "scope": "Fix configuration digest failure in the diagnostic tool; original A/C numerical root cause remains unresolved",
+  "red_reproduction": {
+    "status": "reproduced",
+    "exception": "ValueError: quantization settings exceed digest scratch budget",
+    "seam": "state_manifest with shared ModelSlim-style global description exceeding 8 MiB",
+    "log": "digest-red.txt"
+  },
+  "tests": {
+    "cpu_full_suite": {
+      "status": "passed",
+      "count": 487,
+      "command": "python -m unittest discover -s ascend-mempool-test/tests/unit -v"
+    },
+    "targeted": {
+      "status": "passed",
+      "count": 15,
+      "command": "python -m unittest test_mempool_post_attention -v"
+    },
+    "typecheck": {
+      "status": "passed",
+      "modules": 2,
+      "python_version": "3.10 override; installed mypy rejects configured 3.9"
+    },
+    "ruff": "passed",
+    "isort": "passed",
+    "python39_syntax_files": 3
+  },
+  "coverage": [
+    "Complete canonical JSON hash equals stdlib oracle for >8 MiB shared mapping",
+    "Mutation after the old size boundary changes the next manifest digest",
+    "One huge Unicode/string value escapes in bounded slices",
+    "Nested values and key types match json.dumps(sort_keys=True,allow_nan=False)",
+    "NaN/infinity/cycles/unserializable inputs fail",
+    "Alias cache is manifest-local and invalidated between A/C",
+    "Sixteen identical errors collapse for terminal display while retaining all rank records"
+  ],
+  "memory_evidence": {
+    "measurement": "tracemalloc Python allocations on CPU fixtures; not remote/NPU memory",
+    "additional_peak_per_fixture_lt_bytes": 8388608,
+    "fixture_cases": [
+      "40000-entry global description",
+      "single huge Unicode string"
+    ]
+  },
+  "reviews": {
+    "standards_unresolved": 0,
+    "spec_unresolved": 0
+  },
+  "hardware": {
+    "run006": "failed in new probe before useful boundary comparisons",
+    "run007": "not run; user-run pending",
+    "decode137_cause": "unverified"
+  },
+  "ticket03_state": "open",
+  "ticket04_unlocked": false,
+  "source_sha256": {
+    "python/sglang/srt/hardware_backend/npu/mempool/debug_post_attention.py": "3cc7c3ee1263ddbba5c1cb11d6fa615acd6c825e2af862b78fbc17997c6aa9b6",
+    "ascend-mempool-test/scripts/summarize_mempool_post_attention.py": "ff603663a11252b3020e1f3efb897a2b92905f51d73e65d43ee652cac32ed01f",
+    "ascend-mempool-test/tests/unit/test_mempool_post_attention.py": "f8040c5552d61aa86891de675cd10897b6e1dc1944592c736eac4bdda7b83d78"
+  }
+}

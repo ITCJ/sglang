@@ -472,9 +472,19 @@ def summarize(root: Path, *, ranks: int = 16) -> dict[str, Any]:
     try:
         errors = sorted(root.glob("error-rank*.json"))
         if errors:
-            raise ValueError(
-                "probe errors: " + "; ".join(path.read_text() for path in errors)
-            )
+            # Retain every rank record, but print an identical failure only once.
+            # A concatenated traceback otherwise gets cut off by compact().
+            records = [json.loads(path.read_text()) for path in errors]
+            report["probe_errors"] = records
+            groups: dict[tuple[str, str], list[int]] = {}
+            for record in records:
+                key = (record["hook"], record["error"])
+                groups.setdefault(key, []).append(record["rank"])
+            report["errors"] = [
+                f"probe errors: hook={hook}; ranks={sorted(ranks)}; {error}"
+                for (hook, error), ranks in groups.items()
+            ]
+            return report
         expected = {
             f"{label}-rank{rank}.pt"
             for label in ("cold", "reused")

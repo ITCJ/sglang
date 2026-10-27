@@ -15,7 +15,7 @@ import os
 import time
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 import torch
 from torch import Tensor
@@ -59,11 +59,85 @@ def tensor_digest(value: Tensor) -> dict[str, Any]:
     )
 
 
+def configuration_digest(value: Mapping[Any, Any]) -> dict[str, Any]:
+    """Hash canonical JSON without retaining its complete text or UTF-8 copy.
+
+    Match json.dumps(sort_keys=True, allow_nan=False), including nested values.
+    Slice strings before JSON escaping: iterencode alone emits a whole string.
+    Sorting retains key references, not a second copy of the mapping or values.
+    """
+    encoder = json.JSONEncoder(allow_nan=False)
+    active: set[int] = set()
+    ordering_bytes = 0
+
+    def pieces(item: Any) -> Iterator[bytes]:
+        nonlocal ordering_bytes
+        if isinstance(item, str):
+            yield b'"'
+            for start in range(0, len(item), 64 * 1024):
+                yield encoder.encode(item[start : start + 64 * 1024])[1:-1].encode(
+                    "ascii"
+                )
+            yield b'"'
+        elif isinstance(item, (Mapping, list, tuple)):
+            if id(item) in active:
+                raise ValueError("Circular reference detected")
+            active.add(id(item))
+            # Allow sorting scratch within the existing 64 MiB CPU reserve.
+            # 16 bytes/key covers list references and TimSort's temporary array.
+            reservation = 16 * len(item) if isinstance(item, Mapping) else 0
+            ordering_bytes += reservation
+            try:
+                if ordering_bytes > CPU_SCRATCH_BYTES - 2 * HASH_CHUNK_BYTES:
+                    raise ValueError(
+                        "configuration key ordering exceeds CPU scratch budget"
+                    )
+                if isinstance(item, Mapping):
+                    yield b"{"
+                    for index, key in enumerate(sorted(item)):
+                        if index:
+                            yield b", "
+                        if isinstance(key, str):
+                            text_key = key
+                        elif key is None or isinstance(key, (int, float, bool)):
+                            text_key = encoder.encode(key)
+                        else:
+                            raise TypeError(
+                                "configuration keys must be JSON scalar types"
+                            )
+                        yield from pieces(text_key)
+                        yield b": "
+                        yield from pieces(item[key])
+                    yield b"}"
+                else:
+                    yield b"["
+                    for index, element in enumerate(item):
+                        if index:
+                            yield b", "
+                        yield from pieces(element)
+                    yield b"]"
+            finally:
+                ordering_bytes -= reservation
+                active.remove(id(item))
+        else:
+            yield encoder.encode(item).encode("ascii")
+
+    digest = hashlib.sha256()
+    encoded_bytes = 0
+    for chunk in pieces(value):
+        digest.update(chunk)
+        encoded_bytes += len(chunk)
+    return dict(
+        entries=len(value), sha256=digest.hexdigest(), encoded_bytes=encoded_bytes
+    )
+
+
 def state_manifest(scopes: dict[str, Any]) -> dict[str, Any]:
     """Include registered parameters/buffers and unregistered tensor attributes."""
     tensors: dict[str, Any] = {}
     settings: dict[str, Any] = {}
     aliases: dict[int, dict[str, Any]] = {}
+    configurations: dict[int, dict[str, Any]] = {}
     for scope, module in scopes.items():
         for name, child in module.named_modules():
             prefix = scope + ("." + name if name else "")
@@ -122,17 +196,12 @@ def state_manifest(scopes: dict[str, Any]) -> dict[str, Any]:
                         settings[full_name] = list(value)
                     elif isinstance(value, Mapping):
                         # ModelSlim's scheme.quant_config is the JSON description.
-                        encoded = json.dumps(
-                            dict(value), sort_keys=True, allow_nan=False
-                        ).encode()
-                        if len(encoded) > HASH_CHUNK_BYTES:
-                            raise ValueError(
-                                "quantization settings exceed digest scratch budget"
-                            )
-                        settings[full_name] = dict(
-                            entries=len(value),
-                            sha256=hashlib.sha256(encoded).hexdigest(),
-                        )
+                        if id(value) not in configurations:
+                            try:
+                                configurations[id(value)] = configuration_digest(value)
+                            except (TypeError, ValueError) as exc:
+                                raise ValueError(f"{full_name}: {exc}") from exc
+                        settings[full_name] = configurations[id(value)]
     if not tensors:
         raise ValueError("post-attention diagnostic found no model state")
     return dict(tensors=tensors, settings=settings)
