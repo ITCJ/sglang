@@ -1,0 +1,61 @@
+{
+  "source": "User-pasted prefill and decode terminal reports; remote raw artifacts were not downloaded",
+  "run_id": "ticket03-007-post-attention",
+  "mode": "reuse-diagnostic",
+  "replay_run": "ticket03-004",
+  "diagnose_post_attention": true,
+  "remote_commit": null,
+  "local_expected_commit": "d9ba311dd41a9aca22221ff21a7c85c5f4ae1b1d",
+  "original_report": {
+    "purpose": "diagnostic comparison; not full acceptance",
+    "full_acceptance": false,
+    "status": "failed",
+    "outputs": [
+      {"name": "reuse-prefix-a", "equal": true, "reference_length": 128, "actual_length": 128, "first_difference": null},
+      {"name": "reuse-prefix-b", "equal": true, "reference_length": 128, "actual_length": 128, "first_difference": null},
+      {"name": "reuse-prefix-c", "equal": false, "reference_length": 128, "actual_length": 128, "first_difference": 15}
+    ],
+    "probes_ok": true,
+    "controls": {"force_noncontiguous_restore": false, "delay_prefix_fill": false},
+    "target_evidence": {
+      "status": "passed", "requests": 3, "ranks_per_side": 16,
+      "source_rows": {"prompt": 123015264, "decode": 499360},
+      "graph": true, "page_size": 128,
+      "hit_lengths": [0, 4096, 3968], "suffix_tokens": [4096, 1024, 128],
+      "pages_per_request": [32, 40, 40], "main_layers": 78, "index_layers": 21,
+      "contents": "original saved prefix == restored native == fill; computed suffix == alive",
+      "noncontiguous_native_mapping": false, "native_free_before_fill": false,
+      "numa_placement": "not verified"
+    },
+    "paired_process_cleanup": "passed; both owned groups stopped",
+    "timeout_injection": "not part of this diagnostic comparison"
+  },
+  "post_attention": {
+    "complete": true, "checks_ok": true, "errors": [], "mapping_ok": true,
+    "weights_ok": true, "canonical_inputs_ok": true, "replay_repeat_ok": true,
+    "replay_matches_actual": true, "nonfinite": 0, "first_changed_boundary": "reduced",
+    "reductions": {
+      "cold_repeat": {"elements": 786432, "changed": 0, "nonfinite": 0, "max_abs": 0.0, "rms": 0.0, "first_difference": null},
+      "reused_repeat": {"elements": 786432, "changed": 0, "nonfinite": 0, "max_abs": 0.0, "rms": 0.0, "first_difference": null},
+      "full_vs_tail": {"elements": 786432, "changed": 530116, "nonfinite": 0, "max_abs": 0.000244140625, "rms": 3.061378447455354e-05, "first_difference": [3968, 1]},
+      "full_vs_rotated": {"elements": 786432, "changed": 544034, "nonfinite": 0, "max_abs": 0.000244140625, "rms": 3.234646646887995e-05, "first_difference": [3968, 2]},
+      "tail_vs_reused": {"elements": 786432, "changed": 16, "nonfinite": 0, "max_abs": 3.0517578125e-05, "rms": 6.842105193527459e-08, "first_difference": [4061, 185]},
+      "cold_vs_cpu_fp32_sum": {"elements": 786432, "changed": 781770, "nonfinite": 0, "max_abs": 0.00023448467254638672, "rms": 2.5761552024050616e-05, "first_difference": [3968, 0]},
+      "reused_vs_cpu_fp32_sum": {"elements": 786432, "changed": 780616, "nonfinite": 0, "max_abs": 0.00015413761138916016, "rms": 1.61501102411421e-05, "first_difference": [3968, 0]}
+    },
+    "local_effects": {"norm_shape": [], "norm_rank_full": [], "norm_rank_chunks": [], "mlp_shape": [], "mlp_rank_full": [], "mlp_rank_chunks": []},
+    "weights_different": [],
+    "focus_tokens": [
+      {"token": 3968, "cold_owner": 15, "reused_owner": 0, "pre_reduce_changed_by_rank": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], "residual_full_changed": 0, "residual_in_changed": 0, "reduced": {"changed": 4175, "max_abs": 0.00018310546875, "rms": 3.0990187951829284e-05}, "tail_vs_reused_changed": 0},
+      {"token": 4061, "cold_owner": 15, "reused_owner": 11, "pre_reduce_changed_by_rank": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,780], "residual_full_changed": 0, "residual_in_changed": 0, "reduced": {"changed": 4201, "max_abs": 0.00018310546875, "rms": 2.930111986643169e-05}, "tail_vs_reused_changed": 16},
+      {"token": 4090, "cold_owner": 15, "reused_owner": 15, "pre_reduce_changed_by_rank": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], "residual_full_changed": 0, "residual_in_changed": 0, "reduced": {"changed": 4128, "max_abs": 0.000244140625, "rms": 2.8855791242676787e-05}, "tail_vs_reused_changed": 0}
+    ]
+  },
+  "limits": [
+    "Exact collective algorithm, intermediate precision and end-to-end cause of output[15] were not established",
+    "Controlled norm/MLP replays use canonical A inputs; they do not establish all-layer or all-input invariance",
+    "CPU fp32 sum comparisons do not round the reference back to the reduction output dtype",
+    "No timeout injection, full E sequence or final stage-0 acceptance was performed in this diagnostic run",
+    "Physical NUMA placement remains unverified"
+  ]
+}
