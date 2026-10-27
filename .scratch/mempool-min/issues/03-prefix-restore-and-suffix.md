@@ -169,6 +169,22 @@ P alive 每次占 S_P/B=64 页整槽额度，D alive 占 S_D/B=1 页整槽额度
 
 ## Comments
 
+### 2026-10-27：按用户要求收敛到排查前的ticket03实现
+
+用户要求撤销为排查C数值分叉而加入的实现改动。核对0308cd0814后的全部源码差异，
+新增行为仅为KV/attention/post-attention探针、同输入重放、诊断入口和独立测试控制。
+没有恢复/fill/后缀/生命周期功能修复需要保留，因此运行源码、脚本和测试精确恢复该基线。
+删除debug_reuse/debug_post_attention、三个诊断脚本与三个专用测试模块；
+原始内容验证、非连续页/native-free-before-fill验收和资源保护均保留。
+
+本次保持State=closed和上一轮用户接受的范围，不撤回007硬件证据或新逻辑题要求。
+旧诊断命令只属于历史提交，当前不再提供reuse-diagnostic或diagnose/replay参数。
+现存reuse-acceptance仍按旧合成用例严格比较输出，新逻辑题与判定由04实现。
+本机453项CPU通过；17文件静态/3.9语法与9模块strict mypy通过。
+Standards/Spec最终均0项未解决，已修正文档中的旧入口和verify_prefix联动描述。
+未启动NPU测试。交付见[清理说明](../ticket03-cleanup.md)，
+验证见[清理检查](../verification/ticket03-cleanup-20261027/checks.json)。
+
 ### 2026-10-27：007定位归约差异，用户授权功能范围收口
 
 - [007回传摘录](../verification/ticket03-007-20261027/user-results.json)来自用户P/D贴文，

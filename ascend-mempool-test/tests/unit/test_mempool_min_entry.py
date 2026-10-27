@@ -169,42 +169,6 @@ class TestPreflightIdentity(unittest.TestCase):
 
 
 class TestMinRunner(unittest.TestCase):
-    def test_reuse_probe_is_scoped_to_target_prefill_and_requires_reuse_mode(self):
-        config_path = (
-            Path(__file__).resolve().parents[2] / "configs/mempool-min.example.json"
-        )
-        command = [
-            "--role",
-            "prefill",
-            "--mode",
-            "reuse-acceptance",
-            "--config",
-            str(config_path),
-            "--run-id",
-            "debug-reuse",
-            "--diagnose-reuse",
-        ]
-        args = runner.parse_args(command)
-        config = RouterConfig.read(str(config_path))
-        with patch.dict("os.environ", {runner.REUSE_DEBUG_ENV: "1"}):
-            for role in ("prefill", "decode"):
-                args.role = role
-                for target in (False, True):
-                    env = runner.service_environment(
-                        config, args, Path("/tmp/logs"), target=target
-                    )
-                    self.assertEqual(
-                        runner.REUSE_DEBUG_ENV in env, target and role == "prefill"
-                    )
-        args.diagnose_reuse = False
-        self.assertNotIn(
-            runner.REUSE_DEBUG_ENV,
-            runner.service_environment(config, args, Path("/tmp/logs"), target=True),
-        )
-        command[3] = "prefix-acceptance"
-        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-            runner.parse_args(command)
-
     def test_prefix_reference_accepts_four_real_decode_requests_through_runner(self):
         self.check_reference("prefix-acceptance", "abce", (4096, 5120, 4096, 4096))
 
@@ -369,10 +333,7 @@ class TestMinRunner(unittest.TestCase):
             self.assertEqual(data["config"]["match_prefix"], match)
             if match:
                 self.assertIn("formal reference A/B/C", data["stages"])
-                self.assertEqual(
-                    data["acceptance_controls"],
-                    dict(force_noncontiguous_restore=True, delay_prefix_fill=True),
-                )
+                self.assertIn("native_freed", data["acceptance_controls"])
 
     def test_paired_timeout_retains_quota_and_reaps_only_owned_children(self):
         now = [0.0]

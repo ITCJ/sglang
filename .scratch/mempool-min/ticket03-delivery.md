@@ -1,65 +1,31 @@
 ---
 title: Ticket03：命中恢复与后缀计算
-subtitle: 功能代码阅读顺序、所有权与双机自运行验收
+subtitle: 功能代码阅读顺序、所有权与原始双机入口
 template: doc
 theme: blueprint
 lang: zh
-date: 2026-10-26
-status: 原始 C 输出分叉待定位；普通 ABC 对照等待用户运行
+date: 2026-10-27
+status: 已按用户接受范围关闭；排查代码已撤回到0308cd0814
 ---
 
-**下一轮是 ticket03-005-normal-abc。**
-原始 ABC、ignore_eos=true、固定128输出、内容检查和探针均保留；
-普通恢复默认关闭两项独立边界控制，复用 ticket03-004 保存请求。
-运行命令、报告和本轮功能阅读顺序见 [普通 ABC 对照](ticket03-normal-abc.md)。
-本轮只作诊断；下文早期命令与 CPU 数字为各轮历史记录。
+**ticket03 已实现 B 命中4096、C命中3968，只计算各自后缀。**
+源为A真实保存的prefix，仍是P每个TP rank一份；主KV与Index K均参与load_back和fill。
+运行源码和测试已按用户要求收敛到首次交付0308cd0814。
+本页下方保留该功能的数据流、阅读顺序及当前仍存在的原始CLI。
 
-**ticket03 已实现 B 命中 4096、C 命中 3968，只计算各自后缀。**
-源为 A 真实保存的 prefix，仍是 P 每个 TP rank 一份。
-主 KV 与 Index K 均参与 load_back 和 fill。
-本轮基线为 `87157b7365`，不包含用户先前未提交的其他票文档。
+原合成C的output[15]差异仍保留，007已把首层大范围差异定位到归约形状/布局。
+用户接受已验证的数据链路功能和明确数值限制，03已关闭，04解除直接阻塞。
+[收口记录](verification/ticket03-007-20261027/closure.md)区分实际通过、已知限制和未执行范围。
+02的单独关闭确认保留；本次清理不宣称原合成输出一致性已修复。
 
-用户已明确授权先实施 03，02 的关闭确认仍单独保留。
-03 保持 open，NPU 首轮验收失败，正在诊断；04 未解锁。
-后续硬件修正另行提交。
+**临时诊断入口已经移除。**
+reuse-diagnostic、diagnose-reuse、diagnose-post-attention及重放工具不再属于当前代码。
+[005归档](ticket03-normal-abc.md)和[007归档](ticket03-post-attention.md)仅保留历史实验。
+清理范围和源码改动顺序见[ticket03清理说明](ticket03-cleanup.md)。
 
-**2026-10-26 运行反馈：** `0308cd0814`、`ticket03-001` 已在 31/32 执行。
-target 的 C 完整输出与冷算参考不一致，P 退出，D 收到 peer failed。
-最终内容/生命周期汇总和 timeout 验收未完成。
-后续回传确认 A/B 输出相等，C 从 output[15] 不同；冷算 A/C 完全相等。
-
-离线 reuse 内容检查通过，16 rank 的 A/C alive 仅第 31 页不同。
-该页为重算尾页，尚未区分元数据错误与计算数值差异，保留严格比较。
-[失败记录](verification/ticket03-001-20261026/failure-record.json)保留观察与未知项。
-
-**ticket03-002 已回传：** 16 rank 的身份与元数据通过，第 0 层主 KV/Index K 相等。
-从第 1 层开始出现差异；无非有限值，所有 rank 的首差统计相同。
-当前范围为第 0 层 KV 生成后到第 1 层 KV 生成前，尚未确认具体算子或可接受容限。
-
-**首层诊断重测：** 两机更新代码后，保留 --diagnose-reuse，run-id 改为 ticket03-003。
-仍由用户在 31 执行 prefill、32 执行 decode。失败退出仍自动打印结果。
-本轮回传 REUSE_DIAGNOSTIC、16 条 REUSE_OPERATORS 和错误信息。
-
-复制这些行与错误即可；完整 JSON 保存在 prefill/target/reuse-diagnostic.json。
-这轮用于定位根因，不能据此关闭 ticket03 或确认数值误差可接受。
-
-前一轮诊断 CPU 459/459 通过；[原检查记录](verification/ticket03-001-20261026/probe-checks.json)保留。
-本轮首层诊断 CPU 464/464、4 模块 strict mypy、7 文件静态检查通过。
-Standards / Spec 均为 0 项未解决；[本轮记录](verification/ticket03-002-20261026/checks.json)保留范围。
-用户 NPU 尚未运行本轮首层对照，不能将 CPU 结果记为模型精度修复。
-
-本轮新增/修改的功能源码阅读顺序如下，不含测试和说明文件：
-
-| 顺序 | 功能文件 | 阅读目的 |
-|---|---|---|
-| 1 | [npu/mempool/debug_reuse.py](../../python/sglang/srt/hardware_backend/npu/mempool/debug_reuse.py) | 有界 CPU 检查点；同形状重复、尾页 query 和 C 对照；模型沿用原始输出 |
-| 2 | [npu/mempool/prefix.py](../../python/sglang/srt/hardware_backend/npu/mempool/prefix.py) | 只为已分配的真实 P 请求启用诊断，warmup/释放后不采样 |
-| 3 | [npu/attention/ascend_backend.py](../../python/sglang/srt/hardware_backend/npu/attention/ascend_backend.py) | 把首层原始 sparse attention 参数与输出交给探针 |
-| 4 | [npu/modules/deepseek_v2_attention_mla_npu.py](../../python/sglang/srt/hardware_backend/npu/modules/deepseek_v2_attention_mla_npu.py) | 记录第 0 层输入/两段输出投影，以及第 1 层输入 |
-
-验收入口和离线摘要脚本需要在服务外协调开关、收集退出日志，故位于既有测试目录。
-探针会增加同步、两次首层 attention 调用和临时 HBM 分配，不用于性能结论。
-CPU 检查点每 rank 上限 64 MiB，确认根因并验收修复后删除。
+下方reuse-acceptance仍使用原合成输入和严格输出断言，因此已知C分叉仍会失败。
+[新逻辑题约定](output-verification-policy.md)由04实现，不能把原命令当作新验收入口。
+原始453项CPU及后续诊断检查均保留于各轮记录；本次清理后的验证单独报告。
 
 ## A 功能代码阅读顺序
 
@@ -157,14 +123,15 @@ P eager，D Graph，默认页大小仅支持 128；输入为 token IDs，greedy�
 它还把 fill 提交延迟到全 TP 的 native_freed 发布之后。
 日志必须证明此时 suffix 已完成、ready_tokens 仍为 0。
 
-这些是明确的验收控制；普通 `serve` 默认关闭两项，独立于 `verify_prefix`。
-普通路径即使开启内容校验，也不会因此强制非连续页或延迟 fill。
+这些是原始验收控制，通过 `verify_prefix` 联动。
+普通 `serve` 默认verify_prefix=false，不强制这两项；若开启verify_prefix并匹配prefix，
+内容校验、非连续恢复和延迟fill会同时启用，已无独立开关。
 报告保留这些控制，不声称已验证无注入服务的重叠性能。
 
 每个 rank 核对 78 层主 KV 的两部分，以及 21 层 Index K。
 核对基准来自 A 原始计算值及 B/C 后缀原始计算值。
 恢复按真实 token 索引逐内容比较，报告附逐页 digest 便于关联。
-B/C 的完整输出必须各自等于冷算参考；任何差异都失败，不放宽容限。
+该原始CLI仍要求B/C完整输出等于冷算参考，差异会失败；它尚未实现新逻辑题判定。
 同时检查 D 实际 P/D 来源、Graph、全额度归还、显式 free 和超时 fail-stop。
 
 日志位于两机 `/home/cryang/log/mempool-min/ticket03-001/`。
@@ -175,7 +142,7 @@ B/C 的完整输出必须各自等于冷算参考；任何差异都失败，不�
 
 ## D 本地验证与剩余验收
 
-Mac 最终版本完整 CPU 套件 453/453 通过，38.513 秒。
+首次交付时Mac完整CPU套件453/453通过，38.513秒。
 12 个功能/验收模块 strict mypy 通过。
 23 个 Python 文件通过 lint、format、isort、Python 3.9 AST。
 入口 CPU 测试保留真实子进程的启动/回收，仅替换外部 NPU 程序。
@@ -188,6 +155,8 @@ Standards 的 1 项进度摘要问题已修复，并同步 Markdown/HTML。
 [review 记录](verification/ticket03-cpu-20261026/review.md)分别报告两轴结果。
 本地 CPU 使用 Python 3.12；mypy 按 3.10 检查，另做 3.9 语法兼容检查。
 
-本机无 NPU；用户首轮硬件验收在 C 输出比较处失败，尚待诊断和重测。
+本机无NPU；001首轮C输出失败保留，后续007归约定位与用户接受范围见收口记录。
+当前03已关闭；本次清理没有新增NPU验证，结果见[ticket03清理说明](ticket03-cleanup.md)。
+
 物理 NUMA 落点沿用既有未验证标记，不改变 ticket02 已记录的限制。
 本轮不是完整阶段 0 验收；E、完整拒绝矩阵与组合演示留给 04。

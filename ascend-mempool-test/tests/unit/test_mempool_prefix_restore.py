@@ -147,7 +147,7 @@ class TestPrefillRestore(unittest.TestCase):
         )
         pool = native_methods(pool)
         pages.get_kvcache = lambda: pool
-        restore = PrefillRestore(pages, store, force_noncontiguous=True)
+        restore = PrefillRestore(pages, store, verify_boundaries=True)
         request = dict(rid="C", room=3, input_ids=[7] * 4096, hit_len=3968)
         restore.begin_request(request, slot=5)
         req = SimpleNamespace(rid="C", bootstrap_room=3, origin_input_ids=[7] * 4096)

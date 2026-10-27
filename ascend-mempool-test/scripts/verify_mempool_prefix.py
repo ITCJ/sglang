@@ -269,7 +269,6 @@ def check_rank(
     published: list[dict[str, Any]],
     retained: dict[str, str],
     restored: bool = False,
-    delay_fill: bool = True,
 ) -> None:
     done = snapshot["completed"][-1]
     rid, room = done["rid"], done["room"]
@@ -286,10 +285,6 @@ def check_rank(
     alive_native_order = (
         native_line < alive_line if restored else alive_line < native_line
     )
-    if restored and not delay_fill:
-        alive_native_order = (
-            True  # Independent fill may complete on either side of native free.
-        )
     if (
         set(alive["pages"]) != set(map(str, expected_sources))
         or alive["source_pages"] != expected_sources

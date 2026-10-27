@@ -23,9 +23,6 @@ REPO = SCRIPTS.parents[1]
 sys.path.insert(0, str(REPO / "ascend-mempool-test/src"))
 
 import msgspec
-import replay_mempool_reuse as replay
-import summarize_mempool_post_attention
-import summarize_mempool_reuse
 import verify_mempool_min
 import verify_mempool_prefix
 import verify_mempool_reuse
@@ -54,10 +51,6 @@ else:
         RUN_ENV,
         RouterConfig,
     )
-
-REUSE_DEBUG_ENV = "SGLANG_NPU_MEMPOOL_DEBUG_REUSE"
-POST_DEBUG_ENV = "SGLANG_NPU_MEMPOOL_DEBUG_POST_DIR"
-POST_CPU_BYTES_PER_RANK = 320 * 2**20  # 256 MiB snapshots + 64 MiB scratch.
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -98,13 +91,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--role", choices=("prefill", "decode"), required=True)
     parser.add_argument(
         "--mode",
-        choices=(
-            "serve",
-            "acceptance",
-            "prefix-acceptance",
-            "reuse-acceptance",
-            "reuse-diagnostic",
-        ),
+        choices=("serve", "acceptance", "prefix-acceptance", "reuse-acceptance"),
         required=True,
     )
     parser.add_argument("--config", type=Path, required=True)
@@ -113,42 +100,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--log-root", type=Path, default=Path("/home/cryang/log/mempool-min")
     )
     parser.add_argument("--describe", action="store_true")
-    parser.add_argument(
-        "--replay-run",
-        help="existing run whose saved ABC payloads are replayed exactly",
-    )
-    parser.add_argument("--force-noncontiguous-restore", action="store_true")
-    parser.add_argument("--delay-prefix-fill", action="store_true")
-    parser.add_argument(
-        "--diagnose-post-attention",
-        action="store_true",
-        help="record reduction/norm/MLP boundaries and same-input controls on P",
-    )
-    parser.add_argument(
-        "--diagnose-reuse",
-        action="store_true",
-        help="temporarily compare P-side cold/reused tails and kernel metadata",
-    )
     args = parser.parse_args(argv)
-    if args.diagnose_post_attention and args.mode != "reuse-diagnostic":
-        parser.error("--diagnose-post-attention requires --mode reuse-diagnostic")
-    if args.diagnose_reuse and args.mode not in (
-        "reuse-acceptance",
-        "reuse-diagnostic",
-    ):
-        parser.error("--diagnose-reuse requires a reuse mode")
-    if args.mode == "reuse-diagnostic":
-        args.diagnose_reuse = True
-        if not args.replay_run or not re.fullmatch(
-            r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", args.replay_run
-        ):
-            parser.error(
-                "reuse-diagnostic requires --replay-run with a simple directory name"
-            )
-        if args.replay_run == args.run_id:
-            parser.error("diagnostic replay requires a new run-id")
-    elif args.replay_run or args.force_noncontiguous_restore or args.delay_prefix_fill:
-        parser.error("replay and independent controls require --mode reuse-diagnostic")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", args.run_id):
         parser.error("run-id must be a simple new directory name")
     if not args.log_root.resolve().is_relative_to(Path("/home/cryang/log").resolve()):
@@ -164,8 +116,6 @@ def service_environment(
     for name in (
         CONFIG_ENV,
         RUN_ENV,
-        REUSE_DEBUG_ENV,
-        POST_DEBUG_ENV,
         "http_proxy",
         "https_proxy",
         "HTTP_PROXY",
@@ -197,20 +147,10 @@ def service_environment(
     )
     if target:
         env[CONFIG_ENV], env[RUN_ENV] = str(args.config), args.run_id
-        if getattr(args, "diagnose_reuse", False) and args.role == "prefill":
-            env[REUSE_DEBUG_ENV] = "1"
-            if getattr(args, "diagnose_post_attention", False):
-                env[POST_DEBUG_ENV] = str(root / "post-attention")
     return env
 
 
-def memory_budget(
-    config: RouterConfig,
-    role: str,
-    *,
-    diagnose_reuse: bool = False,
-    diagnose_post_attention: bool = False,
-) -> dict[str, int]:
+def memory_budget(config: RouterConfig, role: str) -> dict[str, int]:
     layout = MempoolConfig(
         prefill_capacity=config.prompt_capacity,
         decode_capacity=config.decode_capacity,
@@ -238,23 +178,9 @@ def memory_budget(
         ) // layout.prompt.slots
         references += layout.prefix_main.total_bytes + layout.prefix_index.total_bytes
         scratch = 2 * config.prompt_capacity * layout.prompt.row_bytes
-        if diagnose_reuse:
-            # One cloned cold tail page per rank; reductions use bounded CPU scratch.
-            references += config.page_size * (
-                layout.prompt.layers * layout.prompt.row_bytes
-                + layout.prompt_index.layers * layout.prompt_index.row_bytes
-            )
-            references += 64 * 2**20  # Bounded layer-0 CPU checkpoints per rank.
-        if diagnose_post_attention:
-            references += POST_CPU_BYTES_PER_RANK
         verification = 16 * ((references + scratch + 2**30 - 1) // 2**30) * 2**30
     return dict(
-        bm_bytes=bm,
-        verification_bytes=verification,
-        required_bytes=bm + verification,
-        post_attention_bytes_per_rank=POST_CPU_BYTES_PER_RANK
-        if rank == 0 and diagnose_post_attention
-        else 0,
+        bm_bytes=bm, verification_bytes=verification, required_bytes=bm + verification
     )
 
 
@@ -277,7 +203,6 @@ class Runner:
     ) -> None:
         self.args, self.config, self.peer, self.root = args, config, peer, root
         self.is_p = args.role == "prefill"
-        self.diagnostic = args.mode == "reuse-diagnostic"
         self.host = config.prefill_host if self.is_p else config.decode_host
         self.report: dict[str, Any] = dict(
             status="running",
@@ -293,46 +218,6 @@ class Runner:
         )
         self.cases: list[dict[str, Any]] = []
         self.reference: list[dict[str, Any]] = []
-        if self.diagnostic:
-            self.report.update(
-                purpose=replay.PURPOSE,
-                full_acceptance=False,
-                controls={key: getattr(config, key) for key in replay.CONTROLS},
-            )
-
-    def replay_source(self, identity: dict[str, Any]) -> None:
-        source_root = self.args.log_root / self.args.replay_run
-        local = replay.load_source(source_root, self.args.role)
-        replay.validate_identity(local["identity"], identity)
-        cases = local.pop("cases")
-        local["payload_sha256"] = replay.payload_digest(cases) if self.is_p else None
-        self.peer.send("replay-source", value=local)
-        remote = self.peer.expect("replay-source")["value"]
-        if local["identity"] != remote["identity"]:
-            raise ValueError("P/D saved source identities differ")
-        case_file = self.root / "cases.json"
-        if self.is_p:
-            write_json(case_file, cases)
-            send_log(self.peer, case_file)
-        else:
-            receive_log(self.peer, case_file)
-            cases = json.loads(case_file.read_text())
-        self.cases = cases
-        replay.validate_cases(self.cases)
-        digest = replay.payload_digest(self.cases)
-        if digest != (local if self.is_p else remote)["payload_sha256"]:
-            raise ValueError("replayed payload changed during peer transfer")
-        provenance = dict(
-            purpose=replay.PURPOSE,
-            source_run=self.args.replay_run,
-            source_root=str(source_root),
-            source_identity=local["identity"],
-            payload_sha256=digest,
-            files_sha256={**local["files_sha256"], **remote["files_sha256"]},
-            retokenized=False,
-        )
-        write_json(self.root / "replay-source.json", provenance)
-        self.report["replay_source"] = provenance
 
     def preflight(self) -> None:
         if self.config.interface not in {name for _, name in socket.if_nameindex()}:
@@ -361,11 +246,6 @@ class Runner:
         identity = dict(
             run_id=self.args.run_id,
             mode=self.args.mode,
-            diagnose_reuse=getattr(self.args, "diagnose_reuse", False),
-            diagnose_post_attention=getattr(
-                self.args, "diagnose_post_attention", False
-            ),
-            replay_run=getattr(self.args, "replay_run", None),
             # Peer sends JSON, which turns tuple fields such as numa_nodes into
             # lists. Compare the same wire representation on both sides.
             config=json.loads(msgspec.json.encode(self.config)),
@@ -405,22 +285,13 @@ class Runner:
             raise ValueError(
                 f"P/D identity mismatch: {fields}; see {self.root / 'identity-diff.json'}"
             )
-        if self.diagnostic:
-            self.replay_source(identity)
         meminfo = Path("/proc/meminfo").read_text()
         (self.root / "meminfo.txt").write_text(meminfo)
         match = re.search(r"^MemAvailable:\s+(\d+)", meminfo, re.M)
         if match is None:
             raise ValueError("/proc/meminfo does not report MemAvailable")
         available = int(match.group(1)) * 1024
-        budget = memory_budget(
-            self.config,
-            self.args.role,
-            diagnose_reuse=getattr(self.args, "diagnose_reuse", False),
-            diagnose_post_attention=getattr(
-                self.args, "diagnose_post_attention", False
-            ),
-        )
+        budget = memory_budget(self.config, self.args.role)
         self.report["memory_budget"] = budget
         write_json(self.root / "memory-budget.json", budget)
         required = budget["required_bytes"]
@@ -765,18 +636,9 @@ class Runner:
                         target
                         and result["output_ids"] != self.reference[index]["output_ids"]
                     ):
-                        if not self.diagnostic:
-                            raise ValueError(
-                                f"{case['name']}: full output IDs differ from formal reference"
-                            )
-                if target and self.diagnostic:
-                    self.report["output_comparison"] = replay.compare_outputs(
-                        self.cases, self.reference, results
-                    )
-                    write_json(
-                        root / "output-comparison.json",
-                        self.report["output_comparison"],
-                    )
+                        raise ValueError(
+                            f"{case['name']}: full output IDs differ from formal reference"
+                        )
                 deadline = time.monotonic() + 60
                 while True:
                     watch()
@@ -808,18 +670,14 @@ class Runner:
                             )
                         )
                         if target and self.config.prefix_pages:
-                            if self.config.match_prefix:
-                                evidence["prefix"] = verify_mempool_reuse.check_reuse(
-                                    root / "prefill.log",
-                                    snapshots,
-                                    self.cases,
-                                    force_noncontiguous=self.config.force_noncontiguous_restore,
-                                    delay_fill=self.config.delay_prefix_fill,
-                                )
-                            else:
-                                evidence["prefix"] = verify_mempool_prefix.check_prefix(
-                                    root / "prefill.log", snapshots, self.cases
-                                )
+                            check = (
+                                verify_mempool_reuse.check_reuse
+                                if self.config.match_prefix
+                                else verify_mempool_prefix.check_prefix
+                            )
+                            evidence["prefix"] = check(
+                                root / "prefill.log", snapshots, self.cases
+                            )
                             evidence["coverage"] = self.report["coverage"]
                         break
                     except (ValueError, RuntimeError, KeyError):
@@ -827,8 +685,6 @@ class Runner:
                             raise
                         time.sleep(1)
                 write_json(root / "evidence.json", evidence)
-                if target and self.diagnostic:
-                    self.report["target_evidence"] = evidence
                 if not target:
                     self.reference = results
                 self.peer.send("stage-control", action="done")
@@ -846,78 +702,18 @@ class Runner:
                     (root / f"{role}-normal.log").write_bytes(
                         (root / f"{role}.log").read_bytes()
                     )
-                if not self.diagnostic:
-                    self.timeout_case(jobs, server, root, base)
+                self.timeout_case(jobs, server, root, base)
         self.peer.barrier(name + "-stopped")
-        if target and not self.diagnostic:
+        if target:
             self.final_timeout_evidence(root)
         self.report["stages"].append(name)
         write_json(self.root / "summary.json", self.report)
-        if target and self.diagnostic:
-            self.finish_diagnostic(root)
-
-    def finish_diagnostic(self, root: Path) -> None:
-        # Called after both owned service groups have stopped, including when
-        # output IDs differ. Preserve independent content and probe evidence.
-        if self.is_p:
-            diagnosis = summarize_mempool_reuse.summarize(root / "prefill.log")
-            write_json(root / "reuse-diagnostic.json", diagnosis)
-            probes_ok = diagnosis["complete"] and all(
-                row["identity_ok"]
-                and row["metadata_ok"]
-                and not row["nonfinite"]
-                and all(
-                    not point["nonfinite"]
-                    for point in row["operators"]["checkpoints"].values()
-                )
-                and all(
-                    not point["nonfinite"]
-                    for point in row["operators"]["replays"].values()
-                )
-                for row in diagnosis["ranks"]
-            )
-            post_summary = None
-            if getattr(self.args, "diagnose_post_attention", False):
-                post = summarize_mempool_post_attention.summarize(
-                    root / "post-attention"
-                )
-                write_json(root / "post-attention.json", post)
-                post_summary = summarize_mempool_post_attention.compact(post)
-                probes_ok = probes_ok and post["complete"] and post["checks_ok"]
-            outputs = self.report["output_comparison"]
-            result = dict(
-                purpose=replay.PURPOSE,
-                full_acceptance=False,
-                status="passed"
-                if probes_ok and all(c["equal"] for c in outputs)
-                else "failed",
-                output_comparison=outputs,
-                probes_ok=probes_ok,
-                controls=self.report["controls"],
-                target_evidence=self.report["target_evidence"],
-                paired_process_cleanup="passed; both owned groups stopped",
-                timeout_injection="not part of this diagnostic comparison",
-            )
-            if post_summary is not None:
-                result["post_attention"] = post_summary
-            self.peer.send("diagnostic-result", value=result)
-        else:
-            result = self.peer.expect("diagnostic-result")["value"]
-        self.report.update(result)
-        write_json(root / "diagnostic-comparison.json", result)
-        print("REUSE_COMPARISON " + json.dumps(result), flush=True)
-        self.peer.barrier("diagnostic-result-saved")
-        if result["status"] != "passed":
-            failed = [c["name"] for c in result["output_comparison"] if not c["equal"]]
-            raise ValueError(
-                f"diagnostic comparison failed: output mismatches={failed}; probes_ok={result['probes_ok']}"
-            )
 
     def run(self) -> None:
         self.preflight()
         if self.args.mode != "serve":
             self.components()
-            if self.is_p and not self.diagnostic:
+            if self.is_p:
                 fixtures = (
                     verify_mempool_reuse
                     if self.config.match_prefix
@@ -947,15 +743,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     config = RouterConfig.read(str(args.config))
     root = args.log_root / args.run_id / args.role
     requested = msgspec.to_builtins(config)
-    if args.mode in ("prefix-acceptance", "reuse-acceptance", "reuse-diagnostic"):
+    if args.mode in ("prefix-acceptance", "reuse-acceptance"):
         config = msgspec.structs.replace(
             config,
             prefix_pages=40,
             verify_prefix=True,
-            match_prefix=args.mode != "prefix-acceptance",
-            force_noncontiguous_restore=args.mode == "reuse-acceptance"
-            or args.force_noncontiguous_restore,
-            delay_prefix_fill=args.mode == "reuse-acceptance" or args.delay_prefix_fill,
+            match_prefix=args.mode == "reuse-acceptance",
         )
     elif args.mode == "acceptance" and config.prefix_pages:
         raise ValueError(
@@ -970,21 +763,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                     mode=args.mode,
                     config=msgspec.to_builtins(config),
                     logs=str(root),
-                    memory_budget=memory_budget(
-                        config,
-                        args.role,
-                        diagnose_reuse=args.diagnose_reuse,
-                        diagnose_post_attention=args.diagnose_post_attention,
+                    memory_budget=memory_budget(config, args.role),
+                    acceptance_controls=(
+                        "one skipped allocator page; fill submitted after native_freed"
+                        if config.match_prefix and config.verify_prefix
+                        else "none"
                     ),
-                    diagnose_reuse=args.diagnose_reuse,
-                    diagnose_post_attention=args.diagnose_post_attention,
-                    replay_run=args.replay_run,
-                    purpose=replay.PURPOSE
-                    if args.mode == "reuse-diagnostic"
-                    else args.mode,
-                    acceptance_controls={
-                        key: getattr(config, key) for key in replay.CONTROLS
-                    },
                     stages=[
                         "paired preflight",
                         "P-only/D-only/mixed NPU fetch",
@@ -994,9 +778,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         if config.prefix_pages
                         else "formal reference 4096+128",
                         "Main/SR target and cleanup",
-                        "strict ABC diagnostic verdict; not full acceptance"
-                        if args.mode == "reuse-diagnostic"
-                        else "timeout/fail-stop and paired cleanup",
+                        "timeout/fail-stop and paired cleanup",
                     ]
                     if args.mode != "serve"
                     else ["paired preflight", "Main and P/D persistent services"],
@@ -1009,7 +791,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     target_environment={
                         k: v
                         for k, v in service_environment(
-                            config, args, root / "target", target=True
+                            config, args, root, target=True
                         ).items()
                         if k
                         in (
@@ -1021,8 +803,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                             "PAGE_SIZE",
                             "MAX_TOTAL_TOKENS",
                             "SKIP_SERVER_WARMUP",
-                            REUSE_DEBUG_ENV,
-                            POST_DEBUG_ENV,
                         )
                     },
                 ),
@@ -1066,38 +846,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(report["error"], file=sys.stderr)
         return 1
     finally:
-        if args.diagnose_reuse and args.role == "prefill":
-            try:
-                diagnosis = summarize_mempool_reuse.summarize(
-                    root / "target" / "prefill.log"
-                )
-                write_json(root / "target" / "reuse-diagnostic.json", diagnosis)
-                report["reuse_diagnostic"] = diagnosis
-                summarize_mempool_reuse.print_summary(diagnosis)
-            except Exception as exc:
-                # Preserve the original acceptance failure even if collection fails.
-                report["reuse_diagnostic"] = dict(error=f"{type(exc).__name__}: {exc}")
-        if args.diagnose_post_attention and args.role == "prefill":
-            try:
-                post_path = root / "target" / "post-attention.json"
-                post = (
-                    json.loads(post_path.read_text())
-                    if post_path.exists()
-                    else summarize_mempool_post_attention.summarize(
-                        root / "target" / "post-attention"
-                    )
-                )
-                write_json(post_path, post)
-                report["post_attention"] = summarize_mempool_post_attention.compact(
-                    post
-                )
-                summarize_mempool_post_attention.print_summary(post)
-            except Exception as exc:
-                report["post_attention"] = dict(
-                    complete=False,
-                    checks_ok=False,
-                    error=f"{type(exc).__name__}: {exc}",
-                )
         write_json(root / "summary.json", report)
         if args.role == "prefill":
             write_json(root.parent / "summary.json", report)

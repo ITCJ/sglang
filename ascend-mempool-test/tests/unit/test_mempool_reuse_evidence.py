@@ -11,67 +11,6 @@ import verify_mempool_reuse as verifier
 
 
 class TestReuseEvidence(unittest.TestCase):
-    def test_controls_are_independent_without_weakening_content_checks(self):
-        for noncontiguous, delayed in (
-            (False, False),
-            (True, False),
-            (False, True),
-            (True, True),
-        ):
-            with (
-                self.subTest(noncontiguous=noncontiguous, delayed=delayed),
-                tempfile.TemporaryDirectory() as folder,
-            ):
-                data, cases, records = fixtures.TestPrefixEvidence().evidence(
-                    reuse=True, noncontiguous=noncontiguous, delayed=delayed
-                )
-                path = Path(folder) / "prefill.log"
-                path.write_text("\n".join(records))
-                result = verifier.check_reuse(
-                    path,
-                    data,
-                    cases,
-                    force_noncontiguous=noncontiguous,
-                    delay_fill=delayed,
-                )
-                self.assertEqual(result["noncontiguous_native_mapping"], noncontiguous)
-                self.assertEqual(result["native_free_before_fill"], delayed)
-                if not (noncontiguous and delayed):
-                    with self.assertRaises(ValueError):
-                        verifier.check_reuse(path, data, cases)
-                # Content and readiness remain strict even with both controls off.
-                for defect in ("content", "early_ready", "hit", "occupancy"):
-                    corrupted, snapshots = list(records), copy.deepcopy(data)
-                    if defect in ("content", "early_ready"):
-                        marker = (
-                            '"stage": "fill"'
-                            if defect == "content"
-                            else "mempool prefix_progress"
-                        )
-                        index = next(
-                            i for i, line in enumerate(corrupted) if marker in line
-                        )
-                        prefix, raw = corrupted[index].split("data=", 1)
-                        value = json.loads(raw)
-                        if defect == "content":
-                            value["pages"]["0"] = "f" * 64
-                        else:
-                            value["ready_tokens"] += 128
-                        corrupted[index] = prefix + "data=" + json.dumps(value)
-                    elif defect == "hit":
-                        snapshots[2]["completed"][-1]["hit_len"] = 4096
-                    else:
-                        snapshots[2]["ledger"]["p_prefix"]["free"] = 1
-                    path.write_text("\n".join(corrupted))
-                    with self.subTest(defect=defect), self.assertRaises(ValueError):
-                        verifier.check_reuse(
-                            path,
-                            snapshots,
-                            cases,
-                            force_noncontiguous=noncontiguous,
-                            delay_fill=delayed,
-                        )
-
     def test_actual_main_history_and_all_rank_content_with_corruptions(self):
         snapshots, cases, lines = fixtures.TestPrefixEvidence().evidence(reuse=True)
         with tempfile.TemporaryDirectory() as folder:

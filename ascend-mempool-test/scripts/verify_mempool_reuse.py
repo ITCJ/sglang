@@ -17,12 +17,7 @@ def make_cases(model_path: str, page_size: int) -> list[dict[str, Any]]:
 
 
 def check_reuse(
-    prefill: Path,
-    snapshots: list[dict[str, Any]],
-    cases: list[dict[str, Any]],
-    *,
-    force_noncontiguous: bool = True,
-    delay_fill: bool = True,
+    prefill: Path, snapshots: list[dict[str, Any]], cases: list[dict[str, Any]]
 ) -> dict[str, Any]:
     if len(snapshots) != 3 or len(cases) != 3:
         raise ValueError("reuse acceptance requires exactly A/B/C")
@@ -40,7 +35,6 @@ def check_reuse(
     retained: dict[int, dict[str, str]] = {rank: {} for rank in range(16)}
     previous: dict[str, Any] = {}
     base_hashes: list[str] = []
-    observations = []
     for snapshot, case, hit, added, total in zip(
         snapshots, cases, (0, 4096, 3968), (32, 8, 0), (32, 40, 40)
     ):
@@ -67,26 +61,22 @@ def check_reuse(
             directory=directory, previous=previous, published=published
         )
         if hit:
-            check_operations(done, delay_fill=delay_fill)
+            check_operations(done)
         elif done["reads"]:
             raise ValueError("cold A unexpectedly restored a prefix")
         else:
             base_hashes = [item["hash"] for item in published]
         for rank in range(16):
             if hit:
-                observations.append(
-                    check_restored_rank(
-                        reports,
-                        progress,
-                        snapshot,
-                        previous,
-                        base_hashes,
-                        retained[rank],
-                        rank,
-                        len(case["input_ids"]),
-                        force_noncontiguous=force_noncontiguous,
-                        delay_fill=delay_fill,
-                    )
+                check_restored_rank(
+                    reports,
+                    progress,
+                    snapshot,
+                    previous,
+                    base_hashes,
+                    retained[rank],
+                    rank,
+                    len(case["input_ids"]),
                 )
             saved.check_rank(
                 reports=reports,
@@ -99,7 +89,6 @@ def check_reuse(
                 published=published,
                 retained=retained[rank],
                 restored=bool(hit),
-                delay_fill=delay_fill,
             )
         previous = {key: node["prefix"] for key, node in directory.items()}
     if reports.consumed != set(reports.contents):
@@ -117,19 +106,14 @@ def check_reuse(
         ranks=16,
         main_layers=78,
         index_layers=21,
-        noncontiguous_native_mapping=all(
-            o["noncontiguous_native_mapping"] for o in observations
-        ),
-        native_free_before_fill=all(o["native_free_before_fill"] for o in observations),
+        noncontiguous_native_mapping=True,
+        native_free_before_fill=True,
         contents="original saved prefix == restored native == fill; computed suffix == alive",
-        controls=dict(
-            force_noncontiguous_restore=force_noncontiguous,
-            delay_prefix_fill=delay_fill,
-        ),
+        acceptance_controls="one skipped allocator page; fill submitted after native_freed",
     )
 
 
-def check_operations(done: dict[str, Any], *, delay_fill: bool = True) -> None:
+def check_operations(done: dict[str, Any]) -> None:
     trace, reads = done["trace"], done["reads"]
     if set(reads) != {"load_back", "fill"}:
         raise ValueError("reuse requires two distinct prefix reads")
@@ -183,6 +167,7 @@ def check_operations(done: dict[str, Any], *, delay_fill: bool = True) -> None:
         < pos("prefix_protect", fill)
         < pos("fill")
         < pos("prefix_unprotect", load)
+        < pos("native_freed")
         < pos("fill_ack")
         < pos("prefix_unprotect", fill)
         < pos("ready_tokens")
@@ -190,10 +175,6 @@ def check_operations(done: dict[str, Any], *, delay_fill: bool = True) -> None:
         raise ValueError(
             "restore, independent fill, native free and ready lack causal ordering"
         )
-    if not pos("prefix_unprotect", load) < pos("native_freed"):
-        raise ValueError("native pages freed before restore protection was released")
-    if delay_fill and not pos("native_freed") < pos("fill_ack"):
-        raise ValueError("delayed fill did not wait for native free")
 
 
 def check_restored_rank(
@@ -205,10 +186,7 @@ def check_restored_rank(
     retained: dict[str, str],
     rank: int,
     prompt: int,
-    *,
-    force_noncontiguous: bool = True,
-    delay_fill: bool = True,
-) -> dict[str, bool]:
+) -> None:
     done = snapshot["completed"][-1]
     hit, rid = done["hit_len"], done["rid"]
     slot = done["allocations"]["prefill"][rank]["slot"]
@@ -221,7 +199,6 @@ def check_restored_rank(
         str(i): retained[str(p["logical_page"])] for i, p in enumerate(source_pages)
     }
     lines = {}
-    noncontiguous = False
     for kind, operation in done["reads"].items():
         command, receipt = operation["command"], operation["ack"]["ranks"][rank]
         line, content = reports.content(stage=kind, **identity)
@@ -260,22 +237,15 @@ def check_restored_rank(
                 or any(
                     indices[i] != indices[i // 128 * 128] + i % 128 for i in range(hit)
                 )
+                or all(
+                    indices[i] == indices[i - 128] + 128 for i in range(128, hit, 128)
+                )
             ):
-                raise ValueError("load_back lacks valid complete native pages")
-            noncontiguous = any(
-                indices[i] != indices[i - 128] + 128 for i in range(128, hit, 128)
-            )
-            if force_noncontiguous and not noncontiguous:
-                raise ValueError("load_back lacks forced noncontiguous native pages")
-    if not (
-        lines["load_back"] < suffix_line < native_line
-        and lines["load_back"] < lines["fill"] < alive_line
-        and suffix_line < alive_line
-    ):
+                raise ValueError(
+                    "load_back lacks actual noncontiguous complete native pages"
+                )
+    if not lines["load_back"] < suffix_line < native_line < lines["fill"] < alive_line:
         raise ValueError("suffix/native free/fill order was not demonstrated")
-    native_before_fill = native_line < lines["fill"]
-    if delay_fill and not native_before_fill:
-        raise ValueError("delayed fill completed before native free")
     suffix_pages = list(range(hit // 128, prompt // 128))
     if (
         suffix["op_id"] != 0
@@ -306,16 +276,8 @@ def check_restored_rank(
             and value["native_freed"]
             and native_line < line < lines["fill"]
         )
-        complete |= (
-            count == prompt - hit
-            and filled
-            and (value["native_freed"] or not delay_fill)
-        )
-    if not complete or (delay_fill and not pending):
+        complete |= count == prompt - hit and filled and value["native_freed"]
+    if not pending or not complete:
         raise ValueError(
             "missing native-free/suffix-complete progress while fill was pending"
         )
-    return dict(
-        noncontiguous_native_mapping=noncontiguous,
-        native_free_before_fill=native_before_fill,
-    )

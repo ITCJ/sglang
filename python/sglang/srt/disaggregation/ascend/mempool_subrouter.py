@@ -187,11 +187,7 @@ class RouterShard:
             self.identity = message.request
             if self.prefix is not None:
                 self.prefix.begin_request(
-                    rid=request["rid"],
-                    slot=slot,
-                    tokens=request["prompt_tokens"],
-                    input_ids=request["input_ids"],
-                    hit_len=request.get("hit_len", 0),
+                    rid=request["rid"], slot=slot, tokens=request["prompt_tokens"]
                 )
             if self.restore is not None:
                 self.restore.begin_request(request, slot=slot)
@@ -309,7 +305,7 @@ class RouterShard:
             raise RuntimeError("fill cannot precede completed load_back")
         # Acceptance forces the native-free-before-fill boundary on every rank.
         # Main already protects these prefix sources while submission is delayed.
-        if restore.delay_fill and (
+        if restore.verify_boundaries and (
             not restore.native_freed or "native_freed" not in self.sent_events
         ):
             return None

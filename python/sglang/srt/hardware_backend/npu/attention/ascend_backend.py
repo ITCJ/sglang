@@ -1247,19 +1247,6 @@ class AscendAttnBackend(AttentionBackend):
 
         if (
             is_prefill
-            and self.mempool_runtime is not None
-            and self.mempool_runtime.prefix_store is not None
-        ):
-            self.mempool_runtime.prefix_store.debug_forward(
-                forward_batch,
-                block_table=self.forward_metadata.block_tables,
-                query_lengths=actual_seq_qlen,
-                kv_lengths=actual_seq_lengths_kv,
-                pool=self.token_to_kv_pool,
-            )
-
-        if (
-            is_prefill
             and is_dsa_enable_prefill_cp()
             and forward_batch.attn_cp_metadata is not None
         ):
@@ -1307,7 +1294,7 @@ class AscendAttnBackend(AttentionBackend):
                     rope_head_dim=self.qk_rope_head_dim,
                 )
             else:
-                sparse_kwargs = dict(
+                attn_out, _, _ = torch_npu.npu_sparse_flash_attention(
                     query=q_nope,
                     key=k_nope,
                     value=k_nope,
@@ -1329,18 +1316,6 @@ class AscendAttnBackend(AttentionBackend):
                     attention_mode=2,
                     return_softmax_lse=False,
                 )
-                attn_out, _, _ = torch_npu.npu_sparse_flash_attention(**sparse_kwargs)
-                if (
-                    is_prefill
-                    and self.mempool_runtime is not None
-                    and self.mempool_runtime.prefix_store is not None
-                ):
-                    self.mempool_runtime.prefix_store.debug_attention(
-                        layer.layer_id,
-                        sparse_kwargs,
-                        attn_out,
-                        torch_npu.npu_sparse_flash_attention,
-                    )
 
         return attn_out
 

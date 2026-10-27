@@ -1,0 +1,19 @@
+lint
+All checks passed!
+
+
+format
+17 files already formatted
+
+
+types
+ascend-mempool-test/pyproject.toml: [mypy]: python_version: Python 3.9 is not supported (must be 3.10 or higher)
+Success: no issues found in 9 source files
+
+
+isort-source
+
+
+isort-tests
+
+Python 3.9 AST: 17 files passed

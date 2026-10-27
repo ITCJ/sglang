@@ -16,10 +16,7 @@ from sglang.srt.layers.attention.dsa.utils import (
     dsa_use_prefill_cp,
 )
 from sglang.srt.layers.communicator import ScatterMode, get_attn_tp_context
-from sglang.srt.model_executor.forward_context import (
-    get_attn_backend,
-    get_token_to_kv_pool,
-)
+from sglang.srt.model_executor.forward_context import get_token_to_kv_pool
 from sglang.srt.runtime_context import get_disagg
 
 if TYPE_CHECKING:
@@ -28,23 +25,6 @@ if TYPE_CHECKING:
     from sglang.srt.utils import BumpAllocator
 _use_ag_after_qlora = envs.SGLANG_USE_AG_AFTER_QLORA.get()
 _is_npu_arch35 = is_npu_arch35()
-
-
-def _reuse_checkpoint(
-    m: "DeepseekV2AttentionMLA",
-    forward_batch: "ForwardBatch",
-    name: str,
-    values: torch.Tensor,
-) -> None:
-    """Temporary P-only probes for the first layer and the following layer input."""
-    if m.layer_id not in (0, 1) or (m.layer_id == 1 and name != "input"):
-        return
-    if not forward_batch.forward_mode.is_extend_without_speculative():
-        return
-    runtime = getattr(get_attn_backend(), "mempool_runtime", None)
-    prefix = getattr(runtime, "prefix_store", None)
-    if prefix is not None:
-        prefix.debug_checkpoint(m.layer_id, name, values)
 
 
 # region MHA
@@ -396,7 +376,6 @@ def forward_dsa_prepare_npu(
         raise ValueError(
             f"DSA shared layer {m.layer_id} requires top-k from this forward's producer"
         )
-    _reuse_checkpoint(m, forward_batch, "input", hidden_states)
     dynamic_scale = None
     mla_preprocess_used = (
         is_mla_preprocess_enabled()
@@ -593,9 +572,7 @@ def forward_dsa_core_npu(
 
     if gate is not None:
         attn_bmm_output = m._apply_gated(attn_bmm_output, gate)
-    _reuse_checkpoint(m, forward_batch, "value_projection", attn_bmm_output)
     output, _ = m.o_proj(attn_bmm_output)
-    _reuse_checkpoint(m, forward_batch, "output_projection", output)
     if not m.next_skip_topk:
         return output, None
     else:

@@ -5,8 +5,11 @@ template: doc
 theme: blueprint
 lang: zh
 date: 2026-10-27
-status: 007定位归约差异；用户接受功能范围关闭03，旧严格输出失败保留
+status: 历史诊断归档；探针与入口已按用户要求移除
 ---
+
+**本页保留历史实验说明。当前代码已移除探针和reuse-diagnostic入口，下列命令不再可用。**
+历史实验基于d9ba311dd4，结果和关闭依据继续保留；清理范围见[ticket03清理说明](ticket03-cleanup.md)。
 
 005 在取消强制非连续页和延迟 fill 后仍复现 C 的 output[15] 分叉。
 006在首个A的_layer0_pre配置摘要中触发8MiB限制，没有得到算子对比结果。
@@ -18,7 +21,7 @@ status: 007定位归约差异；用户接受功能范围关闭03，旧严格输�
 原C output[15]差异和旧failed报告保留；未运行新一轮硬件或端到端归约干预。
 
 [回传与收口](verification/ticket03-007-20261027/closure.md)记录实际覆盖与未执行项。
-[新输出约定](output-verification-policy.md)由04实现；下列命令保留为历史复现入口，仍执行旧严格比较。
+[新输出约定](output-verification-policy.md)由04实现；下列命令仅描述历史提交的诊断操作。
 
 ## A 同一轮记录什么
 
@@ -102,9 +105,9 @@ complete只表示记录完整；checks_ok还要求映射、副本、有限值、
 
 | 顺序 | 文件 | 作用 |
 |---|---|---|
-| 1 | [debug_post_attention.py](../../python/sglang/srt/hardware_backend/npu/mempool/debug_post_attention.py) | 安装边界hooks、保存逻辑位置/副本摘要并执行同输入控制 |
+| 1 | `debug_post_attention.py` | 安装边界hooks、保存逻辑位置/副本摘要并执行同输入控制 |
 | 2 | [mempool_router_transport.py](../../python/sglang/srt/disaggregation/ascend/mempool_router_transport.py) | 仅在P的显式诊断环境下绑定已有模型与prefix探针 |
-| 3 | [summarize_mempool_post_attention.py](../../ascend-mempool-test/scripts/summarize_mempool_post_attention.py) | 跨rank逻辑行对齐、控制比较、映射及副本检查和终端摘要 |
+| 3 | `summarize_mempool_post_attention.py` | 跨rank逻辑行对齐、控制比较、映射及副本检查和终端摘要 |
 | 4 | [run_mempool_min.py](../../ascend-mempool-test/scripts/run_mempool_min.py) | 新开关、身份/预算核对、自动采集和严格失败判定 |
 
 前两项功能变更均在npu/ascend目录。

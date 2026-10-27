@@ -5,10 +5,17 @@ template: doc
 theme: blueprint
 lang: zh
 date: 2026-10-27
-status: 诊断对照入口已实现；等待用户运行 NPU
+status: 005历史诊断归档；独立控制与诊断入口已移除
 ---
 
-本轮重放 ticket03-004 保存的原始 ABC，请求不重新分词。
+**本页以下正文记录005时的实验、命令和当时状态，不能作为当前运行说明。**
+对应实现提交为1c0280132c；当前代码已移除reuse-diagnostic和两个独立控制。
+
+03现已按用户接受范围关闭，04解除直接阻塞；原失败证据保留。
+当前代码范围见[ticket03清理说明](ticket03-cleanup.md)，005结果见
+[用户回传](verification/ticket03-005-20261027/user-results.json)。
+
+当时重放 ticket03-004 保存的原始 ABC，请求不重新分词。
 默认关闭强制非连续页、延迟 fill，使用正常恢复分配与调度。
 内容校验与首层诊断探针保持开启，严格比较每个用例的完整 output IDs。
 即使输出分叉，也先收齐 ABC 内容、命中和占用证据，再清理两机自己的进程并非零退出。
@@ -97,7 +104,7 @@ complete=true 仍只表示探针记录完整；诊断 passed 也不关闭票。
 | 3 | [mempool_subrouter.py](../../python/sglang/srt/disaggregation/ascend/mempool_subrouter.py) | 仅按调度控制决定 fill 是否等待 native free |
 | 4 | [mempool_router_transport.py](../../python/sglang/srt/disaggregation/ascend/mempool_router_transport.py) | 安装独立配置并注册每 rank 控制值 |
 | 5 | [mempool_router.py](../../python/sglang/srt/disaggregation/ascend/mempool_router.py) | 拒绝各 rank 不一致的控制配置 |
-| 6 | [replay_mempool_reuse.py](../../ascend-mempool-test/scripts/replay_mempool_reuse.py) | 读取并验证保存的请求/身份，严格输出比较 |
+| 6 | `replay_mempool_reuse.py` | 读取并验证保存的请求/身份，严格输出比较 |
 | 7 | [verify_mempool_reuse.py](../../ascend-mempool-test/scripts/verify_mempool_reuse.py) | 按独立控制核对边界，保留全部内容和占用要求 |
 | 8 | [verify_mempool_prefix.py](../../ascend-mempool-test/scripts/verify_mempool_prefix.py) | 普通恢复允许 fill/alive 与 native free 的实际先后关系 |
 | 9 | [run_mempool_min.py](../../ascend-mempool-test/scripts/run_mempool_min.py) | 配对运行、原请求分块传输、证据采集、清理和最终判定 |

@@ -43,8 +43,6 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     prefix_pages: int = 0
     verify_prefix: bool = False
     match_prefix: bool = False
-    force_noncontiguous_restore: bool = False
-    delay_prefix_fill: bool = False
 
     def __post_init__(self) -> None:
         if type(self.match_prefix) is not bool or (
@@ -57,10 +55,6 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
             self.verify_prefix and not self.prefix_pages
         ):
             raise ValueError("verify_prefix requires enabled prefix storage")
-        for name in ("force_noncontiguous_restore", "delay_prefix_fill"):
-            value = getattr(self, name)
-            if type(value) is not bool or (value and not self.match_prefix):
-                raise ValueError(f"{name} requires prefix matching")
         if (
             not self.prefill_host
             or not self.decode_host

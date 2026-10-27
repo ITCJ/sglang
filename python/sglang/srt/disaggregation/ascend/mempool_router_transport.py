@@ -108,16 +108,6 @@ def attach_subrouter(
     if native is not None:
         rows.mempool_reservations = native
     prefix = getattr(runtime, "prefix_store", None)
-    if role == "prefill" and os.environ.get("SGLANG_NPU_MEMPOOL_DEBUG_POST_DIR"):
-        from sglang.srt.hardware_backend.npu.mempool.debug_post_attention import (
-            install_post_attention,
-        )
-
-        if prefix is None:
-            raise ValueError("post-attention tracing requires prefix storage")
-        prefix.debug_post_probe = install_post_attention(
-            scheduler.tp_worker.model_runner.model, prefix.debug_probe
-        )
     if config.prefix_pages:
         layout = runtime.manager.layout
         if (
@@ -142,10 +132,7 @@ def attach_subrouter(
         if prefix is None:
             raise ValueError("prefix restore requires local storage")
         restore = PrefillRestore(
-            allocator,
-            prefix,
-            force_noncontiguous=config.force_noncontiguous_restore,
-            delay_fill=config.delay_prefix_fill,
+            allocator, prefix, verify_boundaries=config.verify_prefix
         )
         install_prefill_cache(scheduler, restore)
     shard = RouterShard(
@@ -201,11 +188,7 @@ def attach_subrouter(
             verify_prefix=config.verify_prefix,
         )
     if config.match_prefix:
-        registration.update(
-            match_prefix=True,
-            force_noncontiguous_restore=config.force_noncontiguous_restore,
-            delay_prefix_fill=config.delay_prefix_fill,
-        )
+        registration["match_prefix"] = True
 
     def registered() -> dict[str, Any]:
         if control.peer is None:
