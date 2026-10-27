@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-27",
+  "ticket": "mempool-min/04",
+  "run_id": "ticket04-002",
+  "user_accepted": true,
+  "user_message": "关闭",
+  "state": "closed",
+  "status": "ready-for-agent",
+  "scope": "sparse stage 0 / L0 complete demo acceptance",
+  "latest_delivered_code": "3da1fd61be3618dcaec33c0ae471df2e43c152fc",
+  "evidence_record_commit": "017d0397c94d02682c0a6e417347d2d85f42a582",
+  "automated_summary": "terminal-summary.json",
+  "deployment_identity": "Stored remotely in each host identity.json; terminal excerpt did not include git SHA",
+  "remaining_scope": [
+    "ticket02 separate closure confirmation",
+    "K1 and later stages",
+    "dense integration",
+    "physical NUMA page placement verification"
+  ]
+}

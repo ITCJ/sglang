@@ -24,6 +24,8 @@
 V3按独立标准答案验收；不改写旧ticket03合成C失败或物理NUMA页落点未验证的边界。
 本次证明范围是sparse阶段0/L0，不包括K1、后续阶段或dense。
 
-ticket04自动化NPU验收通过，等待用户明确确认关闭；State仍open，Status仍needs-info。
+2026-10-27用户明确回复“关闭”，确认接受本票实现与ticket04-002完整NPU验收。
+State=closed，Status=ready-for-agent，user_accepted=true。
+[用户确认记录](user-confirmation.json)与原始自动化摘要分别保存。
 此前ticket04-001输入生成失败和tokenizer修复的证据继续保留。
 本轮仅更新记录与页面，无源码变更，未重跑CPU或NPU测试。

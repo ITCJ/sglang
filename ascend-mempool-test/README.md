@@ -4,7 +4,7 @@ mempool-min ticket04 的完整入口为 `run_mempool_min.sh --mode full-acceptan
 它自动运行逻辑ABCE、独立标准答案、长生成/EOS、V1–V10及隔离容量/超时验证。
 双机命令、常驻配置、报告和源码阅读顺序见
 [ticket04 交付说明](../.scratch/mempool-min/ticket04-delivery.md)。
-代码与CPU检查不替代用户NPU验收，ticket04仍保持open。
+ticket04-002完整NPU验收已通过，用户于2026-10-27确认关闭ticket04。
 
 ticket03 的原始命中验收入口为 `run_mempool_min.sh --mode reuse-acceptance`。
 它自动运行独立 A/B/C 冷算参考、真实保存/恢复/后缀计算和全量输出比较。
