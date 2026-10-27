@@ -1,0 +1,13 @@
+{
+  "scope": "Documentation and user-result transcription only",
+  "json_and_result_consistency": "passed",
+  "ticket03_state": "closed under user-authorized scope and known limitation",
+  "ticket04_state": "open; dependency on ticket03 cleared",
+  "new_relative_links": "passed",
+  "html_source_sync": "passed for both updated pages",
+  "git_diff_check": "passed",
+  "functional_source_changes": false,
+  "new_cpu_tests_run": false,
+  "new_hardware_run": false,
+  "old_strict_report_status": "failed; preserved"
+}
