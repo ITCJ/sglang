@@ -1,0 +1,72 @@
+{
+  "date": "2026-10-27",
+  "baseline": "7bce6844299f4d6f299dbd4cd066d2167728a4e8",
+  "scope": "ticket04 complete sparse stage0/L0 implementation and CPU verification",
+  "cpu": {
+    "status": "passed",
+    "tests": 469,
+    "seconds": 42.44,
+    "command": "python3 /private/tmp/mempool-ticket04/run.py cpu-full-final -m unittest discover -s ascend-mempool-test/tests/unit -v",
+    "log": "cpu-unittest.txt"
+  },
+  "static": {
+    "status": "passed",
+    "lint_format_isort_python39_files": 9,
+    "strict_mypy_modules": 7,
+    "mypy_python_target": "3.10 override; installed mypy rejects configured 3.9; separate AST check uses 3.9",
+    "lint_selection": "F,UP037 (includes repository pre-commit F401,F821,UP037)",
+    "log": "static-checks.txt"
+  },
+  "cli": {
+    "describe_checks": 4,
+    "modes": [
+      "serve",
+      "full-acceptance"
+    ],
+    "roles": [
+      "prefill",
+      "decode"
+    ],
+    "shell_syntax": "passed"
+  },
+  "review": {
+    "standards_unresolved": 0,
+    "spec_unresolved": 0,
+    "resolved": [
+      "stale implementation status",
+      "independent aligned over-limit request",
+      "same-condition cold A/C stability diagnostic"
+    ],
+    "log": "review.md"
+  },
+  "source_sha256": {
+    "ascend-mempool-test/scripts/mempool_logical_cases.py": "b61f16acacef3da0e6b2d06dce8f09c7f093178107a76c2cd94014ac08cf7801",
+    "ascend-mempool-test/scripts/run_mempool_min.py": "98aa20f381dd35e1ee4967daafd63cdd464e734b364c9cb841fefefa9914d99b",
+    "ascend-mempool-test/scripts/verify_mempool_full.py": "ba0a07a979f003be8c79af4e2cb9f8ab75bfe1093650138e2d1491c9608f9b37",
+    "ascend-mempool-test/scripts/verify_mempool_min.py": "385470baa0ad9d1cd2387106080d7e9c164475548da0582ad25b617e0dc9413e",
+    "ascend-mempool-test/scripts/verify_mempool_reuse.py": "e0e4d799b957b95af2cd9cfec07f0e4f7321842b60f5b9350b0c4dbbe2622805",
+    "ascend-mempool-test/tests/unit/test_mempool_full.py": "294a698fa86b552d5fc88c41af6d7965b117ef6dd43651ee74b0ad975041f53f",
+    "ascend-mempool-test/tests/unit/test_mempool_min_entry.py": "1ad265a5d7403e42083889b660caa1df7b009b092f7e2bfb3a2461337c626802",
+    "ascend-mempool-test/tests/unit/test_mempool_prefix_evidence.py": "7afd9a355538e4ead8080788b0f005ca6a603ddc0ef7c960c6ccd42d8881a8c1",
+    "python/sglang/srt/disaggregation/ascend/mempool_router_transport.py": "61e5dce7af9c261f3a2b949a02db7203252dcb741717d911430b763631453bd3"
+  },
+  "hardware": {
+    "executed": false,
+    "user_accepted": false,
+    "ticket04_state": "open",
+    "pending": [
+      "real GLM tokenizer and exact fixture IDs",
+      "independent model answers",
+      "all-rank NPU content and Graph/lifecycle V1–V10",
+      "isolated capacity and timeout cases",
+      "paired hardware process cleanup"
+    ]
+  },
+  "scope_notes": {
+    "production_files": [
+      "python/sglang/srt/disaggregation/ascend/mempool_router_transport.py"
+    ],
+    "mainline_functional_changes": [],
+    "outside_ascend": "Independent Ascend runner/checker tools own tokenizer fixtures, two-host processes and offline evidence; model hooks cannot perform these duties."
+  }
+}

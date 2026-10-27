@@ -1,0 +1,15 @@
+test_identical_cold_a_c_differences_are_a_separate_stability_anomaly (test_mempool_full.TestLogicalAnswers.test_identical_cold_a_c_differences_are_a_separate_stability_anomaly) ... ERROR
+
+======================================================================
+ERROR: test_identical_cold_a_c_differences_are_a_separate_stability_anomaly (test_mempool_full.TestLogicalAnswers.test_identical_cold_a_c_differences_are_a_separate_stability_anomaly)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_full.py", line 91, in test_identical_cold_a_c_differences_are_a_separate_stability_anomaly
+    self.assertEqual(logical.check_stability(cases, results)["status"], "passed")
+                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: module 'mempool_logical_cases' has no attribute 'check_stability'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (errors=1)

@@ -22,7 +22,9 @@ SCRIPTS = Path(__file__).resolve().parent
 REPO = SCRIPTS.parents[1]
 sys.path.insert(0, str(REPO / "ascend-mempool-test/src"))
 
+import mempool_logical_cases
 import msgspec
+import verify_mempool_full
 import verify_mempool_min
 import verify_mempool_prefix
 import verify_mempool_reuse
@@ -91,7 +93,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--role", choices=("prefill", "decode"), required=True)
     parser.add_argument(
         "--mode",
-        choices=("serve", "acceptance", "prefix-acceptance", "reuse-acceptance"),
+        choices=(
+            "serve",
+            "acceptance",
+            "prefix-acceptance",
+            "reuse-acceptance",
+            "full-acceptance",
+        ),
         required=True,
     )
     parser.add_argument("--config", type=Path, required=True)
@@ -120,6 +128,7 @@ def service_environment(
         "https_proxy",
         "HTTP_PROXY",
         "HTTPS_PROXY",
+        "SGLANG_NPU_MEMPOOL_TEST_CAPACITY",
     ):
         env.pop(name, None)
     env.update(
@@ -202,13 +211,17 @@ class Runner:
         self, args: argparse.Namespace, config: RouterConfig, peer: Peer, root: Path
     ) -> None:
         self.args, self.config, self.peer, self.root = args, config, peer, root
+        self.full = args.mode == "full-acceptance"
+        self.tokenizer: Any = None
         self.is_p = args.role == "prefill"
         self.host = config.prefill_host if self.is_p else config.decode_host
         self.report: dict[str, Any] = dict(
             status="running",
             role=args.role,
             mode=args.mode,
-            coverage="ticket03 prefix restore and suffix"
+            coverage="ticket04 complete sparse stage0/L0"
+            if self.full
+            else "ticket03 prefix restore and suffix"
             if config.match_prefix
             else "ticket02 cold prefix save"
             if config.prefix_pages
@@ -400,7 +413,7 @@ class Runner:
                 sampling_params=dict(temperature=0, max_new_tokens=1),
             ),
             dict(
-                input_ids=[7] * 8256,
+                input_ids=[7] * (self.config.prompt_capacity + self.config.page_size),
                 sampling_params=dict(temperature=0, max_new_tokens=1),
             ),
             dict(
@@ -423,7 +436,14 @@ class Runner:
             for k in ("active", "ledger", "directory", "completed")
         ):
             raise ValueError("rejected requests changed the resource ledger")
-        return dict(status="passed", cases=len(cases), ledger_unchanged=True)
+        return dict(
+            status="passed",
+            cases=len(cases),
+            ledger_unchanged=True,
+            names=["unaligned", "too-long", "generation-limit", "unsupported-text"],
+            ledger=after["ledger"],
+            directory=after["directory"],
+        )
 
     def timeout_case(
         self, jobs: Processes, server: subprocess.Popen[bytes], root: Path, base: str
@@ -506,6 +526,11 @@ class Runner:
             self.peer.expect("fault-result")
             send_log(self.peer, root / "decode.log")
             evidence = self.peer.expect("fault-verified")["evidence"]
+            if self.full:
+                code = server.wait(timeout=self.config.operation_timeout)
+                if code == 0:
+                    raise ValueError("fail-stop worker exited successfully")
+                write_json(root / "worker-exit.json", dict(returncode=code))
         write_json(root / "timeout.json", evidence)
         self.report["timeout_fail_stop"] = evidence
 
@@ -520,16 +545,25 @@ class Runner:
                 (root / "decode-fault-final.log").read_text(errors="replace"),
             )
             evidence["process_cleanup_verified"] = True
+            if self.full:
+                code = self.peer.expect("fault-exit")["returncode"]
+                if type(code) is not int or code == 0:
+                    raise ValueError("missing fail-stop worker failure exit")
+                evidence["worker_exit"] = code
             self.peer.send("fault-final-verified", evidence=evidence)
         else:
             send_log(self.peer, root / "decode.log")
+            if self.full:
+                self.peer.send(
+                    "fault-exit", **json.loads((root / "worker-exit.json").read_text())
+                )
             evidence = self.peer.expect("fault-final-verified")["evidence"]
         write_json(root / "timeout.json", evidence)
         self.report["timeout_fail_stop"] = evidence
         self.report["paired_process_cleanup"] = "passed; both owned groups stopped"
 
-    def stage(self, *, target: bool) -> None:
-        name = "target" if target else "reference"
+    def stage(self, *, target: bool, fault_only: bool = False) -> None:
+        name = "timeout" if fault_only else "target" if target else "reference"
         root = self.root / name
         env = service_environment(self.config, self.args, root, target=target)
         self.peer.barrier(name + "-start")
@@ -610,107 +644,287 @@ class Runner:
                         if status["fault"]:
                             raise RuntimeError(status["fault"])
                     time.sleep(1)
-            if self.is_p:
-                snapshots, results = [], []
-                if target:
-                    write_json(
-                        root / "input-rejections.json", self.rejected_inputs(base)
-                    )
-                for index, case in enumerate(self.cases):
-                    watch()
-                    result = request_json(
-                        base + "/generate",
-                        payload={k: case[k] for k in ("input_ids", "sampling_params")},
-                        timeout=self.config.operation_timeout,
-                    )
-                    # Preserve failing outputs too, before any acceptance assertion.
-                    results.append(result)
-                    if target:
-                        snapshots.append(request_json(base + "/status", timeout=30))
-                    write_json(
-                        root / "responses.json", dict(cases=self.cases, results=results)
-                    )
-                    write_json(root / "snapshots.json", snapshots)
-                    verify_mempool_min.check_response(case, result)
-                    if (
-                        target
-                        and result["output_ids"] != self.reference[index]["output_ids"]
-                    ):
-                        raise ValueError(
-                            f"{case['name']}: full output IDs differ from formal reference"
+            if not fault_only:
+                if self.is_p:
+                    snapshots, results, answers = [], [], []
+                    if target and not self.full:
+                        write_json(
+                            root / "input-rejections.json", self.rejected_inputs(base)
                         )
-                deadline = time.monotonic() + 60
-                while True:
-                    watch()
-                    self.peer.send("stage-control", action="snapshot")
-                    receive_log(self.peer, root / "decode.log")
-                    try:
-                        evidence = (
-                            verify_mempool_min.check_target(
-                                root / "prefill.log",
-                                root / "decode.log",
-                                snapshots,
-                                self.cases,
-                                page_size=self.config.page_size,
-                                prompt_capacity=self.config.prompt_capacity,
-                                decode_capacity=self.config.decode_capacity,
-                                prefix=bool(self.config.prefix_pages),
-                            )
-                            if target
-                            else verify_service.check_logs(
-                                [root / "prefill.log"],
-                                [root / "decode.log"],
-                                len(self.cases),
-                                layers=78,
-                                indexer_layer_ids=verify_mempool_min.PRODUCERS,
-                                graph=True,
-                                expected_zero_decode=(
-                                    0 if self.config.prefix_pages else None
-                                ),
-                            )
+                    for index, case in enumerate(self.cases):
+                        watch()
+                        result = request_json(
+                            base + "/generate",
+                            payload={
+                                k: case[k] for k in ("input_ids", "sampling_params")
+                            },
+                            timeout=self.config.operation_timeout,
                         )
-                        if target and self.config.prefix_pages:
-                            check = (
-                                verify_mempool_reuse.check_reuse
-                                if self.config.match_prefix
-                                else verify_mempool_prefix.check_prefix
+                        if (
+                            self.full
+                            and self.tokenizer is not None
+                            and isinstance(result.get("output_ids"), list)
+                        ):
+                            result["server_text"] = result.get("text")
+                            result["text"] = self.tokenizer.decode(
+                                result.get("output_ids", []), skip_special_tokens=True
                             )
-                            evidence["prefix"] = check(
-                                root / "prefill.log", snapshots, self.cases
+                        # Preserve failing outputs too, before any acceptance assertion.
+                        results.append(result)
+                        if target:
+                            snapshots.append(request_json(base + "/status", timeout=30))
+                        write_json(
+                            root / "responses.json",
+                            dict(cases=self.cases, results=results),
+                        )
+                        write_json(root / "snapshots.json", snapshots)
+                        if self.full:
+                            answers.append(
+                                mempool_logical_cases.compare_answers(
+                                    case, self.reference[index], result
+                                )
+                                if target
+                                else mempool_logical_cases.answer(case, result)
                             )
-                            evidence["coverage"] = self.report["coverage"]
-                        break
-                    except (ValueError, RuntimeError, KeyError):
-                        if time.monotonic() >= deadline:
-                            raise
-                        time.sleep(1)
-                write_json(root / "evidence.json", evidence)
-                if not target:
-                    self.reference = results
-                self.peer.send("stage-control", action="done")
-            else:
-                while True:
-                    message = self.peer.expect("stage-control", check=watch)
-                    if message == dict(action="done"):
-                        break
-                    if message != dict(action="snapshot"):
-                        raise ValueError("unknown runner action")
-                    send_log(self.peer, root / "decode.log")
-            if target:
+                            write_json(root / "answers.json", answers)
+                        verify_mempool_min.check_response(case, result)
+                        if (
+                            target
+                            and not self.full
+                            and result["output_ids"]
+                            != self.reference[index]["output_ids"]
+                        ):
+                            raise ValueError(
+                                f"{case['name']}: full output IDs differ from formal reference"
+                            )
+                    if not target and self.full:
+                        write_json(
+                            root / "stability.json",
+                            mempool_logical_cases.check_stability(self.cases, results),
+                        )
+                    if target and self.full:
+                        write_json(
+                            root / "input-rejections.json", self.rejected_inputs(base)
+                        )
+                    deadline = time.monotonic() + 60
+                    while True:
+                        watch()
+                        self.peer.send("stage-control", action="snapshot")
+                        receive_log(self.peer, root / "decode.log")
+                        try:
+                            evidence = (
+                                verify_mempool_min.check_target(
+                                    root / "prefill.log",
+                                    root / "decode.log",
+                                    snapshots,
+                                    self.cases,
+                                    page_size=self.config.page_size,
+                                    prompt_capacity=self.config.prompt_capacity,
+                                    decode_capacity=self.config.decode_capacity,
+                                    prefix=bool(self.config.prefix_pages),
+                                )
+                                if target
+                                else verify_service.check_logs(
+                                    [root / "prefill.log"],
+                                    [root / "decode.log"],
+                                    len(self.cases),
+                                    layers=78,
+                                    indexer_layer_ids=verify_mempool_min.PRODUCERS,
+                                    graph=True,
+                                    expected_zero_decode=(
+                                        0 if self.config.prefix_pages else None
+                                    ),
+                                )
+                            )
+                            if target and self.config.prefix_pages:
+                                check = (
+                                    verify_mempool_reuse.check_reuse
+                                    if self.config.match_prefix
+                                    else verify_mempool_prefix.check_prefix
+                                )
+                                evidence["prefix"] = (
+                                    verify_mempool_reuse.check_reuse(
+                                        root / "prefill.log",
+                                        snapshots,
+                                        self.cases,
+                                        full=True,
+                                    )
+                                    if self.full
+                                    else check(
+                                        root / "prefill.log", snapshots, self.cases
+                                    )
+                                )
+                                evidence["coverage"] = self.report["coverage"]
+                            break
+                        except (ValueError, RuntimeError, KeyError) as exc:
+                            if time.monotonic() >= deadline:
+                                write_json(
+                                    root / "evidence.json",
+                                    dict(
+                                        status="failed",
+                                        error=f"{type(exc).__name__}: {exc}",
+                                    ),
+                                )
+                                raise
+                            time.sleep(1)
+                    write_json(root / "evidence.json", evidence)
+                    if not target:
+                        self.reference = results
+                    self.peer.send("stage-control", action="done")
+                else:
+                    while True:
+                        message = self.peer.expect("stage-control", check=watch)
+                        if message == dict(action="done"):
+                            break
+                        if message != dict(action="snapshot"):
+                            raise ValueError("unknown runner action")
+                        send_log(self.peer, root / "decode.log")
+            if target and (not self.full or fault_only):
                 # Freeze the successful normal logs before the intentional fault.
-                for role in ("prefill", "decode") if self.is_p else ("decode",):
-                    (root / f"{role}-normal.log").write_bytes(
-                        (root / f"{role}.log").read_bytes()
-                    )
+                if not fault_only:
+                    for role in ("prefill", "decode") if self.is_p else ("decode",):
+                        (root / f"{role}-normal.log").write_bytes(
+                            (root / f"{role}.log").read_bytes()
+                        )
                 self.timeout_case(jobs, server, root, base)
         self.peer.barrier(name + "-stopped")
-        if target:
+        if target and (not self.full or fault_only):
             self.final_timeout_evidence(root)
+        write_json(root / "process-cleanup.json", dict(status="passed", paired=True))
         self.report["stages"].append(name)
         write_json(self.root / "summary.json", self.report)
 
+    def capacity_stage(self) -> None:
+        """Reject a real TP registration with one deliberately limited rank."""
+        root = self.root / "capacity"
+        env = service_environment(self.config, self.args, root, target=True)
+        env["SGLANG_NPU_MEMPOOL_TEST_CAPACITY"] = "1"
+        base = f"http://{self.config.prefill_host}:{self.config.main_port}"
+        self.peer.barrier("capacity-start")
+        before, after, http_status, worker_exit = {}, {}, 0, 0
+        with Processes(root, env) as jobs:
+            router = None
+            if self.is_p:
+                router = jobs.start(
+                    "router",
+                    [
+                        sys.executable,
+                        "-u",
+                        "-m",
+                        "sglang.srt.disaggregation.ascend.mempool_router",
+                        "--config",
+                        str(self.args.config),
+                        "--run-id",
+                        self.args.run_id,
+                    ],
+                )
+                wait_http(
+                    base + "/status", self.config.startup_timeout, self.peer.check
+                )
+                before = request_json(base + "/status")
+            self.peer.barrier("capacity-main-up")
+            server = jobs.start(
+                "launcher",
+                ["bash", str(SCRIPTS / "run_service.sh"), self.args.role, "formal"],
+            )
+            if self.is_p:
+                deadline = time.monotonic() + self.config.startup_timeout
+                while True:
+                    self.peer.check()
+                    if router is not None:
+                        jobs.alive("Router", router)
+                    after = request_json(base + "/status")
+                    if after["fault"]:
+                        break
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(
+                            "capacity-limited registration did not fail-stop"
+                        )
+                    time.sleep(0.5)
+                case = self.cases[0]
+                try:
+                    request_json(
+                        base + "/generate",
+                        payload={k: case[k] for k in ("input_ids", "sampling_params")},
+                    )
+                except urllib.error.HTTPError as exc:
+                    http_status = exc.code
+                else:
+                    raise ValueError("capacity-limited deployment admitted a request")
+                after = request_json(base + "/status")
+                write_json(root / "snapshots.json", dict(before=before, after=after))
+                self.peer.send("capacity-fault")
+                worker_exit = self.peer.expect("capacity-exit")["returncode"]
+            else:
+                self.peer.expect("capacity-fault")
+                worker_exit = server.wait(timeout=self.config.operation_timeout)
+                self.peer.send("capacity-exit", returncode=worker_exit)
+        self.peer.barrier("capacity-stopped")
+        if self.is_p:
+            receive_log(self.peer, root / "decode.log")
+            evidence = verify_mempool_full.check_capacity_rejection(
+                before,
+                after,
+                (root / "decode.log").read_text(errors="replace"),
+                run_id=self.args.run_id,
+                http_status=http_status,
+                worker_exit=worker_exit,
+            )
+            self.peer.send("capacity-verified", evidence=evidence)
+        else:
+            send_log(self.peer, root / "decode.log")
+            evidence = self.peer.expect("capacity-verified")["evidence"]
+        write_json(root / "evidence.json", evidence)
+        write_json(root / "process-cleanup.json", dict(status="passed", paired=True))
+        self.report["stages"].append("capacity")
+
+    def run_full(self) -> None:
+        if self.is_p:
+            from transformers import AutoTokenizer
+
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.config.model_path, trust_remote_code=True
+            )
+            self.cases = mempool_logical_cases.make_cases(
+                self.tokenizer, self.config.page_size
+            )
+            self.cases += mempool_logical_cases.make_controls(
+                self.tokenizer, self.config.page_size
+            )
+            write_json(self.root / "cases.json", self.cases)
+            send_log(self.peer, self.root / "cases.json")
+        else:
+            receive_log(self.peer, self.root / "cases.json")
+            self.cases = json.loads((self.root / "cases.json").read_text())
+        self.peer.barrier("fixtures-ready")
+        self.components()
+        self.stage(target=False)
+        self.stage(target=True)
+        self.capacity_stage()
+        self.stage(target=True, fault_only=True)
+        if self.is_p:
+            acceptance = verify_mempool_full.summarize(self.root)
+            self.peer.send("full-result", acceptance=acceptance)
+        else:
+            acceptance = self.peer.expect("full-result")["acceptance"]
+        write_json(self.root / "v1-v10.json", acceptance)
+        self.report["acceptance"] = acceptance
+        if acceptance["status"] != "passed":
+            raise ValueError(
+                "full acceptance failed; see v1-v10.json and per-stage evidence"
+            )
+        self.report.update(
+            status="passed",
+            output_policy=mempool_logical_cases.POLICY,
+            hardware_execution="completed by user runner",
+            user_accepted=False,
+        )
+
     def run(self) -> None:
         self.preflight()
+        if self.full:
+            self.run_full()
+            return
         if self.args.mode != "serve":
             self.components()
             if self.is_p:
@@ -743,12 +957,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     config = RouterConfig.read(str(args.config))
     root = args.log_root / args.run_id / args.role
     requested = msgspec.to_builtins(config)
-    if args.mode in ("prefix-acceptance", "reuse-acceptance"):
+    if args.mode in ("prefix-acceptance", "reuse-acceptance", "full-acceptance"):
         config = msgspec.structs.replace(
             config,
             prefix_pages=40,
             verify_prefix=True,
-            match_prefix=args.mode == "reuse-acceptance",
+            match_prefix=args.mode in ("reuse-acceptance", "full-acceptance"),
         )
     elif args.mode == "acceptance" and config.prefix_pages:
         raise ValueError(
@@ -764,12 +978,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                     config=msgspec.to_builtins(config),
                     logs=str(root),
                     memory_budget=memory_budget(config, args.role),
+                    output_policy=mempool_logical_cases.POLICY
+                    if args.mode == "full-acceptance"
+                    else "strict full output IDs",
                     acceptance_controls=(
                         "one skipped allocator page; fill submitted after native_freed"
                         if config.match_prefix and config.verify_prefix
                         else "none"
                     ),
                     stages=[
+                        "paired preflight",
+                        "P-only/D-only/mixed NPU fetch",
+                        "independent logical ABCE + load/EOS reference",
+                        "Main/SR logical ABCE + load/EOS target and cleanup",
+                        "isolated registration-capacity rejection",
+                        "isolated timeout/fail-stop and paired cleanup",
+                        "V1-V10 evidence and independent answers",
+                    ]
+                    if args.mode == "full-acceptance"
+                    else [
                         "paired preflight",
                         "P-only/D-only/mixed NPU fetch",
                         "formal reference A/B/C"
@@ -846,6 +1073,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(report["error"], file=sys.stderr)
         return 1
     finally:
+        if args.mode == "full-acceptance" and args.role == "prefill":
+            report["acceptance"] = verify_mempool_full.summarize(root)
+            write_json(root / "v1-v10.json", report["acceptance"])
+            print(
+                "FULL_ACCEPTANCE "
+                + json.dumps(
+                    dict(
+                        status=report["acceptance"]["status"],
+                        stability=report["acceptance"]["stability"],
+                        long_generation=report["acceptance"]["long_generation"],
+                        timeout_fail_stop=report["acceptance"]["timeout_fail_stop"],
+                        paired_cleanup=report["acceptance"]["paired_cleanup"],
+                        checks={
+                            key: value["status"]
+                            for key, value in report["acceptance"]["checks"].items()
+                        },
+                        report=str(root / "v1-v10.json"),
+                    )
+                ),
+                flush=True,
+            )
         write_json(root / "summary.json", report)
         if args.role == "prefill":
             write_json(root.parent / "summary.json", report)

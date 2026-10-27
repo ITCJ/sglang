@@ -1,0 +1,10 @@
+test_isolated_timeout_starts_without_success_logs_and_retains_allocations (test_mempool_full.TestFullEntry.test_isolated_timeout_starts_without_success_logs_and_retains_allocations) ... START launcher pid=35119 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpgto0c8oo/decode/timeout/launcher.log
+START router pid=35120 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpgto0c8oo/prefill/timeout/router.log
+START launcher pid=35121 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpgto0c8oo/prefill/timeout/launcher.log
+mempool_router fail-stop: SR heartbeat timeout
+ok
+
+----------------------------------------------------------------------
+Ran 1 test in 1.184s
+
+OK

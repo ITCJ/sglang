@@ -1,0 +1,9 @@
+test_correct_answers_allow_different_ids_and_preserve_first_difference (test_mempool_full.TestLogicalAnswers.test_correct_answers_allow_different_ids_and_preserve_first_difference) ... ok
+test_duplicate_fields_are_invalid_even_when_the_last_value_is_correct (test_mempool_full.TestLogicalAnswers.test_duplicate_fields_are_invalid_even_when_the_last_value_is_correct) ... ok
+test_identical_cold_a_c_differences_are_a_separate_stability_anomaly (test_mempool_full.TestLogicalAnswers.test_identical_cold_a_c_differences_are_a_separate_stability_anomaly) ... ok
+test_complete_report_requires_the_fault_cleanup_and_adapter_receipts (test_mempool_full.TestFullEntry.test_complete_report_requires_the_fault_cleanup_and_adapter_receipts) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.005s
+
+OK

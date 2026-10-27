@@ -10,20 +10,42 @@ import verify_mempool_prefix as saved
 
 
 def make_cases(model_path: str, page_size: int) -> list[dict[str, Any]]:
-    cases = saved.make_cases(model_path, page_size)[:3]
+    cases: list[dict[str, Any]] = saved.make_cases(model_path, page_size)[:3]
     for case in cases:
         case["name"] = case["name"].replace("cold-", "reuse-", 1)
     return cases
 
 
 def check_reuse(
-    prefill: Path, snapshots: list[dict[str, Any]], cases: list[dict[str, Any]]
+    prefill: Path,
+    snapshots: list[dict[str, Any]],
+    cases: list[dict[str, Any]],
+    *,
+    full: bool = False,
 ) -> dict[str, Any]:
-    if len(snapshots) != 3 or len(cases) != 3:
-        raise ValueError("reuse acceptance requires exactly A/B/C")
-    a, b, c = [case["input_ids"] for case in cases]
+    count = len(cases) if full else 3
+    if full and count not in (4, 6):
+        raise ValueError(
+            "full acceptance requires ABCE with optional load/EOS controls"
+        )
+    if len(snapshots) != count or len(cases) != count:
+        raise ValueError(
+            "reuse acceptance requires exactly A/B/C" + ("/E" if full else "")
+        )
+    a, b, c = [case["input_ids"] for case in cases[:3]]
     if list(map(len, (a, b, c))) != [4096, 5120, 4096] or a != b[:4096] or a != c:
         raise ValueError("reuse fixtures do not exercise A/B/C")
+    if full and (
+        len(cases[3]["input_ids"]) != 4096 or cases[3]["input_ids"][:128] == a[:128]
+    ):
+        raise ValueError("E must be an independent 4096-token cold request")
+    if count == 6 and (
+        [case["name"] for case in cases[4:]] != ["long-generation", "early-eos"]
+        or [len(case["input_ids"]) for case in cases[4:]] != [4096, 128]
+    ):
+        raise ValueError("full controls must be long-generation and early-eos")
+    hits = [0, 4096, 3968, 0, 0, 0][:count]
+    totals = [32, 40, 40, 40, 40, 40][:count]
     reports = saved.Reports.read(prefill)
     progress: dict[tuple[str, int], list[tuple[int, dict[str, Any]]]] = {}
     for line_no, line in enumerate(prefill.read_text(errors="replace").splitlines()):
@@ -36,7 +58,7 @@ def check_reuse(
     previous: dict[str, Any] = {}
     base_hashes: list[str] = []
     for snapshot, case, hit, added, total in zip(
-        snapshots, cases, (0, 4096, 3968), (32, 8, 0), (32, 40, 40)
+        snapshots, cases, hits, (32, 8, 0, 0, 0, 0), totals
     ):
         done, directory = snapshot["completed"][-1], snapshot["directory"]
         if (
@@ -52,7 +74,9 @@ def check_reuse(
             != dict(total=40, free=40 - total, outstanding=total)
             or len(directory) != total
         ):
-            raise ValueError("reuse prefix occupancy differs from 32/40/40")
+            raise ValueError(
+                "reuse prefix occupancy differs from the required sequence"
+            )
         for key, prefix in previous.items():
             if key not in directory or directory[key]["prefix"] != prefix:
                 raise ValueError("reuse changed a retained prefix location")
@@ -63,8 +87,8 @@ def check_reuse(
         if hit:
             check_operations(done)
         elif done["reads"]:
-            raise ValueError("cold A unexpectedly restored a prefix")
-        else:
+            raise ValueError("cold request unexpectedly restored a prefix")
+        elif not previous:
             base_hashes = [item["hash"] for item in published]
         for rank in range(16):
             if hit:
@@ -94,15 +118,15 @@ def check_reuse(
     if reports.consumed != set(reports.contents):
         raise ValueError("unexpected reuse request/rank content receipt")
     expected_progress = {
-        (s["completed"][-1]["rid"], rank) for s in snapshots[1:] for rank in range(16)
+        (s["completed"][-1]["rid"], rank) for s in snapshots[1:3] for rank in range(16)
     }
     if set(progress) != expected_progress:
         raise ValueError("unexpected or missing reuse progress rank")
     return dict(
         status="passed",
-        hit_lengths=[0, 4096, 3968],
-        suffix_tokens=[4096, 1024, 128],
-        pages_per_request=[32, 40, 40],
+        hit_lengths=hits,
+        suffix_tokens=[len(case["input_ids"]) - hit for case, hit in zip(cases, hits)],
+        pages_per_request=totals,
         ranks=16,
         main_layers=78,
         index_layers=21,

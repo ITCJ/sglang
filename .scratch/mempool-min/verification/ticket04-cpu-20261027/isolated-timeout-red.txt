@@ -1,0 +1,33 @@
+test_isolated_timeout_starts_without_success_logs_and_retains_allocations (test_mempool_full.TestFullEntry.test_isolated_timeout_starts_without_success_logs_and_retains_allocations) ... START launcher pid=34785 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpq9i232q8/decode/timeout/launcher.log
+START router pid=34786 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpq9i232q8/prefill/timeout/router.log
+START launcher pid=34787 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpq9i232q8/prefill/timeout/launcher.log
+ERROR
+
+======================================================================
+ERROR: test_isolated_timeout_starts_without_success_logs_and_retains_allocations (test_mempool_full.TestFullEntry.test_isolated_timeout_starts_without_success_logs_and_retains_allocations)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_full.py", line 202, in test_isolated_timeout_starts_without_success_logs_and_retains_allocations
+    future.result(timeout=10)
+  File "/Users/hibikid/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/concurrent/futures/_base.py", line 456, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/hibikid/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/scripts/run_mempool_min.py", line 736, in stage
+    (root / f"{role}.log").read_bytes()
+  File "/Users/hibikid/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/pathlib.py", line 1019, in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/pathlib.py", line 1013, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpq9i232q8/prefill/timeout/decode.log'
+
+----------------------------------------------------------------------
+Ran 1 test in 3.347s
+
+FAILED (errors=1)

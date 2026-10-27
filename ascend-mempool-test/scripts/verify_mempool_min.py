@@ -182,6 +182,7 @@ def check_target(
     if len(snapshots) != len(cases):
         raise ValueError("missing request ledger snapshots")
     source_rows = dict(prompt=0, decode=0)
+    request_evidence = []
     previous: dict[tuple[str, int], int] = {}
     for index, (snapshot, case) in enumerate(zip(snapshots, cases)):
         check_pages(snapshot, case, page_size, prompt_capacity, decode_capacity)
@@ -198,6 +199,7 @@ def check_target(
         ):
             raise ValueError("resource ledger did not return to its initial values")
         done = snapshot["completed"][-1]
+        decode_receipts = []
         room = done["room"]
         check_response(case, done["result"])
         trace = [(t["role"], t["kind"]) for t in done["trace"]]
@@ -243,6 +245,12 @@ def check_target(
             if data is None:
                 raise ValueError("missing D completion report")
             check_step_counts(steps.get((rank, room), []), data["forwards"])
+            check_output_steps(case, done["result"], data["forwards"])
+            decode_receipts.append(
+                dict(
+                    rank=rank, forwards=data["forwards"], written_kv=data["written_kv"]
+                )
+            )
             check_completion(
                 data, 78, (p["slot"], p["generation"], d["slot"], d["generation"])
             )
@@ -254,6 +262,15 @@ def check_target(
                 raise ValueError("cold request never executed decode")
             if case["name"] == "first-token" and data["forwards"] != 0:
                 raise ValueError("max_new_tokens=1 unexpectedly executed decode")
+        request_evidence.append(
+            dict(
+                case=case["name"],
+                rid=done["rid"],
+                room=room,
+                output_tokens=len(done["result"]["output_ids"]),
+                decode=decode_receipts,
+            )
+        )
     if any(count <= 0 for count in source_rows.values()):
         raise ValueError("service has no completed BM reads from one of P/D")
     return dict(
@@ -264,6 +281,7 @@ def check_target(
         source_rows=source_rows,
         graph=True,
         page_size=page_size,
+        request_evidence=request_evidence,
         prefix="not implemented in ticket01",
         numa_placement="not verified",
     )
@@ -324,6 +342,15 @@ def check_step_counts(samples: list[tuple[int, int, int]], forwards: int) -> Non
         raise ValueError("missing/invalid per-step D resident and execution counts")
 
 
+def check_output_steps(
+    case: dict[str, Any], result: dict[str, Any], forwards: int
+) -> None:
+    if case.get("kind") == "load-only" and (
+        len(result["output_ids"]) != 128 or not 127 <= forwards <= 128
+    ):
+        raise ValueError("long output lacks 127-128 actual decode forwards")
+
+
 def check_timeout(
     before: dict[str, Any], after: dict[str, Any], decode_log: str
 ) -> dict[str, Any]:
@@ -347,7 +374,10 @@ def check_timeout(
         )
     ):
         raise ValueError("timeout released resources or continued the request")
-    if any(q["outstanding"] <= 0 for q in after["ledger"].values()):
+    if any(
+        after["ledger"][name]["outstanding"] <= 0
+        for name in ("p_alive", "d_alive", "d_hbm", "d_rows")
+    ):
         raise ValueError("timeout did not retain the full reservation")
     allocated = set()
     for line in decode_log.splitlines():

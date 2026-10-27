@@ -1,6 +1,12 @@
 # Ascend mempool 功能与服务测试
 
-mempool-min ticket03 的原始命中验收入口为 `run_mempool_min.sh --mode reuse-acceptance`。
+mempool-min ticket04 的完整入口为 `run_mempool_min.sh --mode full-acceptance`。
+它自动运行逻辑ABCE、独立标准答案、长生成/EOS、V1–V10及隔离容量/超时验证。
+双机命令、常驻配置、报告和源码阅读顺序见
+[ticket04 交付说明](../.scratch/mempool-min/ticket04-delivery.md)。
+代码与CPU检查不替代用户NPU验收，ticket04仍保持open。
+
+ticket03 的原始命中验收入口为 `run_mempool_min.sh --mode reuse-acceptance`。
 它自动运行独立 A/B/C 冷算参考、真实保存/恢复/后缀计算和全量输出比较。
 代码阅读顺序、每机一条命令和验收边界控制见
 [ticket03 交付说明](../.scratch/mempool-min/ticket03-delivery.md)。
@@ -8,7 +14,7 @@ ticket03 已按用户接受的功能范围关闭，原合成 C 的输出差异�
 排查新增的模型探针、重放和 `reuse-diagnostic` 已移除；运行代码及测试收敛回
 `0308cd0814`，见[清理说明](../.scratch/mempool-min/ticket03-cleanup.md)。
 此入口仍保留原严格输出比较，不用于宣称新的逻辑题验收已经完成。
-后续同长度逻辑题与独立标准答案由 ticket04 按
+同长度逻辑题与独立标准答案在ticket04的完整入口中按
 [输出验证约定](../.scratch/mempool-min/output-verification-policy.md)实现。
 
 ticket02 的保存验收入口为 `run_mempool_min.sh --mode prefix-acceptance`。

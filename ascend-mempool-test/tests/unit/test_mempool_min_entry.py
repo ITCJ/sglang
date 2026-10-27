@@ -175,6 +175,11 @@ class TestMinRunner(unittest.TestCase):
     def test_reuse_reference_accepts_three_real_decode_requests_through_runner(self):
         self.check_reference("reuse-acceptance", "abc", (4096, 5120, 4096))
 
+    def test_full_reference_preserves_per_request_answer_results(self):
+        self.check_reference(
+            "full-acceptance", "abcefg", (4096, 5120, 4096, 4096, 4096, 128)
+        )
+
     def check_reference(self, mode, names, lengths):
         logs = service_logs(
             (127,) * len(names), layers=78, indexer_layer_ids=verifier.PRODUCERS
@@ -259,6 +264,11 @@ class TestMinRunner(unittest.TestCase):
             self.assertEqual(evidence["zero_decode_requests"], 0)
             self.assertEqual(instance.reference, results)
             self.assertEqual(instance.report["stages"], ["reference"])
+            if mode == "full-acceptance":
+                answers = json.loads((stage / "answers.json").read_text())
+                self.assertEqual(len(answers), 6)
+                # External response stand-ins omit text: never silently count as semantic passes.
+                self.assertTrue(all(item["status"] == "failed" for item in answers))
 
     def test_prefix_acceptance_has_effective_config_and_layout_based_memory_budget(
         self,
@@ -460,6 +470,14 @@ class TestMinRunner(unittest.TestCase):
             snapshots = json.loads((p_root / "timeout-snapshots.json").read_text())
             room = snapshots["after"]["active"]["room"]
             final_log = (p_root / "decode-fault-final.log").read_text()
+            for snapshot in snapshots.values():
+                snapshot["ledger"]["p_prefix"] = dict(total=40, free=40, outstanding=0)
+            self.assertEqual(
+                verifier.check_timeout(
+                    snapshots["before"], snapshots["after"], final_log
+                )["status"],
+                "passed",
+            )
             with self.assertRaisesRegex(ValueError, "freed native/alive"):
                 verifier.check_timeout(
                     snapshots["before"],
@@ -621,6 +639,49 @@ class TestMinRunner(unittest.TestCase):
                 ):
                     attach_subrouter(service, lambda value: [value] * 16)
                 component.page_size = 128
+
+            # Fault mode caps one real worker's advertised capacity after capture;
+            # it must preserve the measured allocator capacity and ordinary registration.
+            service.control.local.role = "decode"
+            service.control.local.tp_rank = 15
+            args.disable_cuda_graph = False
+            service.scheduler.tp_worker = SimpleNamespace(
+                model_runner=SimpleNamespace(
+                    attn_backend=SimpleNamespace(
+                        sparse_kv_manager=SimpleNamespace(
+                            reset_requests=lambda rows: None
+                        )
+                    )
+                )
+            )
+            service.runtime.manager.rank = 1
+            service.runtime.manager.layout.prefix_main = SimpleNamespace(
+                slots=40, tokens=128
+            )
+            service.runtime.manager.layout.prefix_index = object()
+            service.runtime.manager.layout.prompt_index = object()
+            service.runtime.manager.layout.contribution_bytes = lambda rank: 2**30
+            full_config = RouterConfig(
+                "p",
+                "d",
+                "/model",
+                prefix_pages=40,
+                verify_prefix=True,
+                match_prefix=True,
+            )
+            with patch.object(RouterConfig, "read", return_value=full_config):
+                plain = attach_subrouter(
+                    service, lambda value: [value] * 16
+                ).registration()
+                with patch.dict(
+                    "os.environ", {"SGLANG_NPU_MEMPOOL_TEST_CAPACITY": "1"}
+                ):
+                    capped = attach_subrouter(
+                        service, lambda value: [value] * 16
+                    ).registration()
+                self.assertEqual(plain["hbm_pages"], 128)
+                self.assertEqual(capped["hbm_pages"], 64)
+                self.assertEqual(allocator.available_size(), 16384)
 
     def test_npu_evidence_rejects_old_page_contract_and_budget(self):
         config = RouterConfig("p", "d", "/model")

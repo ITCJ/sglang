@@ -1,0 +1,906 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="blueprint" data-mode="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Answer me with HTML 0.4.3">
+<title>Ticket04 完整自运行验收</title>
+<style>
+html[data-theme="blueprint"], html[data-theme="blueprint"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 0px;
+  --shadow: none;
+  --bw: 1.5px;
+  --head-font: var(--font-sans);
+  --bg: #f6f6f3;
+  --paper: #ffffff;
+  --ink: #16181d;
+  --ink-2: #4b5260;
+  --ink-3: #8b929e;
+  --line: #1d2026;
+  --line-2: #d6dae1;
+  --fill: #f3f5f8;
+  --accent: #1d5fbf;
+  --accent-bg: #e4ecf8;
+  --ok: #1d5fbf;
+  --ok-bg: #e4ecf8;
+  --err: #c62828;
+  --err-bg: #fbeaea;
+  --warn: #a8620a;
+  --warn-bg: #fdf3e2;
+  --head-bg: #16181d;
+  --head-fg: #ffffff;
+}
+html[data-theme="blueprint"][data-mode="dark"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="blueprint"][data-mode="auto"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+}
+
+html[data-theme="shadcn"], html[data-theme="shadcn"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 8px;
+  --shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --bw: 1px;
+  --head-font: var(--font-sans);
+  --bg: #fafafa;
+  --paper: #ffffff;
+  --ink: #09090b;
+  --ink-2: #71717a;
+  --ink-3: #a1a1aa;
+  --line: #e4e4e7;
+  --line-2: #f0f0f2;
+  --fill: #f4f4f5;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --ok: #16a34a;
+  --ok-bg: #f0fdf4;
+  --err: #dc2626;
+  --err-bg: #fef2f2;
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --head-bg: #18181b;
+  --head-fg: #fafafa;
+}
+html[data-theme="shadcn"][data-mode="dark"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="shadcn"][data-mode="auto"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+}
+
+/* Answer me with HTML base — 只引用主题变量，禁止写死颜色（主题 token 见 themes/index.js） */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd { font-family: var(--font-mono); }
+
+/* ── 工具栏 ─────────────────────────────── */
+.am-toolbar {
+  position: fixed; top: 12px; right: 12px; z-index: 10; display: flex; gap: 6px;
+}
+.am-btn {
+  font: 12px/1 var(--font-sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding: 7px 10px; cursor: pointer;
+}
+.am-btn:hover { border-color: var(--ink-3); }
+.am-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── 页头 ───────────────────────────────── */
+.am-head { margin: 0 0 20px; padding-right: 260px; }
+.am-head h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; }
+.am-sub { margin: 4px 0 0; color: var(--ink-2); }
+.am-head-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 12px; color: var(--ink-2); }
+.am-head-meta b { font-family: var(--font-mono); font-weight: 400; color: var(--ink-3); margin-right: 6px; }
+.am-intro { margin-top: 12px; max-width: 80ch; }
+
+/* ── sheet 图纸板 ────────────────────────── */
+.am-sheet { max-width: 1680px; margin: 0 auto; padding: 32px 28px 40px; }
+.am-frame { position: relative; }
+.am-grid {
+  display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 20px; align-items: start;
+}
+.am-ruler { display: none; }
+html[data-theme="blueprint"] .am-frame { border: 1px solid var(--line); padding: 30px; }
+html[data-theme="blueprint"] .am-frame::before {
+  content: ""; position: absolute; inset: 18px; border: 1px solid var(--line); pointer-events: none;
+}
+html[data-theme="blueprint"] .am-ruler {
+  display: flex; position: absolute; font: 10px/1 var(--font-mono); color: var(--ink-3);
+}
+.am-ruler span { flex: 1; display: flex; align-items: center; justify-content: center; }
+.am-ruler--top, .am-ruler--bottom { left: 18px; right: 18px; height: 18px; }
+.am-ruler--top { top: 0; }
+.am-ruler--bottom { bottom: 0; }
+.am-ruler--left, .am-ruler--right { top: 18px; bottom: 18px; width: 18px; flex-direction: column; }
+.am-ruler--left { left: 0; }
+.am-ruler--right { right: 0; }
+.am-ruler--top span + span, .am-ruler--bottom span + span { border-left: 1px solid var(--line); }
+.am-ruler--left span + span, .am-ruler--right span + span { border-top: 1px solid var(--line); }
+
+/* ── 面板 ───────────────────────────────── */
+.am-panel {
+  background: var(--paper); border: var(--bw) solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); min-width: 0; overflow: hidden;
+}
+.am-panel-head {
+  display: flex; align-items: stretch; gap: 0; border-bottom: var(--bw) solid var(--line); min-height: 34px;
+}
+.am-panel-id {
+  display: flex; align-items: center; justify-content: center; min-width: 34px; padding: 0 8px;
+  background: var(--head-bg); color: var(--head-fg); font-weight: 600; font-size: 14px;
+}
+html[data-theme="shadcn"] .am-panel-id { border-radius: 6px; min-width: 24px; height: 24px; margin: 9px 0 9px 14px; font-size: 12px; }
+html[data-theme="shadcn"] .am-panel-head { border-bottom-width: 1px; }
+.am-panel-head h2 { margin: 0; padding: 7px 12px; font-size: 15px; font-weight: 600; flex: 1; display: flex; align-items: center; }
+.am-panel-meta { align-self: center; padding: 0 12px; font: 11px/1.3 var(--font-mono); color: var(--ink-2); text-align: right; }
+.am-panel-body { padding: 14px 16px 16px; }
+.am-panel-body > * + * { margin-top: 12px; }
+
+/* ── Markdown 正文 ───────────────────────── */
+.am-md > :first-child { margin-top: 0; }
+.am-md > :last-child { margin-bottom: 0; }
+.am-md p { margin: 0 0 8px; }
+.am-md ul, .am-md ol { margin: 0 0 8px; padding-left: 20px; }
+.am-md li + li { margin-top: 3px; }
+.am-md h3, .am-md h4 { margin: 14px 0 6px; font-size: 13px; }
+.am-md a { color: var(--accent); }
+.am-md blockquote { margin: 0 0 8px; padding: 2px 12px; border-left: 3px solid var(--line-2); color: var(--ink-2); }
+.am-md :not(pre) > code { font-size: 0.9em; background: var(--fill); padding: 1px 5px; border-radius: 4px; }
+.am-md hr { border: 0; border-top: 1px solid var(--line-2); margin: 12px 0; }
+.am-md table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.am-md th {
+  text-align: left; font: 11px/1.3 var(--font-mono); color: var(--ink-2); font-weight: 400;
+  padding: 6px 10px; border-bottom: 1px solid var(--line-2);
+}
+.am-md td { padding: 7px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.am-md tbody tr:nth-child(even) td { background: var(--fill); }
+.am-table-wrap { overflow-x: auto; }
+.am-code {
+  margin: 0; padding: 12px 14px; background: var(--fill); border: 1px solid var(--line-2);
+  border-radius: var(--radius); overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+}
+
+/* ── 状态徽章 ok / no / warn ──────────────── */
+.am-status { white-space: nowrap; font-weight: 500; }
+.am-status--ok { color: var(--ok); }
+.am-status--no { color: var(--err); }
+.am-status--warn { color: var(--warn); }
+.am-status-icon { display: inline-block; width: 1.1em; font-weight: 700; }
+
+/* ── callout ─────────────────────────────── */
+.am-callout {
+  border: 1px solid var(--line-2); border-left: 3px solid var(--accent); background: var(--accent-bg);
+  padding: 10px 14px; border-radius: var(--radius);
+}
+.am-callout--ok { border-left-color: var(--ok); background: var(--ok-bg); }
+.am-callout--warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.am-callout--err { border-left-color: var(--err); background: var(--err-bg); }
+.am-callout-title { font-weight: 600; margin-bottom: 4px; }
+
+/* ── kv 标题栏格 ─────────────────────────── */
+.am-kv {
+  display: grid; grid-template-columns: repeat(var(--kv-cols, 2), minmax(0, 1fr)); margin: 0;
+  border-top: var(--bw) solid var(--line); border-left: var(--bw) solid var(--line);
+}
+.am-kv-cell { border-right: var(--bw) solid var(--line); border-bottom: var(--bw) solid var(--line); padding: 6px 10px 8px; min-width: 0; }
+.am-kv-cell--wide { grid-column: 1 / -1; }
+.am-kv dt { font: 11px/1.4 var(--font-mono); color: var(--ink-2); }
+.am-kv dd { margin: 2px 0 0; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.am-kv-cell--wide dd { font-size: 17px; font-weight: 600; }
+html[data-theme="shadcn"] .am-kv { border-color: var(--line); border-radius: var(--radius); overflow: hidden; }
+
+/* ── timeline ────────────────────────────── */
+.am-timeline { list-style: none; margin: 0; padding: 0; }
+.am-timeline--h { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); padding-top: 4px; }
+.am-timeline--h li { position: relative; text-align: center; padding: 0 6px; }
+.am-timeline--h li::before {
+  content: ""; position: absolute; top: 31px; left: 0; right: 0; border-top: var(--bw) solid var(--line);
+}
+.am-timeline--h li:first-child::before { left: 50%; }
+.am-timeline--h li:last-child::before { right: 50%; }
+.am-tl-when { display: block; font-size: 15px; font-weight: 500; height: 24px; }
+.am-tl-dot {
+  position: relative; display: block; width: 11px; height: 11px; margin: 2px auto 8px;
+  border: var(--bw) solid var(--line); border-radius: 50%; background: var(--paper);
+}
+.am-tl-item--hi .am-tl-dot { background: var(--accent); border-color: var(--accent); }
+.am-tl-title { display: block; font-size: 12.5px; font-weight: 500; }
+.am-tl-text { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.45; }
+.am-timeline--v li { position: relative; padding: 0 0 14px 22px; }
+.am-timeline--v li::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: -6px; border-left: var(--bw) solid var(--line-2); }
+.am-timeline--v li:last-child::before { display: none; }
+.am-timeline--v .am-tl-dot { position: absolute; left: 0; top: 4px; margin: 0; }
+.am-timeline--v .am-tl-when { display: inline; height: auto; font: 12px var(--font-mono); color: var(--ink-2); margin-right: 8px; }
+.am-timeline--v .am-tl-title { display: inline; font-size: 14px; }
+.am-timeline--v .am-tl-text { margin-top: 2px; }
+
+/* ── annot 句子标注 ──────────────────────── */
+.am-annot + .am-annot { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.am-annot-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.am-annot-meta { font: 11px var(--font-mono); font-weight: 400; color: var(--ink-2); }
+.am-annot-scroll { overflow-x: auto; }
+.am-annot-line {
+  position: relative; display: inline-block; white-space: pre; font: 14px/1.6 var(--font-mono);
+  padding-bottom: calc(var(--rows, 0) * 17px + 14px);
+}
+.am-annot-line--wrap { display: block; white-space: normal; padding-bottom: 10px; }
+.am-annot-line--wrap .am-seg { white-space: nowrap; }
+.am-seg { position: relative; }
+.am-seg::after {
+  content: ""; position: absolute; left: 1px; right: 1px; top: calc(100% + 1px); height: 5px;
+  border: 1px solid var(--accent); border-top: 0;
+}
+.am-seg-n {
+  position: absolute; left: 0; top: calc(100% + 8px + var(--row, 0) * 17px);
+  font: 11px/16px var(--font-sans); color: var(--accent); white-space: nowrap;
+}
+.am-seg--err { color: var(--err); }
+.am-seg--err::after { border-color: var(--err); }
+.am-seg--err .am-seg-n { color: var(--err); }
+.am-annot-caption { font-size: 12px; color: var(--ink-2); }
+
+/* ── limits 限值条 ───────────────────────── */
+.am-lim + .am-lim { margin-top: 14px; }
+.am-lim-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; margin-bottom: 4px; }
+.am-lim-val { font: 12px var(--font-mono); color: var(--accent); white-space: nowrap; }
+.am-lim-track { position: relative; height: 12px; border: 1px solid var(--line-2); background: var(--fill); border-radius: calc(var(--radius) / 2); }
+.am-lim-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-bg); border-right: 1px solid var(--accent); }
+.am-lim-mark { position: absolute; top: -4px; bottom: -4px; border-left: 2px solid var(--accent); }
+.am-lim.is-over .am-lim-fill { background: var(--err-bg); border-right-color: var(--err); }
+.am-lim.is-over .am-lim-val { color: var(--err); }
+.am-lim-ticks { position: relative; height: 16px; font: 10px/16px var(--font-mono); color: var(--ink-3); }
+.am-lim-ticks span { position: absolute; transform: translateX(-50%); }
+.am-lim-ticks span:first-child { transform: none; }
+.am-lim-note { font-size: 11px; color: var(--ink-2); margin-left: 6px; }
+
+/* ── tree 结构树 ─────────────────────────── */
+.am-tree { font-size: 13px; }
+.am-tree-root { display: flex; justify-content: center; position: relative; padding-bottom: 18px; }
+.am-tree-root::after { content: ""; position: absolute; bottom: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-root--solo { padding-bottom: 12px; }
+.am-tree-root--solo::after { display: none; }
+.am-tree-box {
+  border: var(--bw) solid var(--line); background: var(--paper); padding: 6px 14px; text-align: center;
+  border-radius: var(--radius); font-weight: 600;
+}
+.am-tree-box small { display: block; font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.am-tree-box--root { background: var(--accent-bg); font-size: 15px; padding: 8px 28px; }
+.am-tree-cols { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
+.am-tree-col { position: relative; padding: 18px 8px 0; min-width: 0; }
+.am-tree-col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; border-top: var(--bw) solid var(--line); }
+.am-tree-col:first-child::before { left: 50%; }
+.am-tree-col:last-child::before { right: 50%; }
+.am-tree-col::after { content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-list, .am-tree-list ul { list-style: none; margin: 0; padding: 0; }
+.am-tree-col > .am-tree-list { margin: 8px 0 0 14px; }
+.am-tree-list ul { margin-left: 16px; }
+.am-tree-list li { position: relative; padding: 3px 0 3px 18px; }
+.am-tree-list li::before { content: ""; position: absolute; left: 0; top: 0.95em; width: 12px; border-top: 1px solid var(--ink-3); }
+.am-tree-list li::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--ink-3); }
+.am-tree-list li:last-child::after { bottom: auto; height: 0.95em; }
+.am-tree-tag { font: 11px var(--font-mono); color: var(--ink-3); margin-right: 4px; }
+.am-tree code { font: 12px var(--font-mono); }
+.am-tree-sub { display: block; font-size: 11.5px; color: var(--ink-2); }
+.am-tree-hi > .am-tree-label { color: var(--accent); font-weight: 600; }
+
+/* ── 图（flow / sequence）───────────────── */
+.am-diagram { margin: 0; overflow-x: auto; text-align: center; }
+.am-diagram svg { max-width: 100%; height: auto; font-family: var(--font-sans); }
+.am-diagram text { fill: var(--ink); font-size: 13px; }
+.am-node-shape { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-node--hi .am-node-shape { fill: var(--accent-bg); stroke: var(--accent); }
+.am-node--hi text { fill: var(--accent); font-weight: 600; }
+.am-edge { fill: none; stroke: var(--ink-2); stroke-width: 1.3; }
+.am-edge--dashed { stroke-dasharray: 5 4; }
+.am-arrow { fill: var(--ink-2); }
+.am-edge-label rect { fill: var(--paper); }
+.am-diagram .am-edge-label text { fill: var(--accent); font-size: 11.5px; }
+.am-cluster { fill: var(--fill); stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 4 3; }
+.am-diagram .am-cluster-label { fill: var(--ink-2); font: 11px var(--font-mono); }
+.am-lifeline { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 4 4; }
+.am-actor { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-note { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 1; }
+.am-diagram .am-step { fill: var(--ink-3); font: 10px var(--font-mono); }
+
+/* ── doc 线性讲解 ────────────────────────── */
+.am-doc { max-width: 1120px; margin: 0 auto; padding: 40px 28px 64px; }
+.am-doc-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
+.am-doc-layout--notoc { grid-template-columns: minmax(0, 1fr); max-width: 860px; }
+.am-toc { position: sticky; top: 24px; font-size: 13px; }
+.am-toc a { display: block; color: var(--ink-2); text-decoration: none; padding: 4px 0 4px 10px; border-left: 2px solid var(--line-2); }
+.am-toc a:hover { color: var(--ink); border-left-color: var(--accent); }
+.am-doc-body > .am-panel + .am-panel { margin-top: 20px; }
+
+/* ── 响应式与打印 ─────────────────────────── */
+@media (max-width: 1100px) {
+  .am-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .am-grid > .am-panel { grid-column: auto !important; }
+  .am-grid > .am-panel.am-span-wide { grid-column: 1 / -1 !important; }
+}
+@media (max-width: 760px) {
+  .am-sheet, .am-doc { padding: 56px 12px 24px; }
+  .am-head { padding-right: 0; }
+  .am-grid { grid-template-columns: minmax(0, 1fr); }
+  .am-grid > .am-panel.am-span-wide { grid-column: auto !important; }
+  html[data-theme="blueprint"] .am-frame { padding: 0; border: 0; }
+  html[data-theme="blueprint"] .am-frame::before, html[data-theme="blueprint"] .am-ruler { display: none; }
+  .am-doc-layout { grid-template-columns: minmax(0, 1fr); }
+  .am-toc { position: static; }
+  .am-timeline--h { grid-template-columns: minmax(0, 1fr); }
+  .am-tree-cols { grid-template-columns: minmax(0, 1fr); }
+}
+.am-colophon { text-align: center; padding: 0 0 28px; font: 11px var(--font-mono); color: var(--ink-3); }
+
+@media print {
+  .am-toolbar { display: none; }
+  body { background: var(--paper); }
+  .am-panel { break-inside: avoid; box-shadow: none; }
+}
+.am-panel--bare { border: 0; background: transparent; box-shadow: none; }
+.am-panel--bare > .am-panel-body { padding: 0; }
+.am-panel--bare .am-kv { background: var(--paper); }
+
+</style>
+</head>
+<body>
+<div class="am-toolbar">
+<button class="am-btn" type="button" data-am="theme" data-labels="{&quot;blueprint&quot;:&quot;主题：图纸&quot;,&quot;shadcn&quot;:&quot;主题：卡片&quot;}">主题：图纸</button>
+<button class="am-btn" type="button" data-am="mode" data-labels="{&quot;auto&quot;:&quot;明暗：跟随系统&quot;,&quot;light&quot;:&quot;明暗：亮&quot;,&quot;dark&quot;:&quot;明暗：暗&quot;}">明暗：跟随系统</button>
+<button class="am-btn" type="button" data-am="copy" data-done="已复制 ✓">复制源稿</button>
+</div>
+<main class="am-doc">
+<header class="am-head"><h1>Ticket04 完整自运行验收</h1><p class="am-sub">逻辑ABCE、V1–V10、独立故障运行与源码阅读顺序</p><div class="am-head-meta"><span><b>date</b>2026-10-27</span><span><b>status</b>实现、469项CPU及两轴review通过；等待用户NPU验收</span></div><div class="am-intro am-md"><div class="am-md"><p><strong>同一入口新增 <code>full-acceptance</code>，自动完成阶段 0 的完整验收。</strong>
+每机一条命令，依次运行独立参考组、目标组、容量故障和超时故障。
+结果按 <a href="output-verification-policy.md">输出约定</a> 判定。
+本票保持 open，等待用户 NPU 验收和确认。</p>
+</div></div></header>
+<div class="am-doc-layout">
+<nav class="am-toc" aria-label="目录"><a href="#panel-A">A · 功能源码阅读顺序</a><a href="#panel-B">B · 正常路径与释放条件</a><a href="#panel-C">C · 完整 NPU 验收命令</a><a href="#panel-D">D · 报告与回传材料</a><a href="#panel-E">E · 常驻 demo</a><a href="#panel-F">F · 验证状态</a></nav><div class="am-doc-body">
+<section class="am-panel" id="panel-A">
+<header class="am-panel-head"><span class="am-panel-id">A</span><h2>功能源码阅读顺序</h2></header>
+<div class="am-panel-body"><div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>顺序</th>
+<th>文件</th>
+<th>阅读目的</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td><a href="../../ascend-mempool-test/scripts/mempool_logical_cases.py">mempool_logical_cases.py</a></td>
+<td>用真实模板生成精确长度逻辑题；分别报告标准答案与完整IDs差异</td>
+</tr>
+<tr>
+<td>2</td>
+<td><a href="../../ascend-mempool-test/scripts/verify_mempool_reuse.py">verify_mempool_reuse.py</a></td>
+<td>将既有ABC内容、映射和生命周期检查扩展到E及独立控制请求</td>
+</tr>
+<tr>
+<td>3</td>
+<td><a href="../../ascend-mempool-test/scripts/verify_mempool_min.py">verify_mempool_min.py</a></td>
+<td>保存每请求、每rank实际decode步数；验证长生成与空prefix超时</td>
+</tr>
+<tr>
+<td>4</td>
+<td><a href="../../python/sglang/srt/disaggregation/ascend/mempool_router_transport.py">ascend/mempool_router_transport.py</a></td>
+<td>在隔离故障运行限制D rank15的注册容量，并保留真实容量证据</td>
+</tr>
+<tr>
+<td>5</td>
+<td><a href="../../ascend-mempool-test/scripts/verify_mempool_full.py">verify_mempool_full.py</a></td>
+<td>校验容量拒绝并汇总V1–V10；区分failed与not-run</td>
+</tr>
+<tr>
+<td>6</td>
+<td><a href="../../ascend-mempool-test/scripts/run_mempool_min.py">run_mempool_min.py</a></td>
+<td>串联双机阶段、独立池、请求、证据汇集、退出与清理</td>
+</tr>
+</tbody></table></div>
+<p>服务运行代码只改动一个 Ascend 文件，无主线目录功能修改。
+其余功能代码属于既有独立 Ascend 验收工具。
+双机进程、tokenizer fixture和离线报告需要由服务外入口管理。
+模型内部 hook 无法代替这些职责，因此沿用 <code>ascend-mempool-test/scripts/</code>。
+单元测试与解释文件不列入上面的阅读顺序。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-B">
+<header class="am-panel-head"><span class="am-panel-id">B</span><h2>正常路径与释放条件</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>参考组使用独立服务和池，关闭 match_prefix。
+目标组从空 prefix 开始运行 A→B→C→E，再运行长生成与提前 EOS。
+两组使用同一份保存的 input IDs、模型身份和采样配置。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>请求</th>
+<th align="right">输入token</th>
+<th align="right">hit_len</th>
+<th align="right">P新算token</th>
+<th align="right">prefix页／份</th>
+<th align="right">D Index K预留页／rank</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>A</td>
+<td align="right">4096</td>
+<td align="right">0</td>
+<td align="right">4096</td>
+<td align="right">32</td>
+<td align="right">33</td>
+</tr>
+<tr>
+<td>B</td>
+<td align="right">5120</td>
+<td align="right">4096</td>
+<td align="right">1024</td>
+<td align="right">40</td>
+<td align="right">41</td>
+</tr>
+<tr>
+<td>C</td>
+<td align="right">4096</td>
+<td align="right">3968</td>
+<td align="right">128</td>
+<td align="right">40</td>
+<td align="right">33</td>
+</tr>
+<tr>
+<td>E</td>
+<td align="right">4096</td>
+<td align="right">0</td>
+<td align="right">4096</td>
+<td align="right">40</td>
+<td align="right">33</td>
+</tr>
+<tr>
+<td>长生成控制</td>
+<td align="right">4096</td>
+<td align="right">0</td>
+<td align="right">4096</td>
+<td align="right">40</td>
+<td align="right">33</td>
+</tr>
+<tr>
+<td>提前EOS控制</td>
+<td align="right">128</td>
+<td align="right">0</td>
+<td align="right">128</td>
+<td align="right">40</td>
+<td align="right">2</td>
+</tr>
+</tbody></table></div>
+<p>逻辑题的答案依赖前部地点与初始数量、中部赠送量、尾部新增量。
+B 的追加用户消息改变数量与路线，E 使用另一组事实。
+完整模板必须满足B的前4096 IDs等于A，C等于A。
+入口只增加完整句子和空白，不截断问题或任意拼接词表ID。
+无法满足真实tokenizer合同就明确失败，并保留现场。</p>
+<p>输出规则分别检查参考与目标的独立标准答案。
+重复字段、缺字段、错误类型、截断或错误答案均不通过。
+完整IDs是否相同、长度和首差独立记录。
+独立冷算参考A/C另做同条件稳定性比较。
+新出现的不一致记为anomaly，需分析后才能接受完整结果。</p>
+<p>长生成强制128个输出token，并要求127–128次实际decode forward。
+其报告只表示负载覆盖；ABCE和提前EOS使用独立答案检查。</p>
+<p>保存、load_back、fill、ready和free_ack继续使用原来的严格证据。
+P native先释放，P alive等待D结束及新增prefix保存完成后归还。
+所有相关读写和依赖完成后，真实free_ack才允许后续请求复用槽位。
+Graph padding不能替代每步真实常驻和执行请求数。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-C">
+<header class="am-panel-head"><span class="am-panel-id">C</span><h2>完整 NPU 验收命令</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>两机使用相同提交、模型、依赖和配置。
+先启动P机命令，再启动D机命令；后续自动协调。
+31/32可沿用 <code>/home/cryang/mempool-min-ticket01-3132.json</code>。</p>
+<p>完整模式自动启用40页prefix、match_prefix和内容验证。
+使用新的run-id；旧运行目录不会被覆盖。</p>
+<p>P机：</p>
+</div>
+<pre class="am-code"><code data-lang="bash">bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role prefill --mode full-acceptance \
+  --config /home/cryang/mempool-min-ticket01-3132.json \
+  --run-id ticket04-001</code></pre>
+<div class="am-md"><p>D机：</p>
+</div>
+<pre class="am-code"><code data-lang="bash">bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role decode --mode full-acceptance \
+  --config /home/cryang/mempool-min-ticket01-3132.json \
+  --run-id ticket04-001</code></pre>
+<div class="am-md"><p>其他部署使用 <a href="../../ascend-mempool-test/configs/mempool-min-full.example.json">完整配置模板</a>。
+填写真实P/D地址、模型路径、网卡和NUMA节点后，两机使用同一份配置。
+启动预检核对代码和模型身份、可用容量及端口。
+就绪等待BM映射、D Graph、原生握手和全rank注册。
+硬件容量必须覆盖固定用例，入口不通过缩短输入绕过容量检查。</p>
+<p>容量故障单独重启两侧服务。
+它仅限制D rank15对Main报告的HBM页数，物理allocator不变。
+日志同时保存真实页数、注入值和需求值。
+此阶段要求注册被拒绝、请求返回503、目录账本保持空、D服务非零退出。</p>
+<p>超时故障再次使用独立池和服务。
+入口暂停自己启动的P进程组，确认D已实际预留资源后等待Main超时。
+之后检查停止新操作、拒绝新请求、无提前free、D非零退出和双端清理。
+预期故障全部符合合同，完整验收才可通过；任一检查失败，入口返回非零。
+参考和正常目标组的日志独立保留。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-D">
+<header class="am-panel-head"><span class="am-panel-id">D</span><h2>报告与回传材料</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>日志根目录为 <code>/home/cryang/log/mempool-min/ticket04-001/</code>。
+P终端打印 <code>FULL_ACCEPTANCE</code>，列出V1–V10状态与报告位置。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>文件／目录</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>summary.json</code>、<code>prefill/v1-v10.json</code></td>
+<td>总结果、逐项结论、独立答案及缺失项目</td>
+</tr>
+<tr>
+<td>两侧<code>identity.json</code>、<code>peer-identity.json</code></td>
+<td>版本、工作区差异、模型和部署身份</td>
+</tr>
+<tr>
+<td>两侧<code>cases.json</code></td>
+<td>完整input IDs、题面、模板、采样配置与标准答案</td>
+</tr>
+<tr>
+<td><code>prefill/reference/</code>、<code>prefill/target/</code></td>
+<td>完整输出、答案结果、日志和证据；目标另有资源快照</td>
+</tr>
+<tr>
+<td><code>prefill/reference/stability.json</code></td>
+<td>相同输入A/C的冷算稳定性、完整IDs长度与首差</td>
+</tr>
+<tr>
+<td><code>prefill/fetch/</code></td>
+<td>P-only、D-only、混合来源适配器结果</td>
+</tr>
+<tr>
+<td>两侧<code>capacity/</code>、<code>timeout/</code></td>
+<td>注入证据、账本、故障日志、退出码和清理收据</td>
+</tr>
+<tr>
+<td>各阶段<code>process-cleanup.json</code></td>
+<td>两端已退出本轮拥有的进程组</td>
+</tr>
+</tbody></table></div>
+<p>回传根目录summary、P侧v1-v10及失败阶段的原始日志与JSON。
+若两机失联，同时回传D侧summary与该阶段日志。
+缺rank、缺设备完成或未执行项目不会默认算通过。
+强制终止不能当作free_ack；物理NUMA页落点仍单独标为未验证。
+旧ticket03合成C的失败记录继续保留。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-E">
+<header class="am-panel-head"><span class="am-panel-id">E</span><h2>常驻 demo</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>完整配置模板默认启用prefix复用，关闭昂贵的内容回读验证。
+将填写后的配置保存为 <code>/home/cryang/mempool-min-full.json</code>。
+常驻模式继续从Main统一接收请求。</p>
+<p>P机：</p>
+</div>
+<pre class="am-code"><code data-lang="bash">bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role prefill --mode serve \
+  --config /home/cryang/mempool-min-full.json --run-id ticket04-serve-001</code></pre>
+<div class="am-md"><p>D机：</p>
+</div>
+<pre class="am-code"><code data-lang="bash">bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role decode --mode serve \
+  --config /home/cryang/mempool-min-full.json --run-id ticket04-serve-001</code></pre>
+<div class="am-md"><p>Main的 <code>/ready</code> 表示控制与注册就绪。
+<code>/status</code> 另行显示请求是否空闲、故障与账本。
+业务请求发送到Main的 <code>/generate</code>，输入使用对齐的token IDs。
+常驻服务启动成功只代表就绪，不替代完整验收。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-F">
+<header class="am-panel-head"><span class="am-panel-id">F</span><h2>验证状态</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>完整469项CPU测试通过，耗时42.440秒。
+9个Python文件通过lint、format、isort和3.9语法检查。
+7个源码模块通过strict mypy；两轴review均0项未解决。
+超长拒绝的独立性和同条件稳定性诊断已按审核修复。</p>
+<p><a href="verification/ticket04-cpu-20261027/checks.json">检查记录</a>包含源码摘要和实际日志。
+<a href="verification/ticket04-cpu-20261027/review.md">两轴审核</a>保留发现、修复和复核结论。
+实际GLM tokenizer、模型答案、远端BM和NPU Graph均尚未运行本票验收。
+用户执行完整测试并确认后，才更新本票硬件状态并关闭。</p>
+</div></div>
+</section>
+</div>
+</div>
+</main>
+<footer class="am-colophon">Generated by Answer me with HTML 0.4.3 · 2026-10-27 17:04</footer>
+<textarea id="am-source" hidden readonly aria-hidden="true">---
+title: Ticket04 完整自运行验收
+subtitle: 逻辑ABCE、V1–V10、独立故障运行与源码阅读顺序
+template: doc
+theme: blueprint
+lang: zh
+date: 2026-10-27
+status: 实现、469项CPU及两轴review通过；等待用户NPU验收
+---
+
+**同一入口新增 `full-acceptance`，自动完成阶段 0 的完整验收。**
+每机一条命令，依次运行独立参考组、目标组、容量故障和超时故障。
+结果按 [输出约定](output-verification-policy.md) 判定。
+本票保持 open，等待用户 NPU 验收和确认。
+
+## A 功能源码阅读顺序
+
+| 顺序 | 文件 | 阅读目的 |
+|---|---|---|
+| 1 | [mempool_logical_cases.py](../../ascend-mempool-test/scripts/mempool_logical_cases.py) | 用真实模板生成精确长度逻辑题；分别报告标准答案与完整IDs差异 |
+| 2 | [verify_mempool_reuse.py](../../ascend-mempool-test/scripts/verify_mempool_reuse.py) | 将既有ABC内容、映射和生命周期检查扩展到E及独立控制请求 |
+| 3 | [verify_mempool_min.py](../../ascend-mempool-test/scripts/verify_mempool_min.py) | 保存每请求、每rank实际decode步数；验证长生成与空prefix超时 |
+| 4 | [ascend/mempool_router_transport.py](../../python/sglang/srt/disaggregation/ascend/mempool_router_transport.py) | 在隔离故障运行限制D rank15的注册容量，并保留真实容量证据 |
+| 5 | [verify_mempool_full.py](../../ascend-mempool-test/scripts/verify_mempool_full.py) | 校验容量拒绝并汇总V1–V10；区分failed与not-run |
+| 6 | [run_mempool_min.py](../../ascend-mempool-test/scripts/run_mempool_min.py) | 串联双机阶段、独立池、请求、证据汇集、退出与清理 |
+
+服务运行代码只改动一个 Ascend 文件，无主线目录功能修改。
+其余功能代码属于既有独立 Ascend 验收工具。
+双机进程、tokenizer fixture和离线报告需要由服务外入口管理。
+模型内部 hook 无法代替这些职责，因此沿用 `ascend-mempool-test/scripts/`。
+单元测试与解释文件不列入上面的阅读顺序。
+
+## B 正常路径与释放条件
+
+参考组使用独立服务和池，关闭 match_prefix。
+目标组从空 prefix 开始运行 A→B→C→E，再运行长生成与提前 EOS。
+两组使用同一份保存的 input IDs、模型身份和采样配置。
+
+| 请求 | 输入token | hit_len | P新算token | prefix页／份 | D Index K预留页／rank |
+|---|---:|---:|---:|---:|---:|
+| A | 4096 | 0 | 4096 | 32 | 33 |
+| B | 5120 | 4096 | 1024 | 40 | 41 |
+| C | 4096 | 3968 | 128 | 40 | 33 |
+| E | 4096 | 0 | 4096 | 40 | 33 |
+| 长生成控制 | 4096 | 0 | 4096 | 40 | 33 |
+| 提前EOS控制 | 128 | 0 | 128 | 40 | 2 |
+
+逻辑题的答案依赖前部地点与初始数量、中部赠送量、尾部新增量。
+B 的追加用户消息改变数量与路线，E 使用另一组事实。
+完整模板必须满足B的前4096 IDs等于A，C等于A。
+入口只增加完整句子和空白，不截断问题或任意拼接词表ID。
+无法满足真实tokenizer合同就明确失败，并保留现场。
+
+输出规则分别检查参考与目标的独立标准答案。
+重复字段、缺字段、错误类型、截断或错误答案均不通过。
+完整IDs是否相同、长度和首差独立记录。
+独立冷算参考A/C另做同条件稳定性比较。
+新出现的不一致记为anomaly，需分析后才能接受完整结果。
+
+长生成强制128个输出token，并要求127–128次实际decode forward。
+其报告只表示负载覆盖；ABCE和提前EOS使用独立答案检查。
+
+保存、load_back、fill、ready和free_ack继续使用原来的严格证据。
+P native先释放，P alive等待D结束及新增prefix保存完成后归还。
+所有相关读写和依赖完成后，真实free_ack才允许后续请求复用槽位。
+Graph padding不能替代每步真实常驻和执行请求数。
+
+## C 完整 NPU 验收命令
+
+两机使用相同提交、模型、依赖和配置。
+先启动P机命令，再启动D机命令；后续自动协调。
+31/32可沿用 `/home/cryang/mempool-min-ticket01-3132.json`。
+
+完整模式自动启用40页prefix、match_prefix和内容验证。
+使用新的run-id；旧运行目录不会被覆盖。
+
+P机：
+
+```bash
+bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role prefill --mode full-acceptance \
+  --config /home/cryang/mempool-min-ticket01-3132.json \
+  --run-id ticket04-001
+```
+
+D机：
+
+```bash
+bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role decode --mode full-acceptance \
+  --config /home/cryang/mempool-min-ticket01-3132.json \
+  --run-id ticket04-001
+```
+
+其他部署使用 [完整配置模板](../../ascend-mempool-test/configs/mempool-min-full.example.json)。
+填写真实P/D地址、模型路径、网卡和NUMA节点后，两机使用同一份配置。
+启动预检核对代码和模型身份、可用容量及端口。
+就绪等待BM映射、D Graph、原生握手和全rank注册。
+硬件容量必须覆盖固定用例，入口不通过缩短输入绕过容量检查。
+
+容量故障单独重启两侧服务。
+它仅限制D rank15对Main报告的HBM页数，物理allocator不变。
+日志同时保存真实页数、注入值和需求值。
+此阶段要求注册被拒绝、请求返回503、目录账本保持空、D服务非零退出。
+
+超时故障再次使用独立池和服务。
+入口暂停自己启动的P进程组，确认D已实际预留资源后等待Main超时。
+之后检查停止新操作、拒绝新请求、无提前free、D非零退出和双端清理。
+预期故障全部符合合同，完整验收才可通过；任一检查失败，入口返回非零。
+参考和正常目标组的日志独立保留。
+
+## D 报告与回传材料
+
+日志根目录为 `/home/cryang/log/mempool-min/ticket04-001/`。
+P终端打印 `FULL_ACCEPTANCE`，列出V1–V10状态与报告位置。
+
+| 文件／目录 | 内容 |
+|---|---|
+| `summary.json`、`prefill/v1-v10.json` | 总结果、逐项结论、独立答案及缺失项目 |
+| 两侧`identity.json`、`peer-identity.json` | 版本、工作区差异、模型和部署身份 |
+| 两侧`cases.json` | 完整input IDs、题面、模板、采样配置与标准答案 |
+| `prefill/reference/`、`prefill/target/` | 完整输出、答案结果、日志和证据；目标另有资源快照 |
+| `prefill/reference/stability.json` | 相同输入A/C的冷算稳定性、完整IDs长度与首差 |
+| `prefill/fetch/` | P-only、D-only、混合来源适配器结果 |
+| 两侧`capacity/`、`timeout/` | 注入证据、账本、故障日志、退出码和清理收据 |
+| 各阶段`process-cleanup.json` | 两端已退出本轮拥有的进程组 |
+
+回传根目录summary、P侧v1-v10及失败阶段的原始日志与JSON。
+若两机失联，同时回传D侧summary与该阶段日志。
+缺rank、缺设备完成或未执行项目不会默认算通过。
+强制终止不能当作free_ack；物理NUMA页落点仍单独标为未验证。
+旧ticket03合成C的失败记录继续保留。
+
+## E 常驻 demo
+
+完整配置模板默认启用prefix复用，关闭昂贵的内容回读验证。
+将填写后的配置保存为 `/home/cryang/mempool-min-full.json`。
+常驻模式继续从Main统一接收请求。
+
+P机：
+
+```bash
+bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role prefill --mode serve \
+  --config /home/cryang/mempool-min-full.json --run-id ticket04-serve-001
+```
+
+D机：
+
+```bash
+bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role decode --mode serve \
+  --config /home/cryang/mempool-min-full.json --run-id ticket04-serve-001
+```
+
+Main的 `/ready` 表示控制与注册就绪。
+`/status` 另行显示请求是否空闲、故障与账本。
+业务请求发送到Main的 `/generate`，输入使用对齐的token IDs。
+常驻服务启动成功只代表就绪，不替代完整验收。
+
+## F 验证状态
+
+完整469项CPU测试通过，耗时42.440秒。
+9个Python文件通过lint、format、isort和3.9语法检查。
+7个源码模块通过strict mypy；两轴review均0项未解决。
+超长拒绝的独立性和同条件稳定性诊断已按审核修复。
+
+[检查记录](verification/ticket04-cpu-20261027/checks.json)包含源码摘要和实际日志。
+[两轴审核](verification/ticket04-cpu-20261027/review.md)保留发现、修复和复核结论。
+实际GLM tokenizer、模型答案、远端BM和NPU Graph均尚未运行本票验收。
+用户执行完整测试并确认后，才更新本票硬件状态并关闭。
+</textarea>
+<script>
+(() => {
+  const root = document.documentElement;
+  const cycle = (list, cur) => list[(list.indexOf(cur) + 1) % list.length];
+  const label = (btn, value) => {
+    const map = JSON.parse(btn.dataset.labels || '{}');
+    btn.textContent = map[value] || value;
+  };
+  const bind = (name, attr, values) => {
+    const btn = document.querySelector(`[data-am="${name}"]`);
+    if (!btn) return;
+    label(btn, root.getAttribute(attr));
+    btn.addEventListener('click', () => {
+      const next = cycle(values, root.getAttribute(attr));
+      root.setAttribute(attr, next);
+      label(btn, next);
+    });
+  };
+  bind('theme', 'data-theme', ['blueprint', 'shadcn']);
+  bind('mode', 'data-mode', ['auto', 'light', 'dark']);
+
+  const copyBtn = document.querySelector('[data-am="copy"]');
+  copyBtn?.addEventListener('click', async () => {
+    const text = document.getElementById('am-source').value;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = Object.assign(document.createElement('textarea'), { value: text });
+      document.body.append(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    const original = copyBtn.textContent;
+    copyBtn.textContent = copyBtn.dataset.done;
+    setTimeout(() => { copyBtn.textContent = original; }, 1400);
+  });
+})();
+</script>
+</body>
+</html>

@@ -11,7 +11,7 @@ import verify_mempool_prefix as verifier
 
 
 class TestPrefixEvidence(unittest.TestCase):
-    def evidence(self, *, reuse=False):
+    def evidence(self, *, reuse=False, full=False, controls=False):
         system = fixture.TestPrefixMainRouter()
         system.setUp()
         snapshots, cases, lines = [], [], []
@@ -26,7 +26,10 @@ class TestPrefixEvidence(unittest.TestCase):
             from msgspec.structs import replace
 
             system.main.config = replace(system.main.config, match_prefix=True)
-            scenarios = scenarios[:3]
+            if not full:
+                scenarios = scenarios[:3]
+        if controls:
+            scenarios += (([10] * 4096, 0, 40), ([11] * 128, 0, 40))
         for index, (tokens, added, total) in enumerate(scenarios):
             request, p_dispatch, d_dispatch = system.start_inference(tokens)
             hit = request["hit_len"]
@@ -68,7 +71,9 @@ class TestPrefixEvidence(unittest.TestCase):
             snapshots.append(system.main.status())
             cases.append(
                 dict(
-                    name=("reuse-prefix-" if reuse else "cold-prefix-") + "abce"[index],
+                    name=("reuse-prefix-" if reuse else "cold-prefix-") + "abce"[index]
+                    if index < 4
+                    else ("long-generation", "early-eos")[index - 4],
                     input_ids=tokens,
                 )
             )

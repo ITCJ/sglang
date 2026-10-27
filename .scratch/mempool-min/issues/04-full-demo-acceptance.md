@@ -9,7 +9,7 @@
 **Blocked by:** [03：命中 prefix 后恢复与后缀计算](03-prefix-restore-and-suffix.md)。
 该票完成实现 review、用户 NPU 验收并关闭后才可开始。
 
-**Status:** ready-for-agent
+**Status:** needs-info
 
 **State:** open
 
@@ -164,6 +164,26 @@ publish／finished／free_ack 和 D 每步负载必须可追溯。跨机裸时�
   整个 mempool demo min 经用户确认验收后才可删除，不能因阶段 0 结束提前删除。
 
 ## Comments
+
+### 2026-10-27：代码、完整CPU和两轴审核交付；等待NPU验收
+
+完整469项CPU回归通过（42.440秒）；9文件lint/format/isort/3.9语法和7模块strict mypy通过。
+Standards与Spec复核均0项未解决；已修复超长拒绝与页对齐混用的漏洞，补齐冷算A/C稳定性诊断。
+双机full-acceptance、常驻配置、逐项V1–V10、独立故障及清理入口已交付。
+证据见[检查记录](../verification/ticket04-cpu-20261027/checks.json)和
+[审核记录](../verification/ticket04-cpu-20261027/review.md)，命令见[交付说明](../ticket04-delivery.md)。
+运行源码仅改Ascend注册边界；独立验收脚本负责服务外编排，未改主线目录功能。
+NPU未运行、用户尚未验收；Status转needs-info，State保持open，硬件项保持未勾选。
+本提交不解锁后续阶段，也不改写ticket03的已知数值限制或旧失败报告。
+
+### 2026-10-27：用户授权实施，完整入口已接线
+
+以7bce684429为实施基线，复用已确认测试边界。新增full-acceptance、同长度逻辑ABCE、
+独立答案、完整IDs差异、长生成/EOS及隔离容量/超时运行，汇总V1–V10证据。
+运行服务只修改Ascend注册边界；其余变更是独立验收入口，主线目录没有功能修改。
+相关CPU30项与7模块strict mypy通过；完整回归、Standards/Spec review正在执行。
+[交付说明](../ticket04-delivery.md)列出命令、源码阅读顺序及目录外脚本必要性。
+NPU尚未运行，所有硬件验收项保持未勾选，State保持open。
 
 ### 2026-10-27：03按范围收口，更新完整验收的输入与输出判定
 

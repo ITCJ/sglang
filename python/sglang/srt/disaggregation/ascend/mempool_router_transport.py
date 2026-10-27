@@ -193,7 +193,34 @@ def attach_subrouter(
     def registered() -> dict[str, Any]:
         if control.peer is None:
             raise RuntimeError("native control handshake has not completed")
-        return dict(registration, peer_session=control.peer.session)
+        result = dict(registration, peer_session=control.peer.session)
+        capacity_test = os.environ.get("SGLANG_NPU_MEMPOOL_TEST_CAPACITY")
+        if capacity_test is not None:
+            if capacity_test != "1" or not (
+                config.verify_prefix and config.match_prefix
+            ):
+                raise ValueError("capacity fault requires verified prefix acceptance")
+            if role == "decode" and control.local.tp_rank == 15:
+                # Isolated acceptance fault: limit the advertised budget, not the
+                # physical allocator. Preserve both numbers as hardware evidence.
+                required = (
+                    config.prompt_capacity + config.decode_capacity
+                ) // config.page_size
+                actual = result["hbm_pages"]
+                result["hbm_pages"] = min(actual, required - 1)
+                logger.warning(
+                    "mempool acceptance_capacity data=%s",
+                    json.dumps(
+                        dict(
+                            run_id=run_id,
+                            rank=15,
+                            actual_hbm_pages=actual,
+                            advertised_hbm_pages=result["hbm_pages"],
+                            required_hbm_pages=required,
+                        )
+                    ),
+                )
+        return result
 
     return MempoolSubrouter(
         shard,

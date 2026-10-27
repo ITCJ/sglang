@@ -1,0 +1,15 @@
+test_length_rejection_is_independent_of_alignment_and_generation_limits (test_mempool_full.TestFullEntry.test_length_rejection_is_independent_of_alignment_and_generation_limits) ... FAIL
+
+======================================================================
+FAIL: test_length_rejection_is_independent_of_alignment_and_generation_limits (test_mempool_full.TestFullEntry.test_length_rejection_is_independent_of_alignment_and_generation_limits)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_full.py", line 215, in test_length_rejection_is_independent_of_alignment_and_generation_limits
+    with self.assertRaisesRegex(ValueError, "was admitted"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (failures=1)
