@@ -1,13 +1,16 @@
 """Exercise paired orchestration and child ownership without NPU libraries."""
 
 import concurrent.futures
+import http.client
 import json
 import signal
 import socket
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
+from socketserver import BaseRequestHandler, ThreadingTCPServer
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -20,6 +23,73 @@ from ticket10_processes import Peer, Processes
 
 
 class TestAcceptanceRunner(unittest.TestCase):
+    def test_ready_probe_recovers_from_echoed_request_line(self):
+        """A malformed /ready reply is not readiness and must not abort startup."""
+        requests = []
+
+        class Handler(BaseRequestHandler):
+            def handle(self):
+                with self.request.makefile("rb") as stream:
+                    line = stream.readline()
+                    while stream.readline() not in (b"\r\n", b"\n", b""):
+                        pass
+                requests.append(line)
+                self.request.sendall(
+                    line
+                    if len(requests) == 1
+                    else b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                )
+
+        with ThreadingTCPServer(("127.0.0.1", 0), Handler) as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            self.addCleanup(thread.join, 5)
+            self.addCleanup(server.shutdown)
+            url = f"http://127.0.0.1:{server.server_address[1]}/ready"
+            with patch("builtins.print") as warning:
+                runner.wait_http(url, 3, lambda: None)
+            warning.assert_called_once()
+            self.assertIn(url, warning.call_args.args[0])
+            self.assertIn("BadStatusLine", warning.call_args.args[0])
+        self.assertEqual(requests, [b"GET /ready HTTP/1.1\r\n"] * 2)
+
+    def test_ready_probe_times_out_with_protocol_evidence(self):
+        url = "http://127.0.0.1:12345/ready"
+        with (
+            patch.object(runner.urllib.request, "build_opener") as build_opener,
+            patch("builtins.print"),
+        ):
+            build_opener.return_value.open.side_effect = http.client.BadStatusLine(
+                "GET /ready HTTP/1.1\r\n"
+            )
+            with self.assertRaises(TimeoutError) as failure:
+                runner.wait_http(url, 0.01, lambda: None)
+        self.assertIn(url, str(failure.exception))
+        self.assertIn("BadStatusLine", str(failure.exception))
+        self.assertIn("GET /ready", str(failure.exception))
+
+    def test_ready_probe_preserves_watchdog_failure_after_protocol_error(self):
+        checks = []
+
+        def watch():
+            checks.append(True)
+            if len(checks) == 2:
+                raise RuntimeError("NPU service exited with status 7")
+
+        with (
+            patch.object(runner.urllib.request, "build_opener") as build_opener,
+            patch.object(runner.time, "sleep"),
+            patch("builtins.print"),
+        ):
+            build_opener.return_value.open.side_effect = http.client.BadStatusLine(
+                "GET /ready HTTP/1.1\r\n"
+            )
+            with self.assertRaisesRegex(
+                RuntimeError, "NPU service exited with status 7"
+            ):
+                runner.wait_http("http://127.0.0.1:12345/ready", 3, watch)
+            self.assertEqual(build_opener.return_value.open.call_count, 1)
+
     def test_peer_keeps_early_barrier_and_propagates_failure(self):
         left, right = socket.socketpair()
         with Peer(left, 2) as p, Peer(right, 2) as d:

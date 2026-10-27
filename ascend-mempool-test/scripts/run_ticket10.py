@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import http.client
 import json
 import math
 import os
@@ -187,17 +188,30 @@ def available_port(host: str, port: int) -> None:
 def wait_http(url: str, timeout: float, check: Callable[[], None]) -> None:
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     deadline = time.monotonic() + timeout
+    last_error = "no response"
+    reported_protocol_error = False
     while True:
         check()
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(f"service not ready: {url}; last error: {last_error}")
         try:
-            with opener.open(url, timeout=3) as response:
+            with opener.open(url, timeout=min(3, remaining)) as response:
                 if response.status == 200:
                     return
-        except (OSError, urllib.error.URLError):
-            pass
-        if time.monotonic() >= deadline:
-            raise TimeoutError(f"service not ready: {url}")
-        time.sleep(1)
+                last_error = f"HTTP {response.status}"
+        except (OSError, urllib.error.URLError, http.client.HTTPException) as exc:
+            last_error = f"{type(exc).__name__}: {str(exc)!r}"
+            if (
+                isinstance(exc, http.client.HTTPException)
+                and not reported_protocol_error
+            ):
+                print(f"WAIT_HTTP_RETRY url={url} error={last_error}", flush=True)
+                reported_protocol_error = True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(f"service not ready: {url}; last error: {last_error}")
+        time.sleep(min(1, remaining))
 
 
 def send_log(peer: Peer, path: Path) -> None:
