@@ -1,0 +1,2013 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="shadcn" data-mode="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Answer me with HTML 0.4.3">
+<title>两个部署例子：sharing_plan 如何分组</title>
+<style>
+html[data-theme="blueprint"], html[data-theme="blueprint"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 0px;
+  --shadow: none;
+  --bw: 1.5px;
+  --head-font: var(--font-sans);
+  --bg: #f6f6f3;
+  --paper: #ffffff;
+  --ink: #16181d;
+  --ink-2: #4b5260;
+  --ink-3: #8b929e;
+  --line: #1d2026;
+  --line-2: #d6dae1;
+  --fill: #f3f5f8;
+  --accent: #1d5fbf;
+  --accent-bg: #e4ecf8;
+  --ok: #1d5fbf;
+  --ok-bg: #e4ecf8;
+  --err: #c62828;
+  --err-bg: #fbeaea;
+  --warn: #a8620a;
+  --warn-bg: #fdf3e2;
+  --head-bg: #16181d;
+  --head-fg: #ffffff;
+}
+html[data-theme="blueprint"][data-mode="dark"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="blueprint"][data-mode="auto"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+}
+
+html[data-theme="shadcn"], html[data-theme="shadcn"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 8px;
+  --shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --bw: 1px;
+  --head-font: var(--font-sans);
+  --bg: #fafafa;
+  --paper: #ffffff;
+  --ink: #09090b;
+  --ink-2: #71717a;
+  --ink-3: #a1a1aa;
+  --line: #e4e4e7;
+  --line-2: #f0f0f2;
+  --fill: #f4f4f5;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --ok: #16a34a;
+  --ok-bg: #f0fdf4;
+  --err: #dc2626;
+  --err-bg: #fef2f2;
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --head-bg: #18181b;
+  --head-fg: #fafafa;
+}
+html[data-theme="shadcn"][data-mode="dark"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="shadcn"][data-mode="auto"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+}
+
+/* Answer me with HTML base — 只引用主题变量，禁止写死颜色（主题 token 见 themes/index.js） */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd { font-family: var(--font-mono); }
+
+/* ── 工具栏 ─────────────────────────────── */
+.am-toolbar {
+  position: fixed; top: 12px; right: 12px; z-index: 10; display: flex; gap: 6px;
+}
+.am-btn {
+  font: 12px/1 var(--font-sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding: 7px 10px; cursor: pointer;
+}
+.am-btn:hover { border-color: var(--ink-3); }
+.am-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── 页头 ───────────────────────────────── */
+.am-head { margin: 0 0 20px; padding-right: 260px; }
+.am-head h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; }
+.am-sub { margin: 4px 0 0; color: var(--ink-2); }
+.am-head-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 12px; color: var(--ink-2); }
+.am-head-meta b { font-family: var(--font-mono); font-weight: 400; color: var(--ink-3); margin-right: 6px; }
+.am-intro { margin-top: 12px; max-width: 80ch; }
+
+/* ── sheet 图纸板 ────────────────────────── */
+.am-sheet { max-width: 1680px; margin: 0 auto; padding: 32px 28px 40px; }
+.am-frame { position: relative; }
+.am-grid {
+  display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 20px; align-items: start;
+}
+.am-ruler { display: none; }
+html[data-theme="blueprint"] .am-frame { border: 1px solid var(--line); padding: 30px; }
+html[data-theme="blueprint"] .am-frame::before {
+  content: ""; position: absolute; inset: 18px; border: 1px solid var(--line); pointer-events: none;
+}
+html[data-theme="blueprint"] .am-ruler {
+  display: flex; position: absolute; font: 10px/1 var(--font-mono); color: var(--ink-3);
+}
+.am-ruler span { flex: 1; display: flex; align-items: center; justify-content: center; }
+.am-ruler--top, .am-ruler--bottom { left: 18px; right: 18px; height: 18px; }
+.am-ruler--top { top: 0; }
+.am-ruler--bottom { bottom: 0; }
+.am-ruler--left, .am-ruler--right { top: 18px; bottom: 18px; width: 18px; flex-direction: column; }
+.am-ruler--left { left: 0; }
+.am-ruler--right { right: 0; }
+.am-ruler--top span + span, .am-ruler--bottom span + span { border-left: 1px solid var(--line); }
+.am-ruler--left span + span, .am-ruler--right span + span { border-top: 1px solid var(--line); }
+
+/* ── 面板 ───────────────────────────────── */
+.am-panel {
+  background: var(--paper); border: var(--bw) solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); min-width: 0; overflow: hidden;
+}
+.am-panel-head {
+  display: flex; align-items: stretch; gap: 0; border-bottom: var(--bw) solid var(--line); min-height: 34px;
+}
+.am-panel-id {
+  display: flex; align-items: center; justify-content: center; min-width: 34px; padding: 0 8px;
+  background: var(--head-bg); color: var(--head-fg); font-weight: 600; font-size: 14px;
+}
+html[data-theme="shadcn"] .am-panel-id { border-radius: 6px; min-width: 24px; height: 24px; margin: 9px 0 9px 14px; font-size: 12px; }
+html[data-theme="shadcn"] .am-panel-head { border-bottom-width: 1px; }
+.am-panel-head h2 { margin: 0; padding: 7px 12px; font-size: 15px; font-weight: 600; flex: 1; display: flex; align-items: center; }
+.am-panel-meta { align-self: center; padding: 0 12px; font: 11px/1.3 var(--font-mono); color: var(--ink-2); text-align: right; }
+.am-panel-body { padding: 14px 16px 16px; }
+.am-panel-body > * + * { margin-top: 12px; }
+
+/* ── Markdown 正文 ───────────────────────── */
+.am-md > :first-child { margin-top: 0; }
+.am-md > :last-child { margin-bottom: 0; }
+.am-md p { margin: 0 0 8px; }
+.am-md ul, .am-md ol { margin: 0 0 8px; padding-left: 20px; }
+.am-md li + li { margin-top: 3px; }
+.am-md h3, .am-md h4 { margin: 14px 0 6px; font-size: 13px; }
+.am-md a { color: var(--accent); }
+.am-md blockquote { margin: 0 0 8px; padding: 2px 12px; border-left: 3px solid var(--line-2); color: var(--ink-2); }
+.am-md :not(pre) > code { font-size: 0.9em; background: var(--fill); padding: 1px 5px; border-radius: 4px; }
+.am-md hr { border: 0; border-top: 1px solid var(--line-2); margin: 12px 0; }
+.am-md table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.am-md th {
+  text-align: left; font: 11px/1.3 var(--font-mono); color: var(--ink-2); font-weight: 400;
+  padding: 6px 10px; border-bottom: 1px solid var(--line-2);
+}
+.am-md td { padding: 7px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.am-md tbody tr:nth-child(even) td { background: var(--fill); }
+.am-table-wrap { overflow-x: auto; }
+.am-code {
+  margin: 0; padding: 12px 14px; background: var(--fill); border: 1px solid var(--line-2);
+  border-radius: var(--radius); overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+}
+
+/* ── 状态徽章 ok / no / warn ──────────────── */
+.am-status { white-space: nowrap; font-weight: 500; }
+.am-status--ok { color: var(--ok); }
+.am-status--no { color: var(--err); }
+.am-status--warn { color: var(--warn); }
+.am-status-icon { display: inline-block; width: 1.1em; font-weight: 700; }
+
+/* ── callout ─────────────────────────────── */
+.am-callout {
+  border: 1px solid var(--line-2); border-left: 3px solid var(--accent); background: var(--accent-bg);
+  padding: 10px 14px; border-radius: var(--radius);
+}
+.am-callout--ok { border-left-color: var(--ok); background: var(--ok-bg); }
+.am-callout--warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.am-callout--err { border-left-color: var(--err); background: var(--err-bg); }
+.am-callout-title { font-weight: 600; margin-bottom: 4px; }
+
+/* ── kv 标题栏格 ─────────────────────────── */
+.am-kv {
+  display: grid; grid-template-columns: repeat(var(--kv-cols, 2), minmax(0, 1fr)); margin: 0;
+  border-top: var(--bw) solid var(--line); border-left: var(--bw) solid var(--line);
+}
+.am-kv-cell { border-right: var(--bw) solid var(--line); border-bottom: var(--bw) solid var(--line); padding: 6px 10px 8px; min-width: 0; }
+.am-kv-cell--wide { grid-column: 1 / -1; }
+.am-kv dt { font: 11px/1.4 var(--font-mono); color: var(--ink-2); }
+.am-kv dd { margin: 2px 0 0; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.am-kv-cell--wide dd { font-size: 17px; font-weight: 600; }
+html[data-theme="shadcn"] .am-kv { border-color: var(--line); border-radius: var(--radius); overflow: hidden; }
+
+/* ── timeline ────────────────────────────── */
+.am-timeline { list-style: none; margin: 0; padding: 0; }
+.am-timeline--h { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); padding-top: 4px; }
+.am-timeline--h li { position: relative; text-align: center; padding: 0 6px; }
+.am-timeline--h li::before {
+  content: ""; position: absolute; top: 31px; left: 0; right: 0; border-top: var(--bw) solid var(--line);
+}
+.am-timeline--h li:first-child::before { left: 50%; }
+.am-timeline--h li:last-child::before { right: 50%; }
+.am-tl-when { display: block; font-size: 15px; font-weight: 500; height: 24px; }
+.am-tl-dot {
+  position: relative; display: block; width: 11px; height: 11px; margin: 2px auto 8px;
+  border: var(--bw) solid var(--line); border-radius: 50%; background: var(--paper);
+}
+.am-tl-item--hi .am-tl-dot { background: var(--accent); border-color: var(--accent); }
+.am-tl-title { display: block; font-size: 12.5px; font-weight: 500; }
+.am-tl-text { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.45; }
+.am-timeline--v li { position: relative; padding: 0 0 14px 22px; }
+.am-timeline--v li::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: -6px; border-left: var(--bw) solid var(--line-2); }
+.am-timeline--v li:last-child::before { display: none; }
+.am-timeline--v .am-tl-dot { position: absolute; left: 0; top: 4px; margin: 0; }
+.am-timeline--v .am-tl-when { display: inline; height: auto; font: 12px var(--font-mono); color: var(--ink-2); margin-right: 8px; }
+.am-timeline--v .am-tl-title { display: inline; font-size: 14px; }
+.am-timeline--v .am-tl-text { margin-top: 2px; }
+
+/* ── annot 句子标注 ──────────────────────── */
+.am-annot + .am-annot { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.am-annot-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.am-annot-meta { font: 11px var(--font-mono); font-weight: 400; color: var(--ink-2); }
+.am-annot-scroll { overflow-x: auto; }
+.am-annot-line {
+  position: relative; display: inline-block; white-space: pre; font: 14px/1.6 var(--font-mono);
+  padding-bottom: calc(var(--rows, 0) * 17px + 14px);
+}
+.am-annot-line--wrap { display: block; white-space: normal; padding-bottom: 10px; }
+.am-annot-line--wrap .am-seg { white-space: nowrap; }
+.am-seg { position: relative; }
+.am-seg::after {
+  content: ""; position: absolute; left: 1px; right: 1px; top: calc(100% + 1px); height: 5px;
+  border: 1px solid var(--accent); border-top: 0;
+}
+.am-seg-n {
+  position: absolute; left: 0; top: calc(100% + 8px + var(--row, 0) * 17px);
+  font: 11px/16px var(--font-sans); color: var(--accent); white-space: nowrap;
+}
+.am-seg--err { color: var(--err); }
+.am-seg--err::after { border-color: var(--err); }
+.am-seg--err .am-seg-n { color: var(--err); }
+.am-annot-caption { font-size: 12px; color: var(--ink-2); }
+
+/* ── limits 限值条 ───────────────────────── */
+.am-lim + .am-lim { margin-top: 14px; }
+.am-lim-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; margin-bottom: 4px; }
+.am-lim-val { font: 12px var(--font-mono); color: var(--accent); white-space: nowrap; }
+.am-lim-track { position: relative; height: 12px; border: 1px solid var(--line-2); background: var(--fill); border-radius: calc(var(--radius) / 2); }
+.am-lim-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-bg); border-right: 1px solid var(--accent); }
+.am-lim-mark { position: absolute; top: -4px; bottom: -4px; border-left: 2px solid var(--accent); }
+.am-lim.is-over .am-lim-fill { background: var(--err-bg); border-right-color: var(--err); }
+.am-lim.is-over .am-lim-val { color: var(--err); }
+.am-lim-ticks { position: relative; height: 16px; font: 10px/16px var(--font-mono); color: var(--ink-3); }
+.am-lim-ticks span { position: absolute; transform: translateX(-50%); }
+.am-lim-ticks span:first-child { transform: none; }
+.am-lim-note { font-size: 11px; color: var(--ink-2); margin-left: 6px; }
+
+/* ── tree 结构树 ─────────────────────────── */
+.am-tree { font-size: 13px; }
+.am-tree-root { display: flex; justify-content: center; position: relative; padding-bottom: 18px; }
+.am-tree-root::after { content: ""; position: absolute; bottom: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-root--solo { padding-bottom: 12px; }
+.am-tree-root--solo::after { display: none; }
+.am-tree-box {
+  border: var(--bw) solid var(--line); background: var(--paper); padding: 6px 14px; text-align: center;
+  border-radius: var(--radius); font-weight: 600;
+}
+.am-tree-box small { display: block; font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.am-tree-box--root { background: var(--accent-bg); font-size: 15px; padding: 8px 28px; }
+.am-tree-cols { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
+.am-tree-col { position: relative; padding: 18px 8px 0; min-width: 0; }
+.am-tree-col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; border-top: var(--bw) solid var(--line); }
+.am-tree-col:first-child::before { left: 50%; }
+.am-tree-col:last-child::before { right: 50%; }
+.am-tree-col::after { content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-list, .am-tree-list ul { list-style: none; margin: 0; padding: 0; }
+.am-tree-col > .am-tree-list { margin: 8px 0 0 14px; }
+.am-tree-list ul { margin-left: 16px; }
+.am-tree-list li { position: relative; padding: 3px 0 3px 18px; }
+.am-tree-list li::before { content: ""; position: absolute; left: 0; top: 0.95em; width: 12px; border-top: 1px solid var(--ink-3); }
+.am-tree-list li::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--ink-3); }
+.am-tree-list li:last-child::after { bottom: auto; height: 0.95em; }
+.am-tree-tag { font: 11px var(--font-mono); color: var(--ink-3); margin-right: 4px; }
+.am-tree code { font: 12px var(--font-mono); }
+.am-tree-sub { display: block; font-size: 11.5px; color: var(--ink-2); }
+.am-tree-hi > .am-tree-label { color: var(--accent); font-weight: 600; }
+
+/* ── 图（flow / sequence）───────────────── */
+.am-diagram { margin: 0; overflow-x: auto; text-align: center; }
+.am-diagram svg { max-width: 100%; height: auto; font-family: var(--font-sans); }
+.am-diagram text { fill: var(--ink); font-size: 13px; }
+.am-node-shape { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-node--hi .am-node-shape { fill: var(--accent-bg); stroke: var(--accent); }
+.am-node--hi text { fill: var(--accent); font-weight: 600; }
+.am-edge { fill: none; stroke: var(--ink-2); stroke-width: 1.3; }
+.am-edge--dashed { stroke-dasharray: 5 4; }
+.am-arrow { fill: var(--ink-2); }
+.am-edge-label rect { fill: var(--paper); }
+.am-diagram .am-edge-label text { fill: var(--accent); font-size: 11.5px; }
+.am-cluster { fill: var(--fill); stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 4 3; }
+.am-diagram .am-cluster-label { fill: var(--ink-2); font: 11px var(--font-mono); }
+.am-lifeline { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 4 4; }
+.am-actor { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-note { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 1; }
+.am-diagram .am-step { fill: var(--ink-3); font: 10px var(--font-mono); }
+
+/* ── doc 线性讲解 ────────────────────────── */
+.am-doc { max-width: 1120px; margin: 0 auto; padding: 40px 28px 64px; }
+.am-doc-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
+.am-doc-layout--notoc { grid-template-columns: minmax(0, 1fr); max-width: 860px; }
+.am-toc { position: sticky; top: 24px; font-size: 13px; }
+.am-toc a { display: block; color: var(--ink-2); text-decoration: none; padding: 4px 0 4px 10px; border-left: 2px solid var(--line-2); }
+.am-toc a:hover { color: var(--ink); border-left-color: var(--accent); }
+.am-doc-body > .am-panel + .am-panel { margin-top: 20px; }
+
+/* ── 响应式与打印 ─────────────────────────── */
+@media (max-width: 1100px) {
+  .am-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .am-grid > .am-panel { grid-column: auto !important; }
+  .am-grid > .am-panel.am-span-wide { grid-column: 1 / -1 !important; }
+}
+@media (max-width: 760px) {
+  .am-sheet, .am-doc { padding: 56px 12px 24px; }
+  .am-head { padding-right: 0; }
+  .am-grid { grid-template-columns: minmax(0, 1fr); }
+  .am-grid > .am-panel.am-span-wide { grid-column: auto !important; }
+  html[data-theme="blueprint"] .am-frame { padding: 0; border: 0; }
+  html[data-theme="blueprint"] .am-frame::before, html[data-theme="blueprint"] .am-ruler { display: none; }
+  .am-doc-layout { grid-template-columns: minmax(0, 1fr); }
+  .am-toc { position: static; }
+  .am-timeline--h { grid-template-columns: minmax(0, 1fr); }
+  .am-tree-cols { grid-template-columns: minmax(0, 1fr); }
+}
+.am-colophon { text-align: center; padding: 0 0 28px; font: 11px var(--font-mono); color: var(--ink-3); }
+
+@media print {
+  .am-toolbar { display: none; }
+  body { background: var(--paper); }
+  .am-panel { break-inside: avoid; box-shadow: none; }
+}
+.am-panel--bare { border: 0; background: transparent; box-shadow: none; }
+.am-panel--bare > .am-panel-body { padding: 0; }
+.am-panel--bare .am-kv { background: var(--paper); }
+
+</style>
+</head>
+<body>
+<div class="am-toolbar">
+<button class="am-btn" type="button" data-am="theme" data-labels="{&quot;blueprint&quot;:&quot;主题：图纸&quot;,&quot;shadcn&quot;:&quot;主题：卡片&quot;}">主题：卡片</button>
+<button class="am-btn" type="button" data-am="mode" data-labels="{&quot;auto&quot;:&quot;明暗：跟随系统&quot;,&quot;light&quot;:&quot;明暗：亮&quot;,&quot;dark&quot;:&quot;明暗：暗&quot;}">明暗：亮</button>
+<button class="am-btn" type="button" data-am="copy" data-done="已复制 ✓">复制源稿</button>
+</div>
+<main class="am-doc">
+<header class="am-head"><h1>两个部署例子：sharing_plan 如何分组</h1><p class="am-sub">双机16卡 TP16；四机32卡 TP32，并展开 TP8 × DP4 的边界</p><div class="am-head-meta"><span><b>source</b>2026-10-15 · d328af12bd · 使用当前规划器计算</span></div><div class="am-intro am-md"><div class="am-md"><p>你确认的部署是双机1P+1D、四机2P+2D。
+第一个例子每个 NUMA 放两个同实例 ranks。
+第二个例子先用每机 TP32，每个 NUMA 放四个同实例 ranks。
+最后再说明 TP8×DP4 如何改变共享边界。</p>
+</div></div></header>
+<div class="am-doc-layout">
+<nav class="am-toc" aria-label="目录"><a href="#panel-A">A · 先固定计数口径和支持范围</a><a href="#panel-B">B · 例一：两台16卡，每侧一个 TP16</a><a href="#panel-C">C · 例一：完整拆开 NUMA0 的四个 participants</a><a href="#panel-D">D · 例一：这些输入怎样经过代码</a><a href="#panel-E">E · 例二：四台32卡，先按每机 TP32 展开</a><a href="#panel-F">F · 例二：八个 participants 与全四机的贡献</a><a href="#panel-G">G · 回到 TP8×DP4：为什么不能直接当作 TP32</a><a href="#panel-H">H · 可复现输入、检查结果和源码落点</a></nav><div class="am-doc-body">
+<section class="am-panel" id="panel-A">
+<header class="am-panel-head"><span class="am-panel-id">A</span><h2>先固定计数口径和支持范围</h2></header>
+<div class="am-panel-body"><div class="am-md"><p><strong>物理机、TP 实例、共享组和 BM 组是四层概念。</strong>
+一台机器可以运行一个 TP 实例，也可以运行多个实例。
+TP rank 在每个实例内部编号，不按整个集群的卡数编号。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>名称</th>
+<th>本文含义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>TP 实例</td>
+<td>一侧共同处理一份请求状态的 TP workers</td>
+</tr>
+<tr>
+<td>本侧共享组</td>
+<td>同实例、同主机、同 NUMA 的一组 ranks</td>
+</tr>
+<tr>
+<td>本侧物理存储份数</td>
+<td>共享开启时，每组一份 owner allocation</td>
+</tr>
+<tr>
+<td>P/D 配对的 BM 组</td>
+<td>把 P 侧和 D 侧对应成员放入同一个 BM world</td>
+</tr>
+<tr>
+<td>g</td>
+<td>本侧一个共享组的成员数</td>
+</tr>
+<tr>
+<td>BM world_size</td>
+<td>一个配对组的 P/D participants 总数，等于2g</td>
+</tr>
+</tbody></table></div>
+<p>一个 g=2 的 BM 组有4个 participants。
+它规划两份物理存储：P 一份、D 一份。
+不能把这两份存储算作两个 BM world。</p>
+<p><strong>两例使用这些明确的示意假设：</strong></p>
+<ul>
+<li>NUMA 编号统一写成0到7。</li>
+<li>卡号、设备编号和本侧 TP rank 按表中的顺序对应。</li>
+<li>16卡机器中，相邻两卡分配到一个 NUMA。</li>
+<li>32卡机器中，相邻四卡分配到一个 NUMA。</li>
+<li>所有成员使用兼容的 compact KV 布局。</li>
+</ul>
+<p>这些是配置示例，不是对真实硬件亲和性的探测结果。
+真实部署应按设备拓扑生成 map。
+规划器也不会自动验证实际物理页落点。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>当前纯规划器</th>
+<th>当前正式 mempool 服务</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>TP16、DP1</td>
+<td>可以计算</td>
+<td>共享路径仍等待02-2</td>
+</tr>
+<tr>
+<td>TP32、DP1</td>
+<td>可以计算</td>
+<td>被现有 TP16 限制拒绝</td>
+</tr>
+<tr>
+<td>TP8、DP4</td>
+<td>没有 DP 维度；只能分别演示各 TP8 实例</td>
+<td>被 TP16、DP1 限制拒绝</td>
+</tr>
+</tbody></table></div>
+<p>本文所有数值是计划结果，不是硬件测量。
+TP32 能算出计划，不代表 TP32 服务已经支持。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-B">
+<header class="am-panel-head"><span class="am-panel-id">B</span><h2>例一：两台16卡，每侧一个 TP16</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>P0 使用16张卡，运行一个 prefill TP16 实例。
+D0 使用16张卡，运行对应的 decode TP16 实例。
+P0 和 D0 的 TP rank 都是0到15。
+D0 的 rank 不应编号成16到31。</p>
+</div>
+<figure class="am-diagram am-flow"><svg viewBox="0 0 704 63" width="704" height="63" role="img" aria-label="流程图：P0: TP ranks 0至15、8个 P/D BM 组、D0: TP ranks 0至15" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am1-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><g></g><g><g data-step="0"><path class="am-edge" d="M159.8,31.5 L192.2,31.5 Q224.7,31.5 257.1,31.5 L289.5,31.5" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="183.8" y="22.5" width="81.8" height="18" rx="3"/><text x="224.7" y="31.5" text-anchor="middle" dominant-baseline="central">每组2个P成员</text></g></g><g data-step="1"><path class="am-edge" d="M409.8,31.5 L442.8,31.5 Q475.8,31.5 508.7,31.5 L541.7,31.5" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="433.8" y="22.5" width="83.8" height="18" rx="3"/><text x="475.8" y="31.5" text-anchor="middle" dominant-baseline="central">每组2个D成员</text></g></g></g><g><g class="am-node am-node--rect" data-key="P0: TP ranks 0至15" data-step="0"><rect class="am-node-shape" x="14" y="14" width="145.8" height="35" rx="3"/><text x="86.9" y="31.5" text-anchor="middle" dominant-baseline="central">P0: TP ranks 0至15</text></g><g class="am-node am-node--rect" data-key="8个 P/D BM 组" data-step="0"><rect class="am-node-shape" x="289.5" y="14" width="120.3" height="35" rx="3"/><text x="349.7" y="31.5" text-anchor="middle" dominant-baseline="central">8个 P/D BM 组</text></g><g class="am-node am-node--rect" data-key="D0: TP ranks 0至15" data-step="1"><rect class="am-node-shape" x="541.7" y="14" width="148.1" height="35" rx="3"/><text x="615.7" y="31.5" text-anchor="middle" dominant-baseline="central">D0: TP ranks 0至15</text></g></g></svg></figure>
+<div class="am-md"><p>两侧各有一份 <code>SharingPlan</code>，role 不同。
+它们使用相同的 <code>instance_id=case1-pair-0</code>。
+示例物理 host 分别是 <code>case1-p0</code> 和 <code>case1-d0</code>。</p>
+<p>显式分配公式是：</p>
+</div>
+<pre class="am-code"><code data-lang="python">numa_node = tp_rank // 2</code></pre>
+<div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>NUMA</th>
+<th>P0 的成员</th>
+<th>D0 的成员</th>
+<th align="right">各侧 owner TP rank</th>
+<th align="right">各 BM 组 world_size</th>
+<th align="right">store 端口</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>0</td>
+<td>0, 1</td>
+<td>0, 1</td>
+<td align="right">0</td>
+<td align="right">4</td>
+<td align="right">19000</td>
+</tr>
+<tr>
+<td>1</td>
+<td>2, 3</td>
+<td>2, 3</td>
+<td align="right">2</td>
+<td align="right">4</td>
+<td align="right">19002</td>
+</tr>
+<tr>
+<td>2</td>
+<td>4, 5</td>
+<td>4, 5</td>
+<td align="right">4</td>
+<td align="right">4</td>
+<td align="right">19004</td>
+</tr>
+<tr>
+<td>3</td>
+<td>6, 7</td>
+<td>6, 7</td>
+<td align="right">6</td>
+<td align="right">4</td>
+<td align="right">19006</td>
+</tr>
+<tr>
+<td>4</td>
+<td>8, 9</td>
+<td>8, 9</td>
+<td align="right">8</td>
+<td align="right">4</td>
+<td align="right">19008</td>
+</tr>
+<tr>
+<td>5</td>
+<td>10, 11</td>
+<td>10, 11</td>
+<td align="right">10</td>
+<td align="right">4</td>
+<td align="right">19010</td>
+</tr>
+<tr>
+<td>6</td>
+<td>12, 13</td>
+<td>12, 13</td>
+<td align="right">12</td>
+<td align="right">4</td>
+<td align="right">19012</td>
+</tr>
+<tr>
+<td>7</td>
+<td>14, 15</td>
+<td>14, 15</td>
+<td align="right">14</td>
+<td align="right">4</td>
+<td align="right">19014</td>
+</tr>
+</tbody></table></div>
+<p>例如 NUMA2 的组是 <code>(4,5)</code>。
+rank4 是 owner，因为它是排序后的第一名。
+rank5 贡献0，但后续仍会拥有自己的 BM handle 和设备映射。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>计数对象</th>
+<th align="right">share=0</th>
+<th align="right">share=1</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>P0 的物理存储份数</td>
+<td align="right">16</td>
+<td align="right">8</td>
+</tr>
+<tr>
+<td>D0 的物理存储份数</td>
+<td align="right">16</td>
+<td align="right">8</td>
+</tr>
+<tr>
+<td>全部署物理存储份数</td>
+<td align="right">32</td>
+<td align="right">16</td>
+</tr>
+<tr>
+<td>P/D 配对的 BM 组数</td>
+<td align="right">16</td>
+<td align="right">8</td>
+</tr>
+<tr>
+<td>所有组的 participants 总数</td>
+<td align="right">32</td>
+<td align="right">32</td>
+</tr>
+</tbody></table></div>
+<p>共享减少物理副本和 BM 组数量。
+每张卡对应的 worker 仍然参与，不会因为零贡献而消失。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-C">
+<header class="am-panel-head"><span class="am-panel-id">C</span><h2>例一：完整拆开 NUMA0 的四个 participants</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>本组 <code>members=(0,1)</code>，所以 g=2。
+组内 member 是0或1，与物理主机编号无关。</p>
+</div>
+<pre class="am-code"><code data-lang="python">participant = side * g + member  # P side=0，D side=1
+owner_participant = side * g</code></pre>
+<div class="am-md"><p>为便于算具体容量，两例统一使用一套示例参数：</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>参数</th>
+<th align="right">示例值</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>layers</td>
+<td align="right">78</td>
+</tr>
+<tr>
+<td>slots</td>
+<td align="right">16</td>
+</tr>
+<tr>
+<td>P 每 slot 的 token 容量</td>
+<td align="right">4096</td>
+</tr>
+<tr>
+<td>D 每 slot 的 token 容量</td>
+<td align="right">8192</td>
+</tr>
+<tr>
+<td>compact dim</td>
+<td align="right">512 + 64 = 576</td>
+</tr>
+<tr>
+<td>dtype</td>
+<td align="right">BF16，每元素2字节</td>
+</tr>
+<tr>
+<td>allocation 对齐</td>
+<td align="right">1 GiB</td>
+</tr>
+</tbody></table></div>
+<p><code>slots=16</code> 是请求槽位数，与 TP16 中的16没有绑定关系。
+这里的容量也不是服务默认值，而是为比较选定的输入。</p>
+</div>
+<pre class="am-code"><code data-lang="python">P_payload = 78 * 16 * 4096 * 576 * 2  # 5,888,802,816 B
+D_payload = 78 * 16 * 8192 * 576 * 2  # 11,777,605,632 B
+probe_bytes = 64 * 2                  # 128 B
+P_contribution = align_up(P_payload + 128, 1 GiB)  # 6 GiB
+D_contribution = align_up(D_payload + 128, 1 GiB)  # 11 GiB
+rank_stride = max(6 GiB, 11 GiB)                  # 11 GiB</code></pre>
+<div class="am-md"><p>贡献包含所有 layers、所有 slots 和对应 token 容量。
+它不是单个 token 或单个请求的字节数。
+stride 是共同地址间距，不是每个 participant 的实际贡献。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>worker</th>
+<th align="right">TP rank</th>
+<th align="right">member</th>
+<th align="right">participant</th>
+<th align="right">owner participant</th>
+<th align="right">本地贡献</th>
+<th>probe 相对偏移</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>P0/r0</td>
+<td align="right">0</td>
+<td align="right">0</td>
+<td align="right">0</td>
+<td align="right">0</td>
+<td align="right">6 GiB</td>
+<td>P_payload + 0</td>
+</tr>
+<tr>
+<td>P0/r1</td>
+<td align="right">1</td>
+<td align="right">1</td>
+<td align="right">1</td>
+<td align="right">0</td>
+<td align="right">0</td>
+<td>P_payload + 64</td>
+</tr>
+<tr>
+<td>D0/r0</td>
+<td align="right">0</td>
+<td align="right">0</td>
+<td align="right">2</td>
+<td align="right">2</td>
+<td align="right">11 GiB</td>
+<td>D_payload + 0</td>
+</tr>
+<tr>
+<td>D0/r1</td>
+<td align="right">1</td>
+<td align="right">1</td>
+<td align="right">3</td>
+<td align="right">2</td>
+<td align="right">0</td>
+<td>D_payload + 64</td>
+</tr>
+</tbody></table></div>
+<p>P 的两个 probe 位于 P owner 的 allocation 中。
+D 的两个 probe 位于 D owner 的 allocation 中。
+零贡献成员不会为 probe 另建一份完整 KV。
+owner 是内存贡献者；后续每个成员都可直接访问映射。</p>
+<p>本组 <code>nic_offset=0</code>。
+每个 member 预留4个端口，MemFabric 再加 participant 偏移。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>worker</th>
+<th align="right">NIC base</th>
+<th align="right">加上的 participant</th>
+<th align="right">实际 NIC 端口</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>P0/r0</td>
+<td align="right">25670</td>
+<td align="right">0</td>
+<td align="right">25670</td>
+</tr>
+<tr>
+<td>P0/r1</td>
+<td align="right">25674</td>
+<td align="right">1</td>
+<td align="right">25675</td>
+</tr>
+<tr>
+<td>D0/r0</td>
+<td align="right">25670</td>
+<td align="right">2</td>
+<td align="right">25672</td>
+</tr>
+<tr>
+<td>D0/r1</td>
+<td align="right">25674</td>
+<td align="right">3</td>
+<td align="right">25677</td>
+</tr>
+</tbody></table></div>
+<p>本组预留范围是25670到25677。
+下一组 offset 增加8，使用25678到25685。
+同组的 store 端口相同，因为成员连接同一个 store。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>内存位置</th>
+<th align="right">share=0</th>
+<th align="right">share=1</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>P0</td>
+<td align="right">16 × 6 = 96 GiB</td>
+<td align="right">8 × 6 = 48 GiB</td>
+</tr>
+<tr>
+<td>D0</td>
+<td align="right">16 × 11 = 176 GiB</td>
+<td align="right">8 × 11 = 88 GiB</td>
+</tr>
+<tr>
+<td>两机合计</td>
+<td align="right">272 GiB</td>
+<td align="right">136 GiB</td>
+</tr>
+</tbody></table></div>
+<p>这是 BM KV contribution 的计划值，节省50%。
+它不包含模型权重、HBM cache 和其他服务内存。
+每个 reader 仍需要自己的完整 selected KV。
+读取流量不会因为物理副本减半就自动减半。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-D">
+<header class="am-panel-head"><span class="am-panel-id">D</span><h2>例一：这些输入怎样经过代码</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>P0 的拓扑输入是一台主机、16个全局 TP ranks：</p>
+</div>
+<pre class="am-code"><code data-lang="python">hosts = (HostTopology(&quot;case1-p0&quot;, tuple(range(16)), &quot;0-7&quot;),)</code></pre>
+<div class="am-md"><p>P0 的显式 map 按 <code>rank // 2</code> 生成16条记录。
+例如前两条如下；完整文件已随页面保存。</p>
+</div>
+<pre class="am-code"><code data-lang="json">[
+  {&quot;host&quot;: &quot;case1-p0&quot;, &quot;rank&quot;: 0, &quot;node&quot;: 0},
+  {&quot;host&quot;: &quot;case1-p0&quot;, &quot;rank&quot;: 1, &quot;node&quot;: 0}
+]</code></pre>
+<div class="am-md"><p>这段截取不能单独充当 TP16 的完整 map。
+缺少 rank2到15时，<code>plan()</code> 会明确拒绝。</p>
+</div>
+<figure class="am-diagram am-flow"><svg viewBox="0 0 910 180" width="910" height="180" role="img" aria-label="流程图：环境与完整map、from_environment、MempoolNumaConfig、plan、拓扑与layout、P计划、validate_peer、D计划" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am2-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><g></g><g><g data-step="0"><path class="am-edge" d="M132.7,31.5 L144.2,31.5 Q155.7,31.5 167.2,31.5 L178.7,31.5" marker-end="url(#am2-arrow)"/></g><g data-step="1"><path class="am-edge" d="M315.4,31.5 L326.9,31.5 Q338.4,31.5 349.9,31.5 L361.4,31.5" marker-end="url(#am2-arrow)"/></g><g data-step="2"><path class="am-edge" d="M518.6,31.5 L530.1,31.5 Q541.6,31.5 555.6,40.5 L569.5,49.5" marker-end="url(#am2-arrow)"/></g><g data-step="3"><path class="am-edge" d="M492.3,102.5 L516.9,102.5 Q541.6,102.5 555.6,93.5 L569.5,84.5" marker-end="url(#am2-arrow)"/></g><g data-step="4"><path class="am-edge" d="M628.6,67 L640.1,67 Q651.6,67 663.4,67 L675.2,67" marker-end="url(#am2-arrow)"/></g><g data-step="5"><path class="am-edge" d="M734.6,84.5 L748.7,93.5 Q762.8,102.5 782.6,111.5 L802.4,120.5" marker-end="url(#am2-arrow)"/></g><g data-step="6"><path class="am-edge" d="M739.8,148 L751.3,148 Q762.8,148 774.3,146.5 L785.8,145.1" marker-end="url(#am2-arrow)"/></g><g data-step="7"><path class="am-edge" d="M739.2,61.2 L751,59.1 Q762.8,57 785.9,57 L808.9,57" marker-end="url(#am2-arrow)"/></g></g><g><g class="am-node am-node--rect" data-key="环境与完整map" data-step="0"><rect class="am-node-shape" x="14" y="14" width="118.7" height="35" rx="3"/><text x="73.4" y="31.5" text-anchor="middle" dominant-baseline="central">环境与完整map</text></g><g class="am-node am-node--rect" data-key="from_environment" data-step="0"><rect class="am-node-shape" x="178.7" y="14" width="136.7" height="35" rx="3"/><text x="247.1" y="31.5" text-anchor="middle" dominant-baseline="central">from_environment</text></g><g class="am-node am-node--rect" data-key="MempoolNumaConfig" data-step="1"><rect class="am-node-shape" x="361.4" y="14" width="157.2" height="35" rx="3"/><text x="440" y="31.5" text-anchor="middle" dominant-baseline="central">MempoolNumaConfig</text></g><g class="am-node am-node--rect" data-key="plan" data-step="2"><rect class="am-node-shape" x="564.6" y="49.5" width="64" height="35" rx="3"/><text x="596.6" y="67" text-anchor="middle" dominant-baseline="central">plan</text></g><g class="am-node am-node--rect" data-key="拓扑与layout" data-step="3"><rect class="am-node-shape" x="387.8" y="85" width="104.4" height="35" rx="3"/><text x="440" y="102.5" text-anchor="middle" dominant-baseline="central">拓扑与layout</text></g><g class="am-node am-node--rect" data-key="P计划" data-step="4"><rect class="am-node-shape" x="675.2" y="49.5" width="64" height="35" rx="3"/><text x="707.2" y="67" text-anchor="middle" dominant-baseline="central">P计划</text></g><g class="am-node am-node--rect" data-key="validate_peer" data-step="5"><rect class="am-node-shape" x="785.8" y="120.5" width="110.2" height="35" rx="3"/><text x="840.9" y="138" text-anchor="middle" dominant-baseline="central">validate_peer</text></g><g class="am-node am-node--rect" data-key="D计划" data-step="6"><rect class="am-node-shape" x="674.6" y="130.5" width="65.2" height="35" rx="3"/><text x="707.2" y="148" text-anchor="middle" dominant-baseline="central">D计划</text></g><g class="am-node am-node--rect" data-key="report" data-step="7"><rect class="am-node-shape" x="808.9" y="39.5" width="64" height="35" rx="3"/><text x="840.9" y="57" text-anchor="middle" dominant-baseline="central">report</text></g></g></svg></figure>
+<div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>代码步骤</th>
+<th>本例得到的结果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>from_environment()</code></td>
+<td>share=True；16条显式分配</td>
+</tr>
+<tr>
+<td><code>plan()</code> 检查拓扑</td>
+<td>ranks 0到15完整且唯一</td>
+</tr>
+<tr>
+<td>map 校验</td>
+<td>host 匹配；节点全部属于0到7</td>
+</tr>
+<tr>
+<td>排序和分组</td>
+<td><code>(0,1), (2,3), …, (14,15)</code></td>
+</tr>
+<tr>
+<td>owner</td>
+<td><code>0,2,4,6,8,10,12,14</code></td>
+</tr>
+<tr>
+<td>NIC offset</td>
+<td><code>0,8,16,24,32,40,48,56</code></td>
+</tr>
+<tr>
+<td><code>validate_peer()</code></td>
+<td>两侧成员、layout和逻辑身份一致</td>
+</tr>
+<tr>
+<td><code>report()</code></td>
+<td>按 rank 输出计划贡献、编号、probe和端口</td>
+</tr>
+</tbody></table></div>
+<p><strong>旧节点列表与这里的显式 map 有不同含义。</strong>
+如果使用旧列表 <code>0,1,2,3,4,5,6,7</code>，代码按 rank 取模。
+它会得到下面的组：</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>NUMA</th>
+<th>显式 <code>rank // 2</code></th>
+<th>旧列表 <code>rank % 8</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>0</td>
+<td><code>(0,1)</code></td>
+<td><code>(0,8)</code></td>
+</tr>
+<tr>
+<td>1</td>
+<td><code>(2,3)</code></td>
+<td><code>(1,9)</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>(4,5)</code></td>
+<td><code>(2,10)</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>(14,15)</code></td>
+<td><code>(7,15)</code></td>
+</tr>
+</tbody></table></div>
+<p>两种分配都有8组，组大小都是2，但成员关系不同。
+P 用第一种、D 用第二种，会被 <code>validate_peer()</code> 拒绝。
+不能只比较两侧的组数和 NUMA 数量。</p>
+<p>D 可以使用不同 NUMA 编号，只要对应成员仍相同。
+例如 P 的 <code>(0,1)</code> 在 node0，D 的 <code>(0,1)</code> 在 node6，逻辑上可以配对。
+实际在线节点和所需硬件映射仍须单独满足。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-E">
+<header class="am-panel-head"><span class="am-panel-id">E</span><h2>例二：四台32卡，先按每机 TP32 展开</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>你确认这里是两台 P、两台 D。
+每台机器有32张卡，所以每机可容纳一个完整 TP32 实例。
+为了使用全部128张卡，本文选择两对独立 P/D 实例。
+实际服务路由仍是未来接入内容。</p>
+</div>
+<figure class="am-diagram am-flow"><svg viewBox="0 0 462 134" width="462" height="134" role="img" aria-label="流程图：P0: case2-p0, TP32、D0: case2-d0, TP32、P1: case2-p1, TP32、D1: case2-d1, TP32" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am3-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><g></g><g><g data-step="0"><path class="am-edge" d="M164.7,31.5 L197.2,31.5 Q229.6,31.5 262,31.5 L294.5,31.5" marker-end="url(#am3-arrow)"/><g class="am-edge-label"><rect x="188.7" y="22.5" width="81.8" height="18" rx="3"/><text x="229.6" y="31.5" text-anchor="middle" dominant-baseline="central">case2-pair-0</text></g></g><g data-step="1"><path class="am-edge" d="M164.7,102.5 L197.2,102.5 Q229.6,102.5 262,102.5 L294.5,102.5" marker-end="url(#am3-arrow)"/><g class="am-edge-label"><rect x="188.7" y="93.5" width="81.8" height="18" rx="3"/><text x="229.6" y="102.5" text-anchor="middle" dominant-baseline="central">case2-pair-1</text></g></g></g><g><g class="am-node am-node--rect" data-key="P0: case2-p0, TP32" data-step="0"><rect class="am-node-shape" x="14" y="14" width="150.7" height="35" rx="3"/><text x="89.4" y="31.5" text-anchor="middle" dominant-baseline="central">P0: case2-p0, TP32</text></g><g class="am-node am-node--rect" data-key="D0: case2-d0, TP32" data-step="0"><rect class="am-node-shape" x="294.5" y="14" width="153.1" height="35" rx="3"/><text x="371" y="31.5" text-anchor="middle" dominant-baseline="central">D0: case2-d0, TP32</text></g><g class="am-node am-node--rect" data-key="P1: case2-p1, TP32" data-step="1"><rect class="am-node-shape" x="14" y="85" width="150.7" height="35" rx="3"/><text x="89.4" y="102.5" text-anchor="middle" dominant-baseline="central">P1: case2-p1, TP32</text></g><g class="am-node am-node--rect" data-key="D1: case2-d1, TP32" data-step="1"><rect class="am-node-shape" x="294.5" y="85" width="153.1" height="35" rx="3"/><text x="371" y="102.5" text-anchor="middle" dominant-baseline="central">D1: case2-d1, TP32</text></g></g></svg></figure>
+<div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>物理机</th>
+<th>role</th>
+<th>TP rank 范围</th>
+<th>配对的 instance_id</th>
+<th align="right">占用卡数</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>P0</td>
+<td>prefill</td>
+<td>0到31</td>
+<td>case2-pair-0</td>
+<td align="right">32</td>
+</tr>
+<tr>
+<td>D0</td>
+<td>decode</td>
+<td>0到31</td>
+<td>case2-pair-0</td>
+<td align="right">32</td>
+</tr>
+<tr>
+<td>P1</td>
+<td>prefill</td>
+<td>0到31</td>
+<td>case2-pair-1</td>
+<td align="right">32</td>
+</tr>
+<tr>
+<td>D1</td>
+<td>decode</td>
+<td>0到31</td>
+<td>case2-pair-1</td>
+<td align="right">32</td>
+</tr>
+</tbody></table></div>
+<p>总共四份本侧计划、两对可匹配的 P/D 计划。
+P0 的 rank0 和 P1 的 rank0 属于不同 TP 实例。
+它们的 rank 数字相同，但 <code>instance_id</code> 不同。
+单个 <code>SharingPlan</code> 不能把这两个 rank0 混成一个 rank。</p>
+<p>每台主机使用显式分配：</p>
+</div>
+<pre class="am-code"><code data-lang="python">numa_node = tp_rank // 4</code></pre>
+<div class="am-md"><p>下面的分组表分别适用于两对 P/D：</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>NUMA</th>
+<th>各侧成员</th>
+<th align="right">owner TP rank</th>
+<th align="right">g</th>
+<th align="right">BM world_size</th>
+<th align="right">NIC offset</th>
+<th align="right">store 端口</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>0</td>
+<td>0,1,2,3</td>
+<td align="right">0</td>
+<td align="right">4</td>
+<td align="right">8</td>
+<td align="right">0</td>
+<td align="right">19000</td>
+</tr>
+<tr>
+<td>1</td>
+<td>4,5,6,7</td>
+<td align="right">4</td>
+<td align="right">4</td>
+<td align="right">8</td>
+<td align="right">32</td>
+<td align="right">19004</td>
+</tr>
+<tr>
+<td>2</td>
+<td>8,9,10,11</td>
+<td align="right">8</td>
+<td align="right">4</td>
+<td align="right">8</td>
+<td align="right">64</td>
+<td align="right">19008</td>
+</tr>
+<tr>
+<td>3</td>
+<td>12,13,14,15</td>
+<td align="right">12</td>
+<td align="right">4</td>
+<td align="right">8</td>
+<td align="right">96</td>
+<td align="right">19012</td>
+</tr>
+<tr>
+<td>4</td>
+<td>16,17,18,19</td>
+<td align="right">16</td>
+<td align="right">4</td>
+<td align="right">8</td>
+<td align="right">128</td>
+<td align="right">19016</td>
+</tr>
+<tr>
+<td>5</td>
+<td>20,21,22,23</td>
+<td align="right">20</td>
+<td align="right">4</td>
+<td align="right">8</td>
+<td align="right">160</td>
+<td align="right">19020</td>
+</tr>
+<tr>
+<td>6</td>
+<td>24,25,26,27</td>
+<td align="right">24</td>
+<td align="right">4</td>
+<td align="right">8</td>
+<td align="right">192</td>
+<td align="right">19024</td>
+</tr>
+<tr>
+<td>7</td>
+<td>28,29,30,31</td>
+<td align="right">28</td>
+<td align="right">4</td>
+<td align="right">8</td>
+<td align="right">224</td>
+<td align="right">19028</td>
+</tr>
+</tbody></table></div>
+<p>P0/node0 和 P1/node0 属于不同物理主机。
+它们也属于不同实例，因此各有自己的 owner allocation。
+相同的节点编号不表示同一块内存。</p>
+<p>两对实例可以使用相同的数字端口，因为主机不同。
+它们也可以各自使用数值 <code>pool_id=104</code>。
+BM world 的连接端点和逻辑 instance 必须保持隔离。
+仅靠相同或不同的数字 pool ID 不能代替实例隔离。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-F">
+<header class="am-panel-head"><span class="am-panel-id">F</span><h2>例二：八个 participants 与全四机的贡献</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>看 P0/D0 的 NUMA0 组，<code>members=(0,1,2,3)</code>。
+P 的 participant 为0到3，D 的 participant 为4到7。
+两侧 owner participant 分别是0和4。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>worker</th>
+<th align="right">member</th>
+<th align="right">participant</th>
+<th align="right">本地贡献</th>
+<th align="right">实际 NIC 端口</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>P0/r0</td>
+<td align="right">0</td>
+<td align="right">0</td>
+<td align="right">6 GiB</td>
+<td align="right">25670</td>
+</tr>
+<tr>
+<td>P0/r1</td>
+<td align="right">1</td>
+<td align="right">1</td>
+<td align="right">0</td>
+<td align="right">25679</td>
+</tr>
+<tr>
+<td>P0/r2</td>
+<td align="right">2</td>
+<td align="right">2</td>
+<td align="right">0</td>
+<td align="right">25688</td>
+</tr>
+<tr>
+<td>P0/r3</td>
+<td align="right">3</td>
+<td align="right">3</td>
+<td align="right">0</td>
+<td align="right">25697</td>
+</tr>
+<tr>
+<td>D0/r0</td>
+<td align="right">0</td>
+<td align="right">4</td>
+<td align="right">11 GiB</td>
+<td align="right">25674</td>
+</tr>
+<tr>
+<td>D0/r1</td>
+<td align="right">1</td>
+<td align="right">5</td>
+<td align="right">0</td>
+<td align="right">25683</td>
+</tr>
+<tr>
+<td>D0/r2</td>
+<td align="right">2</td>
+<td align="right">6</td>
+<td align="right">0</td>
+<td align="right">25692</td>
+</tr>
+<tr>
+<td>D0/r3</td>
+<td align="right">3</td>
+<td align="right">7</td>
+<td align="right">0</td>
+<td align="right">25701</td>
+</tr>
+</tbody></table></div>
+<p>这里每个 member 的 NIC base 相差8。
+一个组预留 <code>2 × 4² = 32</code> 个端口。
+NUMA0 预留25670到25701，NUMA1从25702开始。
+全部8组预留25670到25925。</p>
+<p>probe 从128字节扩展为256字节。
+成员0到3使用 payload 后的0、64、128、192偏移。
+在本例的1 GiB对齐下，P/D贡献仍为6/11 GiB。
+对齐前的 probe 变大，不一定使对齐后的 allocation 增大。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>全部署计数</th>
+<th align="right">share=0</th>
+<th align="right">share=1</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>P侧两机的存储份数</td>
+<td align="right">64</td>
+<td align="right">16</td>
+</tr>
+<tr>
+<td>D侧两机的存储份数</td>
+<td align="right">64</td>
+<td align="right">16</td>
+</tr>
+<tr>
+<td>四机存储份数</td>
+<td align="right">128</td>
+<td align="right">32</td>
+</tr>
+<tr>
+<td>P/D 配对的 BM 组数</td>
+<td align="right">64</td>
+<td align="right">16</td>
+</tr>
+<tr>
+<td>所有组的 participants 总数</td>
+<td align="right">128</td>
+<td align="right">128</td>
+</tr>
+</tbody></table></div>
+<p>共享模式的16个 BM 组，每组都有8个 participants。
+因此参与进程总数是 <code>16 × 8 = 128</code>。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>内存位置</th>
+<th align="right">share=0</th>
+<th align="right">share=1</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>每台 P</td>
+<td align="right">32 × 6 = 192 GiB</td>
+<td align="right">8 × 6 = 48 GiB</td>
+</tr>
+<tr>
+<td>每台 D</td>
+<td align="right">32 × 11 = 352 GiB</td>
+<td align="right">8 × 11 = 88 GiB</td>
+</tr>
+<tr>
+<td>两台 P 合计</td>
+<td align="right">384 GiB</td>
+<td align="right">96 GiB</td>
+</tr>
+<tr>
+<td>两台 D 合计</td>
+<td align="right">704 GiB</td>
+<td align="right">176 GiB</td>
+</tr>
+<tr>
+<td>四机合计</td>
+<td align="right">1088 GiB</td>
+<td align="right">272 GiB</td>
+</tr>
+</tbody></table></div>
+<p>在相同容量输入下，计划贡献减少75%。
+这不等于吞吐提升4倍，也不等于读取流量降至四分之一。</p>
+<p><strong>如果你要的是单个 TP32 横跨两台 P，计数会不同。</strong>
+一个 TP32 总共只需要32个 ranks。
+平均分到两台32卡 P，每机只使用16张卡。
+D侧相同，总共使用64张卡，另64张闲置。
+如果每侧跨两机并用满64张卡，那是 TP64 的例子。</p>
+<p>跨主机的 TP 实例可以用多个 <code>HostTopology</code> 描述。
+但共享组仍按 host 切开，不会把两台机器的 node0 合并。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-G">
+<header class="am-panel-head"><span class="am-panel-id">G</span><h2>回到 TP8×DP4：为什么不能直接当作 TP32</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>这里先按普通 DP 理解：四个独立 TP8 请求副本。
+每台机器使用 <code>8 × 4 = 32</code> 张卡。
+每个副本都有自己的 TP rank0到7和请求状态。
+不同 DP 副本的 KV 内容通常不同，即使模型和 dtype 相同。</p>
+<p><strong>方案一：每个副本占连续8张卡。</strong>
+继续假设每四张卡对应一个 NUMA。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>DP副本</th>
+<th>本机卡号</th>
+<th>占用NUMA</th>
+<th>本副本TP ranks</th>
+<th>本副本共享组</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>DP0</td>
+<td>0到7</td>
+<td>0、1</td>
+<td>0到7</td>
+<td><code>(0,1,2,3)</code>、<code>(4,5,6,7)</code></td>
+</tr>
+<tr>
+<td>DP1</td>
+<td>8到15</td>
+<td>2、3</td>
+<td>0到7</td>
+<td><code>(0,1,2,3)</code>、<code>(4,5,6,7)</code></td>
+</tr>
+<tr>
+<td>DP2</td>
+<td>16到23</td>
+<td>4、5</td>
+<td>0到7</td>
+<td><code>(0,1,2,3)</code>、<code>(4,5,6,7)</code></td>
+</tr>
+<tr>
+<td>DP3</td>
+<td>24到31</td>
+<td>6、7</td>
+<td>0到7</td>
+<td><code>(0,1,2,3)</code>、<code>(4,5,6,7)</code></td>
+</tr>
+</tbody></table></div>
+<p>例如物理卡10属于 DP1，本副本内的 TP rank 是2。
+它的节点是2，member 是2。
+如果它在 P侧，对应 participant 就是2。
+物理卡号10不应直接填成这个 TP8 计划的 rank10。</p>
+<p>每个 DP 副本得到2组，整台机器共8份存储。
+数字上与 TP32 的8份相同，数据含义却不同：</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>对比</th>
+<th>每机一个 TP32</th>
+<th>每机四个普通 TP8 副本</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>逻辑请求状态</td>
+<td>1套</td>
+<td>4套，各自独立</td>
+</tr>
+<tr>
+<td>一套 KV 的本机副本数</td>
+<td>8</td>
+<td>2</td>
+</tr>
+<tr>
+<td>每机物理存储份数</td>
+<td>8</td>
+<td>4 × 2 = 8</td>
+</tr>
+<tr>
+<td>若每实例 slots=16</td>
+<td>1套16个槽位</td>
+<td>4套各16个槽位</td>
+</tr>
+<tr>
+<td>rank 编号</td>
+<td>一套0到31</td>
+<td>四套0到7</td>
+</tr>
+</tbody></table></div>
+<p>这不构成模型显存、吞吐或请求容量的等价比较。
+这里只演示 BM 共享边界如何变化。</p>
+<p><strong>方案二：每个 NUMA 放四个不同 DP 的 ranks。</strong>
+假设 node n 放 DP0/rn、DP1/rn、DP2/rn、DP3/rn。
+每个 DP 的八张卡就分散在八个 NUMA 上。</p>
+</div>
+<div class="am-tree"><div class="am-tree-root am-tree-root--solo"><div class="am-tree-box am-tree-box--root" data-key="同一物理主机的 NUMA0" data-step="0">同一物理主机的 NUMA0</div></div><ul class="am-tree-list"><li data-key="DP0 的 TP rank0" data-step="1"><span class="am-tree-label">DP0 的 TP rank0</span><span class="am-tree-sub">请求集合A，只能共享A的KV</span></li><li data-key="DP1 的 TP rank0" data-step="2"><span class="am-tree-label">DP1 的 TP rank0</span><span class="am-tree-sub">请求集合B，只能共享B的KV</span></li><li data-key="DP2 的 TP rank0" data-step="3"><span class="am-tree-label">DP2 的 TP rank0</span><span class="am-tree-sub">请求集合C，只能共享C的KV</span></li><li data-key="DP3 的 TP rank0" data-step="4"><span class="am-tree-label">DP3 的 TP rank0</span><span class="am-tree-sub">请求集合D，只能共享D的KV</span></li></ul></div>
+<div class="am-md"><p>这四个 ranks 不能因为同机同节点就合并。
+每个 DP 在每个节点只有一个成员，所以 g=1。
+每台机器共有 <code>4 × 8 = 32</code> 份存储，不能在这里去重。</p>
+<p><strong>现有规划器怎样表达，哪些还没有实现？</strong>
+它没有 <code>dp_rank</code> 字段，也没有 DP 请求路由。
+未来可以让每个 DP 副本单独生成一对 TP8 计划。
+对应 P/D 副本共享一个 instance_id，不同副本使用不同身份。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>副本</th>
+<th>示例 instance_id</th>
+<th align="right">store基址</th>
+<th align="right">NIC基址</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>DP0</td>
+<td>future-dp-pair-0-replica-0</td>
+<td align="right">19000</td>
+<td align="right">25670</td>
+</tr>
+<tr>
+<td>DP1</td>
+<td>future-dp-pair-0-replica-1</td>
+<td align="right">19100</td>
+<td align="right">25770</td>
+</tr>
+<tr>
+<td>DP2</td>
+<td>future-dp-pair-0-replica-2</td>
+<td align="right">19200</td>
+<td align="right">25870</td>
+</tr>
+<tr>
+<td>DP3</td>
+<td>future-dp-pair-0-replica-3</td>
+<td align="right">19300</td>
+<td align="right">25970</td>
+</tr>
+</tbody></table></div>
+<p>这些基址为示例，各副本预留的64个 NIC 端口互不重叠。
+只改变 instance_id 不会改变监听端口，仍可能冲突。
+当前 <code>validate_peer()</code> 只检查一对计划，不管理跨实例端口资源。
+未来还需要副本配对、slot/session、生命周期和发布依赖的隔离。
+把 DP ranks 扁平化成一个 TP32 计划会丢失这些边界。</p>
+<p><strong>SGLang 的 DP attention 另有参数语义。</strong>
+当前代码在启用它时计算 <code>attn_tp_size = tp_size / dp_size / cp_size</code>。
+所以 TP8、DP4、CP1 对应 attention TP2，不能按普通 DP 的32卡解释。
+若想表达全局32卡中的四个 attention TP8 组，算式是32/4=8。
+这只是当前代码的编号关系，不表示 mempool 已支持该模式。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-H">
+<header class="am-panel-head"><span class="am-panel-id">H</span><h2>可复现输入、检查结果和源码落点</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>两例已通过当前 <code>MempoolNumaConfig.plan()</code> 实际计算。
+每对 P/D 都调用了 <code>validate_peer()</code>。
+附带文件保存全部 ranks 的映射、端口和贡献，无需手工补齐表格。
+DP附例只计算四份互相隔离的 TP8 计划。
+它没有启动 DP 服务，不能作为 DP 支持的证据。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="examples/sharing-plan-deployments/calculate.py">calculate.py</a></td>
+<td>重算全部示例，校验组数、成员、身份和总贡献</td>
+</tr>
+<tr>
+<td><a href="examples/sharing-plan-deployments/summary.json">summary.json</a></td>
+<td>两例汇总与容量输入</td>
+</tr>
+<tr>
+<td><a href="examples/sharing-plan-deployments/case1-p0-shared-topology.json">双机P拓扑</a></td>
+<td>完整16-rank主机拓扑</td>
+</tr>
+<tr>
+<td><a href="examples/sharing-plan-deployments/case1-p0-shared-map.json">双机P映射</a></td>
+<td>完整16条显式分配</td>
+</tr>
+<tr>
+<td><a href="examples/sharing-plan-deployments/case1-p0-shared-report.json">双机P报告</a></td>
+<td>P侧16个 ranks 的逐项计划</td>
+</tr>
+<tr>
+<td><a href="examples/sharing-plan-deployments/case1-d0-shared-report.json">双机D报告</a></td>
+<td>D侧编号、probe、贡献与端口</td>
+</tr>
+<tr>
+<td><a href="examples/sharing-plan-deployments/case2-p0-shared-map.json">四机P0映射</a></td>
+<td>完整32条显式分配</td>
+</tr>
+<tr>
+<td><a href="examples/sharing-plan-deployments/case2-p0-shared-report.json">四机P0报告</a></td>
+<td>第一对实例的P计划</td>
+</tr>
+<tr>
+<td><a href="examples/sharing-plan-deployments/case2-d0-shared-report.json">四机D0报告</a></td>
+<td>第一对实例的D计划</td>
+</tr>
+<tr>
+<td><a href="examples/sharing-plan-deployments/case2-p1-shared-report.json">四机P1报告</a></td>
+<td>第二对实例的P计划</td>
+</tr>
+<tr>
+<td><a href="examples/sharing-plan-deployments/case2-d1-shared-report.json">四机D1报告</a></td>
+<td>第二对实例的D计划</td>
+</tr>
+</tbody></table></div>
+<p>脚本仅依赖 msgspec，不导入 NPU runtime。
+在安装了 msgspec 的 Python 环境中，从仓库根目录运行：</p>
+</div>
+<pre class="am-code"><code data-lang="bash">python3 .scratch/ascend-mempool-numa-sharing/examples/sharing-plan-deployments/calculate.py</code></pre>
+<div class="am-md"><p>报告里 <code>allocation_status</code> 都是 <code>planned</code>。
+<code>placement_verified</code> 都是 <code>false</code>。
+本次没有执行 BM 分配、远端握手或 NPU 测试。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>关注的问题</th>
+<th>当前代码落点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>输入读取与冲突</td>
+<td><code>sharing_plan.py:246</code>，<code>from_environment()</code></td>
+</tr>
+<tr>
+<td>单TP实例的rank完整性</td>
+<td><code>sharing_plan.py:318</code>，<code>rank_hosts</code></td>
+</tr>
+<tr>
+<td>同机同NUMA合组</td>
+<td><code>sharing_plan.py:390</code>，排序及分组键</td>
+</tr>
+<tr>
+<td>owner和participant</td>
+<td><code>sharing_plan.py:181</code>，<code>report()</code></td>
+</tr>
+<tr>
+<td>P/D对应和端口冲突</td>
+<td><code>sharing_plan.py:113</code>，<code>validate_peer()</code></td>
+</tr>
+<tr>
+<td>probe及贡献</td>
+<td><code>sharing_plan.py:155</code>，<code>group_layout()</code></td>
+</tr>
+<tr>
+<td>TP16、DP1服务限制</td>
+<td><code>config.py:44</code>，<code>required</code></td>
+</tr>
+<tr>
+<td>普通DP启动各TP实例</td>
+<td><code>data_parallel_controller.py:371</code></td>
+</tr>
+<tr>
+<td>DP attention的TP划分</td>
+<td><code>data_parallel_controller.py:682</code></td>
+</tr>
+</tbody></table></div>
+<p>源码分别位于生产 NPU mempool 目录和 SGLang managers 目录。
+本页只增加解释材料，没有放宽 TP/DP 限制或修改生产代码。</p>
+</div></div>
+</section>
+</div>
+</div>
+</main>
+<footer class="am-colophon">Generated by Answer me with HTML 0.4.3 · 2026-10-15 15:38</footer>
+<textarea id="am-source" hidden readonly aria-hidden="true">---
+template: doc
+theme: shadcn
+mode: light
+lang: zh
+title: 两个部署例子：sharing_plan 如何分组
+subtitle: 双机16卡 TP16；四机32卡 TP32，并展开 TP8 × DP4 的边界
+source: 2026-10-15 · d328af12bd · 使用当前规划器计算
+---
+
+你确认的部署是双机1P+1D、四机2P+2D。
+第一个例子每个 NUMA 放两个同实例 ranks。
+第二个例子先用每机 TP32，每个 NUMA 放四个同实例 ranks。
+最后再说明 TP8×DP4 如何改变共享边界。
+
+## A 先固定计数口径和支持范围
+
+**物理机、TP 实例、共享组和 BM 组是四层概念。**
+一台机器可以运行一个 TP 实例，也可以运行多个实例。
+TP rank 在每个实例内部编号，不按整个集群的卡数编号。
+
+| 名称 | 本文含义 |
+|---|---|
+| TP 实例 | 一侧共同处理一份请求状态的 TP workers |
+| 本侧共享组 | 同实例、同主机、同 NUMA 的一组 ranks |
+| 本侧物理存储份数 | 共享开启时，每组一份 owner allocation |
+| P/D 配对的 BM 组 | 把 P 侧和 D 侧对应成员放入同一个 BM world |
+| g | 本侧一个共享组的成员数 |
+| BM world_size | 一个配对组的 P/D participants 总数，等于2g |
+
+一个 g=2 的 BM 组有4个 participants。
+它规划两份物理存储：P 一份、D 一份。
+不能把这两份存储算作两个 BM world。
+
+**两例使用这些明确的示意假设：**
+
+- NUMA 编号统一写成0到7。
+- 卡号、设备编号和本侧 TP rank 按表中的顺序对应。
+- 16卡机器中，相邻两卡分配到一个 NUMA。
+- 32卡机器中，相邻四卡分配到一个 NUMA。
+- 所有成员使用兼容的 compact KV 布局。
+
+这些是配置示例，不是对真实硬件亲和性的探测结果。
+真实部署应按设备拓扑生成 map。
+规划器也不会自动验证实际物理页落点。
+
+| 场景 | 当前纯规划器 | 当前正式 mempool 服务 |
+|---|---|---|
+| TP16、DP1 | 可以计算 | 共享路径仍等待02-2 |
+| TP32、DP1 | 可以计算 | 被现有 TP16 限制拒绝 |
+| TP8、DP4 | 没有 DP 维度；只能分别演示各 TP8 实例 | 被 TP16、DP1 限制拒绝 |
+
+本文所有数值是计划结果，不是硬件测量。
+TP32 能算出计划，不代表 TP32 服务已经支持。
+
+## B 例一：两台16卡，每侧一个 TP16
+
+P0 使用16张卡，运行一个 prefill TP16 实例。
+D0 使用16张卡，运行对应的 decode TP16 实例。
+P0 和 D0 的 TP rank 都是0到15。
+D0 的 rank 不应编号成16到31。
+
+```flow LR
+[P0: TP ranks 0至15] -&gt; [8个 P/D BM 组]: 每组2个P成员
+[8个 P/D BM 组] -&gt; [D0: TP ranks 0至15]: 每组2个D成员
+```
+
+两侧各有一份 `SharingPlan`，role 不同。
+它们使用相同的 `instance_id=case1-pair-0`。
+示例物理 host 分别是 `case1-p0` 和 `case1-d0`。
+
+显式分配公式是：
+
+```python
+numa_node = tp_rank // 2
+```
+
+| NUMA | P0 的成员 | D0 的成员 | 各侧 owner TP rank | 各 BM 组 world_size | store 端口 |
+|---|---|---|---:|---:|---:|
+| 0 | 0, 1 | 0, 1 | 0 | 4 | 19000 |
+| 1 | 2, 3 | 2, 3 | 2 | 4 | 19002 |
+| 2 | 4, 5 | 4, 5 | 4 | 4 | 19004 |
+| 3 | 6, 7 | 6, 7 | 6 | 4 | 19006 |
+| 4 | 8, 9 | 8, 9 | 8 | 4 | 19008 |
+| 5 | 10, 11 | 10, 11 | 10 | 4 | 19010 |
+| 6 | 12, 13 | 12, 13 | 12 | 4 | 19012 |
+| 7 | 14, 15 | 14, 15 | 14 | 4 | 19014 |
+
+例如 NUMA2 的组是 `(4,5)`。
+rank4 是 owner，因为它是排序后的第一名。
+rank5 贡献0，但后续仍会拥有自己的 BM handle 和设备映射。
+
+| 计数对象 | share=0 | share=1 |
+|---|---:|---:|
+| P0 的物理存储份数 | 16 | 8 |
+| D0 的物理存储份数 | 16 | 8 |
+| 全部署物理存储份数 | 32 | 16 |
+| P/D 配对的 BM 组数 | 16 | 8 |
+| 所有组的 participants 总数 | 32 | 32 |
+
+共享减少物理副本和 BM 组数量。
+每张卡对应的 worker 仍然参与，不会因为零贡献而消失。
+
+## C 例一：完整拆开 NUMA0 的四个 participants
+
+本组 `members=(0,1)`，所以 g=2。
+组内 member 是0或1，与物理主机编号无关。
+
+```python
+participant = side * g + member  # P side=0，D side=1
+owner_participant = side * g
+```
+
+为便于算具体容量，两例统一使用一套示例参数：
+
+| 参数 | 示例值 |
+|---|---:|
+| layers | 78 |
+| slots | 16 |
+| P 每 slot 的 token 容量 | 4096 |
+| D 每 slot 的 token 容量 | 8192 |
+| compact dim | 512 + 64 = 576 |
+| dtype | BF16，每元素2字节 |
+| allocation 对齐 | 1 GiB |
+
+`slots=16` 是请求槽位数，与 TP16 中的16没有绑定关系。
+这里的容量也不是服务默认值，而是为比较选定的输入。
+
+```python
+P_payload = 78 * 16 * 4096 * 576 * 2  # 5,888,802,816 B
+D_payload = 78 * 16 * 8192 * 576 * 2  # 11,777,605,632 B
+probe_bytes = 64 * 2                  # 128 B
+P_contribution = align_up(P_payload + 128, 1 GiB)  # 6 GiB
+D_contribution = align_up(D_payload + 128, 1 GiB)  # 11 GiB
+rank_stride = max(6 GiB, 11 GiB)                  # 11 GiB
+```
+
+贡献包含所有 layers、所有 slots 和对应 token 容量。
+它不是单个 token 或单个请求的字节数。
+stride 是共同地址间距，不是每个 participant 的实际贡献。
+
+| worker | TP rank | member | participant | owner participant | 本地贡献 | probe 相对偏移 |
+|---|---:|---:|---:|---:|---:|---|
+| P0/r0 | 0 | 0 | 0 | 0 | 6 GiB | P_payload + 0 |
+| P0/r1 | 1 | 1 | 1 | 0 | 0 | P_payload + 64 |
+| D0/r0 | 0 | 0 | 2 | 2 | 11 GiB | D_payload + 0 |
+| D0/r1 | 1 | 1 | 3 | 2 | 0 | D_payload + 64 |
+
+P 的两个 probe 位于 P owner 的 allocation 中。
+D 的两个 probe 位于 D owner 的 allocation 中。
+零贡献成员不会为 probe 另建一份完整 KV。
+owner 是内存贡献者；后续每个成员都可直接访问映射。
+
+本组 `nic_offset=0`。
+每个 member 预留4个端口，MemFabric 再加 participant 偏移。
+
+| worker | NIC base | 加上的 participant | 实际 NIC 端口 |
+|---|---:|---:|---:|
+| P0/r0 | 25670 | 0 | 25670 |
+| P0/r1 | 25674 | 1 | 25675 |
+| D0/r0 | 25670 | 2 | 25672 |
+| D0/r1 | 25674 | 3 | 25677 |
+
+本组预留范围是25670到25677。
+下一组 offset 增加8，使用25678到25685。
+同组的 store 端口相同，因为成员连接同一个 store。
+
+| 内存位置 | share=0 | share=1 |
+|---|---:|---:|
+| P0 | 16 × 6 = 96 GiB | 8 × 6 = 48 GiB |
+| D0 | 16 × 11 = 176 GiB | 8 × 11 = 88 GiB |
+| 两机合计 | 272 GiB | 136 GiB |
+
+这是 BM KV contribution 的计划值，节省50%。
+它不包含模型权重、HBM cache 和其他服务内存。
+每个 reader 仍需要自己的完整 selected KV。
+读取流量不会因为物理副本减半就自动减半。
+
+## D 例一：这些输入怎样经过代码
+
+P0 的拓扑输入是一台主机、16个全局 TP ranks：
+
+```python
+hosts = (HostTopology(&quot;case1-p0&quot;, tuple(range(16)), &quot;0-7&quot;),)
+```
+
+P0 的显式 map 按 `rank // 2` 生成16条记录。
+例如前两条如下；完整文件已随页面保存。
+
+```json
+[
+  {&quot;host&quot;: &quot;case1-p0&quot;, &quot;rank&quot;: 0, &quot;node&quot;: 0},
+  {&quot;host&quot;: &quot;case1-p0&quot;, &quot;rank&quot;: 1, &quot;node&quot;: 0}
+]
+```
+
+这段截取不能单独充当 TP16 的完整 map。
+缺少 rank2到15时，`plan()` 会明确拒绝。
+
+```flow LR
+环境与完整map -&gt; from_environment
+from_environment -&gt; MempoolNumaConfig
+MempoolNumaConfig -&gt; plan
+拓扑与layout -&gt; plan
+plan -&gt; P计划
+P计划 -&gt; validate_peer
+D计划 -&gt; validate_peer
+P计划 -&gt; report
+```
+
+| 代码步骤 | 本例得到的结果 |
+|---|---|
+| `from_environment()` | share=True；16条显式分配 |
+| `plan()` 检查拓扑 | ranks 0到15完整且唯一 |
+| map 校验 | host 匹配；节点全部属于0到7 |
+| 排序和分组 | `(0,1), (2,3), …, (14,15)` |
+| owner | `0,2,4,6,8,10,12,14` |
+| NIC offset | `0,8,16,24,32,40,48,56` |
+| `validate_peer()` | 两侧成员、layout和逻辑身份一致 |
+| `report()` | 按 rank 输出计划贡献、编号、probe和端口 |
+
+**旧节点列表与这里的显式 map 有不同含义。**
+如果使用旧列表 `0,1,2,3,4,5,6,7`，代码按 rank 取模。
+它会得到下面的组：
+
+| NUMA | 显式 `rank // 2` | 旧列表 `rank % 8` |
+|---|---|---|
+| 0 | `(0,1)` | `(0,8)` |
+| 1 | `(2,3)` | `(1,9)` |
+| 2 | `(4,5)` | `(2,10)` |
+| 7 | `(14,15)` | `(7,15)` |
+
+两种分配都有8组，组大小都是2，但成员关系不同。
+P 用第一种、D 用第二种，会被 `validate_peer()` 拒绝。
+不能只比较两侧的组数和 NUMA 数量。
+
+D 可以使用不同 NUMA 编号，只要对应成员仍相同。
+例如 P 的 `(0,1)` 在 node0，D 的 `(0,1)` 在 node6，逻辑上可以配对。
+实际在线节点和所需硬件映射仍须单独满足。
+
+## E 例二：四台32卡，先按每机 TP32 展开
+
+你确认这里是两台 P、两台 D。
+每台机器有32张卡，所以每机可容纳一个完整 TP32 实例。
+为了使用全部128张卡，本文选择两对独立 P/D 实例。
+实际服务路由仍是未来接入内容。
+
+```flow LR
+[P0: case2-p0, TP32] -&gt; [D0: case2-d0, TP32]: case2-pair-0
+[P1: case2-p1, TP32] -&gt; [D1: case2-d1, TP32]: case2-pair-1
+```
+
+| 物理机 | role | TP rank 范围 | 配对的 instance_id | 占用卡数 |
+|---|---|---|---|---:|
+| P0 | prefill | 0到31 | case2-pair-0 | 32 |
+| D0 | decode | 0到31 | case2-pair-0 | 32 |
+| P1 | prefill | 0到31 | case2-pair-1 | 32 |
+| D1 | decode | 0到31 | case2-pair-1 | 32 |
+
+总共四份本侧计划、两对可匹配的 P/D 计划。
+P0 的 rank0 和 P1 的 rank0 属于不同 TP 实例。
+它们的 rank 数字相同，但 `instance_id` 不同。
+单个 `SharingPlan` 不能把这两个 rank0 混成一个 rank。
+
+每台主机使用显式分配：
+
+```python
+numa_node = tp_rank // 4
+```
+
+下面的分组表分别适用于两对 P/D：
+
+| NUMA | 各侧成员 | owner TP rank | g | BM world_size | NIC offset | store 端口 |
+|---|---|---:|---:|---:|---:|---:|
+| 0 | 0,1,2,3 | 0 | 4 | 8 | 0 | 19000 |
+| 1 | 4,5,6,7 | 4 | 4 | 8 | 32 | 19004 |
+| 2 | 8,9,10,11 | 8 | 4 | 8 | 64 | 19008 |
+| 3 | 12,13,14,15 | 12 | 4 | 8 | 96 | 19012 |
+| 4 | 16,17,18,19 | 16 | 4 | 8 | 128 | 19016 |
+| 5 | 20,21,22,23 | 20 | 4 | 8 | 160 | 19020 |
+| 6 | 24,25,26,27 | 24 | 4 | 8 | 192 | 19024 |
+| 7 | 28,29,30,31 | 28 | 4 | 8 | 224 | 19028 |
+
+P0/node0 和 P1/node0 属于不同物理主机。
+它们也属于不同实例，因此各有自己的 owner allocation。
+相同的节点编号不表示同一块内存。
+
+两对实例可以使用相同的数字端口，因为主机不同。
+它们也可以各自使用数值 `pool_id=104`。
+BM world 的连接端点和逻辑 instance 必须保持隔离。
+仅靠相同或不同的数字 pool ID 不能代替实例隔离。
+
+## F 例二：八个 participants 与全四机的贡献
+
+看 P0/D0 的 NUMA0 组，`members=(0,1,2,3)`。
+P 的 participant 为0到3，D 的 participant 为4到7。
+两侧 owner participant 分别是0和4。
+
+| worker | member | participant | 本地贡献 | 实际 NIC 端口 |
+|---|---:|---:|---:|---:|
+| P0/r0 | 0 | 0 | 6 GiB | 25670 |
+| P0/r1 | 1 | 1 | 0 | 25679 |
+| P0/r2 | 2 | 2 | 0 | 25688 |
+| P0/r3 | 3 | 3 | 0 | 25697 |
+| D0/r0 | 0 | 4 | 11 GiB | 25674 |
+| D0/r1 | 1 | 5 | 0 | 25683 |
+| D0/r2 | 2 | 6 | 0 | 25692 |
+| D0/r3 | 3 | 7 | 0 | 25701 |
+
+这里每个 member 的 NIC base 相差8。
+一个组预留 `2 × 4² = 32` 个端口。
+NUMA0 预留25670到25701，NUMA1从25702开始。
+全部8组预留25670到25925。
+
+probe 从128字节扩展为256字节。
+成员0到3使用 payload 后的0、64、128、192偏移。
+在本例的1 GiB对齐下，P/D贡献仍为6/11 GiB。
+对齐前的 probe 变大，不一定使对齐后的 allocation 增大。
+
+| 全部署计数 | share=0 | share=1 |
+|---|---:|---:|
+| P侧两机的存储份数 | 64 | 16 |
+| D侧两机的存储份数 | 64 | 16 |
+| 四机存储份数 | 128 | 32 |
+| P/D 配对的 BM 组数 | 64 | 16 |
+| 所有组的 participants 总数 | 128 | 128 |
+
+共享模式的16个 BM 组，每组都有8个 participants。
+因此参与进程总数是 `16 × 8 = 128`。
+
+| 内存位置 | share=0 | share=1 |
+|---|---:|---:|
+| 每台 P | 32 × 6 = 192 GiB | 8 × 6 = 48 GiB |
+| 每台 D | 32 × 11 = 352 GiB | 8 × 11 = 88 GiB |
+| 两台 P 合计 | 384 GiB | 96 GiB |
+| 两台 D 合计 | 704 GiB | 176 GiB |
+| 四机合计 | 1088 GiB | 272 GiB |
+
+在相同容量输入下，计划贡献减少75%。
+这不等于吞吐提升4倍，也不等于读取流量降至四分之一。
+
+**如果你要的是单个 TP32 横跨两台 P，计数会不同。**
+一个 TP32 总共只需要32个 ranks。
+平均分到两台32卡 P，每机只使用16张卡。
+D侧相同，总共使用64张卡，另64张闲置。
+如果每侧跨两机并用满64张卡，那是 TP64 的例子。
+
+跨主机的 TP 实例可以用多个 `HostTopology` 描述。
+但共享组仍按 host 切开，不会把两台机器的 node0 合并。
+
+## G 回到 TP8×DP4：为什么不能直接当作 TP32
+
+这里先按普通 DP 理解：四个独立 TP8 请求副本。
+每台机器使用 `8 × 4 = 32` 张卡。
+每个副本都有自己的 TP rank0到7和请求状态。
+不同 DP 副本的 KV 内容通常不同，即使模型和 dtype 相同。
+
+**方案一：每个副本占连续8张卡。**
+继续假设每四张卡对应一个 NUMA。
+
+| DP副本 | 本机卡号 | 占用NUMA | 本副本TP ranks | 本副本共享组 |
+|---|---|---|---|---|
+| DP0 | 0到7 | 0、1 | 0到7 | `(0,1,2,3)`、`(4,5,6,7)` |
+| DP1 | 8到15 | 2、3 | 0到7 | `(0,1,2,3)`、`(4,5,6,7)` |
+| DP2 | 16到23 | 4、5 | 0到7 | `(0,1,2,3)`、`(4,5,6,7)` |
+| DP3 | 24到31 | 6、7 | 0到7 | `(0,1,2,3)`、`(4,5,6,7)` |
+
+例如物理卡10属于 DP1，本副本内的 TP rank 是2。
+它的节点是2，member 是2。
+如果它在 P侧，对应 participant 就是2。
+物理卡号10不应直接填成这个 TP8 计划的 rank10。
+
+每个 DP 副本得到2组，整台机器共8份存储。
+数字上与 TP32 的8份相同，数据含义却不同：
+
+| 对比 | 每机一个 TP32 | 每机四个普通 TP8 副本 |
+|---|---|---|
+| 逻辑请求状态 | 1套 | 4套，各自独立 |
+| 一套 KV 的本机副本数 | 8 | 2 |
+| 每机物理存储份数 | 8 | 4 × 2 = 8 |
+| 若每实例 slots=16 | 1套16个槽位 | 4套各16个槽位 |
+| rank 编号 | 一套0到31 | 四套0到7 |
+
+这不构成模型显存、吞吐或请求容量的等价比较。
+这里只演示 BM 共享边界如何变化。
+
+**方案二：每个 NUMA 放四个不同 DP 的 ranks。**
+假设 node n 放 DP0/rn、DP1/rn、DP2/rn、DP3/rn。
+每个 DP 的八张卡就分散在八个 NUMA 上。
+
+```tree list
+同一物理主机的 NUMA0
+  DP0 的 TP rank0 | 请求集合A，只能共享A的KV
+  DP1 的 TP rank0 | 请求集合B，只能共享B的KV
+  DP2 的 TP rank0 | 请求集合C，只能共享C的KV
+  DP3 的 TP rank0 | 请求集合D，只能共享D的KV
+```
+
+这四个 ranks 不能因为同机同节点就合并。
+每个 DP 在每个节点只有一个成员，所以 g=1。
+每台机器共有 `4 × 8 = 32` 份存储，不能在这里去重。
+
+**现有规划器怎样表达，哪些还没有实现？**
+它没有 `dp_rank` 字段，也没有 DP 请求路由。
+未来可以让每个 DP 副本单独生成一对 TP8 计划。
+对应 P/D 副本共享一个 instance_id，不同副本使用不同身份。
+
+| 副本 | 示例 instance_id | store基址 | NIC基址 |
+|---|---|---:|---:|
+| DP0 | future-dp-pair-0-replica-0 | 19000 | 25670 |
+| DP1 | future-dp-pair-0-replica-1 | 19100 | 25770 |
+| DP2 | future-dp-pair-0-replica-2 | 19200 | 25870 |
+| DP3 | future-dp-pair-0-replica-3 | 19300 | 25970 |
+
+这些基址为示例，各副本预留的64个 NIC 端口互不重叠。
+只改变 instance_id 不会改变监听端口，仍可能冲突。
+当前 `validate_peer()` 只检查一对计划，不管理跨实例端口资源。
+未来还需要副本配对、slot/session、生命周期和发布依赖的隔离。
+把 DP ranks 扁平化成一个 TP32 计划会丢失这些边界。
+
+**SGLang 的 DP attention 另有参数语义。**
+当前代码在启用它时计算 `attn_tp_size = tp_size / dp_size / cp_size`。
+所以 TP8、DP4、CP1 对应 attention TP2，不能按普通 DP 的32卡解释。
+若想表达全局32卡中的四个 attention TP8 组，算式是32/4=8。
+这只是当前代码的编号关系，不表示 mempool 已支持该模式。
+
+## H 可复现输入、检查结果和源码落点
+
+两例已通过当前 `MempoolNumaConfig.plan()` 实际计算。
+每对 P/D 都调用了 `validate_peer()`。
+附带文件保存全部 ranks 的映射、端口和贡献，无需手工补齐表格。
+DP附例只计算四份互相隔离的 TP8 计划。
+它没有启动 DP 服务，不能作为 DP 支持的证据。
+
+| 文件 | 用途 |
+|---|---|
+| [calculate.py](examples/sharing-plan-deployments/calculate.py) | 重算全部示例，校验组数、成员、身份和总贡献 |
+| [summary.json](examples/sharing-plan-deployments/summary.json) | 两例汇总与容量输入 |
+| [双机P拓扑](examples/sharing-plan-deployments/case1-p0-shared-topology.json) | 完整16-rank主机拓扑 |
+| [双机P映射](examples/sharing-plan-deployments/case1-p0-shared-map.json) | 完整16条显式分配 |
+| [双机P报告](examples/sharing-plan-deployments/case1-p0-shared-report.json) | P侧16个 ranks 的逐项计划 |
+| [双机D报告](examples/sharing-plan-deployments/case1-d0-shared-report.json) | D侧编号、probe、贡献与端口 |
+| [四机P0映射](examples/sharing-plan-deployments/case2-p0-shared-map.json) | 完整32条显式分配 |
+| [四机P0报告](examples/sharing-plan-deployments/case2-p0-shared-report.json) | 第一对实例的P计划 |
+| [四机D0报告](examples/sharing-plan-deployments/case2-d0-shared-report.json) | 第一对实例的D计划 |
+| [四机P1报告](examples/sharing-plan-deployments/case2-p1-shared-report.json) | 第二对实例的P计划 |
+| [四机D1报告](examples/sharing-plan-deployments/case2-d1-shared-report.json) | 第二对实例的D计划 |
+
+脚本仅依赖 msgspec，不导入 NPU runtime。
+在安装了 msgspec 的 Python 环境中，从仓库根目录运行：
+
+```bash
+python3 .scratch/ascend-mempool-numa-sharing/examples/sharing-plan-deployments/calculate.py
+```
+
+报告里 `allocation_status` 都是 `planned`。
+`placement_verified` 都是 `false`。
+本次没有执行 BM 分配、远端握手或 NPU 测试。
+
+| 关注的问题 | 当前代码落点 |
+|---|---|
+| 输入读取与冲突 | `sharing_plan.py:246`，`from_environment()` |
+| 单TP实例的rank完整性 | `sharing_plan.py:318`，`rank_hosts` |
+| 同机同NUMA合组 | `sharing_plan.py:390`，排序及分组键 |
+| owner和participant | `sharing_plan.py:181`，`report()` |
+| P/D对应和端口冲突 | `sharing_plan.py:113`，`validate_peer()` |
+| probe及贡献 | `sharing_plan.py:155`，`group_layout()` |
+| TP16、DP1服务限制 | `config.py:44`，`required` |
+| 普通DP启动各TP实例 | `data_parallel_controller.py:371` |
+| DP attention的TP划分 | `data_parallel_controller.py:682` |
+
+源码分别位于生产 NPU mempool 目录和 SGLang managers 目录。
+本页只增加解释材料，没有放宽 TP/DP 限制或修改生产代码。
+</textarea>
+<script>
+(() => {
+  const root = document.documentElement;
+  const cycle = (list, cur) => list[(list.indexOf(cur) + 1) % list.length];
+  const label = (btn, value) => {
+    const map = JSON.parse(btn.dataset.labels || '{}');
+    btn.textContent = map[value] || value;
+  };
+  const bind = (name, attr, values) => {
+    const btn = document.querySelector(`[data-am="${name}"]`);
+    if (!btn) return;
+    label(btn, root.getAttribute(attr));
+    btn.addEventListener('click', () => {
+      const next = cycle(values, root.getAttribute(attr));
+      root.setAttribute(attr, next);
+      label(btn, next);
+    });
+  };
+  bind('theme', 'data-theme', ['blueprint', 'shadcn']);
+  bind('mode', 'data-mode', ['auto', 'light', 'dark']);
+
+  const copyBtn = document.querySelector('[data-am="copy"]');
+  copyBtn?.addEventListener('click', async () => {
+    const text = document.getElementById('am-source').value;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = Object.assign(document.createElement('textarea'), { value: text });
+      document.body.append(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    const original = copyBtn.textContent;
+    copyBtn.textContent = copyBtn.dataset.done;
+    setTimeout(() => { copyBtn.textContent = original; }, 1400);
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+{
+  "provenance": {
+    "source": "User-pasted filtered summaries and prefill target evidence; not a direct read of the NPU log files",
+    "received_date": "2026-10-26",
+    "run_id": "ticket01-3132-20261025-04",
+    "log_root": "/home/cryang/log/mempool-min/ticket01-3132-20261025-04"
+  },
+  "summaries": {
+    "prefill": {
+      "status": "passed",
+      "role": "prefill",
+      "mode": "acceptance",
+      "coverage": "ticket01 cold requests only",
+      "user_accepted": false,
+      "stages": [
+        "fetch",
+        "reference",
+        "target"
+      ],
+      "identity_check": {
+        "status": "passed",
+        "local_role": "prefill",
+        "differences": []
+      },
+      "timeout_fail_stop": {
+        "status": "passed",
+        "rid": "ticket01-3132-20261025-04-5",
+        "room": 2994005120307490,
+        "reason": "SR heartbeat timeout",
+        "retained_native_ranks": 16,
+        "retained_all_quotas": true,
+        "automatic_free": false,
+        "process_cleanup_verified": true
+      },
+      "paired_process_cleanup": "passed; both owned groups stopped",
+      "accuracy": "full output IDs equal to same-length formal reference",
+      "hardware_execution": "completed by user runner",
+      "prefix": "not covered",
+      "git_sha": "7275f29a05c9a7b6ed2902a27f5a5702564bb6f0"
+    },
+    "decode": {
+      "status": "passed",
+      "role": "decode",
+      "mode": "acceptance",
+      "coverage": "ticket01 cold requests only",
+      "user_accepted": false,
+      "stages": [
+        "fetch",
+        "reference",
+        "target"
+      ],
+      "identity_check": {
+        "status": "passed",
+        "local_role": "decode",
+        "differences": []
+      },
+      "timeout_fail_stop": {
+        "status": "passed",
+        "rid": "ticket01-3132-20261025-04-5",
+        "room": 2994005120307490,
+        "reason": "SR heartbeat timeout",
+        "retained_native_ranks": 16,
+        "retained_all_quotas": true,
+        "automatic_free": false,
+        "process_cleanup_verified": true
+      },
+      "paired_process_cleanup": "passed; both owned groups stopped",
+      "accuracy": "full output IDs equal to same-length formal reference",
+      "hardware_execution": "completed by user runner",
+      "prefix": "not covered",
+      "git_sha": "7275f29a05c9a7b6ed2902a27f5a5702564bb6f0"
+    }
+  },
+  "prefill_target_evidence": {
+    "status": "passed",
+    "coverage": "ticket01 cold requests only",
+    "requests": 4,
+    "ranks_per_side": 16,
+    "source_rows": {
+      "prompt": 71847392,
+      "decode": 334672
+    },
+    "graph": true,
+    "page_size": 128,
+    "prefix": "not implemented in ticket01",
+    "numa_placement": "not verified"
+  }
+}

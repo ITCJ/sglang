@@ -28,12 +28,19 @@ Ticket 01 的独立功能验证按用户确认放在仓库根目录 `ascend-memp
    实际结果和确认结论写入该 ticket 的 `Comments`，勾选已满足的验收项并关闭 ticket。
    这时才解锁依赖它的任务。整个 feature 的验收要求主线01–08及新增的
    [10: GLM-5.2算法适配](issues/10-glm52-indexer-sharing.md)完成；10在03后、04前执行。
+   用户2026-10-12新增NUMA共享优先级：10后先执行
+   [共享01→02→03](../ascend-mempool-numa-sharing/delivery-plan.md)，各票同样需
+   用户NPU验收后才解锁下游；共享03关闭后再执行原04。
    [09: NUMA分配跟进](issues/09-numa-allocation-followup.md)按用户2026-10-02决定延期，
    不构成主线blocking edge，也不是新增的demo验收门槛。其延期不替代真实KV、Graph
    与生命周期的硬件验收；这些检查可先用已可运行的小容量配置完成。
 
 ## 进度和证据
 
+- 2026-10-14用户明确接受共享01完成，基于TP1/2/4 C/D结果关闭该组件票，
+  解锁共享02；03和原04仍按既有依赖推进。物理NUMA页落点未验证的原始标记
+  保持不变，这是用户接受的组件证据限制，不能解释为页落点已验证。
+  02/03的真实服务内容、Graph、生命周期及性能仍各自需要用户NPU验收。
 - `Status` 使用既有 triage vocabulary，`State` 单独记录 `open` / `closed`。
   代码交付、Mac 检查通过、测试脚本就绪时，仍保持 `State: open`；
   在 `Comments` 中明确写出“等待用户执行 NPU 验收”及尚未通过的验收项。

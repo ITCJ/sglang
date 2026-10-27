@@ -5,13 +5,22 @@ template: doc
 theme: blueprint
 lang: zh
 date: 2026-10-26
-status: reference 检查修复；CPU 440 项通过；两轴 review 通过；NPU 待用户重测
+status: CPU 440 项、两轴 review 与自动化 NPU 验收通过；待用户确认关闭
 ---
 
 基于用户已验收的 ticket01 `7275f29a05` 重写。
 本票保存冷请求的 prompt 主 KV 和 Index K，所有请求仍为 `hit_len=0`。
 代码中没有恢复、fill、evict 或 prefix 命中行为；它们仍属后续票。
-ticket02 保持 open，ticket03 等待本票 NPU 验收。
+ticket02 自动化 NPU 验收已通过，保持 open 等待用户确认关闭。
+ticket03 继续依赖本票关闭。
+
+**2026-10-26 NPU 结果：** 用户回传 `ticket02-002` 的两端 summary 和 P target evidence，
+均为 passed。验收 commit 为 `87157b7365a78aa336d9558e1ce9f820bee2fdd4`。
+
+16 ranks、78 层主 KV、21 层 Index K 内容与释放后留存通过。
+A/B/C/E 页数为 32→40→40→40，完整输出对齐、Graph、超时保护和清理均通过。
+[证据记录](verification/ticket02-002-20261026/record.json)保留用户粘贴的完整报告字段。
+NUMA 物理落点仍未验证；该字段是当前检查器的固定标记，未接入实际落点探测。
 
 **2026-10-26 运行反馈修复：** `ticket02-001` 在 reference 阶段因旧检查器要求
 zero-decode 而退出，未进入 target。现已按 A/B/C/E 要求检查准确 4 个 completed、
@@ -82,7 +91,8 @@ warmup 保持原生本机路径，不建立 alive 绑定，也不触发 prefix �
 使用同一个全新 run-id；P 先启动，随后启动 D，后续步骤自动协调。
 
 31/32 可直接复用已通过 ticket01 的 `/home/cryang/mempool-min-ticket01-3132.json`。
-以下命令使用该配置与新的 `ticket02-002`，保留上轮失败日志；其他部署填写自己的配置路径。
+以下为已通过的 `ticket02-002` 命令，保留本轮及上轮失败日志。
+后续重跑须换全新 run-id；其他部署填写自己的配置路径。
 
 P 机：
 
@@ -168,4 +178,5 @@ Standards 复核通过，剩余发现 0 项。
 未引入 ticket03 的命中恢复、fill 或 evict。
 
 Standards 剩余 0 项；Spec 剩余 0 项。
-NPU 内容、Graph 与实际设备可见性仍待用户验收。
+用户回传的 ticket02-002 报告已通过 NPU 内容、Graph 与设备可见性检查。
+物理 NUMA 落点未验证；等待用户确认关闭本票。

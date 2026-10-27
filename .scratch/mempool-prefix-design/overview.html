@@ -1,0 +1,758 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="blueprint" data-mode="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Answer me with HTML 0.4.3">
+<title>Mempool 前缀复用设计草案</title>
+<style>
+html[data-theme="blueprint"], html[data-theme="blueprint"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 0px;
+  --shadow: none;
+  --bw: 1.5px;
+  --head-font: var(--font-sans);
+  --bg: #f6f6f3;
+  --paper: #ffffff;
+  --ink: #16181d;
+  --ink-2: #4b5260;
+  --ink-3: #8b929e;
+  --line: #1d2026;
+  --line-2: #d6dae1;
+  --fill: #f3f5f8;
+  --accent: #1d5fbf;
+  --accent-bg: #e4ecf8;
+  --ok: #1d5fbf;
+  --ok-bg: #e4ecf8;
+  --err: #c62828;
+  --err-bg: #fbeaea;
+  --warn: #a8620a;
+  --warn-bg: #fdf3e2;
+  --head-bg: #16181d;
+  --head-fg: #ffffff;
+}
+html[data-theme="blueprint"][data-mode="dark"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="blueprint"][data-mode="auto"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+}
+
+html[data-theme="shadcn"], html[data-theme="shadcn"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 8px;
+  --shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --bw: 1px;
+  --head-font: var(--font-sans);
+  --bg: #fafafa;
+  --paper: #ffffff;
+  --ink: #09090b;
+  --ink-2: #71717a;
+  --ink-3: #a1a1aa;
+  --line: #e4e4e7;
+  --line-2: #f0f0f2;
+  --fill: #f4f4f5;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --ok: #16a34a;
+  --ok-bg: #f0fdf4;
+  --err: #dc2626;
+  --err-bg: #fef2f2;
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --head-bg: #18181b;
+  --head-fg: #fafafa;
+}
+html[data-theme="shadcn"][data-mode="dark"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="shadcn"][data-mode="auto"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+}
+
+/* Answer me with HTML base — 只引用主题变量，禁止写死颜色（主题 token 见 themes/index.js） */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd { font-family: var(--font-mono); }
+
+/* ── 工具栏 ─────────────────────────────── */
+.am-toolbar {
+  position: fixed; top: 12px; right: 12px; z-index: 10; display: flex; gap: 6px;
+}
+.am-btn {
+  font: 12px/1 var(--font-sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding: 7px 10px; cursor: pointer;
+}
+.am-btn:hover { border-color: var(--ink-3); }
+.am-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── 页头 ───────────────────────────────── */
+.am-head { margin: 0 0 20px; padding-right: 260px; }
+.am-head h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; }
+.am-sub { margin: 4px 0 0; color: var(--ink-2); }
+.am-head-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 12px; color: var(--ink-2); }
+.am-head-meta b { font-family: var(--font-mono); font-weight: 400; color: var(--ink-3); margin-right: 6px; }
+.am-intro { margin-top: 12px; max-width: 80ch; }
+
+/* ── sheet 图纸板 ────────────────────────── */
+.am-sheet { max-width: 1680px; margin: 0 auto; padding: 32px 28px 40px; }
+.am-frame { position: relative; }
+.am-grid {
+  display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 20px; align-items: start;
+}
+.am-ruler { display: none; }
+html[data-theme="blueprint"] .am-frame { border: 1px solid var(--line); padding: 30px; }
+html[data-theme="blueprint"] .am-frame::before {
+  content: ""; position: absolute; inset: 18px; border: 1px solid var(--line); pointer-events: none;
+}
+html[data-theme="blueprint"] .am-ruler {
+  display: flex; position: absolute; font: 10px/1 var(--font-mono); color: var(--ink-3);
+}
+.am-ruler span { flex: 1; display: flex; align-items: center; justify-content: center; }
+.am-ruler--top, .am-ruler--bottom { left: 18px; right: 18px; height: 18px; }
+.am-ruler--top { top: 0; }
+.am-ruler--bottom { bottom: 0; }
+.am-ruler--left, .am-ruler--right { top: 18px; bottom: 18px; width: 18px; flex-direction: column; }
+.am-ruler--left { left: 0; }
+.am-ruler--right { right: 0; }
+.am-ruler--top span + span, .am-ruler--bottom span + span { border-left: 1px solid var(--line); }
+.am-ruler--left span + span, .am-ruler--right span + span { border-top: 1px solid var(--line); }
+
+/* ── 面板 ───────────────────────────────── */
+.am-panel {
+  background: var(--paper); border: var(--bw) solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); min-width: 0; overflow: hidden;
+}
+.am-panel-head {
+  display: flex; align-items: stretch; gap: 0; border-bottom: var(--bw) solid var(--line); min-height: 34px;
+}
+.am-panel-id {
+  display: flex; align-items: center; justify-content: center; min-width: 34px; padding: 0 8px;
+  background: var(--head-bg); color: var(--head-fg); font-weight: 600; font-size: 14px;
+}
+html[data-theme="shadcn"] .am-panel-id { border-radius: 6px; min-width: 24px; height: 24px; margin: 9px 0 9px 14px; font-size: 12px; }
+html[data-theme="shadcn"] .am-panel-head { border-bottom-width: 1px; }
+.am-panel-head h2 { margin: 0; padding: 7px 12px; font-size: 15px; font-weight: 600; flex: 1; display: flex; align-items: center; }
+.am-panel-meta { align-self: center; padding: 0 12px; font: 11px/1.3 var(--font-mono); color: var(--ink-2); text-align: right; }
+.am-panel-body { padding: 14px 16px 16px; }
+.am-panel-body > * + * { margin-top: 12px; }
+
+/* ── Markdown 正文 ───────────────────────── */
+.am-md > :first-child { margin-top: 0; }
+.am-md > :last-child { margin-bottom: 0; }
+.am-md p { margin: 0 0 8px; }
+.am-md ul, .am-md ol { margin: 0 0 8px; padding-left: 20px; }
+.am-md li + li { margin-top: 3px; }
+.am-md h3, .am-md h4 { margin: 14px 0 6px; font-size: 13px; }
+.am-md a { color: var(--accent); }
+.am-md blockquote { margin: 0 0 8px; padding: 2px 12px; border-left: 3px solid var(--line-2); color: var(--ink-2); }
+.am-md :not(pre) > code { font-size: 0.9em; background: var(--fill); padding: 1px 5px; border-radius: 4px; }
+.am-md hr { border: 0; border-top: 1px solid var(--line-2); margin: 12px 0; }
+.am-md table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.am-md th {
+  text-align: left; font: 11px/1.3 var(--font-mono); color: var(--ink-2); font-weight: 400;
+  padding: 6px 10px; border-bottom: 1px solid var(--line-2);
+}
+.am-md td { padding: 7px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.am-md tbody tr:nth-child(even) td { background: var(--fill); }
+.am-table-wrap { overflow-x: auto; }
+.am-code {
+  margin: 0; padding: 12px 14px; background: var(--fill); border: 1px solid var(--line-2);
+  border-radius: var(--radius); overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+}
+
+/* ── 状态徽章 ok / no / warn ──────────────── */
+.am-status { white-space: nowrap; font-weight: 500; }
+.am-status--ok { color: var(--ok); }
+.am-status--no { color: var(--err); }
+.am-status--warn { color: var(--warn); }
+.am-status-icon { display: inline-block; width: 1.1em; font-weight: 700; }
+
+/* ── callout ─────────────────────────────── */
+.am-callout {
+  border: 1px solid var(--line-2); border-left: 3px solid var(--accent); background: var(--accent-bg);
+  padding: 10px 14px; border-radius: var(--radius);
+}
+.am-callout--ok { border-left-color: var(--ok); background: var(--ok-bg); }
+.am-callout--warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.am-callout--err { border-left-color: var(--err); background: var(--err-bg); }
+.am-callout-title { font-weight: 600; margin-bottom: 4px; }
+
+/* ── kv 标题栏格 ─────────────────────────── */
+.am-kv {
+  display: grid; grid-template-columns: repeat(var(--kv-cols, 2), minmax(0, 1fr)); margin: 0;
+  border-top: var(--bw) solid var(--line); border-left: var(--bw) solid var(--line);
+}
+.am-kv-cell { border-right: var(--bw) solid var(--line); border-bottom: var(--bw) solid var(--line); padding: 6px 10px 8px; min-width: 0; }
+.am-kv-cell--wide { grid-column: 1 / -1; }
+.am-kv dt { font: 11px/1.4 var(--font-mono); color: var(--ink-2); }
+.am-kv dd { margin: 2px 0 0; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.am-kv-cell--wide dd { font-size: 17px; font-weight: 600; }
+html[data-theme="shadcn"] .am-kv { border-color: var(--line); border-radius: var(--radius); overflow: hidden; }
+
+/* ── timeline ────────────────────────────── */
+.am-timeline { list-style: none; margin: 0; padding: 0; }
+.am-timeline--h { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); padding-top: 4px; }
+.am-timeline--h li { position: relative; text-align: center; padding: 0 6px; }
+.am-timeline--h li::before {
+  content: ""; position: absolute; top: 31px; left: 0; right: 0; border-top: var(--bw) solid var(--line);
+}
+.am-timeline--h li:first-child::before { left: 50%; }
+.am-timeline--h li:last-child::before { right: 50%; }
+.am-tl-when { display: block; font-size: 15px; font-weight: 500; height: 24px; }
+.am-tl-dot {
+  position: relative; display: block; width: 11px; height: 11px; margin: 2px auto 8px;
+  border: var(--bw) solid var(--line); border-radius: 50%; background: var(--paper);
+}
+.am-tl-item--hi .am-tl-dot { background: var(--accent); border-color: var(--accent); }
+.am-tl-title { display: block; font-size: 12.5px; font-weight: 500; }
+.am-tl-text { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.45; }
+.am-timeline--v li { position: relative; padding: 0 0 14px 22px; }
+.am-timeline--v li::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: -6px; border-left: var(--bw) solid var(--line-2); }
+.am-timeline--v li:last-child::before { display: none; }
+.am-timeline--v .am-tl-dot { position: absolute; left: 0; top: 4px; margin: 0; }
+.am-timeline--v .am-tl-when { display: inline; height: auto; font: 12px var(--font-mono); color: var(--ink-2); margin-right: 8px; }
+.am-timeline--v .am-tl-title { display: inline; font-size: 14px; }
+.am-timeline--v .am-tl-text { margin-top: 2px; }
+
+/* ── annot 句子标注 ──────────────────────── */
+.am-annot + .am-annot { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.am-annot-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.am-annot-meta { font: 11px var(--font-mono); font-weight: 400; color: var(--ink-2); }
+.am-annot-scroll { overflow-x: auto; }
+.am-annot-line {
+  position: relative; display: inline-block; white-space: pre; font: 14px/1.6 var(--font-mono);
+  padding-bottom: calc(var(--rows, 0) * 17px + 14px);
+}
+.am-annot-line--wrap { display: block; white-space: normal; padding-bottom: 10px; }
+.am-annot-line--wrap .am-seg { white-space: nowrap; }
+.am-seg { position: relative; }
+.am-seg::after {
+  content: ""; position: absolute; left: 1px; right: 1px; top: calc(100% + 1px); height: 5px;
+  border: 1px solid var(--accent); border-top: 0;
+}
+.am-seg-n {
+  position: absolute; left: 0; top: calc(100% + 8px + var(--row, 0) * 17px);
+  font: 11px/16px var(--font-sans); color: var(--accent); white-space: nowrap;
+}
+.am-seg--err { color: var(--err); }
+.am-seg--err::after { border-color: var(--err); }
+.am-seg--err .am-seg-n { color: var(--err); }
+.am-annot-caption { font-size: 12px; color: var(--ink-2); }
+
+/* ── limits 限值条 ───────────────────────── */
+.am-lim + .am-lim { margin-top: 14px; }
+.am-lim-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; margin-bottom: 4px; }
+.am-lim-val { font: 12px var(--font-mono); color: var(--accent); white-space: nowrap; }
+.am-lim-track { position: relative; height: 12px; border: 1px solid var(--line-2); background: var(--fill); border-radius: calc(var(--radius) / 2); }
+.am-lim-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-bg); border-right: 1px solid var(--accent); }
+.am-lim-mark { position: absolute; top: -4px; bottom: -4px; border-left: 2px solid var(--accent); }
+.am-lim.is-over .am-lim-fill { background: var(--err-bg); border-right-color: var(--err); }
+.am-lim.is-over .am-lim-val { color: var(--err); }
+.am-lim-ticks { position: relative; height: 16px; font: 10px/16px var(--font-mono); color: var(--ink-3); }
+.am-lim-ticks span { position: absolute; transform: translateX(-50%); }
+.am-lim-ticks span:first-child { transform: none; }
+.am-lim-note { font-size: 11px; color: var(--ink-2); margin-left: 6px; }
+
+/* ── tree 结构树 ─────────────────────────── */
+.am-tree { font-size: 13px; }
+.am-tree-root { display: flex; justify-content: center; position: relative; padding-bottom: 18px; }
+.am-tree-root::after { content: ""; position: absolute; bottom: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-root--solo { padding-bottom: 12px; }
+.am-tree-root--solo::after { display: none; }
+.am-tree-box {
+  border: var(--bw) solid var(--line); background: var(--paper); padding: 6px 14px; text-align: center;
+  border-radius: var(--radius); font-weight: 600;
+}
+.am-tree-box small { display: block; font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.am-tree-box--root { background: var(--accent-bg); font-size: 15px; padding: 8px 28px; }
+.am-tree-cols { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
+.am-tree-col { position: relative; padding: 18px 8px 0; min-width: 0; }
+.am-tree-col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; border-top: var(--bw) solid var(--line); }
+.am-tree-col:first-child::before { left: 50%; }
+.am-tree-col:last-child::before { right: 50%; }
+.am-tree-col::after { content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-list, .am-tree-list ul { list-style: none; margin: 0; padding: 0; }
+.am-tree-col > .am-tree-list { margin: 8px 0 0 14px; }
+.am-tree-list ul { margin-left: 16px; }
+.am-tree-list li { position: relative; padding: 3px 0 3px 18px; }
+.am-tree-list li::before { content: ""; position: absolute; left: 0; top: 0.95em; width: 12px; border-top: 1px solid var(--ink-3); }
+.am-tree-list li::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--ink-3); }
+.am-tree-list li:last-child::after { bottom: auto; height: 0.95em; }
+.am-tree-tag { font: 11px var(--font-mono); color: var(--ink-3); margin-right: 4px; }
+.am-tree code { font: 12px var(--font-mono); }
+.am-tree-sub { display: block; font-size: 11.5px; color: var(--ink-2); }
+.am-tree-hi > .am-tree-label { color: var(--accent); font-weight: 600; }
+
+/* ── 图（flow / sequence）───────────────── */
+.am-diagram { margin: 0; overflow-x: auto; text-align: center; }
+.am-diagram svg { max-width: 100%; height: auto; font-family: var(--font-sans); }
+.am-diagram text { fill: var(--ink); font-size: 13px; }
+.am-node-shape { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-node--hi .am-node-shape { fill: var(--accent-bg); stroke: var(--accent); }
+.am-node--hi text { fill: var(--accent); font-weight: 600; }
+.am-edge { fill: none; stroke: var(--ink-2); stroke-width: 1.3; }
+.am-edge--dashed { stroke-dasharray: 5 4; }
+.am-arrow { fill: var(--ink-2); }
+.am-edge-label rect { fill: var(--paper); }
+.am-diagram .am-edge-label text { fill: var(--accent); font-size: 11.5px; }
+.am-cluster { fill: var(--fill); stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 4 3; }
+.am-diagram .am-cluster-label { fill: var(--ink-2); font: 11px var(--font-mono); }
+.am-lifeline { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 4 4; }
+.am-actor { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-note { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 1; }
+.am-diagram .am-step { fill: var(--ink-3); font: 10px var(--font-mono); }
+
+/* ── doc 线性讲解 ────────────────────────── */
+.am-doc { max-width: 1120px; margin: 0 auto; padding: 40px 28px 64px; }
+.am-doc-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
+.am-doc-layout--notoc { grid-template-columns: minmax(0, 1fr); max-width: 860px; }
+.am-toc { position: sticky; top: 24px; font-size: 13px; }
+.am-toc a { display: block; color: var(--ink-2); text-decoration: none; padding: 4px 0 4px 10px; border-left: 2px solid var(--line-2); }
+.am-toc a:hover { color: var(--ink); border-left-color: var(--accent); }
+.am-doc-body > .am-panel + .am-panel { margin-top: 20px; }
+
+/* ── 响应式与打印 ─────────────────────────── */
+@media (max-width: 1100px) {
+  .am-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .am-grid > .am-panel { grid-column: auto !important; }
+  .am-grid > .am-panel.am-span-wide { grid-column: 1 / -1 !important; }
+}
+@media (max-width: 760px) {
+  .am-sheet, .am-doc { padding: 56px 12px 24px; }
+  .am-head { padding-right: 0; }
+  .am-grid { grid-template-columns: minmax(0, 1fr); }
+  .am-grid > .am-panel.am-span-wide { grid-column: auto !important; }
+  html[data-theme="blueprint"] .am-frame { padding: 0; border: 0; }
+  html[data-theme="blueprint"] .am-frame::before, html[data-theme="blueprint"] .am-ruler { display: none; }
+  .am-doc-layout { grid-template-columns: minmax(0, 1fr); }
+  .am-toc { position: static; }
+  .am-timeline--h { grid-template-columns: minmax(0, 1fr); }
+  .am-tree-cols { grid-template-columns: minmax(0, 1fr); }
+}
+.am-colophon { text-align: center; padding: 0 0 28px; font: 11px var(--font-mono); color: var(--ink-3); }
+
+@media print {
+  .am-toolbar { display: none; }
+  body { background: var(--paper); }
+  .am-panel { break-inside: avoid; box-shadow: none; }
+}
+.am-panel--bare { border: 0; background: transparent; box-shadow: none; }
+.am-panel--bare > .am-panel-body { padding: 0; }
+.am-panel--bare .am-kv { background: var(--paper); }
+
+</style>
+</head>
+<body>
+<div class="am-toolbar">
+<button class="am-btn" type="button" data-am="theme" data-labels="{&quot;blueprint&quot;:&quot;主题：图纸&quot;,&quot;shadcn&quot;:&quot;主题：卡片&quot;}">主题：图纸</button>
+<button class="am-btn" type="button" data-am="mode" data-labels="{&quot;auto&quot;:&quot;明暗：跟随系统&quot;,&quot;light&quot;:&quot;明暗：亮&quot;,&quot;dark&quot;:&quot;明暗：暗&quot;}">明暗：跟随系统</button>
+<button class="am-btn" type="button" data-am="copy" data-done="已复制 ✓">复制源稿</button>
+</div>
+<main class="am-doc">
+<header class="am-head"><h1>Mempool 前缀复用设计草案</h1><p class="am-sub">先恢复计算所需的 HBM，再与 prefill 重叠填充 alive</p></header>
+<div class="am-doc-layout">
+<nav class="am-toc" aria-label="目录"><a href="#panel-A">A · 两种存储用途</a><a href="#panel-B">B · 命中后的复制与计算</a><a href="#panel-C">C · 按层流水仍需学习与核实</a><a href="#panel-D">D · Router 统一目录</a><a href="#panel-E">E · B 复制复用 A</a><a href="#panel-F">F · 请求关联与副本索引</a><a href="#panel-G">G · 分散 alive 与直接 backup</a><a href="#panel-H">H · 阅读入口</a></nav><div class="am-doc-body">
+<section class="am-panel" id="panel-A">
+<header class="am-panel-head"><span class="am-panel-id">A</span><h2>两种存储用途</h2></header>
+<div class="am-panel-body"><div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>对象</th>
+<th>保存什么</th>
+<th>主要用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>P 的 HBM</td>
+<td>命中 prefix 与新算 KV</td>
+<td>执行 prefill，含 chunk prefill</td>
+</tr>
+<tr>
+<td>alive DRAM</td>
+<td>当前请求的 KV</td>
+<td>支持后续 decode 的 sparse 读取</td>
+</tr>
+<tr>
+<td>prefix mem pool</td>
+<td>跨请求保留的前缀</td>
+<td>供下一次请求按 page 恢复</td>
+</tr>
+</tbody></table></div>
+<p>alive 与 prefix 不做物理去重。
+一致性哈希只负责 prefix 放置。
+alive 是一个逻辑 pool，内部可有多处区域和副本。
+P/D 生成的 KV 默认各自本地保存。
+入场时也可选择把 prompt 放到 D 附近。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-B">
+<header class="am-panel-head"><span class="am-panel-id">B</span><h2>命中后的复制与计算</h2></header>
+<div class="am-panel-body"><figure class="am-diagram am-seq"><svg viewBox="0 0 943 442" width="943" height="442" role="img" aria-label="时序图：Router、缓存进程、P_HBM、P计算、P_alive、D计算" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am1-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><line class="am-lifeline" x1="54" y1="42" x2="54" y2="438"/><g data-key="Router"><rect class="am-actor" x="12" y="8" width="84" height="34" rx="2"/><text x="54" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">Router</text></g><line class="am-lifeline" x1="245" y1="42" x2="245" y2="438"/><g data-key="缓存进程"><rect class="am-actor" x="203" y="8" width="84" height="34" rx="2"/><text x="245" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">缓存进程</text></g><line class="am-lifeline" x1="383.2" y1="42" x2="383.2" y2="438"/><g data-key="P_HBM"><rect class="am-actor" x="341.2" y="8" width="84" height="34" rx="2"/><text x="383.2" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">P_HBM</text></g><line class="am-lifeline" x1="522.2" y1="42" x2="522.2" y2="438"/><g data-key="P计算"><rect class="am-actor" x="480.2" y="8" width="84" height="34" rx="2"/><text x="522.2" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">P计算</text></g><line class="am-lifeline" x1="696.5" y1="42" x2="696.5" y2="438"/><g data-key="P_alive"><rect class="am-actor" x="654.5" y="8" width="84" height="34" rx="2"/><text x="696.5" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">P_alive</text></g><line class="am-lifeline" x1="832.6" y1="42" x2="832.6" y2="438"/><g data-key="D计算"><rect class="am-actor" x="790.6" y="8" width="84" height="34" rx="2"/><text x="832.6" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">D计算</text></g><g data-step="0"><text x="149.5" y="70" text-anchor="middle">选择源，预留目标，保护源页</text><path class="am-edge" d="M54,80 L243,80" marker-end="url(#am1-arrow)"/></g><g data-step="1"><text x="314.1" y="110" text-anchor="middle">优先恢复命中 prefix</text><path class="am-edge" d="M245,120 L381.2,120" marker-end="url(#am1-arrow)"/></g><g data-step="2"><text x="452.7" y="150" text-anchor="middle">对应层的数据已就绪</text><path class="am-edge am-edge--dashed" d="M383.2,160 L520.2,160" marker-end="url(#am1-arrow)"/></g><g data-step="3"><text x="562.2" y="188" dominant-baseline="central">prefill 未命中部分</text><path class="am-edge" d="M522.2,184 H552.2 V204 H524.2" marker-end="url(#am1-arrow)"/></g><g data-step="4"><text x="470.7" y="238" text-anchor="middle">后台复制命中段</text><path class="am-edge" d="M245,248 L694.5,248" marker-end="url(#am1-arrow)"/></g><g data-step="5"><text x="609.4" y="278" text-anchor="middle">只写新算段</text><path class="am-edge" d="M522.2,288 L694.5,288" marker-end="url(#am1-arrow)"/></g><g data-step="6"><text x="764.6" y="318" text-anchor="middle">完整 prompt 已就绪</text><path class="am-edge am-edge--dashed" d="M696.5,328 L830.6,328" marker-end="url(#am1-arrow)"/></g><g data-step="7"><text x="677.4" y="358" text-anchor="middle">Index K 与 handoff</text><path class="am-edge" d="M522.2,368 L830.6,368" marker-end="url(#am1-arrow)"/></g><g data-step="8"><rect class="am-note" x="734.7" y="392" width="195.9" height="28" rx="2"/><text x="832.6" y="406" text-anchor="middle" dominant-baseline="central" font-size="12">全部前置条件满足后开始 decode</text></g></svg></figure>
+<div class="am-md"><p>命中段与新算段写入不同范围。
+两条 DRAM 写入路径可与 prefill 重叠。
+D 还要等待 Index K 和 handoff。
+图中采用默认的 P 侧 prompt 存储。
+若选 D 侧存储，两条 DRAM 写入都改向该目标。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-C">
+<header class="am-panel-head"><span class="am-panel-id">C</span><h2>按层流水仍需学习与核实</h2></header>
+<div class="am-panel-body"><figure class="am-diagram am-flow"><svg viewBox="0 0 518 134" width="518" height="134" role="img" aria-label="流程图：恢复第1层、计算第1层、恢复第2层、计算第2层" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am2-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><g></g><g><g data-step="0"><path class="am-edge" d="M101.3,82.4 L129.8,92.5 Q158.2,102.5 186.7,102.5 L215.2,102.5" marker-end="url(#am2-arrow)"/><g class="am-edge-label"><rect x="125.3" y="93.5" width="65.9" height="18" rx="3"/><text x="158.2" y="102.5" text-anchor="middle" dominant-baseline="central">本层 ready</text></g></g><g data-step="1"><path class="am-edge" d="M101.3,51.6 L129.8,41.5 Q158.2,31.5 186.7,31.5 L215.2,31.5" marker-end="url(#am2-arrow)"/><g class="am-edge-label"><rect x="130.2" y="22.5" width="56" height="18" rx="3"/><text x="158.2" y="31.5" text-anchor="middle" dominant-baseline="central">继续搬运</text></g></g><g data-step="2"><path class="am-edge" d="M302.5,31.5 L330.9,31.5 Q359.4,31.5 387.9,41.5 L416.3,51.6" marker-end="url(#am2-arrow)"/><g class="am-edge-label"><rect x="326.5" y="22.5" width="65.9" height="18" rx="3"/><text x="359.4" y="31.5" text-anchor="middle" dominant-baseline="central">本层 ready</text></g></g><g data-step="3"><path class="am-edge" d="M302.5,102.5 L330.9,102.5 Q359.4,102.5 387.9,92.5 L416.3,82.4" marker-end="url(#am2-arrow)"/><g class="am-edge-label"><rect x="331.4" y="93.5" width="56" height="18" rx="3"/><text x="359.4" y="102.5" text-anchor="middle" dominant-baseline="central">模型依赖</text></g></g></g><g><g class="am-node am-node--rect" data-key="恢复第1层" data-step="0"><rect class="am-node-shape" x="14" y="49.5" width="87.3" height="35" rx="3"/><text x="57.6" y="67" text-anchor="middle" dominant-baseline="central">恢复第1层</text></g><g class="am-node am-node--rect" data-key="计算第1层" data-step="0"><rect class="am-node-shape" x="215.2" y="85" width="87.3" height="35" rx="3"/><text x="258.8" y="102.5" text-anchor="middle" dominant-baseline="central">计算第1层</text></g><g class="am-node am-node--rect" data-key="恢复第2层" data-step="1"><rect class="am-node-shape" x="215.2" y="14" width="87.3" height="35" rx="3"/><text x="258.8" y="31.5" text-anchor="middle" dominant-baseline="central">恢复第2层</text></g><g class="am-node am-node--rect" data-key="计算第2层" data-step="2"><rect class="am-node-shape" x="416.3" y="49.5" width="87.3" height="35" rx="3"/><text x="460" y="67" text-anchor="middle" dominant-baseline="central">计算第2层</text></g></g></svg></figure>
+<div class="am-md"><p>此图仅表示候选依赖，不表示测得的执行时间。
+每层计算前，必须拿到本层需要的历史 KV。
+后续层的恢复可与当前层计算重叠。
+L3 预取、HBM 按层恢复与 chunk prefill 要分别解释。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-D">
+<header class="am-panel-head"><span class="am-panel-id">D</span><h2>Router 统一目录</h2></header>
+<div class="am-panel-body"><div class="am-tree"><div class="am-tree-cols am-tree-cols--free" style="--n: 2"><div class="am-tree-col"><div class="am-tree-box" data-key="可共享 KV 目录" data-step="0">可共享 KV 目录</div><ul class="am-tree-list"><li data-key="prefix mem pool" data-step="1"><span class="am-tree-label">prefix mem pool</span><span class="am-tree-sub">已保留的可恢复页</span></li><li data-key="alive prefill" data-step="2"><span class="am-tree-label">alive prefill</span><span class="am-tree-sub">已完成且允许复用的页</span></li></ul></div><div class="am-tree-col"><div class="am-tree-box" data-key="请求私有状态" data-step="3">请求私有状态</div><ul class="am-tree-list"><li data-key="alive decode" data-step="4"><span class="am-tree-label">alive decode</span><span class="am-tree-sub">活跃生成的新 KV</span></li></ul></div></div></div>
+<div class="am-md"><p>统一目录不要求统一物理地址。
+hash 表示内容身份，ready 表示数据可用。
+目录还需要布局、位置和 generation。
+Index K 是附属模型数据，不是目录索引。</p>
+<p>已确认：prefill Index K 与必要 scale 也存 alive DRAM。
+这份附属副本供后续复用和 backup。
+router 选择位置并预留容量。
+相关 owner 协调分配具体页，router 不维护空闲页表。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-E">
+<header class="am-panel-head"><span class="am-panel-id">E</span><h2>B 复制复用 A</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>B 拿到自己的 HBM 与 alive 副本。
+A 的源页保护到已有复制完成。
+B 的后续 decode 不再依赖 A 的存活期。</p>
+</div>
+<figure class="am-diagram am-flow"><svg viewBox="0 0 489 134" width="489" height="134" role="img" aria-label="流程图：A源页、复制中、B副本、A可回收" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am3-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><g></g><g><g data-step="0"><path class="am-edge" d="M78,67 L104,67 Q130,67 156,67 L182,67" marker-end="url(#am3-arrow)"/><g class="am-edge-label"><rect x="102" y="58" width="56" height="18" rx="3"/><text x="130" y="67" text-anchor="middle" dominant-baseline="central">临时保护</text></g></g><g data-step="1"><path class="am-edge" d="M249,78 L286.5,90.2 Q324,102.5 364.5,102.5 L404.9,102.5" marker-end="url(#am3-arrow)"/><g class="am-edge-label"><rect x="290.3" y="93.5" width="67.5" height="18" rx="3"/><text x="324" y="102.5" text-anchor="middle" dominant-baseline="central">完成并发布</text></g></g><g data-step="2"><path class="am-edge" d="M249,56 L286.5,43.8 Q324,31.5 361.5,31.5 L399,31.5" marker-end="url(#am3-arrow)"/><g class="am-edge-label"><rect x="273" y="22.5" width="102" height="18" rx="3"/><text x="324" y="31.5" text-anchor="middle" dominant-baseline="central">等所有消费者完成</text></g></g></g><g><g class="am-node am-node--rect" data-key="A源页" data-step="0"><rect class="am-node-shape" x="14" y="49.5" width="64" height="35" rx="3"/><text x="46" y="67" text-anchor="middle" dominant-baseline="central">A源页</text></g><g class="am-node am-node--rect" data-key="复制中" data-step="0"><rect class="am-node-shape" x="182" y="49.5" width="67" height="35" rx="3"/><text x="215.5" y="67" text-anchor="middle" dominant-baseline="central">复制中</text></g><g class="am-node am-node--rect" data-key="B副本" data-step="1"><rect class="am-node-shape" x="404.9" y="85" width="64" height="35" rx="3"/><text x="436.9" y="102.5" text-anchor="middle" dominant-baseline="central">B副本</text></g><g class="am-node am-node--rect" data-key="A可回收" data-step="2"><rect class="am-node-shape" x="399" y="14" width="75.8" height="35" rx="3"/><text x="436.9" y="31.5" text-anchor="middle" dominant-baseline="central">A可回收</text></g></g></svg></figure>
+<div class="am-md"><p>请求结束后，选择是否复制到 prefix。
+发布 prefix 必须等待复制完成。
+alive 回收必须等待计算与复制 drain。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-F">
+<header class="am-panel-head"><span class="am-panel-id">F</span><h2>请求关联与副本索引</h2></header>
+<div class="am-panel-body"><div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>attention 配置</th>
+<th>一个 DP 分组</th>
+<th>该组 KV 副本</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>TP2 / DP4</td>
+<td>两个 rank</td>
+<td>一个 NUMA 一份</td>
+</tr>
+<tr>
+<td>TP4 / DP2</td>
+<td>四个 rank</td>
+<td>两个 NUMA 两份</td>
+</tr>
+</tbody></table></div>
+<p>两例的总 TP 都是 8，CP 为 1。
+同内容副本使用相同页索引和 layout，base 可以不同。
+请求下发后形成 KV group，关联实际 P/D 与位置。
+设备可访问的候选位置可以大于本次关联范围。</p>
+<p>P/D attention TP 不同时，demo 沿用 P 侧 prompt 副本。
+这可能让超过两个 D reader 集中访问同一 NUMA。
+按 D 拓扑补副本属于后续优化。</p>
+<p>容量建议：必须两处复制时，不能直接相加空闲页数。
+示意两处有 100 / 60 空闲页，最多承接 60 逻辑页。
+若页号也一致，还需确认这些页在两处都可用。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-G">
+<header class="am-panel-head"><span class="am-panel-id">G</span><h2>分散 alive 与直接 backup</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>示意每页 16 个 token，prompt 长 30。
+alive 中 P 的末尾 14 个 token 与 D 数据仍各自保存。</p>
+</div>
+<figure class="am-diagram am-flow"><svg viewBox="0 0 617 134" width="617" height="134" role="img" aria-label="流程图：P尾部14个、Prefix目标页、D起始2个、发布可用" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am4-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><g></g><g><g data-step="0"><path class="am-edge" d="M104.4,102.5 L137.2,102.5 Q170,102.5 202.8,92.6 L235.5,82.6" marker-end="url(#am4-arrow)"/><g class="am-edge-label"><rect x="131.6" y="93.5" width="76.7" height="18" rx="3"/><text x="170" y="102.5" text-anchor="middle" dominant-baseline="central">写入 offset 0</text></g></g><g data-step="1"><path class="am-edge" d="M101.9,31.5 L136,31.5 Q170,31.5 202.8,41.4 L235.5,51.4" marker-end="url(#am4-arrow)"/><g class="am-edge-label"><rect x="128.4" y="22.5" width="83.1" height="18" rx="3"/><text x="170" y="31.5" text-anchor="middle" dominant-baseline="central">写入 offset 14</text></g></g><g data-step="2"><path class="am-edge" d="M338.4,67 L384.5,67 Q430.7,67 476.8,67 L522.9,67" marker-end="url(#am4-arrow)"/><g class="am-edge-label"><rect x="362.4" y="58" width="136.5" height="18" rx="3"/><text x="430.7" y="67" text-anchor="middle" dominant-baseline="central">全部数据与附属状态完成</text></g></g></g><g><g class="am-node am-node--rect" data-key="P尾部14个" data-step="0"><rect class="am-node-shape" x="14" y="85" width="90.4" height="35" rx="3"/><text x="59.2" y="102.5" text-anchor="middle" dominant-baseline="central">P尾部14个</text></g><g class="am-node am-node--rect" data-key="Prefix目标页" data-step="0"><rect class="am-node-shape" x="235.5" y="49.5" width="102.9" height="35" rx="3"/><text x="287" y="67" text-anchor="middle" dominant-baseline="central">Prefix目标页</text></g><g class="am-node am-node--rect" data-key="D起始2个" data-step="1"><rect class="am-node-shape" x="16.5" y="14" width="85.5" height="35" rx="3"/><text x="59.2" y="31.5" text-anchor="middle" dominant-baseline="central">D起始2个</text></g><g class="am-node am-node--rect" data-key="发布可用" data-step="2"><rect class="am-node-shape" x="522.9" y="49.5" width="80" height="35" rx="3"/><text x="562.9" y="67" text-anchor="middle" dominant-baseline="central">发布可用</text></g></g></svg></figure>
+<div class="am-md"><p>异步复制直接形成目标页，无需先整理 alive。
+源与目标元素布局必须适合直接复制。
+页不连续或布局不同会增加复制段数。
+backup 的提交开销与吞吐仍需实测。
+D 段对齐方式与 prefix hash 放置单位尚未确定。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-H">
+<header class="am-panel-head"><span class="am-panel-id">H</span><h2>阅读入口</h2></header>
+<div class="am-panel-body"><div class="am-md"><ul>
+<li><a href="design-draft.md">完整草案与代码证据</a></li>
+<li><a href="native-index-k-explainer.html">SGLang 如何保留 Index K</a></li>
+<li><a href="sglang-main-agent-prompt.md">第一步：GPU 主线框架讲解 prompt</a></li>
+<li><a href="sglang-main-hisparse-followup-prompt.md">框架补充：HiSparse HTML 完善 prompt</a></li>
+<li><a href="sglang-main-design-followup-prompt.md">第二步：完整设计分析追加 prompt</a></li>
+<li><a href="../ascend-mempool-numa-sharing/visuals/cd-v1-resume2/report.html">历史 NUMA 组件结果</a></li>
+</ul>
+<p>本轮没有执行硬件测试。
+本页的流程是设计方向，不代表已完成集成。</p>
+</div></div>
+</section>
+</div>
+</div>
+</main>
+<footer class="am-colophon">Generated by Answer me with HTML 0.4.3 · 2026-10-17 15:59</footer>
+<textarea id="am-source" hidden readonly aria-hidden="true">---
+title: Mempool 前缀复用设计草案
+subtitle: 先恢复计算所需的 HBM，再与 prefill 重叠填充 alive
+template: doc
+theme: blueprint
+lang: zh
+---
+
+## A 两种存储用途
+
+| 对象 | 保存什么 | 主要用途 |
+|---|---|---|
+| P 的 HBM | 命中 prefix 与新算 KV | 执行 prefill，含 chunk prefill |
+| alive DRAM | 当前请求的 KV | 支持后续 decode 的 sparse 读取 |
+| prefix mem pool | 跨请求保留的前缀 | 供下一次请求按 page 恢复 |
+
+alive 与 prefix 不做物理去重。
+一致性哈希只负责 prefix 放置。
+alive 是一个逻辑 pool，内部可有多处区域和副本。
+P/D 生成的 KV 默认各自本地保存。
+入场时也可选择把 prompt 放到 D 附近。
+
+## B 命中后的复制与计算
+
+```sequence
+Router -&gt; 缓存进程: 选择源，预留目标，保护源页
+缓存进程 -&gt; P_HBM: 优先恢复命中 prefix
+P_HBM --&gt; P计算: 对应层的数据已就绪
+P计算 -&gt; P计算: prefill 未命中部分
+缓存进程 -&gt; P_alive: 后台复制命中段
+P计算 -&gt; P_alive: 只写新算段
+P_alive --&gt; D计算: 完整 prompt 已就绪
+P计算 -&gt; D计算: Index K 与 handoff
+note D计算: 全部前置条件满足后开始 decode
+```
+
+命中段与新算段写入不同范围。
+两条 DRAM 写入路径可与 prefill 重叠。
+D 还要等待 Index K 和 handoff。
+图中采用默认的 P 侧 prompt 存储。
+若选 D 侧存储，两条 DRAM 写入都改向该目标。
+
+## C 按层流水仍需学习与核实
+
+```flow LR
+恢复第1层 -&gt; 计算第1层: 本层 ready
+恢复第1层 -&gt; 恢复第2层: 继续搬运
+恢复第2层 -&gt; 计算第2层: 本层 ready
+计算第1层 -&gt; 计算第2层: 模型依赖
+```
+
+此图仅表示候选依赖，不表示测得的执行时间。
+每层计算前，必须拿到本层需要的历史 KV。
+后续层的恢复可与当前层计算重叠。
+L3 预取、HBM 按层恢复与 chunk prefill 要分别解释。
+
+## D Router 统一目录
+
+```tree
+可共享 KV 目录
+  prefix mem pool | 已保留的可恢复页
+  alive prefill | 已完成且允许复用的页
+请求私有状态
+  alive decode | 活跃生成的新 KV
+```
+
+统一目录不要求统一物理地址。
+hash 表示内容身份，ready 表示数据可用。
+目录还需要布局、位置和 generation。
+Index K 是附属模型数据，不是目录索引。
+
+已确认：prefill Index K 与必要 scale 也存 alive DRAM。
+这份附属副本供后续复用和 backup。
+router 选择位置并预留容量。
+相关 owner 协调分配具体页，router 不维护空闲页表。
+
+## E B 复制复用 A
+
+B 拿到自己的 HBM 与 alive 副本。
+A 的源页保护到已有复制完成。
+B 的后续 decode 不再依赖 A 的存活期。
+
+```flow LR
+A源页 -&gt; 复制中: 临时保护
+复制中 -&gt; B副本: 完成并发布
+复制中 -&gt; A可回收: 等所有消费者完成
+```
+
+请求结束后，选择是否复制到 prefix。
+发布 prefix 必须等待复制完成。
+alive 回收必须等待计算与复制 drain。
+
+## F 请求关联与副本索引
+
+| attention 配置 | 一个 DP 分组 | 该组 KV 副本 |
+|---|---|---|
+| TP2 / DP4 | 两个 rank | 一个 NUMA 一份 |
+| TP4 / DP2 | 四个 rank | 两个 NUMA 两份 |
+
+两例的总 TP 都是 8，CP 为 1。
+同内容副本使用相同页索引和 layout，base 可以不同。
+请求下发后形成 KV group，关联实际 P/D 与位置。
+设备可访问的候选位置可以大于本次关联范围。
+
+P/D attention TP 不同时，demo 沿用 P 侧 prompt 副本。
+这可能让超过两个 D reader 集中访问同一 NUMA。
+按 D 拓扑补副本属于后续优化。
+
+容量建议：必须两处复制时，不能直接相加空闲页数。
+示意两处有 100 / 60 空闲页，最多承接 60 逻辑页。
+若页号也一致，还需确认这些页在两处都可用。
+
+## G 分散 alive 与直接 backup
+
+示意每页 16 个 token，prompt 长 30。
+alive 中 P 的末尾 14 个 token 与 D 数据仍各自保存。
+
+```flow LR
+P尾部14个 -&gt; Prefix目标页: 写入 offset 0
+D起始2个 -&gt; Prefix目标页: 写入 offset 14
+Prefix目标页 -&gt; 发布可用: 全部数据与附属状态完成
+```
+
+异步复制直接形成目标页，无需先整理 alive。
+源与目标元素布局必须适合直接复制。
+页不连续或布局不同会增加复制段数。
+backup 的提交开销与吞吐仍需实测。
+D 段对齐方式与 prefix hash 放置单位尚未确定。
+
+## H 阅读入口
+
+- [完整草案与代码证据](design-draft.md)
+- [SGLang 如何保留 Index K](native-index-k-explainer.html)
+- [第一步：GPU 主线框架讲解 prompt](sglang-main-agent-prompt.md)
+- [框架补充：HiSparse HTML 完善 prompt](sglang-main-hisparse-followup-prompt.md)
+- [第二步：完整设计分析追加 prompt](sglang-main-design-followup-prompt.md)
+- [历史 NUMA 组件结果](../ascend-mempool-numa-sharing/visuals/cd-v1-resume2/report.html)
+
+本轮没有执行硬件测试。
+本页的流程是设计方向，不代表已完成集成。
+</textarea>
+<script>
+(() => {
+  const root = document.documentElement;
+  const cycle = (list, cur) => list[(list.indexOf(cur) + 1) % list.length];
+  const label = (btn, value) => {
+    const map = JSON.parse(btn.dataset.labels || '{}');
+    btn.textContent = map[value] || value;
+  };
+  const bind = (name, attr, values) => {
+    const btn = document.querySelector(`[data-am="${name}"]`);
+    if (!btn) return;
+    label(btn, root.getAttribute(attr));
+    btn.addEventListener('click', () => {
+      const next = cycle(values, root.getAttribute(attr));
+      root.setAttribute(attr, next);
+      label(btn, next);
+    });
+  };
+  bind('theme', 'data-theme', ['blueprint', 'shadcn']);
+  bind('mode', 'data-mode', ['auto', 'light', 'dark']);
+
+  const copyBtn = document.querySelector('[data-am="copy"]');
+  copyBtn?.addEventListener('click', async () => {
+    const text = document.getElementById('am-source').value;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = Object.assign(document.createElement('textarea'), { value: text });
+      document.body.append(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    const original = copyBtn.textContent;
+    copyBtn.textContent = copyBtn.dataset.done;
+    setTimeout(() => { copyBtn.textContent = original; }, 1400);
+  });
+})();
+</script>
+</body>
+</html>

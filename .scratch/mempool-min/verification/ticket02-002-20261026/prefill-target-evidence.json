@@ -1,0 +1,27 @@
+{
+  "status": "passed",
+  "coverage": "ticket02 cold prefix save; no prefix hits",
+  "requests": 4,
+  "ranks_per_side": 16,
+  "source_rows": {
+    "prompt": 170530208,
+    "decode": 672880
+  },
+  "graph": true,
+  "page_size": 128,
+  "prefix": {
+    "status": "passed",
+    "pages_per_request": [
+      32,
+      40,
+      40,
+      40
+    ],
+    "ranks": 16,
+    "main_layers": 78,
+    "index_layers": 21,
+    "cold_only": true,
+    "contents": "original == alive == prefix == retained after alive free"
+  },
+  "numa_placement": "not verified"
+}

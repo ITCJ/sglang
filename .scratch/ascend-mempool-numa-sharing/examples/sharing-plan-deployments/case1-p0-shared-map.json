@@ -1,0 +1,82 @@
+[
+  {
+    "host": "case1-p0",
+    "rank": 0,
+    "node": 0
+  },
+  {
+    "host": "case1-p0",
+    "rank": 1,
+    "node": 0
+  },
+  {
+    "host": "case1-p0",
+    "rank": 2,
+    "node": 1
+  },
+  {
+    "host": "case1-p0",
+    "rank": 3,
+    "node": 1
+  },
+  {
+    "host": "case1-p0",
+    "rank": 4,
+    "node": 2
+  },
+  {
+    "host": "case1-p0",
+    "rank": 5,
+    "node": 2
+  },
+  {
+    "host": "case1-p0",
+    "rank": 6,
+    "node": 3
+  },
+  {
+    "host": "case1-p0",
+    "rank": 7,
+    "node": 3
+  },
+  {
+    "host": "case1-p0",
+    "rank": 8,
+    "node": 4
+  },
+  {
+    "host": "case1-p0",
+    "rank": 9,
+    "node": 4
+  },
+  {
+    "host": "case1-p0",
+    "rank": 10,
+    "node": 5
+  },
+  {
+    "host": "case1-p0",
+    "rank": 11,
+    "node": 5
+  },
+  {
+    "host": "case1-p0",
+    "rank": 12,
+    "node": 6
+  },
+  {
+    "host": "case1-p0",
+    "rank": 13,
+    "node": 6
+  },
+  {
+    "host": "case1-p0",
+    "rank": 14,
+    "node": 7
+  },
+  {
+    "host": "case1-p0",
+    "rank": 15,
+    "node": 7
+  }
+]

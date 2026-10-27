@@ -1,0 +1,1607 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="blueprint" data-mode="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Answer me with HTML 0.4.3">
+<title>阶段 0 实现总结与 K1 计划</title>
+<style>
+html[data-theme="blueprint"], html[data-theme="blueprint"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 0px;
+  --shadow: none;
+  --bw: 1.5px;
+  --head-font: var(--font-sans);
+  --bg: #f6f6f3;
+  --paper: #ffffff;
+  --ink: #16181d;
+  --ink-2: #4b5260;
+  --ink-3: #8b929e;
+  --line: #1d2026;
+  --line-2: #d6dae1;
+  --fill: #f3f5f8;
+  --accent: #1d5fbf;
+  --accent-bg: #e4ecf8;
+  --ok: #1d5fbf;
+  --ok-bg: #e4ecf8;
+  --err: #c62828;
+  --err-bg: #fbeaea;
+  --warn: #a8620a;
+  --warn-bg: #fdf3e2;
+  --head-bg: #16181d;
+  --head-fg: #ffffff;
+}
+html[data-theme="blueprint"][data-mode="dark"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="blueprint"][data-mode="auto"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+}
+
+html[data-theme="shadcn"], html[data-theme="shadcn"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 8px;
+  --shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --bw: 1px;
+  --head-font: var(--font-sans);
+  --bg: #fafafa;
+  --paper: #ffffff;
+  --ink: #09090b;
+  --ink-2: #71717a;
+  --ink-3: #a1a1aa;
+  --line: #e4e4e7;
+  --line-2: #f0f0f2;
+  --fill: #f4f4f5;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --ok: #16a34a;
+  --ok-bg: #f0fdf4;
+  --err: #dc2626;
+  --err-bg: #fef2f2;
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --head-bg: #18181b;
+  --head-fg: #fafafa;
+}
+html[data-theme="shadcn"][data-mode="dark"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="shadcn"][data-mode="auto"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+}
+
+/* Answer me with HTML base — 只引用主题变量，禁止写死颜色（主题 token 见 themes/index.js） */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd { font-family: var(--font-mono); }
+
+/* ── 工具栏 ─────────────────────────────── */
+.am-toolbar {
+  position: fixed; top: 12px; right: 12px; z-index: 10; display: flex; gap: 6px;
+}
+.am-btn {
+  font: 12px/1 var(--font-sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding: 7px 10px; cursor: pointer;
+}
+.am-btn:hover { border-color: var(--ink-3); }
+.am-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── 页头 ───────────────────────────────── */
+.am-head { margin: 0 0 20px; padding-right: 260px; }
+.am-head h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; }
+.am-sub { margin: 4px 0 0; color: var(--ink-2); }
+.am-head-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 12px; color: var(--ink-2); }
+.am-head-meta b { font-family: var(--font-mono); font-weight: 400; color: var(--ink-3); margin-right: 6px; }
+.am-intro { margin-top: 12px; max-width: 80ch; }
+
+/* ── sheet 图纸板 ────────────────────────── */
+.am-sheet { max-width: 1680px; margin: 0 auto; padding: 32px 28px 40px; }
+.am-frame { position: relative; }
+.am-grid {
+  display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 20px; align-items: start;
+}
+.am-ruler { display: none; }
+html[data-theme="blueprint"] .am-frame { border: 1px solid var(--line); padding: 30px; }
+html[data-theme="blueprint"] .am-frame::before {
+  content: ""; position: absolute; inset: 18px; border: 1px solid var(--line); pointer-events: none;
+}
+html[data-theme="blueprint"] .am-ruler {
+  display: flex; position: absolute; font: 10px/1 var(--font-mono); color: var(--ink-3);
+}
+.am-ruler span { flex: 1; display: flex; align-items: center; justify-content: center; }
+.am-ruler--top, .am-ruler--bottom { left: 18px; right: 18px; height: 18px; }
+.am-ruler--top { top: 0; }
+.am-ruler--bottom { bottom: 0; }
+.am-ruler--left, .am-ruler--right { top: 18px; bottom: 18px; width: 18px; flex-direction: column; }
+.am-ruler--left { left: 0; }
+.am-ruler--right { right: 0; }
+.am-ruler--top span + span, .am-ruler--bottom span + span { border-left: 1px solid var(--line); }
+.am-ruler--left span + span, .am-ruler--right span + span { border-top: 1px solid var(--line); }
+
+/* ── 面板 ───────────────────────────────── */
+.am-panel {
+  background: var(--paper); border: var(--bw) solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); min-width: 0; overflow: hidden;
+}
+.am-panel-head {
+  display: flex; align-items: stretch; gap: 0; border-bottom: var(--bw) solid var(--line); min-height: 34px;
+}
+.am-panel-id {
+  display: flex; align-items: center; justify-content: center; min-width: 34px; padding: 0 8px;
+  background: var(--head-bg); color: var(--head-fg); font-weight: 600; font-size: 14px;
+}
+html[data-theme="shadcn"] .am-panel-id { border-radius: 6px; min-width: 24px; height: 24px; margin: 9px 0 9px 14px; font-size: 12px; }
+html[data-theme="shadcn"] .am-panel-head { border-bottom-width: 1px; }
+.am-panel-head h2 { margin: 0; padding: 7px 12px; font-size: 15px; font-weight: 600; flex: 1; display: flex; align-items: center; }
+.am-panel-meta { align-self: center; padding: 0 12px; font: 11px/1.3 var(--font-mono); color: var(--ink-2); text-align: right; }
+.am-panel-body { padding: 14px 16px 16px; }
+.am-panel-body > * + * { margin-top: 12px; }
+
+/* ── Markdown 正文 ───────────────────────── */
+.am-md > :first-child { margin-top: 0; }
+.am-md > :last-child { margin-bottom: 0; }
+.am-md p { margin: 0 0 8px; }
+.am-md ul, .am-md ol { margin: 0 0 8px; padding-left: 20px; }
+.am-md li + li { margin-top: 3px; }
+.am-md h3, .am-md h4 { margin: 14px 0 6px; font-size: 13px; }
+.am-md a { color: var(--accent); }
+.am-md blockquote { margin: 0 0 8px; padding: 2px 12px; border-left: 3px solid var(--line-2); color: var(--ink-2); }
+.am-md :not(pre) > code { font-size: 0.9em; background: var(--fill); padding: 1px 5px; border-radius: 4px; }
+.am-md hr { border: 0; border-top: 1px solid var(--line-2); margin: 12px 0; }
+.am-md table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.am-md th {
+  text-align: left; font: 11px/1.3 var(--font-mono); color: var(--ink-2); font-weight: 400;
+  padding: 6px 10px; border-bottom: 1px solid var(--line-2);
+}
+.am-md td { padding: 7px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.am-md tbody tr:nth-child(even) td { background: var(--fill); }
+.am-table-wrap { overflow-x: auto; }
+.am-code {
+  margin: 0; padding: 12px 14px; background: var(--fill); border: 1px solid var(--line-2);
+  border-radius: var(--radius); overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+}
+
+/* ── 状态徽章 ok / no / warn ──────────────── */
+.am-status { white-space: nowrap; font-weight: 500; }
+.am-status--ok { color: var(--ok); }
+.am-status--no { color: var(--err); }
+.am-status--warn { color: var(--warn); }
+.am-status-icon { display: inline-block; width: 1.1em; font-weight: 700; }
+
+/* ── callout ─────────────────────────────── */
+.am-callout {
+  border: 1px solid var(--line-2); border-left: 3px solid var(--accent); background: var(--accent-bg);
+  padding: 10px 14px; border-radius: var(--radius);
+}
+.am-callout--ok { border-left-color: var(--ok); background: var(--ok-bg); }
+.am-callout--warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.am-callout--err { border-left-color: var(--err); background: var(--err-bg); }
+.am-callout-title { font-weight: 600; margin-bottom: 4px; }
+
+/* ── kv 标题栏格 ─────────────────────────── */
+.am-kv {
+  display: grid; grid-template-columns: repeat(var(--kv-cols, 2), minmax(0, 1fr)); margin: 0;
+  border-top: var(--bw) solid var(--line); border-left: var(--bw) solid var(--line);
+}
+.am-kv-cell { border-right: var(--bw) solid var(--line); border-bottom: var(--bw) solid var(--line); padding: 6px 10px 8px; min-width: 0; }
+.am-kv-cell--wide { grid-column: 1 / -1; }
+.am-kv dt { font: 11px/1.4 var(--font-mono); color: var(--ink-2); }
+.am-kv dd { margin: 2px 0 0; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.am-kv-cell--wide dd { font-size: 17px; font-weight: 600; }
+html[data-theme="shadcn"] .am-kv { border-color: var(--line); border-radius: var(--radius); overflow: hidden; }
+
+/* ── timeline ────────────────────────────── */
+.am-timeline { list-style: none; margin: 0; padding: 0; }
+.am-timeline--h { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); padding-top: 4px; }
+.am-timeline--h li { position: relative; text-align: center; padding: 0 6px; }
+.am-timeline--h li::before {
+  content: ""; position: absolute; top: 31px; left: 0; right: 0; border-top: var(--bw) solid var(--line);
+}
+.am-timeline--h li:first-child::before { left: 50%; }
+.am-timeline--h li:last-child::before { right: 50%; }
+.am-tl-when { display: block; font-size: 15px; font-weight: 500; height: 24px; }
+.am-tl-dot {
+  position: relative; display: block; width: 11px; height: 11px; margin: 2px auto 8px;
+  border: var(--bw) solid var(--line); border-radius: 50%; background: var(--paper);
+}
+.am-tl-item--hi .am-tl-dot { background: var(--accent); border-color: var(--accent); }
+.am-tl-title { display: block; font-size: 12.5px; font-weight: 500; }
+.am-tl-text { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.45; }
+.am-timeline--v li { position: relative; padding: 0 0 14px 22px; }
+.am-timeline--v li::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: -6px; border-left: var(--bw) solid var(--line-2); }
+.am-timeline--v li:last-child::before { display: none; }
+.am-timeline--v .am-tl-dot { position: absolute; left: 0; top: 4px; margin: 0; }
+.am-timeline--v .am-tl-when { display: inline; height: auto; font: 12px var(--font-mono); color: var(--ink-2); margin-right: 8px; }
+.am-timeline--v .am-tl-title { display: inline; font-size: 14px; }
+.am-timeline--v .am-tl-text { margin-top: 2px; }
+
+/* ── annot 句子标注 ──────────────────────── */
+.am-annot + .am-annot { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.am-annot-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.am-annot-meta { font: 11px var(--font-mono); font-weight: 400; color: var(--ink-2); }
+.am-annot-scroll { overflow-x: auto; }
+.am-annot-line {
+  position: relative; display: inline-block; white-space: pre; font: 14px/1.6 var(--font-mono);
+  padding-bottom: calc(var(--rows, 0) * 17px + 14px);
+}
+.am-annot-line--wrap { display: block; white-space: normal; padding-bottom: 10px; }
+.am-annot-line--wrap .am-seg { white-space: nowrap; }
+.am-seg { position: relative; }
+.am-seg::after {
+  content: ""; position: absolute; left: 1px; right: 1px; top: calc(100% + 1px); height: 5px;
+  border: 1px solid var(--accent); border-top: 0;
+}
+.am-seg-n {
+  position: absolute; left: 0; top: calc(100% + 8px + var(--row, 0) * 17px);
+  font: 11px/16px var(--font-sans); color: var(--accent); white-space: nowrap;
+}
+.am-seg--err { color: var(--err); }
+.am-seg--err::after { border-color: var(--err); }
+.am-seg--err .am-seg-n { color: var(--err); }
+.am-annot-caption { font-size: 12px; color: var(--ink-2); }
+
+/* ── limits 限值条 ───────────────────────── */
+.am-lim + .am-lim { margin-top: 14px; }
+.am-lim-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; margin-bottom: 4px; }
+.am-lim-val { font: 12px var(--font-mono); color: var(--accent); white-space: nowrap; }
+.am-lim-track { position: relative; height: 12px; border: 1px solid var(--line-2); background: var(--fill); border-radius: calc(var(--radius) / 2); }
+.am-lim-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-bg); border-right: 1px solid var(--accent); }
+.am-lim-mark { position: absolute; top: -4px; bottom: -4px; border-left: 2px solid var(--accent); }
+.am-lim.is-over .am-lim-fill { background: var(--err-bg); border-right-color: var(--err); }
+.am-lim.is-over .am-lim-val { color: var(--err); }
+.am-lim-ticks { position: relative; height: 16px; font: 10px/16px var(--font-mono); color: var(--ink-3); }
+.am-lim-ticks span { position: absolute; transform: translateX(-50%); }
+.am-lim-ticks span:first-child { transform: none; }
+.am-lim-note { font-size: 11px; color: var(--ink-2); margin-left: 6px; }
+
+/* ── tree 结构树 ─────────────────────────── */
+.am-tree { font-size: 13px; }
+.am-tree-root { display: flex; justify-content: center; position: relative; padding-bottom: 18px; }
+.am-tree-root::after { content: ""; position: absolute; bottom: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-root--solo { padding-bottom: 12px; }
+.am-tree-root--solo::after { display: none; }
+.am-tree-box {
+  border: var(--bw) solid var(--line); background: var(--paper); padding: 6px 14px; text-align: center;
+  border-radius: var(--radius); font-weight: 600;
+}
+.am-tree-box small { display: block; font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.am-tree-box--root { background: var(--accent-bg); font-size: 15px; padding: 8px 28px; }
+.am-tree-cols { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
+.am-tree-col { position: relative; padding: 18px 8px 0; min-width: 0; }
+.am-tree-col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; border-top: var(--bw) solid var(--line); }
+.am-tree-col:first-child::before { left: 50%; }
+.am-tree-col:last-child::before { right: 50%; }
+.am-tree-col::after { content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-list, .am-tree-list ul { list-style: none; margin: 0; padding: 0; }
+.am-tree-col > .am-tree-list { margin: 8px 0 0 14px; }
+.am-tree-list ul { margin-left: 16px; }
+.am-tree-list li { position: relative; padding: 3px 0 3px 18px; }
+.am-tree-list li::before { content: ""; position: absolute; left: 0; top: 0.95em; width: 12px; border-top: 1px solid var(--ink-3); }
+.am-tree-list li::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--ink-3); }
+.am-tree-list li:last-child::after { bottom: auto; height: 0.95em; }
+.am-tree-tag { font: 11px var(--font-mono); color: var(--ink-3); margin-right: 4px; }
+.am-tree code { font: 12px var(--font-mono); }
+.am-tree-sub { display: block; font-size: 11.5px; color: var(--ink-2); }
+.am-tree-hi > .am-tree-label { color: var(--accent); font-weight: 600; }
+
+/* ── 图（flow / sequence）───────────────── */
+.am-diagram { margin: 0; overflow-x: auto; text-align: center; }
+.am-diagram svg { max-width: 100%; height: auto; font-family: var(--font-sans); }
+.am-diagram text { fill: var(--ink); font-size: 13px; }
+.am-node-shape { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-node--hi .am-node-shape { fill: var(--accent-bg); stroke: var(--accent); }
+.am-node--hi text { fill: var(--accent); font-weight: 600; }
+.am-edge { fill: none; stroke: var(--ink-2); stroke-width: 1.3; }
+.am-edge--dashed { stroke-dasharray: 5 4; }
+.am-arrow { fill: var(--ink-2); }
+.am-edge-label rect { fill: var(--paper); }
+.am-diagram .am-edge-label text { fill: var(--accent); font-size: 11.5px; }
+.am-cluster { fill: var(--fill); stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 4 3; }
+.am-diagram .am-cluster-label { fill: var(--ink-2); font: 11px var(--font-mono); }
+.am-lifeline { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 4 4; }
+.am-actor { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-note { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 1; }
+.am-diagram .am-step { fill: var(--ink-3); font: 10px var(--font-mono); }
+
+/* ── doc 线性讲解 ────────────────────────── */
+.am-doc { max-width: 1120px; margin: 0 auto; padding: 40px 28px 64px; }
+.am-doc-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
+.am-doc-layout--notoc { grid-template-columns: minmax(0, 1fr); max-width: 860px; }
+.am-toc { position: sticky; top: 24px; font-size: 13px; }
+.am-toc a { display: block; color: var(--ink-2); text-decoration: none; padding: 4px 0 4px 10px; border-left: 2px solid var(--line-2); }
+.am-toc a:hover { color: var(--ink); border-left-color: var(--accent); }
+.am-doc-body > .am-panel + .am-panel { margin-top: 20px; }
+
+/* ── 响应式与打印 ─────────────────────────── */
+@media (max-width: 1100px) {
+  .am-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .am-grid > .am-panel { grid-column: auto !important; }
+  .am-grid > .am-panel.am-span-wide { grid-column: 1 / -1 !important; }
+}
+@media (max-width: 760px) {
+  .am-sheet, .am-doc { padding: 56px 12px 24px; }
+  .am-head { padding-right: 0; }
+  .am-grid { grid-template-columns: minmax(0, 1fr); }
+  .am-grid > .am-panel.am-span-wide { grid-column: auto !important; }
+  html[data-theme="blueprint"] .am-frame { padding: 0; border: 0; }
+  html[data-theme="blueprint"] .am-frame::before, html[data-theme="blueprint"] .am-ruler { display: none; }
+  .am-doc-layout { grid-template-columns: minmax(0, 1fr); }
+  .am-toc { position: static; }
+  .am-timeline--h { grid-template-columns: minmax(0, 1fr); }
+  .am-tree-cols { grid-template-columns: minmax(0, 1fr); }
+}
+.am-colophon { text-align: center; padding: 0 0 28px; font: 11px var(--font-mono); color: var(--ink-3); }
+
+@media print {
+  .am-toolbar { display: none; }
+  body { background: var(--paper); }
+  .am-panel { break-inside: avoid; box-shadow: none; }
+}
+.am-panel--bare { border: 0; background: transparent; box-shadow: none; }
+.am-panel--bare > .am-panel-body { padding: 0; }
+.am-panel--bare .am-kv { background: var(--paper); }
+
+</style>
+</head>
+<body>
+<div class="am-toolbar">
+<button class="am-btn" type="button" data-am="theme" data-labels="{&quot;blueprint&quot;:&quot;主题：图纸&quot;,&quot;shadcn&quot;:&quot;主题：卡片&quot;}">主题：图纸</button>
+<button class="am-btn" type="button" data-am="mode" data-labels="{&quot;auto&quot;:&quot;明暗：跟随系统&quot;,&quot;light&quot;:&quot;明暗：亮&quot;,&quot;dark&quot;:&quot;明暗：暗&quot;}">明暗：跟随系统</button>
+<button class="am-btn" type="button" data-am="copy" data-done="已复制 ✓">复制源稿</button>
+</div>
+<main class="am-doc">
+<header class="am-head"><h1>阶段 0 实现总结与 K1 计划</h1><p class="am-sub">已交付能力、共享目标、五张票据草案与验收边界</p><div class="am-head-meta"><span><b>date</b>2026-10-27</span><span><b>status</b>阶段 0 功能已完成；K1 范围已明确，拆票方案待定稿</span></div><div class="am-intro am-md"><div class="am-md"><p><strong>阶段 0 已完成请求执行、prefix 保存与复用、资源回收的完整流程。</strong>
+K1 将在这些能力上接入共享存储，保留每个中间版本的保存与命中功能。
+当前顺序是：先补单请求性能基线，再实施完整共享，随后单独推进性能优化。</p>
+</div></div></header>
+<div class="am-doc-layout">
+<nav class="am-toc" aria-label="目录"><a href="#panel-A">A · 阶段 0 已建立的系统与存储模型</a><a href="#panel-B">B · 阶段 0 已完成的请求生命周期</a><a href="#panel-C">C · 阶段 0 已完成的 prefix 保存与命中</a><a href="#panel-D">D · 阶段 0 的完成证据与性能现状</a><a href="#panel-E">E · K1 的完整目标</a><a href="#panel-F">F · 当前五票方案与中间状态</a><a href="#panel-G">G · 每张票具体做什么、如何验收</a><a href="#panel-H">H · 交付原则、范围与当前状态</a></nav><div class="am-doc-body">
+<section class="am-panel" id="panel-A">
+<header class="am-panel-head"><span class="am-panel-id">A</span><h2>阶段 0 已建立的系统与存储模型</h2></header>
+<div class="am-panel-body"><div class="am-md"><p><strong>角色分工</strong></p>
+<p>P 侧负责 prefill，即处理输入 prompt。
+D 侧负责 decode，即逐步生成输出。
+当前两侧各有 16 个计算 worker，各自组成一个 TP16 实例。
+系统同时只处理一个真实请求。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>角色</th>
+<th>已实现的职责</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Main Router</td>
+<td>接收请求、检查约束、管理资源额度、匹配 prefix、编排操作和保护源数据</td>
+</tr>
+<tr>
+<td>SR 协调者</td>
+<td>每侧由 rank 0 承担；分发操作，汇总各分片实际完成结果</td>
+</tr>
+<tr>
+<td>SR 分片</td>
+<td>每个 worker 一个；解析本地映射，执行存储操作并报告完成</td>
+</tr>
+<tr>
+<td>Scheduler</td>
+<td>推进请求调度、模型计算和控制消息；空闲时也推进控制流程</td>
+</tr>
+<tr>
+<td>计算 worker</td>
+<td>执行模型计算，读写本请求需要的 KV 和 Index K</td>
+</tr>
+</tbody></table></div>
+<p>Main Router 持有逻辑位置和不透明描述符。
+具体内存地址由持有映射的执行分片解析。
+请求分配成功、数据写完、生成结束、资源归还分别有完成条件。</p>
+</div>
+<figure class="am-diagram am-flow"><svg viewBox="0 0 1124 134" width="1124" height="134" role="img" aria-label="流程图：客户端、MainRouter、SR_P协调者、SR_D协调者、P侧计算与存储分片、D侧计算与存储分片" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am1-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><g></g><g><g data-step="0"><path class="am-edge" d="M81,67 L107,67 Q133,67 159,67 L185,67" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="105" y="58" width="56" height="18" rx="3"/><text x="133" y="67" text-anchor="middle" dominant-baseline="central">提交请求</text></g></g><g data-step="1"><path class="am-edge" d="M281.9,80.5 L321.4,91.5 Q360.8,102.5 403.5,102.5 L446.3,102.5" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="305.9" y="93.5" width="109.8" height="18" rx="3"/><text x="360.8" y="102.5" text-anchor="middle" dominant-baseline="central">P侧资源与存储操作</text></g></g><g data-step="2"><path class="am-edge" d="M281.9,53.5 L321.4,42.5 Q360.8,31.5 428.7,31.5 Q496.7,31.5 554,31.5 Q611.4,31.5 649.7,31.5 L688,31.5" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="440.7" y="22.5" width="111.9" height="18" rx="3"/><text x="496.7" y="31.5" text-anchor="middle" dominant-baseline="central">D侧资源与存储操作</text></g></g><g data-step="3"><path class="am-edge" d="M547.1,102.5 L579.2,102.5 Q611.4,102.5 640.2,102.5 L669.1,102.5" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="577.6" y="93.5" width="67.5" height="18" rx="3"/><text x="611.4" y="102.5" text-anchor="middle" dominant-baseline="central">分发及汇总</text></g></g><g data-step="4"><path class="am-edge" d="M791.1,31.5 L839.6,31.5 Q888.1,31.5 927.1,40.8 L966.2,50" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="854.3" y="22.5" width="67.5" height="18" rx="3"/><text x="888.1" y="31.5" text-anchor="middle" dominant-baseline="central">分发及汇总</text></g></g><g data-step="5"><path class="am-edge" d="M809.9,102.5 L849,102.5 Q888.1,102.5 927.1,93.2 L966.2,84" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="834" y="93.5" width="108.2" height="18" rx="3"/><text x="888.1" y="102.5" text-anchor="middle" dominant-baseline="central">Index K及交接信息</text></g></g></g><g><g class="am-node am-node--rect" data-key="客户端" data-step="0"><rect class="am-node-shape" x="14" y="49.5" width="67" height="35" rx="3"/><text x="47.5" y="67" text-anchor="middle" dominant-baseline="central">客户端</text></g><g class="am-node am-node--rect" data-key="MainRouter" data-step="0"><rect class="am-node-shape" x="185" y="49.5" width="96.9" height="35" rx="3"/><text x="233.5" y="67" text-anchor="middle" dominant-baseline="central">MainRouter</text></g><g class="am-node am-node--rect" data-key="SR_P协调者" data-step="1"><rect class="am-node-shape" x="446.3" y="85" width="100.8" height="35" rx="3"/><text x="496.7" y="102.5" text-anchor="middle" dominant-baseline="central">SR_P协调者</text></g><g class="am-node am-node--rect" data-key="SR_D协调者" data-step="2"><rect class="am-node-shape" x="688" y="14" width="103.1" height="35" rx="3"/><text x="739.5" y="31.5" text-anchor="middle" dominant-baseline="central">SR_D协调者</text></g><g class="am-node am-node--rect" data-key="P侧计算与存储分片" data-step="3"><rect class="am-node-shape" x="669.1" y="85" width="140.8" height="35" rx="3"/><text x="739.5" y="102.5" text-anchor="middle" dominant-baseline="central">P侧计算与存储分片</text></g><g class="am-node am-node--rect" data-key="D侧计算与存储分片" data-step="4"><rect class="am-node-shape" x="966.2" y="49.5" width="143.2" height="35" rx="3"/><text x="1037.8" y="67" text-anchor="middle" dominant-baseline="central">D侧计算与存储分片</text></g></g></svg></figure>
+<div class="am-md"><p><strong>alive 与 prefix 的用途</strong></p>
+<p>alive 保存仍在执行的请求所需数据。
+P alive 保存 prompt KV；D alive 保存 decode 产生的 KV。
+请求结束且全部读写依赖解除后，alive 才能回收。</p>
+<p>prefix 保存跨请求复用的数据，请求结束后仍可保留。
+主 KV 是注意力读取的数据，Index K 用于选择相关 token。
+两类数据用途不同，prefix 复用时都需要保存与恢复。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>主存数据区域</th>
+<th>阶段 0 的实际存储方式</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>P alive 主 KV</td>
+<td>每 rank 一份完整副本，P 侧共 16 份</td>
+</tr>
+<tr>
+<td>D alive 主 KV</td>
+<td>每 rank 一份完整副本，D 侧共 16 份</td>
+</tr>
+<tr>
+<td>P alive Index K</td>
+<td>每 rank 一份，共 16 份</td>
+</tr>
+<tr>
+<td>prefix 主 KV</td>
+<td>保存在 P 侧，每 rank 一份，共 16 份</td>
+</tr>
+<tr>
+<td>prefix Index K</td>
+<td>保存在 P 侧，每 rank 一份，共 16 份</td>
+</tr>
+</tbody></table></div>
+<p>因此，阶段 0 的四类副本数是 <code>16 / 16 / 16 / 16</code>。
+第一项是 alive 主 KV 的每侧副本数，其余三项均指 P 侧区域。
+D 生成的 Index K 保留在计算侧缓存，不新增对应主存区域。</p>
+<p><strong>页与槽的实际含义</strong></p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>项目</th>
+<th>阶段 0 的实现与验收配置</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Token 页</td>
+<td>每页 128 token；主存和计算侧缓存严格使用同一页大小</td>
+</tr>
+<tr>
+<td>alive 分配</td>
+<td>接口表达逻辑页，底层仍为请求保留整个连续槽</td>
+</tr>
+<tr>
+<td>P alive 槽</td>
+<td>每槽容量 8192 token，即 64 页额度</td>
+</tr>
+<tr>
+<td>D alive 槽</td>
+<td>每槽容量 128 token，即 1 页额度</td>
+</tr>
+<tr>
+<td>prefix 分配</td>
+<td>真正按页分配；每份容量 40 页，即 5120 token</td>
+</tr>
+<tr>
+<td>数据布局</td>
+<td>沿用 layer-first 布局</td>
+</tr>
+</tbody></table></div>
+<p>请求只用到槽的一部分时，剩余空间仍被该请求占用。
+例如 4096-token prompt 使用 32 页，但 P alive 仍扣 64 页额度。
+16 个 worker、16 个存储槽和计算图的补齐宽度含义不同。
+这些数量不表示已经支持 16 个真实并发请求。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-B">
+<header class="am-panel-head"><span class="am-panel-id">B</span><h2>阶段 0 已完成的请求生命周期</h2></header>
+<div class="am-panel-body"><div class="am-md"><p><strong>冷请求：计算、交接、生成</strong></p>
+<ol>
+<li>Main 检查输入、长度、页对齐和生成上限。</li>
+<li>Main 预留 P/D alive 额度及 D 计算侧资源。</li>
+<li>SR 分配槽位，建立请求与存储位置的绑定。</li>
+<li>P 计算 prompt，并写回主 KV 和 Index K。</li>
+<li>原生通道完成 Index K 和请求交接信息的传输。</li>
+<li>D 在全部就绪条件满足后开始生成。</li>
+</ol>
+<p>D 启动需要同时满足三个条件：</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>条件</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Prompt ready</td>
+<td>请求 alive 内所需 prompt 数据已经完整可读</td>
+</tr>
+<tr>
+<td>Index K ready</td>
+<td>所有相关 rank 的 Index K 传输已完成</td>
+</tr>
+<tr>
+<td>Handoff ready</td>
+<td>所有相关 rank 的请求交接信息已到齐</td>
+</tr>
+</tbody></table></div>
+<p>整个计算组一致推进，单个 rank 完成不能代表全组就绪。
+生成时，D 按实际选中位置读取 P 的 prompt KV 和 D 的生成 KV。</p>
+<p><strong>P 计算侧缓存可提前释放</strong></p>
+<p>P 的计算侧 KV 在必要写回和原生传输完成后即可释放。
+这允许 P 计算侧资源早于 D 请求结束归还。
+请求的主存 alive 仍保留，供 D 后续读取和请求结束后的保存操作使用。
+P alive Index K 的保留，使后续保存不依赖已释放的计算侧缓存。</p>
+<p><strong>生成结束、保存完成、资源归还是三个边界</strong></p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>边界</th>
+<th>已实现的含义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>finished</code></td>
+<td>D 停止提交新工作，相关最后读写完成，必要计算侧资源已经清理</td>
+</tr>
+<tr>
+<td><code>admit</code> 完成</td>
+<td>需要保留的 prompt 页已复制到 prefix，并按完成顺序发布</td>
+</tr>
+<tr>
+<td><code>free_ack</code></td>
+<td>SR 已实际归还对应 alive 存储，Main 才恢复额度</td>
+</tr>
+</tbody></table></div>
+<p>Main 收到 <code>finished</code> 后重新检查 prefix 目录，只保存尚未存在的页。
+保存前先保护源数据及必要父路径，复制实际完成后再解除保护。
+prefix 目标可读后才发布，父页先于子页发布。
+重复完成消息不会重复解锁、重复发布或重复归还资源。</p>
+<p>整个 alive 槽等最后依赖解除后才能回收。
+下一请求等待上一请求保存结束、全部 <code>free_ack</code> 到齐后再进入。
+当前 Main 使用非流式接口，完整响应也要等这套流程结束。</p>
+<p><strong>失败时保留正确的资源状态</strong></p>
+<p>不支持的输入或容量不足会在入口明确拒绝，账本保持不变。
+运行中出现错误或超时会进入 fail-stop，停止新请求和不安全的释放。
+尚未证明读写结束的内存不会被强行归还后交给下一请求。
+测试入口负责保存现场并清理本轮启动的进程。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-C">
+<header class="am-panel-head"><span class="am-panel-id">C</span><h2>阶段 0 已完成的 prefix 保存与命中</h2></header>
+<div class="am-panel-body"><div class="am-md"><p><strong>保存的内容已经包含主 KV 和 Index K。</strong>
+这两类 prefix 数据以及 P alive Index K 都是阶段 0 的已有能力。
+K1 的工作是改变它们的物理副本与访问方式。</p>
+<p><strong>命中后有两条不同的数据恢复路径</strong></p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>数据从哪里到哪里</th>
+<th>解决的问题</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>load_back</code></td>
+<td>prefix → P 的计算侧缓存</td>
+<td>让 P 能接着计算未命中的后缀</td>
+</tr>
+<tr>
+<td><code>fill</code></td>
+<td>prefix → 本请求新分配的 alive</td>
+<td>让 D 能从本请求的存储位置读取命中段</td>
+</tr>
+<tr>
+<td>后缀写回</td>
+<td>P 新计算结果 → 本请求 alive</td>
+<td>补全未命中段的主 KV 与 Index K</td>
+</tr>
+</tbody></table></div>
+<p>命中请求仍分配自己的 alive 存储。
+<code>load_back</code> 完成后，<code>fill</code> 与 P 后缀计算可以独立推进。
+这表示依赖允许它们并行，不代表已经量出性能收益。</p>
+<p><code>ready_tokens</code> 汇总命中段和新算段的实际完成范围。
+只有从开头连续完成、且所有必要数据都可读的部分才能计入。
+不能仅凭命中长度把数据标成已经写好。</p>
+<p><strong>完整命中仍会重算最后一页</strong></p>
+<p>输入完全相同，不表示这次 prefill 可以计算零个 token。
+当前规则为完整 prompt 留出最后一页重算，以完成模型输出接续。
+4096-token prompt 因而恢复 3968 token，重算最后 128 token。</p>
+<p><strong>已验收的 A → B → C → E 用例</strong></p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>用例</th>
+<th align="right">输入</th>
+<th align="right">实际命中</th>
+<th align="right">P 新计算</th>
+<th align="right">结束后 prefix 页数／份</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>A：冷请求</td>
+<td align="right">4096</td>
+<td align="right">0</td>
+<td align="right">4096</td>
+<td align="right">32</td>
+</tr>
+<tr>
+<td>B：在 A 后新增后缀</td>
+<td align="right">5120</td>
+<td align="right">4096</td>
+<td align="right">1024</td>
+<td align="right">40</td>
+</tr>
+<tr>
+<td>C：输入与 A 相同</td>
+<td align="right">4096</td>
+<td align="right">3968</td>
+<td align="right">128</td>
+<td align="right">40</td>
+</tr>
+<tr>
+<td>E：另一条冷请求</td>
+<td align="right">4096</td>
+<td align="right">0</td>
+<td align="right">4096</td>
+<td align="right">40</td>
+</tr>
+</tbody></table></div>
+<p>A 保存 32 页，B 只补充此前没有保存的后缀页。
+C 复用已有内容，不重复保存相同 prefix。
+E 在 prefix 已满时跳过新增保存，仍正常生成并归还 alive。
+容量不足时也允许缩短保存范围；当前没有缓存淘汰流程。</p>
+<p>每份 40 页表示同一套逻辑缓存容量。
+保存 16 份相同副本，并不会把可缓存的不同 prefix 扩大为 640 页。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-D">
+<header class="am-panel-head"><span class="am-panel-id">D</span><h2>阶段 0 的完成证据与性能现状</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>阶段 0 的工作按四类能力完成：</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>原阶段 0 票据</th>
+<th>已交付的能力</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>01 冷请求与释放复用</td>
+<td>Main/SR 控制、真实请求、就绪门控、显式释放和槽位复用</td>
+</tr>
+<tr>
+<td>02 prompt 保存</td>
+<td>P alive Index K、prefix 主 KV/Index K 保存、目录与源保护</td>
+</tr>
+<tr>
+<td>03 命中恢复</td>
+<td><code>load_back</code>、<code>fill</code>、后缀计算、部分和完整命中</td>
+</tr>
+<tr>
+<td>04 完整验收</td>
+<td>组合用例、独立参考、拒绝与超时场景、报告和自动清理</td>
+</tr>
+</tbody></table></div>
+<p>2026-10-27 的完整验收回传中，V1–V10 全部通过。
+长生成、超时保护和双端进程清理也通过，用户已确认接受。
+本地归档保留终端摘要；逐 rank 原始明细保存在实际运行环境。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>验收项</th>
+<th>已检查的行为</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>V1 命中</td>
+<td>B=4096、C=3968，能追溯真实 prefix 来源</td>
+</tr>
+<tr>
+<td>V2 复制</td>
+<td>各必要 rank、层和逻辑 token 的内容与恢复映射正确</td>
+</tr>
+<tr>
+<td>V3 输出</td>
+<td>冷算与复用分别通过独立标准答案检查，保存完整输出 IDs</td>
+</tr>
+<tr>
+<td>V4 来源</td>
+<td>D 读取本请求对应的 P/D 存储位置</td>
+</tr>
+<tr>
+<td>V5 提前释放</td>
+<td>P 计算侧缓存提前释放后，D 后续生成仍正确</td>
+</tr>
+<tr>
+<td>V6 账本</td>
+<td>alive 与计算侧额度实际归还，prefix 为 32→40→40→40</td>
+</tr>
+<tr>
+<td>V7 接续</td>
+<td>恢复 31 个完整页，重算最后一页，并覆盖提前结束清理</td>
+</tr>
+<tr>
+<td>V8 拒绝</td>
+<td>超长、未对齐、生成上限和容量异常被正确拒绝</td>
+</tr>
+<tr>
+<td>V9 复用</td>
+<td>后续请求复用实际归还的槽，不读到旧请求内容</td>
+</tr>
+<tr>
+<td>V10 负载</td>
+<td>每步真实常驻与执行请求数均不超过 1</td>
+</tr>
+</tbody></table></div>
+<p>输出验证有明确边界：历史跨形状的逐 token 差异仍保留为已知限制。
+当前使用独立标准答案，并严格核对 KV 内容、就绪和资源生命周期。
+不能从功能通过推导所有复用输出都与冷算逐 token 相同。</p>
+<p><strong>阶段 0 尚未建立正式单请求性能基线。</strong></p>
+<p>已有一条单次功能检查记录：128 输入、48 输出 token。
+该请求的 D 后端报告 <code>e2e_latency ≈ 11.12 秒</code>。
+它没有重复采样、首 token 拆分或逐 token 延迟分布。
+因此不能据此判断稳态速度、瓶颈或调优效果。</p>
+<p>阶段 0 的功能完成不等于性能调优完成。
+先补测基线，是为了给之后的共享改动留下可比较依据。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-E">
+<header class="am-panel-head"><span class="am-panel-id">E</span><h2>K1 的完整目标</h2></header>
+<div class="am-panel-body"><div class="am-md"><p><strong>K1 在既有请求流程上，将主存副本改成 <code>8 / 1 / 1 / 1</code>。</strong></p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>数据类别</th>
+<th align="right">阶段 0</th>
+<th align="right">K1 默认目标</th>
+<th>访问方式</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>alive 主 KV</td>
+<td align="right">每侧 16 份</td>
+<td align="right">每侧 8 份</td>
+<td>默认每 2 个 rank 共享一份，分工写入，各自完整读取</td>
+</tr>
+<tr>
+<td>P alive Index K</td>
+<td align="right">16 份</td>
+<td align="right">1 份</td>
+<td>按规定分工写入，供保存和复用流程访问</td>
+</tr>
+<tr>
+<td>prefix 主 KV</td>
+<td align="right">16 份</td>
+<td align="right">1 份</td>
+<td>单份保存，供恢复与各 alive 副本填充使用</td>
+</tr>
+<tr>
+<td>prefix Index K</td>
+<td align="right">16 份</td>
+<td align="right">1 份</td>
+<td>单份保存，恢复到各计算 rank 所需的缓存</td>
+</tr>
+</tbody></table></div>
+<p>alive 的 8 份是 P、D 每侧各 8 份，并非两侧合计 8 份。
+其余三项是 P 侧各一份，副本数独立于 alive 共享组数量。
+每个 alive 副本不会再附带一份私有 Index K 和 prefix。
+计算侧为各 rank 保留的执行缓存，不计入这四类主存副本。</p>
+<p><strong>物理共享必须真实成立</strong></p>
+<p>共享组成员访问同一份物理数据，进程内的虚拟地址可以不同。
+多个 rank 放在同一个内存节点，并不自动构成共享。
+分组依据实际拓扑和配置生成；双成员是默认部署，不应写成实现上限。
+每个成员仍有自己的执行职责，SR 分片不会从 16 个变成 8 个。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>需要区分的身份</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>物理分配 owner</td>
+<td>为共享区域承担实际存储分配的参与者</td>
+</tr>
+<tr>
+<td>Writer</td>
+<td>对某一范围执行写入的参与者</td>
+</tr>
+<tr>
+<td>Reader</td>
+<td>需要读取该共享区域的参与者</td>
+</tr>
+</tbody></table></div>
+<p>每个逻辑写入范围必须有明确分工，写入无遗漏、目标无重叠。
+本 rank 写完自己的部分，不等于整份共享副本已经可读。
+就绪与释放必须覆盖全部必要 writer 和 reader。
+本步新 KV 的本地供给、历史 KV 发布以及后续读取顺序都属于正确性要求。</p>
+<p><strong>单份存储还需要单次源读取与广播</strong></p>
+<p>K1 的最终 <code>load_back</code> 由 rank 0 读取单份 prefix，再广播给其他 rank。
+各 rank 按自己的原生映射恢复计算侧缓存。
+<code>fill</code> 负责把命中内容写入请求需要的 alive 副本。
+单读广播和多副本填充服务不同目标，不能相互替代。</p>
+<p><strong>副本数、描述符和容量必须一致</strong></p>
+<p>注册与页描述分别表达四类数据的实际副本。
+容量核算根据各区域实际大小与贡献，避免把一个副本数套给全部数据。
+验收核对实际分配、写入和读取证据，不能只看配置值。
+共享减少主存重复存储与重复写入，并不意味着每个 reader 少读所需数据。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-F">
+<header class="am-panel-head"><span class="am-panel-id">F</span><h2>当前五票方案与中间状态</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>下面编号属于本轮 K1 规划，包含前置基线票。
+它们与阶段 0 的旧 01–04 不是同一组票据。
+当前仍是讨论草案，尚未发布正式实施票。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>票据</th>
+<th>主要交付</th>
+<th>直接前置</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>01 单请求性能基线</td>
+<td>当前阶段 0 的冷请求、部分命中、完整命中测量报告</td>
+<td>已有阶段 0 功能基线</td>
+</tr>
+<tr>
+<td>02 alive 主 KV 共享</td>
+<td>共享读写与生命周期，保留三类私有区域及全部 prefix 功能</td>
+<td>01</td>
+</tr>
+<tr>
+<td>03 Index K 与 prefix 单份存储</td>
+<td>三类区域各缩为一份，保存和命中继续可用</td>
+<td>02</td>
+</tr>
+<tr>
+<td>04 prefix 单读广播</td>
+<td>从各 rank 重复读单份源，切换为 rank 0 读取后广播</td>
+<td>03</td>
+</tr>
+<tr>
+<td>05 K1 完整验收</td>
+<td>最终版本的组合用例、共享证据和失败路径验证</td>
+<td>04</td>
+</tr>
+</tbody></table></div>
+</div>
+<figure class="am-diagram am-flow"><svg viewBox="0 0 1153 63" width="1153" height="63" role="img" aria-label="流程图：单请求性能基线、alive主KV共享、Index与prefix单份存储、prefix单读广播、K1完整验收" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am2-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><g></g><g><g data-step="0"><path class="am-edge" d="M133,31.5 L167.6,31.5 Q202.3,31.5 236.9,31.5 L271.5,31.5" marker-end="url(#am2-arrow)"/><g class="am-edge-label"><rect x="157" y="22.5" width="90.5" height="18" rx="3"/><text x="202.3" y="31.5" text-anchor="middle" dominant-baseline="central">先保留对照数据</text></g></g><g data-step="1"><path class="am-edge" d="M386.3,31.5 L418.1,31.5 Q449.8,31.5 481.6,31.5 L513.3,31.5" marker-end="url(#am2-arrow)"/><g class="am-edge-label"><rect x="410.3" y="22.5" width="79" height="18" rx="3"/><text x="449.8" y="31.5" text-anchor="middle" dominant-baseline="central">保持已有功能</text></g></g><g data-step="2"><path class="am-edge" d="M673.9,31.5 L711.4,31.5 Q748.9,31.5 786.4,31.5 L823.9,31.5" marker-end="url(#am2-arrow)"/><g class="am-edge-label"><rect x="697.9" y="22.5" width="102" height="18" rx="3"/><text x="748.9" y="31.5" text-anchor="middle" dominant-baseline="central">减少源端重复读取</text></g></g><g data-step="3"><path class="am-edge" d="M938.3,31.5 L964.3,31.5 Q990.3,31.5 1016.3,31.5 L1042.3,31.5" marker-end="url(#am2-arrow)"/><g class="am-edge-label"><rect x="962.3" y="22.5" width="56" height="18" rx="3"/><text x="990.3" y="31.5" text-anchor="middle" dominant-baseline="central">组合核对</text></g></g></g><g><g class="am-node am-node--rect" data-key="单请求性能基线" data-step="0"><rect class="am-node-shape" x="14" y="14" width="119" height="35" rx="3"/><text x="73.5" y="31.5" text-anchor="middle" dominant-baseline="central">单请求性能基线</text></g><g class="am-node am-node--rect" data-key="alive主KV共享" data-step="0"><rect class="am-node-shape" x="271.5" y="14" width="114.8" height="35" rx="3"/><text x="328.9" y="31.5" text-anchor="middle" dominant-baseline="central">alive主KV共享</text></g><g class="am-node am-node--rect" data-key="Index与prefix单份存储" data-step="1"><rect class="am-node-shape" x="513.3" y="14" width="160.6" height="35" rx="3"/><text x="593.6" y="31.5" text-anchor="middle" dominant-baseline="central">Index与prefix单份存储</text></g><g class="am-node am-node--rect" data-key="prefix单读广播" data-step="2"><rect class="am-node-shape" x="823.9" y="14" width="114.3" height="35" rx="3"/><text x="881.1" y="31.5" text-anchor="middle" dominant-baseline="central">prefix单读广播</text></g><g class="am-node am-node--rect" data-key="K1完整验收" data-step="3"><rect class="am-node-shape" x="1042.3" y="14" width="96.1" height="35" rx="3"/><text x="1090.3" y="31.5" text-anchor="middle" dominant-baseline="central">K1完整验收</text></g></g></svg></figure>
+<div class="am-md"><p><strong>各票交付后的主存副本数</strong></p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>状态</th>
+<th align="right">alive 主 KV／侧</th>
+<th align="right">P alive Index K</th>
+<th align="right">prefix 主 KV</th>
+<th align="right">prefix Index K</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>阶段 0／票 01 基线</td>
+<td align="right">16</td>
+<td align="right">16</td>
+<td align="right">16</td>
+<td align="right">16</td>
+</tr>
+<tr>
+<td>票 02 完成</td>
+<td align="right">8</td>
+<td align="right">16</td>
+<td align="right">16</td>
+<td align="right">16</td>
+</tr>
+<tr>
+<td>票 03 完成</td>
+<td align="right">8</td>
+<td align="right">1</td>
+<td align="right">1</td>
+<td align="right">1</td>
+</tr>
+<tr>
+<td>票 04、05 完成</td>
+<td align="right">8</td>
+<td align="right">1</td>
+<td align="right">1</td>
+<td align="right">1</td>
+</tr>
+</tbody></table></div>
+<p><strong>每个中间版本都保留 prefix 保存、部分命中和完整命中。</strong>
+票 02 继续使用阶段 0 的三类私有区域，并适配共享 alive。
+票 03 切换到单份源时同时完成读路径适配。
+票 04 完成广播要求，票 05 负责最终组合验证。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-G">
+<header class="am-panel-head"><span class="am-panel-id">G</span><h2>每张票具体做什么、如何验收</h2></header>
+<div class="am-panel-body"><div class="am-md"><p><strong>票 01：建立阶段 0 单请求性能基线</strong></p>
+<p>本票先量清楚当前性能，不要求先完成调优。
+固定模型、输入、采样、计算图、拓扑和容量，保持真实并发 1。
+覆盖冷请求、部分命中和完整命中；每类分别统计。
+使用长生成负载，同时把自然提前结束的短输出单列。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>指标</th>
+<th>必须说明的口径</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>TTFT</td>
+<td>后端请求开始到首次输出可用；明确观察点</td>
+</tr>
+<tr>
+<td>ITL</td>
+<td>同一观察点的相邻 token 间隔，保留原始样本</td>
+</tr>
+<tr>
+<td>TPOT</td>
+<td>后续输出 token 的平均时间，与 ITL 分布分开</td>
+</tr>
+<tr>
+<td>后端生成耗时</td>
+<td>后端自身请求时间，保留实际输出长度</td>
+</tr>
+<tr>
+<td>Main 完整耗时</td>
+<td>客户端提交到完整响应接收完毕</td>
+</tr>
+<tr>
+<td>Main 收尾耗时</td>
+<td>后端结果到齐到保存和释放结束</td>
+</tr>
+</tbody></table></div>
+<p>Main 完整耗时包含其前置控制与收尾，后端计时的边界更窄。
+当前外部接口非流式，不能把内部输出时间叫作客户端收到 token 的时间。
+已有批次刷新和直方图统计需要核对粒度，不能伪装成逐 token 原始数据。
+预热、重复轮次、命中准备和计时配置都由入口自动完成并记录。
+重型内容校验、故障注入和性能分析采集与正式计时分开。</p>
+<p>验收产物是一份可重复的基线报告，附原始样本、配置和版本。
+用户运行并核对测量结果后，再进入共享实现。</p>
+<p><strong>票 02：共享 alive 主 KV，保留已有 prefix 功能</strong></p>
+<p>把 P/D alive 主 KV 从每侧 16 份改成每侧 8 份。
+实现实际共享建池、成员映射、分工写入、完整读取和协调回收。
+P alive Index K、prefix 主 KV、prefix Index K 继续各保留 16 份。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>既有流程</th>
+<th>本票需要完成的适配</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>冷请求</td>
+<td>写入共享 alive，D 读取对应共享内容并正常生成</td>
+</tr>
+<tr>
+<td>prefix 保存</td>
+<td>从对应共享 alive 保存到各 rank 的私有 prefix</td>
+</tr>
+<tr>
+<td><code>load_back</code></td>
+<td>继续从各 rank 私有 prefix 恢复其计算侧缓存</td>
+</tr>
+<tr>
+<td><code>fill</code></td>
+<td>向共享 alive 按组分工写，避免重复写同一目标</td>
+</tr>
+<tr>
+<td>释放复用</td>
+<td>等所有共享读写者完成后归还，下一请求安全复用</td>
+</tr>
+</tbody></table></div>
+<p>验收覆盖真实冷请求、B/C 命中、内容、计算图和槽复用。
+不能只在关闭 prefix 的配置下证明本票通过。
+内存占用与分配贡献应证明默认主 KV 确实变为每侧 8 份。</p>
+<p><strong>票 03：Index K 与 prefix 各改为单份</strong></p>
+<p>把 P alive Index K、prefix 主 KV、prefix Index K 从各 16 份改为各 1 份。
+同时修改区域映射、写入职责、注册信息、目录描述和容量核算。
+保存流程保持源保护、目标完成后发布及正确释放顺序。</p>
+<p>本票的过渡读取方式为：各 rank 都读取同一份 prefix。
+每个 rank 用它恢复自己的计算侧缓存，命中功能始终可用。
+主存中只有一份源，不能保留隐藏私有副本来实现读取。
+<code>fill</code> 仍负责补齐各必要 alive 副本。</p>
+<p>验收同时覆盖保存和 B/C 命中，证明 <code>8/1/1/1</code> 真实成立。
+本票完成后，存储副本数达到最终目标；单次源读取尚待票 04。</p>
+<p><strong>票 04：单次读取 prefix，再广播</strong></p>
+<p>将票 03 的重复读源改为 rank 0 读取、组内广播。
+各 rank 接收后，按自己的原生索引恢复计算侧缓存。
+所有必要接收与恢复完成后，才能报告 <code>load_back</code> 完成。
+随后仍按现有流程推进 <code>fill</code>、后缀计算、D 生成与回收。</p>
+<p>验收证明源端只按计划读取一次，其他 rank 通过广播取得内容。
+分别核对广播内容、恢复映射及延迟成员的完成约束。
+不能仅凭存储只有一份，就认定已实现单次读取。
+本票不以服务吞吐提升幅度作为关闭条件。</p>
+<p><strong>票 05：最终版本的完整自运行验收</strong></p>
+<p>复用已有完整服务入口，组合验证最终 K1 配置。
+保留 A/B/C/E、V1–V10、长生成、提前结束、拒绝、超时与双端清理。
+增加真实副本贡献、共享写覆盖、单读广播和所有参与者完成证据。
+确保最终版本仍能完整保存与复用 prefix，并安全释放和复用存储。</p>
+<p>入口自动准备环境、等待就绪、发送请求、检查结果、汇总报告并清理自身进程。
+每台机器一条命令即可启动，失败返回非零，原始日志与报告统一归档。
+前几票各自已有对应验证，本票核对它们在最终版本中的组合行为。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-H">
+<header class="am-panel-head"><span class="am-panel-id">H</span><h2>交付原则、范围与当前状态</h2></header>
+<div class="am-panel-body"><div class="am-md"><p><strong>已经确认的推进原则</strong></p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>原则</th>
+<th>具体约定</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>先测量</td>
+<td>阶段 0 单请求基线先于 K1 共享实现</td>
+</tr>
+<tr>
+<td>保留功能</td>
+<td>所有中间版本继续支持 prefix 保存和命中</td>
+</tr>
+<tr>
+<td>先功能共享</td>
+<td>K1 验收完整共享；并行优化与正式性能门槛后续独立推进</td>
+</tr>
+<tr>
+<td>真实验证</td>
+<td>代码完成和本地检查通过不能替代实际部署验收</td>
+</tr>
+<tr>
+<td>顺序解锁</td>
+<td>当前草案按 01→02→03→04→05，每票验收后进入下游</td>
+</tr>
+<tr>
+<td>明确状态</td>
+<td>区分已实现、已验证、用户已接受和仍待执行</td>
+</tr>
+</tbody></table></div>
+<p>K1 继续采用串行、单 chunk、layer-first 和 alive 整槽后端。
+它保留统一页大小、原生 Index K 交接、三条件门控和显式回收合同。
+共享组的同步与安全发布是功能正确性要求，随对应票据交付。</p>
+<p>后续独立工作包括：</p>
+<ul>
+<li>当前数据填充与历史读取的并行优化。</li>
+<li>跨层提前写回及吞吐、延迟的正式性能验收。</li>
+<li>远端 prefix 与 page-first 布局。</li>
+<li>多 chunk、按层流水及提前返回首 token。</li>
+<li>多请求并发、动态容量与真正的 alive 页分配。</li>
+<li>淘汰、重试、暂停恢复和生成段缓存复用。</li>
+</ul>
+<p>基线报告将供后续共享对照和调优使用。
+没有预先完成性能调优，不阻止按既定顺序设计 K1。
+具体采样轮次、写入分工粒度及配置接口，留在对应票据中细化。</p>
+<p><strong>当前状态：</strong> 阶段 0 已作为功能基线完成；K1 目标和推进顺序已明确。
+五票方案为待审阅草案，尚未发布正式票据，也未完成 K1 共享服务接入。
+本总结依据现行规格、逐票交付记录、完整验收回传和本轮规划决定整理。</p>
+</div></div>
+</section>
+</div>
+</div>
+</main>
+<footer class="am-colophon">Generated by Answer me with HTML 0.4.3 · 2026-10-27 22:03</footer>
+<textarea id="am-source" hidden readonly aria-hidden="true">---
+title: 阶段 0 实现总结与 K1 计划
+subtitle: 已交付能力、共享目标、五张票据草案与验收边界
+template: doc
+theme: blueprint
+lang: zh
+date: 2026-10-27
+status: 阶段 0 功能已完成；K1 范围已明确，拆票方案待定稿
+---
+
+**阶段 0 已完成请求执行、prefix 保存与复用、资源回收的完整流程。**
+K1 将在这些能力上接入共享存储，保留每个中间版本的保存与命中功能。
+当前顺序是：先补单请求性能基线，再实施完整共享，随后单独推进性能优化。
+
+## A 阶段 0 已建立的系统与存储模型
+
+**角色分工**
+
+P 侧负责 prefill，即处理输入 prompt。
+D 侧负责 decode，即逐步生成输出。
+当前两侧各有 16 个计算 worker，各自组成一个 TP16 实例。
+系统同时只处理一个真实请求。
+
+| 角色 | 已实现的职责 |
+|---|---|
+| Main Router | 接收请求、检查约束、管理资源额度、匹配 prefix、编排操作和保护源数据 |
+| SR 协调者 | 每侧由 rank 0 承担；分发操作，汇总各分片实际完成结果 |
+| SR 分片 | 每个 worker 一个；解析本地映射，执行存储操作并报告完成 |
+| Scheduler | 推进请求调度、模型计算和控制消息；空闲时也推进控制流程 |
+| 计算 worker | 执行模型计算，读写本请求需要的 KV 和 Index K |
+
+Main Router 持有逻辑位置和不透明描述符。
+具体内存地址由持有映射的执行分片解析。
+请求分配成功、数据写完、生成结束、资源归还分别有完成条件。
+
+```flow LR
+客户端 -&gt; MainRouter: 提交请求
+MainRouter -&gt; SR_P协调者: P侧资源与存储操作
+MainRouter -&gt; SR_D协调者: D侧资源与存储操作
+SR_P协调者 -&gt; P侧计算与存储分片: 分发及汇总
+SR_D协调者 -&gt; D侧计算与存储分片: 分发及汇总
+P侧计算与存储分片 -&gt; D侧计算与存储分片: Index K及交接信息
+```
+
+**alive 与 prefix 的用途**
+
+alive 保存仍在执行的请求所需数据。
+P alive 保存 prompt KV；D alive 保存 decode 产生的 KV。
+请求结束且全部读写依赖解除后，alive 才能回收。
+
+prefix 保存跨请求复用的数据，请求结束后仍可保留。
+主 KV 是注意力读取的数据，Index K 用于选择相关 token。
+两类数据用途不同，prefix 复用时都需要保存与恢复。
+
+| 主存数据区域 | 阶段 0 的实际存储方式 |
+|---|---|
+| P alive 主 KV | 每 rank 一份完整副本，P 侧共 16 份 |
+| D alive 主 KV | 每 rank 一份完整副本，D 侧共 16 份 |
+| P alive Index K | 每 rank 一份，共 16 份 |
+| prefix 主 KV | 保存在 P 侧，每 rank 一份，共 16 份 |
+| prefix Index K | 保存在 P 侧，每 rank 一份，共 16 份 |
+
+因此，阶段 0 的四类副本数是 `16 / 16 / 16 / 16`。
+第一项是 alive 主 KV 的每侧副本数，其余三项均指 P 侧区域。
+D 生成的 Index K 保留在计算侧缓存，不新增对应主存区域。
+
+**页与槽的实际含义**
+
+| 项目 | 阶段 0 的实现与验收配置 |
+|---|---|
+| Token 页 | 每页 128 token；主存和计算侧缓存严格使用同一页大小 |
+| alive 分配 | 接口表达逻辑页，底层仍为请求保留整个连续槽 |
+| P alive 槽 | 每槽容量 8192 token，即 64 页额度 |
+| D alive 槽 | 每槽容量 128 token，即 1 页额度 |
+| prefix 分配 | 真正按页分配；每份容量 40 页，即 5120 token |
+| 数据布局 | 沿用 layer-first 布局 |
+
+请求只用到槽的一部分时，剩余空间仍被该请求占用。
+例如 4096-token prompt 使用 32 页，但 P alive 仍扣 64 页额度。
+16 个 worker、16 个存储槽和计算图的补齐宽度含义不同。
+这些数量不表示已经支持 16 个真实并发请求。
+
+## B 阶段 0 已完成的请求生命周期
+
+**冷请求：计算、交接、生成**
+
+1. Main 检查输入、长度、页对齐和生成上限。
+2. Main 预留 P/D alive 额度及 D 计算侧资源。
+3. SR 分配槽位，建立请求与存储位置的绑定。
+4. P 计算 prompt，并写回主 KV 和 Index K。
+5. 原生通道完成 Index K 和请求交接信息的传输。
+6. D 在全部就绪条件满足后开始生成。
+
+D 启动需要同时满足三个条件：
+
+| 条件 | 含义 |
+|---|---|
+| Prompt ready | 请求 alive 内所需 prompt 数据已经完整可读 |
+| Index K ready | 所有相关 rank 的 Index K 传输已完成 |
+| Handoff ready | 所有相关 rank 的请求交接信息已到齐 |
+
+整个计算组一致推进，单个 rank 完成不能代表全组就绪。
+生成时，D 按实际选中位置读取 P 的 prompt KV 和 D 的生成 KV。
+
+**P 计算侧缓存可提前释放**
+
+P 的计算侧 KV 在必要写回和原生传输完成后即可释放。
+这允许 P 计算侧资源早于 D 请求结束归还。
+请求的主存 alive 仍保留，供 D 后续读取和请求结束后的保存操作使用。
+P alive Index K 的保留，使后续保存不依赖已释放的计算侧缓存。
+
+**生成结束、保存完成、资源归还是三个边界**
+
+| 边界 | 已实现的含义 |
+|---|---|
+| `finished` | D 停止提交新工作，相关最后读写完成，必要计算侧资源已经清理 |
+| `admit` 完成 | 需要保留的 prompt 页已复制到 prefix，并按完成顺序发布 |
+| `free_ack` | SR 已实际归还对应 alive 存储，Main 才恢复额度 |
+
+Main 收到 `finished` 后重新检查 prefix 目录，只保存尚未存在的页。
+保存前先保护源数据及必要父路径，复制实际完成后再解除保护。
+prefix 目标可读后才发布，父页先于子页发布。
+重复完成消息不会重复解锁、重复发布或重复归还资源。
+
+整个 alive 槽等最后依赖解除后才能回收。
+下一请求等待上一请求保存结束、全部 `free_ack` 到齐后再进入。
+当前 Main 使用非流式接口，完整响应也要等这套流程结束。
+
+**失败时保留正确的资源状态**
+
+不支持的输入或容量不足会在入口明确拒绝，账本保持不变。
+运行中出现错误或超时会进入 fail-stop，停止新请求和不安全的释放。
+尚未证明读写结束的内存不会被强行归还后交给下一请求。
+测试入口负责保存现场并清理本轮启动的进程。
+
+## C 阶段 0 已完成的 prefix 保存与命中
+
+**保存的内容已经包含主 KV 和 Index K。**
+这两类 prefix 数据以及 P alive Index K 都是阶段 0 的已有能力。
+K1 的工作是改变它们的物理副本与访问方式。
+
+**命中后有两条不同的数据恢复路径**
+
+| 操作 | 数据从哪里到哪里 | 解决的问题 |
+|---|---|---|
+| `load_back` | prefix → P 的计算侧缓存 | 让 P 能接着计算未命中的后缀 |
+| `fill` | prefix → 本请求新分配的 alive | 让 D 能从本请求的存储位置读取命中段 |
+| 后缀写回 | P 新计算结果 → 本请求 alive | 补全未命中段的主 KV 与 Index K |
+
+命中请求仍分配自己的 alive 存储。
+`load_back` 完成后，`fill` 与 P 后缀计算可以独立推进。
+这表示依赖允许它们并行，不代表已经量出性能收益。
+
+`ready_tokens` 汇总命中段和新算段的实际完成范围。
+只有从开头连续完成、且所有必要数据都可读的部分才能计入。
+不能仅凭命中长度把数据标成已经写好。
+
+**完整命中仍会重算最后一页**
+
+输入完全相同，不表示这次 prefill 可以计算零个 token。
+当前规则为完整 prompt 留出最后一页重算，以完成模型输出接续。
+4096-token prompt 因而恢复 3968 token，重算最后 128 token。
+
+**已验收的 A → B → C → E 用例**
+
+| 用例 | 输入 | 实际命中 | P 新计算 | 结束后 prefix 页数／份 |
+|---|---:|---:|---:|---:|
+| A：冷请求 | 4096 | 0 | 4096 | 32 |
+| B：在 A 后新增后缀 | 5120 | 4096 | 1024 | 40 |
+| C：输入与 A 相同 | 4096 | 3968 | 128 | 40 |
+| E：另一条冷请求 | 4096 | 0 | 4096 | 40 |
+
+A 保存 32 页，B 只补充此前没有保存的后缀页。
+C 复用已有内容，不重复保存相同 prefix。
+E 在 prefix 已满时跳过新增保存，仍正常生成并归还 alive。
+容量不足时也允许缩短保存范围；当前没有缓存淘汰流程。
+
+每份 40 页表示同一套逻辑缓存容量。
+保存 16 份相同副本，并不会把可缓存的不同 prefix 扩大为 640 页。
+
+## D 阶段 0 的完成证据与性能现状
+
+阶段 0 的工作按四类能力完成：
+
+| 原阶段 0 票据 | 已交付的能力 |
+|---|---|
+| 01 冷请求与释放复用 | Main/SR 控制、真实请求、就绪门控、显式释放和槽位复用 |
+| 02 prompt 保存 | P alive Index K、prefix 主 KV/Index K 保存、目录与源保护 |
+| 03 命中恢复 | `load_back`、`fill`、后缀计算、部分和完整命中 |
+| 04 完整验收 | 组合用例、独立参考、拒绝与超时场景、报告和自动清理 |
+
+2026-10-27 的完整验收回传中，V1–V10 全部通过。
+长生成、超时保护和双端进程清理也通过，用户已确认接受。
+本地归档保留终端摘要；逐 rank 原始明细保存在实际运行环境。
+
+| 验收项 | 已检查的行为 |
+|---|---|
+| V1 命中 | B=4096、C=3968，能追溯真实 prefix 来源 |
+| V2 复制 | 各必要 rank、层和逻辑 token 的内容与恢复映射正确 |
+| V3 输出 | 冷算与复用分别通过独立标准答案检查，保存完整输出 IDs |
+| V4 来源 | D 读取本请求对应的 P/D 存储位置 |
+| V5 提前释放 | P 计算侧缓存提前释放后，D 后续生成仍正确 |
+| V6 账本 | alive 与计算侧额度实际归还，prefix 为 32→40→40→40 |
+| V7 接续 | 恢复 31 个完整页，重算最后一页，并覆盖提前结束清理 |
+| V8 拒绝 | 超长、未对齐、生成上限和容量异常被正确拒绝 |
+| V9 复用 | 后续请求复用实际归还的槽，不读到旧请求内容 |
+| V10 负载 | 每步真实常驻与执行请求数均不超过 1 |
+
+输出验证有明确边界：历史跨形状的逐 token 差异仍保留为已知限制。
+当前使用独立标准答案，并严格核对 KV 内容、就绪和资源生命周期。
+不能从功能通过推导所有复用输出都与冷算逐 token 相同。
+
+**阶段 0 尚未建立正式单请求性能基线。**
+
+已有一条单次功能检查记录：128 输入、48 输出 token。
+该请求的 D 后端报告 `e2e_latency ≈ 11.12 秒`。
+它没有重复采样、首 token 拆分或逐 token 延迟分布。
+因此不能据此判断稳态速度、瓶颈或调优效果。
+
+阶段 0 的功能完成不等于性能调优完成。
+先补测基线，是为了给之后的共享改动留下可比较依据。
+
+## E K1 的完整目标
+
+**K1 在既有请求流程上，将主存副本改成 `8 / 1 / 1 / 1`。**
+
+| 数据类别 | 阶段 0 | K1 默认目标 | 访问方式 |
+|---|---:|---:|---|
+| alive 主 KV | 每侧 16 份 | 每侧 8 份 | 默认每 2 个 rank 共享一份，分工写入，各自完整读取 |
+| P alive Index K | 16 份 | 1 份 | 按规定分工写入，供保存和复用流程访问 |
+| prefix 主 KV | 16 份 | 1 份 | 单份保存，供恢复与各 alive 副本填充使用 |
+| prefix Index K | 16 份 | 1 份 | 单份保存，恢复到各计算 rank 所需的缓存 |
+
+alive 的 8 份是 P、D 每侧各 8 份，并非两侧合计 8 份。
+其余三项是 P 侧各一份，副本数独立于 alive 共享组数量。
+每个 alive 副本不会再附带一份私有 Index K 和 prefix。
+计算侧为各 rank 保留的执行缓存，不计入这四类主存副本。
+
+**物理共享必须真实成立**
+
+共享组成员访问同一份物理数据，进程内的虚拟地址可以不同。
+多个 rank 放在同一个内存节点，并不自动构成共享。
+分组依据实际拓扑和配置生成；双成员是默认部署，不应写成实现上限。
+每个成员仍有自己的执行职责，SR 分片不会从 16 个变成 8 个。
+
+| 需要区分的身份 | 含义 |
+|---|---|
+| 物理分配 owner | 为共享区域承担实际存储分配的参与者 |
+| Writer | 对某一范围执行写入的参与者 |
+| Reader | 需要读取该共享区域的参与者 |
+
+每个逻辑写入范围必须有明确分工，写入无遗漏、目标无重叠。
+本 rank 写完自己的部分，不等于整份共享副本已经可读。
+就绪与释放必须覆盖全部必要 writer 和 reader。
+本步新 KV 的本地供给、历史 KV 发布以及后续读取顺序都属于正确性要求。
+
+**单份存储还需要单次源读取与广播**
+
+K1 的最终 `load_back` 由 rank 0 读取单份 prefix，再广播给其他 rank。
+各 rank 按自己的原生映射恢复计算侧缓存。
+`fill` 负责把命中内容写入请求需要的 alive 副本。
+单读广播和多副本填充服务不同目标，不能相互替代。
+
+**副本数、描述符和容量必须一致**
+
+注册与页描述分别表达四类数据的实际副本。
+容量核算根据各区域实际大小与贡献，避免把一个副本数套给全部数据。
+验收核对实际分配、写入和读取证据，不能只看配置值。
+共享减少主存重复存储与重复写入，并不意味着每个 reader 少读所需数据。
+
+## F 当前五票方案与中间状态
+
+下面编号属于本轮 K1 规划，包含前置基线票。
+它们与阶段 0 的旧 01–04 不是同一组票据。
+当前仍是讨论草案，尚未发布正式实施票。
+
+| 票据 | 主要交付 | 直接前置 |
+|---|---|---|
+| 01 单请求性能基线 | 当前阶段 0 的冷请求、部分命中、完整命中测量报告 | 已有阶段 0 功能基线 |
+| 02 alive 主 KV 共享 | 共享读写与生命周期，保留三类私有区域及全部 prefix 功能 | 01 |
+| 03 Index K 与 prefix 单份存储 | 三类区域各缩为一份，保存和命中继续可用 | 02 |
+| 04 prefix 单读广播 | 从各 rank 重复读单份源，切换为 rank 0 读取后广播 | 03 |
+| 05 K1 完整验收 | 最终版本的组合用例、共享证据和失败路径验证 | 04 |
+
+```flow LR
+单请求性能基线 -&gt; alive主KV共享: 先保留对照数据
+alive主KV共享 -&gt; Index与prefix单份存储: 保持已有功能
+Index与prefix单份存储 -&gt; prefix单读广播: 减少源端重复读取
+prefix单读广播 -&gt; K1完整验收: 组合核对
+```
+
+**各票交付后的主存副本数**
+
+| 状态 | alive 主 KV／侧 | P alive Index K | prefix 主 KV | prefix Index K |
+|---|---:|---:|---:|---:|
+| 阶段 0／票 01 基线 | 16 | 16 | 16 | 16 |
+| 票 02 完成 | 8 | 16 | 16 | 16 |
+| 票 03 完成 | 8 | 1 | 1 | 1 |
+| 票 04、05 完成 | 8 | 1 | 1 | 1 |
+
+**每个中间版本都保留 prefix 保存、部分命中和完整命中。**
+票 02 继续使用阶段 0 的三类私有区域，并适配共享 alive。
+票 03 切换到单份源时同时完成读路径适配。
+票 04 完成广播要求，票 05 负责最终组合验证。
+
+## G 每张票具体做什么、如何验收
+
+**票 01：建立阶段 0 单请求性能基线**
+
+本票先量清楚当前性能，不要求先完成调优。
+固定模型、输入、采样、计算图、拓扑和容量，保持真实并发 1。
+覆盖冷请求、部分命中和完整命中；每类分别统计。
+使用长生成负载，同时把自然提前结束的短输出单列。
+
+| 指标 | 必须说明的口径 |
+|---|---|
+| TTFT | 后端请求开始到首次输出可用；明确观察点 |
+| ITL | 同一观察点的相邻 token 间隔，保留原始样本 |
+| TPOT | 后续输出 token 的平均时间，与 ITL 分布分开 |
+| 后端生成耗时 | 后端自身请求时间，保留实际输出长度 |
+| Main 完整耗时 | 客户端提交到完整响应接收完毕 |
+| Main 收尾耗时 | 后端结果到齐到保存和释放结束 |
+
+Main 完整耗时包含其前置控制与收尾，后端计时的边界更窄。
+当前外部接口非流式，不能把内部输出时间叫作客户端收到 token 的时间。
+已有批次刷新和直方图统计需要核对粒度，不能伪装成逐 token 原始数据。
+预热、重复轮次、命中准备和计时配置都由入口自动完成并记录。
+重型内容校验、故障注入和性能分析采集与正式计时分开。
+
+验收产物是一份可重复的基线报告，附原始样本、配置和版本。
+用户运行并核对测量结果后，再进入共享实现。
+
+**票 02：共享 alive 主 KV，保留已有 prefix 功能**
+
+把 P/D alive 主 KV 从每侧 16 份改成每侧 8 份。
+实现实际共享建池、成员映射、分工写入、完整读取和协调回收。
+P alive Index K、prefix 主 KV、prefix Index K 继续各保留 16 份。
+
+| 既有流程 | 本票需要完成的适配 |
+|---|---|
+| 冷请求 | 写入共享 alive，D 读取对应共享内容并正常生成 |
+| prefix 保存 | 从对应共享 alive 保存到各 rank 的私有 prefix |
+| `load_back` | 继续从各 rank 私有 prefix 恢复其计算侧缓存 |
+| `fill` | 向共享 alive 按组分工写，避免重复写同一目标 |
+| 释放复用 | 等所有共享读写者完成后归还，下一请求安全复用 |
+
+验收覆盖真实冷请求、B/C 命中、内容、计算图和槽复用。
+不能只在关闭 prefix 的配置下证明本票通过。
+内存占用与分配贡献应证明默认主 KV 确实变为每侧 8 份。
+
+**票 03：Index K 与 prefix 各改为单份**
+
+把 P alive Index K、prefix 主 KV、prefix Index K 从各 16 份改为各 1 份。
+同时修改区域映射、写入职责、注册信息、目录描述和容量核算。
+保存流程保持源保护、目标完成后发布及正确释放顺序。
+
+本票的过渡读取方式为：各 rank 都读取同一份 prefix。
+每个 rank 用它恢复自己的计算侧缓存，命中功能始终可用。
+主存中只有一份源，不能保留隐藏私有副本来实现读取。
+`fill` 仍负责补齐各必要 alive 副本。
+
+验收同时覆盖保存和 B/C 命中，证明 `8/1/1/1` 真实成立。
+本票完成后，存储副本数达到最终目标；单次源读取尚待票 04。
+
+**票 04：单次读取 prefix，再广播**
+
+将票 03 的重复读源改为 rank 0 读取、组内广播。
+各 rank 接收后，按自己的原生索引恢复计算侧缓存。
+所有必要接收与恢复完成后，才能报告 `load_back` 完成。
+随后仍按现有流程推进 `fill`、后缀计算、D 生成与回收。
+
+验收证明源端只按计划读取一次，其他 rank 通过广播取得内容。
+分别核对广播内容、恢复映射及延迟成员的完成约束。
+不能仅凭存储只有一份，就认定已实现单次读取。
+本票不以服务吞吐提升幅度作为关闭条件。
+
+**票 05：最终版本的完整自运行验收**
+
+复用已有完整服务入口，组合验证最终 K1 配置。
+保留 A/B/C/E、V1–V10、长生成、提前结束、拒绝、超时与双端清理。
+增加真实副本贡献、共享写覆盖、单读广播和所有参与者完成证据。
+确保最终版本仍能完整保存与复用 prefix，并安全释放和复用存储。
+
+入口自动准备环境、等待就绪、发送请求、检查结果、汇总报告并清理自身进程。
+每台机器一条命令即可启动，失败返回非零，原始日志与报告统一归档。
+前几票各自已有对应验证，本票核对它们在最终版本中的组合行为。
+
+## H 交付原则、范围与当前状态
+
+**已经确认的推进原则**
+
+| 原则 | 具体约定 |
+|---|---|
+| 先测量 | 阶段 0 单请求基线先于 K1 共享实现 |
+| 保留功能 | 所有中间版本继续支持 prefix 保存和命中 |
+| 先功能共享 | K1 验收完整共享；并行优化与正式性能门槛后续独立推进 |
+| 真实验证 | 代码完成和本地检查通过不能替代实际部署验收 |
+| 顺序解锁 | 当前草案按 01→02→03→04→05，每票验收后进入下游 |
+| 明确状态 | 区分已实现、已验证、用户已接受和仍待执行 |
+
+K1 继续采用串行、单 chunk、layer-first 和 alive 整槽后端。
+它保留统一页大小、原生 Index K 交接、三条件门控和显式回收合同。
+共享组的同步与安全发布是功能正确性要求，随对应票据交付。
+
+后续独立工作包括：
+
+- 当前数据填充与历史读取的并行优化。
+- 跨层提前写回及吞吐、延迟的正式性能验收。
+- 远端 prefix 与 page-first 布局。
+- 多 chunk、按层流水及提前返回首 token。
+- 多请求并发、动态容量与真正的 alive 页分配。
+- 淘汰、重试、暂停恢复和生成段缓存复用。
+
+基线报告将供后续共享对照和调优使用。
+没有预先完成性能调优，不阻止按既定顺序设计 K1。
+具体采样轮次、写入分工粒度及配置接口，留在对应票据中细化。
+
+**当前状态：** 阶段 0 已作为功能基线完成；K1 目标和推进顺序已明确。
+五票方案为待审阅草案，尚未发布正式票据，也未完成 K1 共享服务接入。
+本总结依据现行规格、逐票交付记录、完整验收回传和本轮规划决定整理。
+</textarea>
+<script>
+(() => {
+  const root = document.documentElement;
+  const cycle = (list, cur) => list[(list.indexOf(cur) + 1) % list.length];
+  const label = (btn, value) => {
+    const map = JSON.parse(btn.dataset.labels || '{}');
+    btn.textContent = map[value] || value;
+  };
+  const bind = (name, attr, values) => {
+    const btn = document.querySelector(`[data-am="${name}"]`);
+    if (!btn) return;
+    label(btn, root.getAttribute(attr));
+    btn.addEventListener('click', () => {
+      const next = cycle(values, root.getAttribute(attr));
+      root.setAttribute(attr, next);
+      label(btn, next);
+    });
+  };
+  bind('theme', 'data-theme', ['blueprint', 'shadcn']);
+  bind('mode', 'data-mode', ['auto', 'light', 'dark']);
+
+  const copyBtn = document.querySelector('[data-am="copy"]');
+  copyBtn?.addEventListener('click', async () => {
+    const text = document.getElementById('am-source').value;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = Object.assign(document.createElement('textarea'), { value: text });
+      document.body.append(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    const original = copyBtn.textContent;
+    copyBtn.textContent = copyBtn.dataset.done;
+    setTimeout(() => { copyBtn.textContent = original; }, 1400);
+  });
+})();
+</script>
+</body>
+</html>

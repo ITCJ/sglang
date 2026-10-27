@@ -1,0 +1,346 @@
+{
+  "allocation_status": "planned",
+  "role": "decode",
+  "mempool_share": false,
+  "group_count": 16,
+  "planned_contribution_bytes": 188978561024,
+  "ranks": [
+    {
+      "rank": 0,
+      "host": "case1-d0",
+      "numa_node": 0,
+      "group": [
+        0
+      ],
+      "owner_tp_rank": 0,
+      "participant": 1,
+      "world_size": 2,
+      "owner_participant": 1,
+      "contribution_bytes": 11811160064,
+      "rank_stride_bytes": 11811160064,
+      "probe_offset": 11777605632,
+      "store_port": 19000,
+      "nic_base_port": 25670,
+      "nic_port": 25671,
+      "pool_id": 104,
+      "pool_identity": "011a9f26e186e022ef5e5e4c34c9e5486ab7d6131bc3df3566025224bb3f2f2a",
+      "placement_verified": false
+    },
+    {
+      "rank": 1,
+      "host": "case1-d0",
+      "numa_node": 0,
+      "group": [
+        1
+      ],
+      "owner_tp_rank": 1,
+      "participant": 1,
+      "world_size": 2,
+      "owner_participant": 1,
+      "contribution_bytes": 11811160064,
+      "rank_stride_bytes": 11811160064,
+      "probe_offset": 11777605632,
+      "store_port": 19001,
+      "nic_base_port": 25672,
+      "nic_port": 25673,
+      "pool_id": 104,
+      "pool_identity": "273d7e07f319e09d8970116bd67b39e4da2a603d6559fcb0559b31090eb79123",
+      "placement_verified": false
+    },
+    {
+      "rank": 2,
+      "host": "case1-d0",
+      "numa_node": 1,
+      "group": [
+        2
+      ],
+      "owner_tp_rank": 2,
+      "participant": 1,
+      "world_size": 2,
+      "owner_participant": 1,
+      "contribution_bytes": 11811160064,
+      "rank_stride_bytes": 11811160064,
+      "probe_offset": 11777605632,
+      "store_port": 19002,
+      "nic_base_port": 25674,
+      "nic_port": 25675,
+      "pool_id": 104,
+      "pool_identity": "a6ea2fcf10e870e8833d5f3e2dc3ce926393ab48f052c5e6f39bea449594202e",
+      "placement_verified": false
+    },
+    {
+      "rank": 3,
+      "host": "case1-d0",
+      "numa_node": 1,
+      "group": [
+        3
+      ],
+      "owner_tp_rank": 3,
+      "participant": 1,
+      "world_size": 2,
+      "owner_participant": 1,
+      "contribution_bytes": 11811160064,
+      "rank_stride_bytes": 11811160064,
+      "probe_offset": 11777605632,
+      "store_port": 19003,
+      "nic_base_port": 25676,
+      "nic_port": 25677,
+      "pool_id": 104,
+      "pool_identity": "e2507519b482f39f6dbe7d6334d1985b10d5378ab5a9770f7bbfbe3de0691fe2",
+      "placement_verified": false
+    },
+    {
+      "rank": 4,
+      "host": "case1-d0",
+      "numa_node": 2,
+      "group": [
+        4
+      ],
+      "owner_tp_rank": 4,
+      "participant": 1,
+      "world_size": 2,
+      "owner_participant": 1,
+      "contribution_bytes": 11811160064,
+      "rank_stride_bytes": 11811160064,
+      "probe_offset": 11777605632,
+      "store_port": 19004,
+      "nic_base_port": 25678,
+      "nic_port": 25679,
+      "pool_id": 104,
+      "pool_identity": "422412f52c644decf279f1825fb9dc18f77f9f584ac87adbbef4242fc6b9522a",
+      "placement_verified": false
+    },
+    {
+      "rank": 5,
+      "host": "case1-d0",
+      "numa_node": 2,
+      "group": [
+        5
+      ],
+      "owner_tp_rank": 5,
+      "participant": 1,
+      "world_size": 2,
+      "owner_participant": 1,
+      "contribution_bytes": 11811160064,
+      "rank_stride_bytes": 11811160064,
+      "probe_offset": 11777605632,
+      "store_port": 19005,
+      "nic_base_port": 25680,
+      "nic_port": 25681,
+      "pool_id": 104,
+      "pool_identity": "39200fbd9f0d8b4fe2d9aa7e797c21ee5213fe5a3a17e29d47fe0736c6eafa5d",
+      "placement_verified": false
+    },
+    {
+      "rank": 6,
+      "host": "case1-d0",
+      "numa_node": 3,
+      "group": [
+        6
+      ],
+      "owner_tp_rank": 6,
+      "participant": 1,
+      "world_size": 2,
+      "owner_participant": 1,
+      "contribution_bytes": 11811160064,
+      "rank_stride_bytes": 11811160064,
+      "probe_offset": 11777605632,
+      "store_port": 19006,
+      "nic_base_port": 25682,
+      "nic_port": 25683,
+      "pool_id": 104,
+      "pool_identity": "8fc6e4e53f0d53f7a3531878bd4eb8d044fa30bb29702c5dc888f179ecb84935",
+      "placement_verified": false
+    },
+    {
+      "rank": 7,
+      "host": "case1-d0",
+      "numa_node": 3,
+      "group": [
+        7
+      ],
+      "owner_tp_rank": 7,
+      "participant": 1,
+      "world_size": 2,
+      "owner_participant": 1,
+      "contribution_bytes": 11811160064,
+      "rank_stride_bytes": 11811160064,
+      "probe_offset": 11777605632,
+      "store_port": 19007,
+      "nic_base_port": 25684,
+      "nic_port": 25685,
+      "pool_id": 104,
+      "pool_identity": "d45a82c967991edb3389a9aaf2aad6638813d0ab65bccb9bcec7c6c741198c98",
+      "placement_verified": false
+    },
+    {
+      "rank": 8,
+      "host": "case1-d0",
+      "numa_node": 4,
+      "group": [
+        8
+      ],
+      "owner_tp_rank": 8,
+      "participant": 1,
+      "world_size": 2,
+      "owner_participant": 1,
+      "contribution_bytes": 11811160064,
+      "rank_stride_bytes": 11811160064,
+      "probe_offset": 11777605632,
+      "store_port": 19008,
+      "nic_base_port": 25686,
+      "nic_port": 25687,
+      "pool_id": 104,
+      "pool_identity": "1d5b59e73566f45a5ddd1df84a4ab2c77eab751203aa3d26cbe18f4644e5525b",
+      "placement_verified": false
+    },
+    {
+      "rank": 9,
+      "host": "case1-d0",
+      "numa_node": 4,
+      "group": [
+        9
+      ],
+      "owner_tp_rank": 9,
+      "participant": 1,
+      "world_size": 2,
+      "owner_participant": 1,
+      "contribution_bytes": 11811160064,
+      "rank_stride_bytes": 11811160064,
+      "probe_offset": 11777605632,
+      "store_port": 19009,
+      "nic_base_port": 25688,
+      "nic_port": 25689,
+      "pool_id": 104,
+      "pool_identity": "fb2403ceecd26539c1ccbeda31d3031244cc54c8c1315d330b6c29c3ee515894",
+      "placement_verified": false
+    },
+    {
+      "rank": 10,
+      "host": "case1-d0",
+      "numa_node": 5,
+      "group": [
+        10
+      ],
+      "owner_tp_rank": 10,
+      "participant": 1,
+      "world_size": 2,
+      "owner_participant": 1,
+      "contribution_bytes": 11811160064,
+      "rank_stride_bytes": 11811160064,
+      "probe_offset": 11777605632,
+      "store_port": 19010,
+      "nic_base_port": 25690,
+      "nic_port": 25691,
+      "pool_id": 104,
+      "pool_identity": "52347158718ddeb5c685dc15532d8e40273c1d14909489f55ac728f02ef8e0fd",
+      "placement_verified": false
+    },
+    {
+      "rank": 11,
+      "host": "case1-d0",
+      "numa_node": 5,
+      "group": [
+        11
+      ],
+      "owner_tp_rank": 11,
+      "participant": 1,
+      "world_size": 2,
+      "owner_participant": 1,
+      "contribution_bytes": 11811160064,
+      "rank_stride_bytes": 11811160064,
+      "probe_offset": 11777605632,
+      "store_port": 19011,
+      "nic_base_port": 25692,
+      "nic_port": 25693,
+      "pool_id": 104,
+      "pool_identity": "23fd431562ef5ae1655727c995dacfceeb7ae1d8e4615ed7d7afa402e6d8027c",
+      "placement_verified": false
+    },
+    {
+      "rank": 12,
+      "host": "case1-d0",
+      "numa_node": 6,
+      "group": [
+        12
+      ],
+      "owner_tp_rank": 12,
+      "participant": 1,
+      "world_size": 2,
+      "owner_participant": 1,
+      "contribution_bytes": 11811160064,
+      "rank_stride_bytes": 11811160064,
+      "probe_offset": 11777605632,
+      "store_port": 19012,
+      "nic_base_port": 25694,
+      "nic_port": 25695,
+      "pool_id": 104,
+      "pool_identity": "2d0e8ef1941472e076a2e20ae98a51ca8b1d904baf0a73f29dc199a31e3ad838",
+      "placement_verified": false
+    },
+    {
+      "rank": 13,
+      "host": "case1-d0",
+      "numa_node": 6,
+      "group": [
+        13
+      ],
+      "owner_tp_rank": 13,
+      "participant": 1,
+      "world_size": 2,
+      "owner_participant": 1,
+      "contribution_bytes": 11811160064,
+      "rank_stride_bytes": 11811160064,
+      "probe_offset": 11777605632,
+      "store_port": 19013,
+      "nic_base_port": 25696,
+      "nic_port": 25697,
+      "pool_id": 104,
+      "pool_identity": "0edbf3fcabd532b5628180b49a512ba5e3694e0d37e5926072e64c73765d3ee4",
+      "placement_verified": false
+    },
+    {
+      "rank": 14,
+      "host": "case1-d0",
+      "numa_node": 7,
+      "group": [
+        14
+      ],
+      "owner_tp_rank": 14,
+      "participant": 1,
+      "world_size": 2,
+      "owner_participant": 1,
+      "contribution_bytes": 11811160064,
+      "rank_stride_bytes": 11811160064,
+      "probe_offset": 11777605632,
+      "store_port": 19014,
+      "nic_base_port": 25698,
+      "nic_port": 25699,
+      "pool_id": 104,
+      "pool_identity": "bb3f266f0c29e2cfffdfaef9f6f17f5b77b5bace553ed0d9ec687ba3480dfdff",
+      "placement_verified": false
+    },
+    {
+      "rank": 15,
+      "host": "case1-d0",
+      "numa_node": 7,
+      "group": [
+        15
+      ],
+      "owner_tp_rank": 15,
+      "participant": 1,
+      "world_size": 2,
+      "owner_participant": 1,
+      "contribution_bytes": 11811160064,
+      "rank_stride_bytes": 11811160064,
+      "probe_offset": 11777605632,
+      "store_port": 19015,
+      "nic_base_port": 25700,
+      "nic_port": 25701,
+      "pool_id": 104,
+      "pool_identity": "895800489df20f6d9cba546a32b9112b54c3f85f286d1876d2c480dfc26888fb",
+      "placement_verified": false
+    }
+  ],
+  "warnings": []
+}

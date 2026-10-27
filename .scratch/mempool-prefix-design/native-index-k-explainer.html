@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="blueprint" data-mode="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Answer me with HTML 0.4.3">
+<title>SGLang 如何保留可复用前缀的 Index K</title>
+<style>
+html[data-theme="blueprint"], html[data-theme="blueprint"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 0px;
+  --shadow: none;
+  --bw: 1.5px;
+  --head-font: var(--font-sans);
+  --bg: #f6f6f3;
+  --paper: #ffffff;
+  --ink: #16181d;
+  --ink-2: #4b5260;
+  --ink-3: #8b929e;
+  --line: #1d2026;
+  --line-2: #d6dae1;
+  --fill: #f3f5f8;
+  --accent: #1d5fbf;
+  --accent-bg: #e4ecf8;
+  --ok: #1d5fbf;
+  --ok-bg: #e4ecf8;
+  --err: #c62828;
+  --err-bg: #fbeaea;
+  --warn: #a8620a;
+  --warn-bg: #fdf3e2;
+  --head-bg: #16181d;
+  --head-fg: #ffffff;
+}
+html[data-theme="blueprint"][data-mode="dark"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="blueprint"][data-mode="auto"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+}
+
+html[data-theme="shadcn"], html[data-theme="shadcn"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 8px;
+  --shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --bw: 1px;
+  --head-font: var(--font-sans);
+  --bg: #fafafa;
+  --paper: #ffffff;
+  --ink: #09090b;
+  --ink-2: #71717a;
+  --ink-3: #a1a1aa;
+  --line: #e4e4e7;
+  --line-2: #f0f0f2;
+  --fill: #f4f4f5;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --ok: #16a34a;
+  --ok-bg: #f0fdf4;
+  --err: #dc2626;
+  --err-bg: #fef2f2;
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --head-bg: #18181b;
+  --head-fg: #fafafa;
+}
+html[data-theme="shadcn"][data-mode="dark"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="shadcn"][data-mode="auto"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+}
+
+/* Answer me with HTML base — 只引用主题变量，禁止写死颜色（主题 token 见 themes/index.js） */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd { font-family: var(--font-mono); }
+
+/* ── 工具栏 ─────────────────────────────── */
+.am-toolbar {
+  position: fixed; top: 12px; right: 12px; z-index: 10; display: flex; gap: 6px;
+}
+.am-btn {
+  font: 12px/1 var(--font-sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding: 7px 10px; cursor: pointer;
+}
+.am-btn:hover { border-color: var(--ink-3); }
+.am-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── 页头 ───────────────────────────────── */
+.am-head { margin: 0 0 20px; padding-right: 260px; }
+.am-head h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; }
+.am-sub { margin: 4px 0 0; color: var(--ink-2); }
+.am-head-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 12px; color: var(--ink-2); }
+.am-head-meta b { font-family: var(--font-mono); font-weight: 400; color: var(--ink-3); margin-right: 6px; }
+.am-intro { margin-top: 12px; max-width: 80ch; }
+
+/* ── sheet 图纸板 ────────────────────────── */
+.am-sheet { max-width: 1680px; margin: 0 auto; padding: 32px 28px 40px; }
+.am-frame { position: relative; }
+.am-grid {
+  display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 20px; align-items: start;
+}
+.am-ruler { display: none; }
+html[data-theme="blueprint"] .am-frame { border: 1px solid var(--line); padding: 30px; }
+html[data-theme="blueprint"] .am-frame::before {
+  content: ""; position: absolute; inset: 18px; border: 1px solid var(--line); pointer-events: none;
+}
+html[data-theme="blueprint"] .am-ruler {
+  display: flex; position: absolute; font: 10px/1 var(--font-mono); color: var(--ink-3);
+}
+.am-ruler span { flex: 1; display: flex; align-items: center; justify-content: center; }
+.am-ruler--top, .am-ruler--bottom { left: 18px; right: 18px; height: 18px; }
+.am-ruler--top { top: 0; }
+.am-ruler--bottom { bottom: 0; }
+.am-ruler--left, .am-ruler--right { top: 18px; bottom: 18px; width: 18px; flex-direction: column; }
+.am-ruler--left { left: 0; }
+.am-ruler--right { right: 0; }
+.am-ruler--top span + span, .am-ruler--bottom span + span { border-left: 1px solid var(--line); }
+.am-ruler--left span + span, .am-ruler--right span + span { border-top: 1px solid var(--line); }
+
+/* ── 面板 ───────────────────────────────── */
+.am-panel {
+  background: var(--paper); border: var(--bw) solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); min-width: 0; overflow: hidden;
+}
+.am-panel-head {
+  display: flex; align-items: stretch; gap: 0; border-bottom: var(--bw) solid var(--line); min-height: 34px;
+}
+.am-panel-id {
+  display: flex; align-items: center; justify-content: center; min-width: 34px; padding: 0 8px;
+  background: var(--head-bg); color: var(--head-fg); font-weight: 600; font-size: 14px;
+}
+html[data-theme="shadcn"] .am-panel-id { border-radius: 6px; min-width: 24px; height: 24px; margin: 9px 0 9px 14px; font-size: 12px; }
+html[data-theme="shadcn"] .am-panel-head { border-bottom-width: 1px; }
+.am-panel-head h2 { margin: 0; padding: 7px 12px; font-size: 15px; font-weight: 600; flex: 1; display: flex; align-items: center; }
+.am-panel-meta { align-self: center; padding: 0 12px; font: 11px/1.3 var(--font-mono); color: var(--ink-2); text-align: right; }
+.am-panel-body { padding: 14px 16px 16px; }
+.am-panel-body > * + * { margin-top: 12px; }
+
+/* ── Markdown 正文 ───────────────────────── */
+.am-md > :first-child { margin-top: 0; }
+.am-md > :last-child { margin-bottom: 0; }
+.am-md p { margin: 0 0 8px; }
+.am-md ul, .am-md ol { margin: 0 0 8px; padding-left: 20px; }
+.am-md li + li { margin-top: 3px; }
+.am-md h3, .am-md h4 { margin: 14px 0 6px; font-size: 13px; }
+.am-md a { color: var(--accent); }
+.am-md blockquote { margin: 0 0 8px; padding: 2px 12px; border-left: 3px solid var(--line-2); color: var(--ink-2); }
+.am-md :not(pre) > code { font-size: 0.9em; background: var(--fill); padding: 1px 5px; border-radius: 4px; }
+.am-md hr { border: 0; border-top: 1px solid var(--line-2); margin: 12px 0; }
+.am-md table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.am-md th {
+  text-align: left; font: 11px/1.3 var(--font-mono); color: var(--ink-2); font-weight: 400;
+  padding: 6px 10px; border-bottom: 1px solid var(--line-2);
+}
+.am-md td { padding: 7px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.am-md tbody tr:nth-child(even) td { background: var(--fill); }
+.am-table-wrap { overflow-x: auto; }
+.am-code {
+  margin: 0; padding: 12px 14px; background: var(--fill); border: 1px solid var(--line-2);
+  border-radius: var(--radius); overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+}
+
+/* ── 状态徽章 ok / no / warn ──────────────── */
+.am-status { white-space: nowrap; font-weight: 500; }
+.am-status--ok { color: var(--ok); }
+.am-status--no { color: var(--err); }
+.am-status--warn { color: var(--warn); }
+.am-status-icon { display: inline-block; width: 1.1em; font-weight: 700; }
+
+/* ── callout ─────────────────────────────── */
+.am-callout {
+  border: 1px solid var(--line-2); border-left: 3px solid var(--accent); background: var(--accent-bg);
+  padding: 10px 14px; border-radius: var(--radius);
+}
+.am-callout--ok { border-left-color: var(--ok); background: var(--ok-bg); }
+.am-callout--warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.am-callout--err { border-left-color: var(--err); background: var(--err-bg); }
+.am-callout-title { font-weight: 600; margin-bottom: 4px; }
+
+/* ── kv 标题栏格 ─────────────────────────── */
+.am-kv {
+  display: grid; grid-template-columns: repeat(var(--kv-cols, 2), minmax(0, 1fr)); margin: 0;
+  border-top: var(--bw) solid var(--line); border-left: var(--bw) solid var(--line);
+}
+.am-kv-cell { border-right: var(--bw) solid var(--line); border-bottom: var(--bw) solid var(--line); padding: 6px 10px 8px; min-width: 0; }
+.am-kv-cell--wide { grid-column: 1 / -1; }
+.am-kv dt { font: 11px/1.4 var(--font-mono); color: var(--ink-2); }
+.am-kv dd { margin: 2px 0 0; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.am-kv-cell--wide dd { font-size: 17px; font-weight: 600; }
+html[data-theme="shadcn"] .am-kv { border-color: var(--line); border-radius: var(--radius); overflow: hidden; }
+
+/* ── timeline ────────────────────────────── */
+.am-timeline { list-style: none; margin: 0; padding: 0; }
+.am-timeline--h { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); padding-top: 4px; }
+.am-timeline--h li { position: relative; text-align: center; padding: 0 6px; }
+.am-timeline--h li::before {
+  content: ""; position: absolute; top: 31px; left: 0; right: 0; border-top: var(--bw) solid var(--line);
+}
+.am-timeline--h li:first-child::before { left: 50%; }
+.am-timeline--h li:last-child::before { right: 50%; }
+.am-tl-when { display: block; font-size: 15px; font-weight: 500; height: 24px; }
+.am-tl-dot {
+  position: relative; display: block; width: 11px; height: 11px; margin: 2px auto 8px;
+  border: var(--bw) solid var(--line); border-radius: 50%; background: var(--paper);
+}
+.am-tl-item--hi .am-tl-dot { background: var(--accent); border-color: var(--accent); }
+.am-tl-title { display: block; font-size: 12.5px; font-weight: 500; }
+.am-tl-text { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.45; }
+.am-timeline--v li { position: relative; padding: 0 0 14px 22px; }
+.am-timeline--v li::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: -6px; border-left: var(--bw) solid var(--line-2); }
+.am-timeline--v li:last-child::before { display: none; }
+.am-timeline--v .am-tl-dot { position: absolute; left: 0; top: 4px; margin: 0; }
+.am-timeline--v .am-tl-when { display: inline; height: auto; font: 12px var(--font-mono); color: var(--ink-2); margin-right: 8px; }
+.am-timeline--v .am-tl-title { display: inline; font-size: 14px; }
+.am-timeline--v .am-tl-text { margin-top: 2px; }
+
+/* ── annot 句子标注 ──────────────────────── */
+.am-annot + .am-annot { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.am-annot-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.am-annot-meta { font: 11px var(--font-mono); font-weight: 400; color: var(--ink-2); }
+.am-annot-scroll { overflow-x: auto; }
+.am-annot-line {
+  position: relative; display: inline-block; white-space: pre; font: 14px/1.6 var(--font-mono);
+  padding-bottom: calc(var(--rows, 0) * 17px + 14px);
+}
+.am-annot-line--wrap { display: block; white-space: normal; padding-bottom: 10px; }
+.am-annot-line--wrap .am-seg { white-space: nowrap; }
+.am-seg { position: relative; }
+.am-seg::after {
+  content: ""; position: absolute; left: 1px; right: 1px; top: calc(100% + 1px); height: 5px;
+  border: 1px solid var(--accent); border-top: 0;
+}
+.am-seg-n {
+  position: absolute; left: 0; top: calc(100% + 8px + var(--row, 0) * 17px);
+  font: 11px/16px var(--font-sans); color: var(--accent); white-space: nowrap;
+}
+.am-seg--err { color: var(--err); }
+.am-seg--err::after { border-color: var(--err); }
+.am-seg--err .am-seg-n { color: var(--err); }
+.am-annot-caption { font-size: 12px; color: var(--ink-2); }
+
+/* ── limits 限值条 ───────────────────────── */
+.am-lim + .am-lim { margin-top: 14px; }
+.am-lim-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; margin-bottom: 4px; }
+.am-lim-val { font: 12px var(--font-mono); color: var(--accent); white-space: nowrap; }
+.am-lim-track { position: relative; height: 12px; border: 1px solid var(--line-2); background: var(--fill); border-radius: calc(var(--radius) / 2); }
+.am-lim-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-bg); border-right: 1px solid var(--accent); }
+.am-lim-mark { position: absolute; top: -4px; bottom: -4px; border-left: 2px solid var(--accent); }
+.am-lim.is-over .am-lim-fill { background: var(--err-bg); border-right-color: var(--err); }
+.am-lim.is-over .am-lim-val { color: var(--err); }
+.am-lim-ticks { position: relative; height: 16px; font: 10px/16px var(--font-mono); color: var(--ink-3); }
+.am-lim-ticks span { position: absolute; transform: translateX(-50%); }
+.am-lim-ticks span:first-child { transform: none; }
+.am-lim-note { font-size: 11px; color: var(--ink-2); margin-left: 6px; }
+
+/* ── tree 结构树 ─────────────────────────── */
+.am-tree { font-size: 13px; }
+.am-tree-root { display: flex; justify-content: center; position: relative; padding-bottom: 18px; }
+.am-tree-root::after { content: ""; position: absolute; bottom: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-root--solo { padding-bottom: 12px; }
+.am-tree-root--solo::after { display: none; }
+.am-tree-box {
+  border: var(--bw) solid var(--line); background: var(--paper); padding: 6px 14px; text-align: center;
+  border-radius: var(--radius); font-weight: 600;
+}
+.am-tree-box small { display: block; font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.am-tree-box--root { background: var(--accent-bg); font-size: 15px; padding: 8px 28px; }
+.am-tree-cols { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
+.am-tree-col { position: relative; padding: 18px 8px 0; min-width: 0; }
+.am-tree-col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; border-top: var(--bw) solid var(--line); }
+.am-tree-col:first-child::before { left: 50%; }
+.am-tree-col:last-child::before { right: 50%; }
+.am-tree-col::after { content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-list, .am-tree-list ul { list-style: none; margin: 0; padding: 0; }
+.am-tree-col > .am-tree-list { margin: 8px 0 0 14px; }
+.am-tree-list ul { margin-left: 16px; }
+.am-tree-list li { position: relative; padding: 3px 0 3px 18px; }
+.am-tree-list li::before { content: ""; position: absolute; left: 0; top: 0.95em; width: 12px; border-top: 1px solid var(--ink-3); }
+.am-tree-list li::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--ink-3); }
+.am-tree-list li:last-child::after { bottom: auto; height: 0.95em; }
+.am-tree-tag { font: 11px var(--font-mono); color: var(--ink-3); margin-right: 4px; }
+.am-tree code { font: 12px var(--font-mono); }
+.am-tree-sub { display: block; font-size: 11.5px; color: var(--ink-2); }
+.am-tree-hi > .am-tree-label { color: var(--accent); font-weight: 600; }
+
+/* ── 图（flow / sequence）───────────────── */
+.am-diagram { margin: 0; overflow-x: auto; text-align: center; }
+.am-diagram svg { max-width: 100%; height: auto; font-family: var(--font-sans); }
+.am-diagram text { fill: var(--ink); font-size: 13px; }
+.am-node-shape { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-node--hi .am-node-shape { fill: var(--accent-bg); stroke: var(--accent); }
+.am-node--hi text { fill: var(--accent); font-weight: 600; }
+.am-edge { fill: none; stroke: var(--ink-2); stroke-width: 1.3; }
+.am-edge--dashed { stroke-dasharray: 5 4; }
+.am-arrow { fill: var(--ink-2); }
+.am-edge-label rect { fill: var(--paper); }
+.am-diagram .am-edge-label text { fill: var(--accent); font-size: 11.5px; }
+.am-cluster { fill: var(--fill); stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 4 3; }
+.am-diagram .am-cluster-label { fill: var(--ink-2); font: 11px var(--font-mono); }
+.am-lifeline { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 4 4; }
+.am-actor { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-note { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 1; }
+.am-diagram .am-step { fill: var(--ink-3); font: 10px var(--font-mono); }
+
+/* ── doc 线性讲解 ────────────────────────── */
+.am-doc { max-width: 1120px; margin: 0 auto; padding: 40px 28px 64px; }
+.am-doc-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
+.am-doc-layout--notoc { grid-template-columns: minmax(0, 1fr); max-width: 860px; }
+.am-toc { position: sticky; top: 24px; font-size: 13px; }
+.am-toc a { display: block; color: var(--ink-2); text-decoration: none; padding: 4px 0 4px 10px; border-left: 2px solid var(--line-2); }
+.am-toc a:hover { color: var(--ink); border-left-color: var(--accent); }
+.am-doc-body > .am-panel + .am-panel { margin-top: 20px; }
+
+/* ── 响应式与打印 ─────────────────────────── */
+@media (max-width: 1100px) {
+  .am-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .am-grid > .am-panel { grid-column: auto !important; }
+  .am-grid > .am-panel.am-span-wide { grid-column: 1 / -1 !important; }
+}
+@media (max-width: 760px) {
+  .am-sheet, .am-doc { padding: 56px 12px 24px; }
+  .am-head { padding-right: 0; }
+  .am-grid { grid-template-columns: minmax(0, 1fr); }
+  .am-grid > .am-panel.am-span-wide { grid-column: auto !important; }
+  html[data-theme="blueprint"] .am-frame { padding: 0; border: 0; }
+  html[data-theme="blueprint"] .am-frame::before, html[data-theme="blueprint"] .am-ruler { display: none; }
+  .am-doc-layout { grid-template-columns: minmax(0, 1fr); }
+  .am-toc { position: static; }
+  .am-timeline--h { grid-template-columns: minmax(0, 1fr); }
+  .am-tree-cols { grid-template-columns: minmax(0, 1fr); }
+}
+.am-colophon { text-align: center; padding: 0 0 28px; font: 11px var(--font-mono); color: var(--ink-3); }
+
+@media print {
+  .am-toolbar { display: none; }
+  body { background: var(--paper); }
+  .am-panel { break-inside: avoid; box-shadow: none; }
+}
+.am-panel--bare { border: 0; background: transparent; box-shadow: none; }
+.am-panel--bare > .am-panel-body { padding: 0; }
+.am-panel--bare .am-kv { background: var(--paper); }
+
+</style>
+</head>
+<body>
+<div class="am-toolbar">
+<button class="am-btn" type="button" data-am="theme" data-labels="{&quot;blueprint&quot;:&quot;主题：图纸&quot;,&quot;shadcn&quot;:&quot;主题：卡片&quot;}">主题：图纸</button>
+<button class="am-btn" type="button" data-am="mode" data-labels="{&quot;auto&quot;:&quot;明暗：跟随系统&quot;,&quot;light&quot;:&quot;明暗：亮&quot;,&quot;dark&quot;:&quot;明暗：暗&quot;}">明暗：跟随系统</button>
+<button class="am-btn" type="button" data-am="copy" data-done="已复制 ✓">复制源稿</button>
+</div>
+<main class="am-doc">
+<header class="am-head"><h1>SGLang 如何保留可复用前缀的 Index K</h1><p class="am-sub">请求释放、缓存淘汰、跨层恢复是三件不同的事</p></header>
+<div class="am-doc-layout">
+<nav class="am-toc" aria-label="目录"><a href="#panel-A">A · 先判断 P 到底释放了什么</a><a href="#panel-B">B · L1 的 Index K 与 KV 使用关联索引</a><a href="#panel-C">C · HiCache 把 Index K 保存成附属数据</a><a href="#panel-D">D · 跨实例复用通过共享存储路径</a><a href="#panel-E">E · 对当前 mempool 设计的启示</a><a href="#panel-F">F · 源码与文档</a></nav><div class="am-doc-body">
+<section class="am-panel" id="panel-A">
+<header class="am-panel-head"><span class="am-panel-id">A</span><h2>先判断 P 到底释放了什么</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>下面讨论 DSA 模型的原生缓存路径。
+代码基点是当前 checkout 的 d328af12bd。
+已交叉查阅官方 HiCache 与 HiSparse 文档。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>A 已交接给 D 后，P 的状态</th>
+<th>B 怎样复用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>请求已释放，L1 仍保留前缀</td>
+<td>引用本地 HBM 中的 KV 与 Index K</td>
+</tr>
+<tr>
+<td>HBM 页已淘汰，完整 L2 备份还在</td>
+<td>从本地 DRAM 恢复 KV 与 Index K</td>
+</tr>
+<tr>
+<td>本地已无完整缓存，共享 L3 中存在</td>
+<td>从存储获取完整状态，再恢复到 HBM</td>
+</tr>
+<tr>
+<td>所有可用层都缺少必要状态</td>
+<td>缩短命中长度，重新计算缺失部分</td>
+</tr>
+</tbody></table></div>
+<p>请求退出不意味着 radix cache 马上丢弃 HBM 页。
+真正淘汰后，原 HBM 槽位可以分配给其他请求。
+残留字节不能再当作有效缓存。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-B">
+<header class="am-panel-head"><span class="am-panel-id">B</span><h2>L1 的 Index K 与 KV 使用关联索引</h2></header>
+<div class="am-panel-body"><div class="am-tree"><div class="am-tree-root"><div class="am-tree-box am-tree-box--root" data-key="同一个可复用前缀" data-step="0">同一个可复用前缀</div></div><div class="am-tree-cols" style="--n: 3"><div class="am-tree-col"><div class="am-tree-box" data-key="radix tree" data-step="1">radix tree<small>保存前缀与 KV 位置、引用状态</small></div></div><div class="am-tree-col"><div class="am-tree-box" data-key="GPU 主 KV buffer" data-step="2">GPU 主 KV buffer<small>保存 compact KV</small></div></div><div class="am-tree-col"><div class="am-tree-box" data-key="GPU IndexKeyCache" data-step="3">GPU IndexKeyCache<small>保存 Index K 与必要 scale</small></div></div></div></div>
+<div class="am-md"><p>DSATokenToKVPool 管理主 KV 与 IndexKeyCache。
+两个 buffer 的物理地址可以不同。
+对应页的身份和生命周期保持关联。
+锁引用保护缓存页；解除引用后才有机会被淘汰。</p>
+<p>P/D 交接也传输 DSA 状态，D 得到本地所需数据。
+该交接不会把 D 的 HBM 自动变成 P 的 prefix cache。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-C">
+<header class="am-panel-head"><span class="am-panel-id">C</span><h2>HiCache 把 Index K 保存成附属数据</h2></header>
+<div class="am-panel-body"><figure class="am-diagram am-seq"><svg viewBox="0 0 655 310" width="655" height="310" role="img" aria-label="时序图：P_HBM、P_DRAM、缓存控制器、新请求B、B计算" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am1-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><line class="am-lifeline" x1="54" y1="42" x2="54" y2="306"/><g data-key="P_HBM"><rect class="am-actor" x="12" y="8" width="84" height="34" rx="2"/><text x="54" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">P_HBM</text></g><line class="am-lifeline" x1="238.5" y1="42" x2="238.5" y2="306"/><g data-key="P_DRAM"><rect class="am-actor" x="196.4" y="8" width="84.2" height="34" rx="2"/><text x="238.5" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">P_DRAM</text></g><line class="am-lifeline" x1="364.5" y1="42" x2="364.5" y2="306"/><g data-key="缓存控制器"><rect class="am-actor" x="318" y="8" width="93" height="34" rx="2"/><text x="364.5" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">缓存控制器</text></g><line class="am-lifeline" x1="488.4" y1="42" x2="488.4" y2="306"/><g data-key="新请求B"><rect class="am-actor" x="446.4" y="8" width="84" height="34" rx="2"/><text x="488.4" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">新请求B</text></g><line class="am-lifeline" x1="600.4" y1="42" x2="600.4" y2="306"/><g data-key="B计算"><rect class="am-actor" x="558.4" y="8" width="84" height="34" rx="2"/><text x="600.4" y="25" text-anchor="middle" dominant-baseline="central" font-weight="600">B计算</text></g><g data-step="0"><text x="146.3" y="70" text-anchor="middle">backup 主 KV 与 INDEXER</text><path class="am-edge" d="M54,80 L236.5,80" marker-end="url(#am1-arrow)"/></g><g data-step="1"><text x="301.5" y="110" text-anchor="middle">完成后确认可恢复</text><path class="am-edge am-edge--dashed" d="M238.5,120 L362.5,120" marker-end="url(#am1-arrow)"/></g><g data-step="2"><text x="209.3" y="150" text-anchor="middle">允许回收符合条件的页</text><path class="am-edge" d="M364.5,160 L56,160" marker-end="url(#am1-arrow)"/></g><g data-step="3"><text x="426.5" y="190" text-anchor="middle">命中本地 L2 前缀</text><path class="am-edge" d="M488.4,200 L366.5,200" marker-end="url(#am1-arrow)"/></g><g data-step="4"><text x="146.3" y="230" text-anchor="middle">恢复本层 KV 与 INDEXER</text><path class="am-edge" d="M238.5,240 L56,240" marker-end="url(#am1-arrow)"/></g><g data-step="5"><text x="327.2" y="270" text-anchor="middle">对应层所需数据已就绪</text><path class="am-edge am-edge--dashed" d="M54,280 L598.4,280" marker-end="url(#am1-arrow)"/></g></svg></figure>
+<div class="am-md"><p>图中采用有常驻 L2 缓存的 HiCache 模式。
+write-through 或 write-back 决定备份触发时机。
+能否恢复，取决于备份是否真正完成。</p>
+<p>DSAIndexerPoolHost 在 DRAM 中保存 Index K 与 scale。
+INDEXER 作为 sidecar，跟随主 KV 的页索引传输。
+按层恢复先提交本层各 buffer，再记录本层完成事件。
+不同 buffer 不必放进一块连续 allocation。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-D">
+<header class="am-panel-head"><span class="am-panel-id">D</span><h2>跨实例复用通过共享存储路径</h2></header>
+<div class="am-panel-body"><figure class="am-diagram am-flow"><svg viewBox="0 0 1074 63" width="1074" height="63" role="img" aria-label="流程图：生产实例完整状态、共享L3、消费实例L2、消费实例HBM、Prefill" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am2-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><g></g><g><g data-step="0"><path class="am-edge" d="M146,31.5 L180.6,31.5 Q215.3,31.5 249.9,31.5 L284.5,31.5" marker-end="url(#am2-arrow)"/><g class="am-edge-label"><rect x="170" y="22.5" width="90.5" height="18" rx="3"/><text x="215.3" y="31.5" text-anchor="middle" dominant-baseline="central">配置备份后写入</text></g></g><g data-step="1"><path class="am-edge" d="M354.6,31.5 L379.9,31.5 Q405.2,31.5 430.6,31.5 L455.9,31.5" marker-end="url(#am2-arrow)"/><g class="am-edge-label"><rect x="378.6" y="22.5" width="53.2" height="18" rx="3"/><text x="405.2" y="31.5" text-anchor="middle" dominant-baseline="central">prefetch</text></g></g><g data-step="2"><path class="am-edge" d="M552,31.5 L595.1,31.5 Q638.1,31.5 681.2,31.5 L724.3,31.5" marker-end="url(#am2-arrow)"/><g class="am-edge-label"><rect x="576" y="22.5" width="124.3" height="18" rx="3"/><text x="638.1" y="31.5" text-anchor="middle" dominant-baseline="central">恢复主KV与INDEXER</text></g></g><g data-step="3"><path class="am-edge" d="M833.1,31.5 L873.5,31.5 Q913.9,31.5 954.3,31.5 L994.7,31.5" marker-end="url(#am2-arrow)"/><g class="am-edge-label"><rect x="857.2" y="22.5" width="113.5" height="18" rx="3"/><text x="913.9" y="31.5" text-anchor="middle" dominant-baseline="central">所需状态完整后计算</text></g></g></g><g><g class="am-node am-node--rect" data-key="生产实例完整状态" data-step="0"><rect class="am-node-shape" x="14" y="14" width="132" height="35" rx="3"/><text x="80" y="31.5" text-anchor="middle" dominant-baseline="central">生产实例完整状态</text></g><g class="am-node am-node--rect" data-key="共享L3" data-step="0"><rect class="am-node-shape" x="284.5" y="14" width="70.1" height="35" rx="3"/><text x="319.6" y="31.5" text-anchor="middle" dominant-baseline="central">共享L3</text></g><g class="am-node am-node--rect" data-key="消费实例L2" data-step="1"><rect class="am-node-shape" x="455.9" y="14" width="96.1" height="35" rx="3"/><text x="503.9" y="31.5" text-anchor="middle" dominant-baseline="central">消费实例L2</text></g><g class="am-node am-node--rect" data-key="消费实例HBM" data-step="2"><rect class="am-node-shape" x="724.3" y="14" width="108.9" height="35" rx="3"/><text x="778.7" y="31.5" text-anchor="middle" dominant-baseline="central">消费实例HBM</text></g><g class="am-node am-node--rect" data-key="Prefill" data-step="3"><rect class="am-node-shape" x="994.7" y="14" width="64.9" height="35" rx="3"/><text x="1027.1" y="31.5" text-anchor="middle" dominant-baseline="central">Prefill</text></g></g></svg></figure>
+<div class="am-md"><p>普通 HiCache 的 L1/L2 归各实例所有。
+跨实例共享依赖后端配置和兼容的缓存身份。
+Mooncake 中 KV 与 INDEXER 可保存成不同对象。
+查找与读入都要考虑必需 sidecar 的完成范围。</p>
+<p>示例：主 KV 有 10 页，INDEXER 只有连续的前 7 页。
+这次 DSA 恢复最多使用完整的前 7 页。
+无法仅凭主 KV 的 10 页宣布全部命中。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-E">
+<header class="am-panel-head"><span class="am-panel-id">E</span><h2>对当前 mempool 设计的启示</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>可复用内容应包含 KV、Index K 和必要 scale。
+缓存目录还需表明这些状态是否可恢复。
+用户已接受将 prefill Index K 与必要 scale 存入 alive DRAM。
+这份副本服务复用与 backup，具体布局和副本数待细化。</p>
+<p>HiSparse 是另一条需要区分的路径。
+它让 decode 从 host KV 中按需取回 sparse 数据。
+当前校验要求 HiSparse 实例关闭 radix cache。
+不能直接把其请求存储视为已经可供其他请求复用。</p>
+<p>P 仍可用自己的普通 prefix cache 节省 prefill 计算。
+HiSparse D 仍为新请求接收完整 prompt 主 KV。
+P 的计算命中与 D 的 sparse 热数据命中是不同概念。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-F">
+<header class="am-panel-head"><span class="am-panel-id">F</span><h2>源码与文档</h2></header>
+<div class="am-panel-body"><div class="am-md"><ul>
+<li><a href="native-index-k-lifecycle.md">完整源码核对记录</a></li>
+<li><a href="../../python/sglang/srt/mem_cache/index_key_cache.py">GPU IndexKeyCache</a></li>
+<li><a href="../../python/sglang/srt/mem_cache/hybrid_cache/hybrid_pool_assembler.py">HiCache DSA stack</a></li>
+<li><a href="../../python/sglang/srt/mem_cache/pool_host/dsa.py">DRAM Index K pool</a></li>
+<li><a href="../../python/sglang/srt/mem_cache/l2_transfer.py">按层传输</a></li>
+<li><a href="https://docs.sglang.io/docs/advanced_features/hicache_design">官方 HiCache 层级与共享范围</a></li>
+<li><a href="https://docs.sglang.io/docs/advanced_features/hicache_best_practices">官方 P/D 与缓存备份配置</a></li>
+<li><a href="https://docs.sglang.io/docs/advanced_features/hisparse_guide">官方 HiSparse 说明</a></li>
+</ul>
+<p>本轮只核对源码和文档，没有运行硬件测试。</p>
+</div></div>
+</section>
+</div>
+</div>
+</main>
+<footer class="am-colophon">Generated by Answer me with HTML 0.4.3 · 2026-10-17 15:59</footer>
+<textarea id="am-source" hidden readonly aria-hidden="true">---
+title: SGLang 如何保留可复用前缀的 Index K
+subtitle: 请求释放、缓存淘汰、跨层恢复是三件不同的事
+template: doc
+theme: blueprint
+lang: zh
+---
+
+## A 先判断 P 到底释放了什么
+
+下面讨论 DSA 模型的原生缓存路径。
+代码基点是当前 checkout 的 d328af12bd。
+已交叉查阅官方 HiCache 与 HiSparse 文档。
+
+| A 已交接给 D 后，P 的状态 | B 怎样复用 |
+|---|---|
+| 请求已释放，L1 仍保留前缀 | 引用本地 HBM 中的 KV 与 Index K |
+| HBM 页已淘汰，完整 L2 备份还在 | 从本地 DRAM 恢复 KV 与 Index K |
+| 本地已无完整缓存，共享 L3 中存在 | 从存储获取完整状态，再恢复到 HBM |
+| 所有可用层都缺少必要状态 | 缩短命中长度，重新计算缺失部分 |
+
+请求退出不意味着 radix cache 马上丢弃 HBM 页。
+真正淘汰后，原 HBM 槽位可以分配给其他请求。
+残留字节不能再当作有效缓存。
+
+## B L1 的 Index K 与 KV 使用关联索引
+
+```tree
+同一个可复用前缀
+  radix tree | 保存前缀与 KV 位置、引用状态
+  GPU 主 KV buffer | 保存 compact KV
+  GPU IndexKeyCache | 保存 Index K 与必要 scale
+```
+
+DSATokenToKVPool 管理主 KV 与 IndexKeyCache。
+两个 buffer 的物理地址可以不同。
+对应页的身份和生命周期保持关联。
+锁引用保护缓存页；解除引用后才有机会被淘汰。
+
+P/D 交接也传输 DSA 状态，D 得到本地所需数据。
+该交接不会把 D 的 HBM 自动变成 P 的 prefix cache。
+
+## C HiCache 把 Index K 保存成附属数据
+
+```sequence
+P_HBM -&gt; P_DRAM: backup 主 KV 与 INDEXER
+P_DRAM --&gt; 缓存控制器: 完成后确认可恢复
+缓存控制器 -&gt; P_HBM: 允许回收符合条件的页
+新请求B -&gt; 缓存控制器: 命中本地 L2 前缀
+P_DRAM -&gt; P_HBM: 恢复本层 KV 与 INDEXER
+P_HBM --&gt; B计算: 对应层所需数据已就绪
+```
+
+图中采用有常驻 L2 缓存的 HiCache 模式。
+write-through 或 write-back 决定备份触发时机。
+能否恢复，取决于备份是否真正完成。
+
+DSAIndexerPoolHost 在 DRAM 中保存 Index K 与 scale。
+INDEXER 作为 sidecar，跟随主 KV 的页索引传输。
+按层恢复先提交本层各 buffer，再记录本层完成事件。
+不同 buffer 不必放进一块连续 allocation。
+
+## D 跨实例复用通过共享存储路径
+
+```flow LR
+生产实例完整状态 -&gt; 共享L3: 配置备份后写入
+共享L3 -&gt; 消费实例L2: prefetch
+消费实例L2 -&gt; 消费实例HBM: 恢复主KV与INDEXER
+消费实例HBM -&gt; Prefill: 所需状态完整后计算
+```
+
+普通 HiCache 的 L1/L2 归各实例所有。
+跨实例共享依赖后端配置和兼容的缓存身份。
+Mooncake 中 KV 与 INDEXER 可保存成不同对象。
+查找与读入都要考虑必需 sidecar 的完成范围。
+
+示例：主 KV 有 10 页，INDEXER 只有连续的前 7 页。
+这次 DSA 恢复最多使用完整的前 7 页。
+无法仅凭主 KV 的 10 页宣布全部命中。
+
+## E 对当前 mempool 设计的启示
+
+可复用内容应包含 KV、Index K 和必要 scale。
+缓存目录还需表明这些状态是否可恢复。
+用户已接受将 prefill Index K 与必要 scale 存入 alive DRAM。
+这份副本服务复用与 backup，具体布局和副本数待细化。
+
+HiSparse 是另一条需要区分的路径。
+它让 decode 从 host KV 中按需取回 sparse 数据。
+当前校验要求 HiSparse 实例关闭 radix cache。
+不能直接把其请求存储视为已经可供其他请求复用。
+
+P 仍可用自己的普通 prefix cache 节省 prefill 计算。
+HiSparse D 仍为新请求接收完整 prompt 主 KV。
+P 的计算命中与 D 的 sparse 热数据命中是不同概念。
+
+## F 源码与文档
+
+- [完整源码核对记录](native-index-k-lifecycle.md)
+- [GPU IndexKeyCache](../../python/sglang/srt/mem_cache/index_key_cache.py)
+- [HiCache DSA stack](../../python/sglang/srt/mem_cache/hybrid_cache/hybrid_pool_assembler.py)
+- [DRAM Index K pool](../../python/sglang/srt/mem_cache/pool_host/dsa.py)
+- [按层传输](../../python/sglang/srt/mem_cache/l2_transfer.py)
+- [官方 HiCache 层级与共享范围](https://docs.sglang.io/docs/advanced_features/hicache_design)
+- [官方 P/D 与缓存备份配置](https://docs.sglang.io/docs/advanced_features/hicache_best_practices)
+- [官方 HiSparse 说明](https://docs.sglang.io/docs/advanced_features/hisparse_guide)
+
+本轮只核对源码和文档，没有运行硬件测试。
+</textarea>
+<script>
+(() => {
+  const root = document.documentElement;
+  const cycle = (list, cur) => list[(list.indexOf(cur) + 1) % list.length];
+  const label = (btn, value) => {
+    const map = JSON.parse(btn.dataset.labels || '{}');
+    btn.textContent = map[value] || value;
+  };
+  const bind = (name, attr, values) => {
+    const btn = document.querySelector(`[data-am="${name}"]`);
+    if (!btn) return;
+    label(btn, root.getAttribute(attr));
+    btn.addEventListener('click', () => {
+      const next = cycle(values, root.getAttribute(attr));
+      root.setAttribute(attr, next);
+      label(btn, next);
+    });
+  };
+  bind('theme', 'data-theme', ['blueprint', 'shadcn']);
+  bind('mode', 'data-mode', ['auto', 'light', 'dark']);
+
+  const copyBtn = document.querySelector('[data-am="copy"]');
+  copyBtn?.addEventListener('click', async () => {
+    const text = document.getElementById('am-source').value;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = Object.assign(document.createElement('textarea'), { value: text });
+      document.body.append(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    const original = copyBtn.textContent;
+    copyBtn.textContent = copyBtn.dataset.done;
+    setTimeout(() => { copyBtn.textContent = original; }, 1400);
+  });
+})();
+</script>
+</body>
+</html>

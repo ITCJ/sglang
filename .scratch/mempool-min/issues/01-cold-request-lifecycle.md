@@ -10,7 +10,7 @@
 
 **Status:** ready-for-agent
 
-**State:** open
+**State:** closed
 
 **本轮依据：** 2026-10-23 用户确认[四票详细回顾](../stage-0-ticket-review.md)，
 要求按该内容重新拆票。本票仍是第一个完整功能切片；首次发布记录保留在 Comments。
@@ -90,38 +90,38 @@ P DONE、早到／迟到 DONE 和取消回滚；旧 RELEASE_ACK 不等于新 fre
 
 ## Acceptance criteria
 
-- [ ] `page_size=B`实际传到Main、P/D worker、DRAM池、native allocator、KV池与Index K传输；逐rank严格相等。当前集成仅放行128，不支持的值及不一致配置须拒绝；页哈希、4096/5120页数、整槽额度、预留和清理由B推导。
+- [x] `page_size=B`实际传到Main、P/D worker、DRAM池、native allocator、KV池与Index K传输；逐rank严格相等。当前集成仅放行128，不支持的值及不一致配置须拒绝；页哈希、4096/5120页数、整槽额度、预留和清理由B推导。
 
-- [ ] Main Router、SR_P、SR_D 与实际推理 worker 接通；注册反映当前真实能力，
+- [x] Main Router、SR_P、SR_D 与实际推理 worker 接通；注册反映当前真实能力，
   首片未启用的 P alive Index K／prefix 不计为可用资源。网络接收只入队，
   TP 通信在 scheduler tick 中按一致顺序推进。
-- [ ] 通过真实服务完成两个内容不同的 4096-token 冷请求，生成上限 128；有实际
+- [x] 通过真实服务完成两个内容不同的 4096-token 冷请求，生成上限 128；有实际
   decode forward 与 mempool 取数，完整输出 token IDs 与同配置的既有正式
   mempool 冷算参考比较。参考也须在目标长度运行。
-- [ ] Main Router／SR 是分配和绑定的唯一来源，保留 opaque 页描述符和 worker
+- [x] Main Router／SR 是分配和绑定的唯一来源，保留 opaque 页描述符和 worker
   映射边界。P／D 可使用不同槽号，本侧各 rank 的分配结果一致。
-- [ ] 入口检查、足额 reserve 和整槽记账生效。未对齐、超长、超生成上限、容量不足
+- [x] 入口检查、足额 reserve 和整槽记账生效。未对齐、超长、超生成上限、容量不足
   及不支持的输入均不改变目录或账本；下一个请求不能绕过串行门。
-- [ ] D 在 alloc 时实际取走所需原生行和全部 HBM 页，后续从预留范围消费；
+- [x] D 在 alloc 时实际取走所需原生行和全部 HBM 页，后续从预留范围消费；
   覆盖提前 EOS、生成上限为 1、未使用页与实际尾页清理，无二次分配、重复 free、
   虚增有效 KV 长度或因已预留资源被误算为空闲不足而触发 retract。
-- [ ] D 等待 Router 的 prompt ready、全部必要 rank 的 Index K 和 handoff；首 token
+- [x] D 等待 Router 的 prompt ready、全部必要 rank 的 Index K 和 handoff；首 token
   同样受门控。P 原生 HBM／请求行可先于 D finished 释放，alive 仍可被 D 读取。
-- [ ] 接管 D drain、P DONE 和提前／迟到 DONE 触发的旧自动释放。D 原生清理完成后
+- [x] 接管 D drain、P DONE 和提前／迟到 DONE 触发的旧自动释放。D 原生清理完成后
   才报 finished；Router 下发 free，SR 实际归还后才报 free_ack 并恢复整槽额度。
-- [ ] 第二请求复用前一个请求真实归还的最小空闲槽。CPU 在 service／TP tick 边界
+- [x] 第二请求复用前一个请求真实归还的最小空闲槽。CPU 在 service／TP tick 边界
   验证迟到 rank、重复 ack、无 free 不复用、过早完成和账本一致性。
-- [ ] NPU 验证实际 P／D 数据来源、D Graph capture／replay、padding 行安全性及
+- [x] NPU 验证实际 P／D 数据来源、D Graph capture／replay、padding 行安全性及
   D 真实负载 ≤ 1；沿用必要的 P-only／D-only／混合复制验证，不要求每层两侧
   都有正字节传输。
-- [ ] error／timeout 走 fail-stop：不继续分配或提前归还，记录失败并由自运行入口
+- [x] error／timeout 走 fail-stop：不继续分配或提前归还，记录失败并由自运行入口
   清理自身进程。本票交付冷请求自运行入口及证据，明确尚未覆盖 prefix 命中。
-- [ ] 交付同一入口的常驻服务和冷请求验收模式，两机各执行一条命令；P 侧启动
+- [x] 交付同一入口的常驻服务和冷请求验收模式，两机各执行一条命令；P 侧启动
   Main 与 P，D 侧启动 D，SR 随 worker 加载。区分映射就绪与控制就绪，注册不全
   不接收请求，自动启动过程无双方互等。
-- [ ] 每次实现后立即更新目标页 D 的代码进度与验证状态，并同步 Markdown／HTML。
-- [ ] 完成本票适用的 CPU／静态检查和自运行测试入口，并记录实际结果与未执行项。
-- [ ] 用户完成本票要求的 NPU 验收，核对实现和证据并确认可以关闭。
+- [x] 每次实现后立即更新目标页 D 的代码进度与验证状态，并同步 Markdown／HTML。
+- [x] 完成本票适用的 CPU／静态检查和自运行测试入口，并记录实际结果与未执行项。
+- [x] 用户完成本票要求的 NPU 验收，核对实现和证据并确认可以关闭。
 
 ## 范围边界
 
@@ -319,3 +319,128 @@ P DONE、早到／迟到 DONE 和取消回滚；旧 RELEASE_ACK 不等于新 fre
   `PYTHONPATH=/tmp/mempool-http-startup-deps:/tmp/mempool-min-implementation/deps:/tmp/mempool-numa-test-deps-20261023:/tmp/mempool-min-implementation/transformers-deps:ascend-mempool-test/src /tmp/sglang-merge-venv/bin/python -m unittest discover -s ascend-mempool-test/tests/unit -v`。
   日志保存在开发机 `/tmp/ticket01-native-warmup-20261025/cpu-tests-final.log`。
   这是开发机临时依赖环境；NPU 用户继续使用仓库自运行 run_mempool_min.sh 入口。
+
+### 2026-10-26：31/32 自动化 NPU 验收首次通过，等待用户确认关闭
+
+- 用户回传 P/D 过滤后的 summary 与 P 侧 target/evidence.json；两端 status=passed，
+  git_sha 均为 7275f29a05c9a7b6ed2902a27f5a5702564bb6f0。
+  run-id=ticket01-3132-20261025-04；P=10.120.72.31，D=10.120.72.32。
+- 原始日志保留在两机 `/home/cryang/log/mempool-min/ticket01-3132-20261025-04/`。
+  本地[回传结果记录](../verification/ticket01-3132-20261025-04/user-reported-results.json)
+  为用户粘贴内容的转录，不是 agent 直接读取远端日志；完整 identity 未在本次粘贴中提供。
+- 两端身份检查 passed、differences=[]；fetch、reference、target 三阶段全部完成。
+  fetch 阶段包含 P-only/D-only/混合 NPU 取数适配器检查。
+- 四个正式用例通过：cold-a/cold-b 为不同内容的 4096-token prompt，各生成 128 token；
+  early-eos 为 128-token prompt，要求实际提前 stop；first-token 为 4096-token prompt、
+  生成上限 1，要求没有 D decode forward。全部完整 output IDs 与同长度参考一致。
+- 目标证据覆盖 P/D 各 16 rank、page_size=128、D Graph capture/replay、逐步单真实请求、
+  P native 提前释放、D drain 后显式 free、最小槽复用及账本恢复。
+  以上为该版本 check_target 的通过条件，依据为用户回传的 passed 报告。
+- 完成收据累计 prompt BM 读取行数为 71,847,392，decode BM 读取行数为 334,672。
+  两种来源均有实际读取；这些是跨层/rank/步骤累计行数，不是唯一 token 数或页数。
+- 故障注入主动暂停 P，Main 检测到 SR heartbeat timeout。两端报告同一请求
+  rid=ticket01-3132-20261025-04-5、room=2994005120307490；D 全部 16 rank 保留
+  native 预留和所有额度，automatic_free=false。最终 process_cleanup_verified=true，
+  paired_process_cleanup=passed; both owned groups stopped。
+- 原生 server warmup 适配在本轮参考/目标启动和严格日志检查中通过；此前导致退出的
+  freeze_gc 启动 Traceback 没有再次阻断本轮。无需为同一问题重跑或扩大功能代码修改。
+- 范围仍为 ticket01 cold requests only；prefix 未实现/未覆盖，物理 NUMA 页落点未验证。
+  输出一致性仅指上述测试与既有正式 mempool 参考一致，不扩大为独立模型质量结论。
+- 自动化硬件验收通过。报告 user_accepted=false；本次用户提供结果，尚未明确确认关闭。
+  按阶段流程保留 State=open 和待人工确认项，ticket02 旧实现仍已撤回、等待重写。
+
+本轮用户执行的入口（在各自容器 `/home/cryang/sglang`，对应上述提交）：
+
+```bash
+# 31
+bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role prefill --mode acceptance \
+  --config /home/cryang/mempool-min-ticket01-3132.json \
+  --run-id ticket01-3132-20261025-04
+
+# 32
+bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role decode --mode acceptance \
+  --config /home/cryang/mempool-min-ticket01-3132.json \
+  --run-id ticket01-3132-20261025-04
+```
+
+### 2026-10-26：交付独立 GLM-5.2 手动 curl demo 入口
+
+用户要求在相邻 `ascend-sglang-script/pd-disaggregation` 中，参考现有
+`glm52mempool.sh` 与 `router.sh` 新增独立 demo，启动后手工输入一句话检查正确性，
+并开启 Graph。本次只在该目录新增以下三个文件，既有启动脚本保持原样：
+
+1. `glm52mempool-demo.json`：共享 P/D 地址、模型、NUMA、端口与容量。
+   默认 P=10.120.72.31、D=10.120.72.32，模型为 `/data_lib/data/models/GLM-5.2-w4a8`；
+   SP=8192、SD=128、统一 page_size=128、context=8448、max_total_tokens=16384。
+2. `glm52mempool-demo.sh`：根据 LOCAL_HOST1 选择 P/D，复用已通过自动化 NPU 测试的
+   `service_environment` 和 `run_service.sh formal`。P eager、D Graph BS=16，原生
+   fake warmup 开启；只启动本机 worker，提供 --dry-run，不调用自动验收 runner。
+3. `router-mempool-demo.sh`：单独启动 ticket01 Ascend Main Router，以共享配置和
+   RUN_ID 连接两侧 SR；默认 HTTP 6699、control 16700。与 worker 同为前台运行。
+
+默认 SGLANG_DIR=/home/cryang/sglang，要求包含 7275f29a05 的版本；默认
+RUN_ID=glm52-mempool-demo，日志写入 `/home/cryang/log/mempool-demo/glm52-mempool-demo/`。
+三个进程的配置内容和 RUN_ID 必须相同。入口拒绝非法角色 IP、run-id、页大小与日志目录。
+这是用户指定的外部启动脚本目录，不属于 SGLang 主线功能改动；无需新增 Ascend hook。
+本次未修改 `python/` 或 `ascend-mempool-test/`，也未新增 worktree。
+
+启动顺序：31 的独立终端先执行 `bash pd-disaggregation/router-mempool-demo.sh`，
+再于另一终端执行 `LOCAL_HOST1=10.120.72.31 bash pd-disaggregation/glm52mempool-demo.sh`；
+32 执行 `LOCAL_HOST1=10.120.72.32 bash pd-disaggregation/glm52mempool-demo.sh`。
+这些命令在脚本仓库根目录运行。P 等待 BM join 时即可启动 D，不等待 P ready。
+P:8000/ready、D:8001/ready 和 Main:6699/ready 全部返回 200 后再发请求。
+
+交付的客户端命令用本地模型 tokenizer 和 chat template 编码用户问题，关闭 thinking；
+在 user 消息的开头补空白 token，保持问题和 assistant generation prompt 完整，
+输入 token 数向上对齐到 128，并检查不超过 SP。curl POST /generate 使用 input_ids、
+temperature=0、max_new_tokens=128、stream=false，保留自然 EOS。
+默认问题为 25 支铅笔送出 7 支后平均分给 3 人，预期回答每人 6 支并给出简短计算。
+请求及回复写入上述日志目录的 request.json / response.json。用户可修改 question 重发。
+这是用户主动执行的单请求正确性 smoke，不代替完整验收，也不扩展 Main 的 API 范围。
+
+本机验证：
+
+- 两份脚本 bash -n、内嵌 Python compile 检查通过；手动 curl 命令也完成语法检查。
+- P、D、Router 三组 dry-run 通过，检查 role、模型、TP16、统一页、SP/SD、context、
+  max-total、P eager、D Graph BS=16、warmup 开启及独立 Ascend Main 命令。
+- 7 个负向检查通过：无效 LOCAL_HOST1；两份入口各自拒绝非法 RUN_ID、page_size=64
+  和位于 /home/cryang/log 之外的 LOG_DIR。均在启动服务之前非零退出。
+- Standards review：硬标准 0、判断项 0；Spec review：0 发现。
+- 现有两个参考脚本内容未改；无 SGLang 功能代码差异。
+- 新入口和手动问题尚未执行 NPU；真实 tokenizer 与生成结果由用户在 31/32 验证。
+  01 保持 open，02 仍待重写；不把本机 dry-run 算作新的硬件通过记录。
+
+### 2026-10-26：独立 demo 的自然语言单请求 smoke 通过
+
+- 三份 demo 文件已独立提交为脚本仓库 `42a1511`，并按用户要求推送到 origin/main。
+  入口要求 SGLang 包含 7275f29a05；本次回传没有打印远端 Git SHA，不把要求的版本
+  当作重新核验过的远端身份。
+- 用户在 31 的 `/home/cryang/ascend-sglang-script` 执行交付的完整命令，三处 ready
+  检查后向 Main `/generate` 提交自然语言问题。客户端按页对齐，实际输入 128 token。
+- 问题为 25 支铅笔送出 7 支，再平均分给 3 人。模型回答“每人分6支”，并给出
+  `25 - 7 = 18`、`18 ÷ 3 = 6`，算术和说明均正确。
+- 请求 id=glm52-mempool-demo-1，完整输出 48 token，与 completion_tokens 一致；
+  finish_reason=stop，matched=154827，与最后一个 output ID 一致。生成上限为 128，
+  本次自然提前结束；num_retractions=0、cached_tokens=0、reasoning_tokens=0。
+- 服务报告 e2e_latency=11.120827391045168 秒。这是单次请求记录，没有拆分 TTFT/TPOT，
+  不作为吞吐或性能验收结论。
+- [回传结果](../verification/glm52-mempool-demo-20261026/user-reported-response.json)
+  转录用户贴出的回复及元信息。远端 request.json / response.json 仍位于
+  `/home/cryang/log/mempool-demo/glm52-mempool-demo/`，agent 未直接读取远端文件。
+- 本次确认独立启动、文本编码、Main 请求及完整生成的基础正确性。Graph 在启动配置中
+  开启；本次 HTTP 响应不包含 replay 标记，Graph 证据仍来自此前 31/32 自动化验收。
+- 记录为手动 smoke 通过；没有修改功能代码。用户尚未明确确认关闭 01，保持 State=open；
+  不据此启动 ticket02，也不扩展到 prefix 或物理 NUMA 页落点验证。
+
+### 2026-10-26：用户确认验收成功，关闭 ticket01
+
+- 用户明确表示“ticket01现在已经验收成功”，确认上述自动化 NPU 验收结果。
+  验收版本为 `7275f29a05c9a7b6ed2902a27f5a5702564bb6f0`，包含原生 fake warmup 适配。
+- 结合已记录的 421 项 CPU 测试、两轴 review、31/32 自动化报告与手动 smoke，
+  勾选验收清单并设置 State=closed。ticket02 的直接前置条件现已满足。
+- 原始回传 JSON 中的 `user_accepted=false` 保留为报告生成时的事实；本条记录
+  当前用户确认 `user_accepted=true`。原始日志位置与命令见上文 31/32 执行记录。
+- 本轮仅核对当前提交与后续规划，没有重新运行 CPU／NPU 测试。
+  prefix 和物理 NUMA 页落点仍不在本票已验证范围内；旧 ticket02 实现继续保持撤回。

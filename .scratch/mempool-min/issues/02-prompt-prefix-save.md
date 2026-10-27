@@ -13,6 +13,10 @@
 
 **State:** open
 
+**最新验证：** 2026-10-26 用户回传 `ticket02-002` 双侧完整 summary 和 P target evidence，
+`87157b7365` 的自动化 NPU 验收通过。保存功能项已核对；等待用户确认关闭。
+物理 NUMA 落点未验证，原始报告的 `user_accepted=false` 保留。
+
 **本轮依据：** 2026-10-23 用户确认[四票详细回顾](../stage-0-ticket-review.md)，
 要求按该内容重新拆票。本票在已验收冷请求链上增加保存，不消费 prefix 命中。
 2026-10-26 复核基线为 `7275f29a05`；旧 ticket02 实现已撤回，从该基线重写。
@@ -89,27 +93,27 @@ freed 状态；完成收据按 rid／op_id 独立存活，不能依赖已释放�
 
 ## Acceptance criteria
 
-- [ ] 接入每 rank 的 P alive Index K DRAM 写回与 P 侧 prefix 页分配，覆盖主 KV
+- [x] 接入每 rank 的 P alive Index K DRAM 写回与 P 侧 prefix 页分配，覆盖主 KV
   78 层、Index K 21 个 producer 层。D 生成 Index K 继续只留 HBM。
-- [ ] 将 Index K 写回真实完成纳入 P 原生资源释放条件；在 P HBM 释放之后，仍能
+- [x] 将 Index K 写回真实完成纳入 P 原生资源释放条件；在 P HBM 释放之后，仍能
   从请求 alive 保存完整 prompt。prefix 和 alive 的分配、位置与容量独立。
-- [ ] 通过 Main Router 计算 token 页哈希和命名空间种子，形成父哈希、位置与完成
+- [x] 通过 Main Router 计算 token 页哈希和命名空间种子，形成父哈希、位置与完成
   状态。冷 A 结束并释放 alive 后，每份 prefix 保留 32 页，逐逻辑 token 核对
   各必要层的主 KV 与 Index K。
-- [ ] finished 后重新检查目录，已存在的 ready prefix 页跳过。建立 admit 源锁与
+- [x] finished 后重新检查目录，已存在的 ready prefix 页跳过。建立 admit 源锁与
   所需父路径保护后才解除 owner hold；只有目标可读 ack 到达且父页已发布时
   才 publish。重复 ack 不重复解锁或归还。
-- [ ] 复制尚未完成时，源槽不能收到 free_ack 或被复用；admit 失败进入 fail-stop，
+- [x] 复制尚未完成时，源槽不能收到 free_ack 或被复用；admit 失败进入 fail-stop，
   不强行释放 writing 目标或仍受保护的源。设备完成收据不依赖已释放的原生请求行。
-- [ ] prefix 容量按真实页计算。容量不足时从尾部缩短或跳过保存；重复冷算相同
+- [x] prefix 容量按真实页计算。容量不足时从尾部缩短或跳过保存；重复冷算相同
   prompt 不增加已有页，缓存满时仍能正常结束并归还 alive，不引入 evict。
-- [ ] 此票的保存验证使用 match_prefix 关闭的冷算请求。可用 A／B／C／E 的冷算
+- [x] 此票的保存验证使用 match_prefix 关闭的冷算请求。可用 A／B／C／E 的冷算
   变体验证 32 → 40 → 40 → 40、已有页跳过和满容量行为，但不宣称这些请求
   已按完整 demo 的预期命中。
-- [ ] CPU 覆盖源保护、publish、重复 ack、容量和错误行为；NPU 核对实际复制内容、
+- [x] CPU 覆盖源保护、publish、重复 ack、容量和错误行为；NPU 核对实际复制内容、
   P native 提前释放及 alive 归还后 prefix 的独立存活。扩展同一自运行入口
   提供保存阶段的测试与独立报告。
-- [ ] 保持 01 的真实冷请求输出、D 三条件门控、显式释放、Graph 和真实串行约束；
+- [x] 保持 01 的真实冷请求输出、D 三条件门控、显式释放、Graph 和真实串行约束；
   直接复用同一启动入口，注册如实启用新增区域并检查实际容量。
 - [x] 每次实现后立即更新目标页 D 的代码进度与验证状态，并同步 Markdown／HTML。
 - [x] 完成本票适用的 CPU／静态检查和自运行测试入口，并记录实际结果与未执行项。
@@ -230,3 +234,27 @@ freed 状态；完成收据按 rid／op_id 独立存活，不能依赖已释放�
   完整 CPU 日志与验证版本摘要。两机更新后使用已有
   `/home/cryang/mempool-min-ticket01-3132.json`，换新 run-id=`ticket02-002` 重跑。
   保留 `ticket02-001` 失败日志；NPU 重测仍待用户执行，02 保持 open。
+
+### 2026-10-26：ticket02-002 自动化 NPU 验收通过
+
+- 用户回传完整 P/D summary 和 P target evidence；两侧均为 `passed`，完成
+  fetch、reference、target。原字段保存在[本轮证据目录](../verification/ticket02-002-20261026/record.json)，
+  来源是会话粘贴，未直接读取服务器文件，也未收到完整日志包。
+- 两侧代码版本均为 `87157b7365a78aa336d9558e1ce9f820bee2fdd4`，identity 无差异，
+  受检功能路径无 tracked diff、无 untracked 文件。P/D 为 10.120.72.31/32，
+  GLM-5.2-w4a8、bond4、各 TP16，page_size=128、prefix_pages=40、verify_prefix=true。
+- 命令使用 `--mode prefix-acceptance`、配置
+  `/home/cryang/mempool-min-ticket01-3132.json`、run-id=`ticket02-002`；
+  日志根目录为 `/home/cryang/log/mempool-min/ticket02-002/`。
+- A/B/C/E 共 4 个冷请求，各份 prefix 页数为 32→40→40→40。16 ranks、78 层主 KV、
+  21 层 Index K 均核对 `original == alive == prefix == retained after alive free`。
+  完整输出 token IDs 与同长度独立参考一致，D Graph 与 P/D BM 数据来源检查通过。
+- 两侧故障注入均观察到 `SR heartbeat timeout`；保留 16 ranks 及全部额度，
+  `automatic_free=false`，随后本次所属进程组清理通过。该记录是预期故障验收通过。
+- 前述 CPU 440/440、静态检查和两轴 review 证据继续有效。本次仅归档用户硬件结果
+  与更新文档，未修改功能代码，也未重新执行 CPU/NPU 测试。
+- 保存功能验收项已勾选。报告保留 `user_accepted=false`；本次用户回传结果，尚未
+  明确确认关闭，因此 State=open、Status=needs-info，03 继续等待关闭确认。
+- `numa_placement="not verified"` 是当前 mempool-min checker 的固定字段，未执行
+  实际落点探测。NUMA 请求参数已接入 BM，但本次不据此声明物理页落点已验证。
+  旧共享探针曾遇到 davinci_manager 映射无节点页计数；这不是本轮新测得的错误。

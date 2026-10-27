@@ -1,0 +1,53 @@
+{
+  "scope": "CPU planning examples; no BM or NPU allocation",
+  "assumptions": "example 1: 1P/1D; example 2: 2P/2D, one TP32 per host",
+  "layout": {
+    "layout": {
+      "prompt": {
+        "layers": 78,
+        "slots": 16,
+        "tokens": 4096,
+        "heads": 1,
+        "dim": 576,
+        "dtype": "bfloat16"
+      },
+      "decode": {
+        "layers": 78,
+        "slots": 16,
+        "tokens": 8192,
+        "heads": 1,
+        "dim": 576,
+        "dtype": "bfloat16"
+      },
+      "alignment_bytes": 1073741824,
+      "probe_bytes": 64
+    },
+    "contributions": [
+      6442450944,
+      11811160064
+    ],
+    "rank_stride_bytes": 11811160064
+  },
+  "examples": {
+    "case1": {
+      "machines": 2,
+      "tp_size": 16,
+      "group_size": 2,
+      "paired_bm_groups": 8,
+      "positive_contributors": 16,
+      "participants": 32,
+      "independent_GiB": 272,
+      "shared_GiB": 136
+    },
+    "case2": {
+      "machines": 4,
+      "tp_size": 32,
+      "group_size": 4,
+      "paired_bm_groups": 16,
+      "positive_contributors": 32,
+      "participants": 128,
+      "independent_GiB": 1088,
+      "shared_GiB": 272
+    }
+  }
+}

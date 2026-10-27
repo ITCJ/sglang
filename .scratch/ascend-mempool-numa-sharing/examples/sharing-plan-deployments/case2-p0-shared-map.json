@@ -1,0 +1,162 @@
+[
+  {
+    "host": "case2-p0",
+    "rank": 0,
+    "node": 0
+  },
+  {
+    "host": "case2-p0",
+    "rank": 1,
+    "node": 0
+  },
+  {
+    "host": "case2-p0",
+    "rank": 2,
+    "node": 0
+  },
+  {
+    "host": "case2-p0",
+    "rank": 3,
+    "node": 0
+  },
+  {
+    "host": "case2-p0",
+    "rank": 4,
+    "node": 1
+  },
+  {
+    "host": "case2-p0",
+    "rank": 5,
+    "node": 1
+  },
+  {
+    "host": "case2-p0",
+    "rank": 6,
+    "node": 1
+  },
+  {
+    "host": "case2-p0",
+    "rank": 7,
+    "node": 1
+  },
+  {
+    "host": "case2-p0",
+    "rank": 8,
+    "node": 2
+  },
+  {
+    "host": "case2-p0",
+    "rank": 9,
+    "node": 2
+  },
+  {
+    "host": "case2-p0",
+    "rank": 10,
+    "node": 2
+  },
+  {
+    "host": "case2-p0",
+    "rank": 11,
+    "node": 2
+  },
+  {
+    "host": "case2-p0",
+    "rank": 12,
+    "node": 3
+  },
+  {
+    "host": "case2-p0",
+    "rank": 13,
+    "node": 3
+  },
+  {
+    "host": "case2-p0",
+    "rank": 14,
+    "node": 3
+  },
+  {
+    "host": "case2-p0",
+    "rank": 15,
+    "node": 3
+  },
+  {
+    "host": "case2-p0",
+    "rank": 16,
+    "node": 4
+  },
+  {
+    "host": "case2-p0",
+    "rank": 17,
+    "node": 4
+  },
+  {
+    "host": "case2-p0",
+    "rank": 18,
+    "node": 4
+  },
+  {
+    "host": "case2-p0",
+    "rank": 19,
+    "node": 4
+  },
+  {
+    "host": "case2-p0",
+    "rank": 20,
+    "node": 5
+  },
+  {
+    "host": "case2-p0",
+    "rank": 21,
+    "node": 5
+  },
+  {
+    "host": "case2-p0",
+    "rank": 22,
+    "node": 5
+  },
+  {
+    "host": "case2-p0",
+    "rank": 23,
+    "node": 5
+  },
+  {
+    "host": "case2-p0",
+    "rank": 24,
+    "node": 6
+  },
+  {
+    "host": "case2-p0",
+    "rank": 25,
+    "node": 6
+  },
+  {
+    "host": "case2-p0",
+    "rank": 26,
+    "node": 6
+  },
+  {
+    "host": "case2-p0",
+    "rank": 27,
+    "node": 6
+  },
+  {
+    "host": "case2-p0",
+    "rank": 28,
+    "node": 7
+  },
+  {
+    "host": "case2-p0",
+    "rank": 29,
+    "node": 7
+  },
+  {
+    "host": "case2-p0",
+    "rank": 30,
+    "node": 7
+  },
+  {
+    "host": "case2-p0",
+    "rank": 31,
+    "node": 7
+  }
+]

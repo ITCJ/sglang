@@ -8,11 +8,17 @@ GLM-5.1 请求、decode Graph replay、短 greedy baseline 对照和正常释放
 **Parent:** [Ascend mempool spec](../spec.md)
 
 **Blocked by:** [03: 正式 mempool 数据路径 cutover](03-prefill-direct-offload.md)（已关闭）、
-[10: GLM-5.2 算法适配与 indexer 跨层复用](10-glm52-indexer-sharing.md)（已关闭）。
+[10: GLM-5.2 算法适配与 indexer 跨层复用](10-glm52-indexer-sharing.md)（已关闭）、
+[NUMA共享03: 策略选择与同负载性能验收](../../ascend-mempool-numa-sharing/issues/03-performance-acceptance.md)
+（open，须用户NPU验收）。
 
 **Status:** ready-for-agent
 
 **State:** open
+
+**执行顺序（2026-10-12 用户确认）：** 先完成
+[MLA NUMA 共享](../../ascend-mempool-numa-sharing/spec.md)，再执行本票。
+03/10 已关闭；共享三票已发布，本票等待共享03关闭。
 
 ## Acceptance criteria
 
@@ -85,3 +91,20 @@ GLM-5.1 请求、decode Graph replay、短 greedy baseline 对照和正常释放
 本票可开始，State仍为open，尚未启动新的Graph/fetch调度修改。
 后续复用10的GLM-5.2四组及GLM-5.1快速回归证据，按本票范围补齐调度变更与对照验收；
 新增测试遵循根AGENTS.md的自主运行约定。
+
+### 2026-10-12：NUMA 共享优先
+
+用户在新需求的 Q9 中明确选择先做 NUMA 共享，再衔接本票。需求与
+[分票草案](../../ascend-mempool-numa-sharing/delivery-plan.md)已单独记录：
+先验证共享组件，再接入真实 MLA 服务，最后验收写入策略、去重及 3% 性能门槛。
+本票保持 open，原有 P/D miss 并行读取建议及验收条件保留；不在共享设计期间启动。
+共享的组件／服务证据可在之后复用，但不自动关闭本票或替代其后续调度变更验收。
+后续 P/D miss 并行方案需沿用共享设计的“本步新 KV 本地读取、历史 KV 通过
+既有 TP 完成次序发布”；任何新 stream 都要保持这条依赖并重新验证 Graph。
+
+### 2026-10-12：共享三票按用户修订发布
+
+用户要求共享01先做两个独立池／一个共享池的双 rank 并发读写性能对照，02
+细化并行数据路径，03维持同负载3%验收。三票已发布，增加共享03为本票明确
+blocking edge。此前同日“已解锁”只描述10关闭时的历史状态，以本段和顶部
+依赖为当前顺序。本票的P/D miss并行建议继续后置，尚未实施。

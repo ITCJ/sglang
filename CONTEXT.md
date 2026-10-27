@@ -30,6 +30,12 @@ baseline when reviewing its history and changes.
   are distinct from the compact MLA KV read by sparse attention.
 - **Mempool KV view**: A typed logical view of KV stored in a mempool. It exposes
   tensor shape and element meaning without implying CPU access to remote data.
+- **Mempool NUMA assignment**: The requested local NUMA node for a TP rank's
+  mempool storage. It is distinct from verified physical page placement.
+- **Mempool sharing group**: TP ranks on the same host, assigned to the same
+  NUMA node, that share one physical replica of the same logical compact KV
+  on one side of PD disaggregation. Members divide writes and each read the
+  complete replica; the group size is not fixed at two.
 - **Mempool mapping ready**: BM mappings and stable device addresses/buffers are
   ready for graph capture. It does not imply that the PD control handshake is complete.
 - **Mempool control ready**: The paired P/D control peers have completed their
@@ -44,3 +50,16 @@ baseline when reviewing its history and changes.
   a request's KV. Finishing generation does not by itself establish drain.
 - **Request attempt**: One instance of a request's acquisition and binding.
   Messages from an older attempt cannot change a current slot's ownership.
+- **Alive mem pool**: The request-lifetime KV storage category containing prompt
+  KV and KV produced during active decoding. Its lifetime category is distinct
+  from its storage medium or cache tier. One logical alive pool can contain
+  distributed physical regions and multiple replicas of the same KV.
+- **Prefix mem pool**: The retained KV storage category used for prefix reuse
+  across requests. It is distinct from request-lifetime alive storage, even when
+  both categories contain KV for the same token prefix.
+- **KV group**: The logical association of compute participants and KV locations
+  established for a request, potentially spanning P/D instances and attention
+  groups. It is distinct from a physical mempool sharing group and from the
+  full set of locations a device can access.
+- **KV replica set**: Physical copies of the same logical KV with the same data
+  layout. Different head shards are not replicas of one another.

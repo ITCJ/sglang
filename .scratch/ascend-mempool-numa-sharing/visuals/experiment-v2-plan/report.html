@@ -1,0 +1,1170 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="shadcn" data-mode="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Answer me with HTML 0.4.3">
+<title>TP1 / TP2 / TP4：mempool 读写与 NUMA 实验方案</title>
+<style>
+html[data-theme="blueprint"], html[data-theme="blueprint"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 0px;
+  --shadow: none;
+  --bw: 1.5px;
+  --head-font: var(--font-sans);
+  --bg: #f6f6f3;
+  --paper: #ffffff;
+  --ink: #16181d;
+  --ink-2: #4b5260;
+  --ink-3: #8b929e;
+  --line: #1d2026;
+  --line-2: #d6dae1;
+  --fill: #f3f5f8;
+  --accent: #1d5fbf;
+  --accent-bg: #e4ecf8;
+  --ok: #1d5fbf;
+  --ok-bg: #e4ecf8;
+  --err: #c62828;
+  --err-bg: #fbeaea;
+  --warn: #a8620a;
+  --warn-bg: #fdf3e2;
+  --head-bg: #16181d;
+  --head-fg: #ffffff;
+}
+html[data-theme="blueprint"][data-mode="dark"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="blueprint"][data-mode="auto"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+}
+
+html[data-theme="shadcn"], html[data-theme="shadcn"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 8px;
+  --shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --bw: 1px;
+  --head-font: var(--font-sans);
+  --bg: #fafafa;
+  --paper: #ffffff;
+  --ink: #09090b;
+  --ink-2: #71717a;
+  --ink-3: #a1a1aa;
+  --line: #e4e4e7;
+  --line-2: #f0f0f2;
+  --fill: #f4f4f5;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --ok: #16a34a;
+  --ok-bg: #f0fdf4;
+  --err: #dc2626;
+  --err-bg: #fef2f2;
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --head-bg: #18181b;
+  --head-fg: #fafafa;
+}
+html[data-theme="shadcn"][data-mode="dark"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="shadcn"][data-mode="auto"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+}
+
+/* Answer me with HTML base — 只引用主题变量，禁止写死颜色（主题 token 见 themes/index.js） */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd { font-family: var(--font-mono); }
+
+/* ── 工具栏 ─────────────────────────────── */
+.am-toolbar {
+  position: fixed; top: 12px; right: 12px; z-index: 10; display: flex; gap: 6px;
+}
+.am-btn {
+  font: 12px/1 var(--font-sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding: 7px 10px; cursor: pointer;
+}
+.am-btn:hover { border-color: var(--ink-3); }
+.am-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── 页头 ───────────────────────────────── */
+.am-head { margin: 0 0 20px; padding-right: 260px; }
+.am-head h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; }
+.am-sub { margin: 4px 0 0; color: var(--ink-2); }
+.am-head-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 12px; color: var(--ink-2); }
+.am-head-meta b { font-family: var(--font-mono); font-weight: 400; color: var(--ink-3); margin-right: 6px; }
+.am-intro { margin-top: 12px; max-width: 80ch; }
+
+/* ── sheet 图纸板 ────────────────────────── */
+.am-sheet { max-width: 1680px; margin: 0 auto; padding: 32px 28px 40px; }
+.am-frame { position: relative; }
+.am-grid {
+  display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 20px; align-items: start;
+}
+.am-ruler { display: none; }
+html[data-theme="blueprint"] .am-frame { border: 1px solid var(--line); padding: 30px; }
+html[data-theme="blueprint"] .am-frame::before {
+  content: ""; position: absolute; inset: 18px; border: 1px solid var(--line); pointer-events: none;
+}
+html[data-theme="blueprint"] .am-ruler {
+  display: flex; position: absolute; font: 10px/1 var(--font-mono); color: var(--ink-3);
+}
+.am-ruler span { flex: 1; display: flex; align-items: center; justify-content: center; }
+.am-ruler--top, .am-ruler--bottom { left: 18px; right: 18px; height: 18px; }
+.am-ruler--top { top: 0; }
+.am-ruler--bottom { bottom: 0; }
+.am-ruler--left, .am-ruler--right { top: 18px; bottom: 18px; width: 18px; flex-direction: column; }
+.am-ruler--left { left: 0; }
+.am-ruler--right { right: 0; }
+.am-ruler--top span + span, .am-ruler--bottom span + span { border-left: 1px solid var(--line); }
+.am-ruler--left span + span, .am-ruler--right span + span { border-top: 1px solid var(--line); }
+
+/* ── 面板 ───────────────────────────────── */
+.am-panel {
+  background: var(--paper); border: var(--bw) solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); min-width: 0; overflow: hidden;
+}
+.am-panel-head {
+  display: flex; align-items: stretch; gap: 0; border-bottom: var(--bw) solid var(--line); min-height: 34px;
+}
+.am-panel-id {
+  display: flex; align-items: center; justify-content: center; min-width: 34px; padding: 0 8px;
+  background: var(--head-bg); color: var(--head-fg); font-weight: 600; font-size: 14px;
+}
+html[data-theme="shadcn"] .am-panel-id { border-radius: 6px; min-width: 24px; height: 24px; margin: 9px 0 9px 14px; font-size: 12px; }
+html[data-theme="shadcn"] .am-panel-head { border-bottom-width: 1px; }
+.am-panel-head h2 { margin: 0; padding: 7px 12px; font-size: 15px; font-weight: 600; flex: 1; display: flex; align-items: center; }
+.am-panel-meta { align-self: center; padding: 0 12px; font: 11px/1.3 var(--font-mono); color: var(--ink-2); text-align: right; }
+.am-panel-body { padding: 14px 16px 16px; }
+.am-panel-body > * + * { margin-top: 12px; }
+
+/* ── Markdown 正文 ───────────────────────── */
+.am-md > :first-child { margin-top: 0; }
+.am-md > :last-child { margin-bottom: 0; }
+.am-md p { margin: 0 0 8px; }
+.am-md ul, .am-md ol { margin: 0 0 8px; padding-left: 20px; }
+.am-md li + li { margin-top: 3px; }
+.am-md h3, .am-md h4 { margin: 14px 0 6px; font-size: 13px; }
+.am-md a { color: var(--accent); }
+.am-md blockquote { margin: 0 0 8px; padding: 2px 12px; border-left: 3px solid var(--line-2); color: var(--ink-2); }
+.am-md :not(pre) > code { font-size: 0.9em; background: var(--fill); padding: 1px 5px; border-radius: 4px; }
+.am-md hr { border: 0; border-top: 1px solid var(--line-2); margin: 12px 0; }
+.am-md table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.am-md th {
+  text-align: left; font: 11px/1.3 var(--font-mono); color: var(--ink-2); font-weight: 400;
+  padding: 6px 10px; border-bottom: 1px solid var(--line-2);
+}
+.am-md td { padding: 7px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.am-md tbody tr:nth-child(even) td { background: var(--fill); }
+.am-table-wrap { overflow-x: auto; }
+.am-code {
+  margin: 0; padding: 12px 14px; background: var(--fill); border: 1px solid var(--line-2);
+  border-radius: var(--radius); overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+}
+
+/* ── 状态徽章 ok / no / warn ──────────────── */
+.am-status { white-space: nowrap; font-weight: 500; }
+.am-status--ok { color: var(--ok); }
+.am-status--no { color: var(--err); }
+.am-status--warn { color: var(--warn); }
+.am-status-icon { display: inline-block; width: 1.1em; font-weight: 700; }
+
+/* ── callout ─────────────────────────────── */
+.am-callout {
+  border: 1px solid var(--line-2); border-left: 3px solid var(--accent); background: var(--accent-bg);
+  padding: 10px 14px; border-radius: var(--radius);
+}
+.am-callout--ok { border-left-color: var(--ok); background: var(--ok-bg); }
+.am-callout--warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.am-callout--err { border-left-color: var(--err); background: var(--err-bg); }
+.am-callout-title { font-weight: 600; margin-bottom: 4px; }
+
+/* ── kv 标题栏格 ─────────────────────────── */
+.am-kv {
+  display: grid; grid-template-columns: repeat(var(--kv-cols, 2), minmax(0, 1fr)); margin: 0;
+  border-top: var(--bw) solid var(--line); border-left: var(--bw) solid var(--line);
+}
+.am-kv-cell { border-right: var(--bw) solid var(--line); border-bottom: var(--bw) solid var(--line); padding: 6px 10px 8px; min-width: 0; }
+.am-kv-cell--wide { grid-column: 1 / -1; }
+.am-kv dt { font: 11px/1.4 var(--font-mono); color: var(--ink-2); }
+.am-kv dd { margin: 2px 0 0; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.am-kv-cell--wide dd { font-size: 17px; font-weight: 600; }
+html[data-theme="shadcn"] .am-kv { border-color: var(--line); border-radius: var(--radius); overflow: hidden; }
+
+/* ── timeline ────────────────────────────── */
+.am-timeline { list-style: none; margin: 0; padding: 0; }
+.am-timeline--h { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); padding-top: 4px; }
+.am-timeline--h li { position: relative; text-align: center; padding: 0 6px; }
+.am-timeline--h li::before {
+  content: ""; position: absolute; top: 31px; left: 0; right: 0; border-top: var(--bw) solid var(--line);
+}
+.am-timeline--h li:first-child::before { left: 50%; }
+.am-timeline--h li:last-child::before { right: 50%; }
+.am-tl-when { display: block; font-size: 15px; font-weight: 500; height: 24px; }
+.am-tl-dot {
+  position: relative; display: block; width: 11px; height: 11px; margin: 2px auto 8px;
+  border: var(--bw) solid var(--line); border-radius: 50%; background: var(--paper);
+}
+.am-tl-item--hi .am-tl-dot { background: var(--accent); border-color: var(--accent); }
+.am-tl-title { display: block; font-size: 12.5px; font-weight: 500; }
+.am-tl-text { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.45; }
+.am-timeline--v li { position: relative; padding: 0 0 14px 22px; }
+.am-timeline--v li::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: -6px; border-left: var(--bw) solid var(--line-2); }
+.am-timeline--v li:last-child::before { display: none; }
+.am-timeline--v .am-tl-dot { position: absolute; left: 0; top: 4px; margin: 0; }
+.am-timeline--v .am-tl-when { display: inline; height: auto; font: 12px var(--font-mono); color: var(--ink-2); margin-right: 8px; }
+.am-timeline--v .am-tl-title { display: inline; font-size: 14px; }
+.am-timeline--v .am-tl-text { margin-top: 2px; }
+
+/* ── annot 句子标注 ──────────────────────── */
+.am-annot + .am-annot { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.am-annot-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.am-annot-meta { font: 11px var(--font-mono); font-weight: 400; color: var(--ink-2); }
+.am-annot-scroll { overflow-x: auto; }
+.am-annot-line {
+  position: relative; display: inline-block; white-space: pre; font: 14px/1.6 var(--font-mono);
+  padding-bottom: calc(var(--rows, 0) * 17px + 14px);
+}
+.am-annot-line--wrap { display: block; white-space: normal; padding-bottom: 10px; }
+.am-annot-line--wrap .am-seg { white-space: nowrap; }
+.am-seg { position: relative; }
+.am-seg::after {
+  content: ""; position: absolute; left: 1px; right: 1px; top: calc(100% + 1px); height: 5px;
+  border: 1px solid var(--accent); border-top: 0;
+}
+.am-seg-n {
+  position: absolute; left: 0; top: calc(100% + 8px + var(--row, 0) * 17px);
+  font: 11px/16px var(--font-sans); color: var(--accent); white-space: nowrap;
+}
+.am-seg--err { color: var(--err); }
+.am-seg--err::after { border-color: var(--err); }
+.am-seg--err .am-seg-n { color: var(--err); }
+.am-annot-caption { font-size: 12px; color: var(--ink-2); }
+
+/* ── limits 限值条 ───────────────────────── */
+.am-lim + .am-lim { margin-top: 14px; }
+.am-lim-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; margin-bottom: 4px; }
+.am-lim-val { font: 12px var(--font-mono); color: var(--accent); white-space: nowrap; }
+.am-lim-track { position: relative; height: 12px; border: 1px solid var(--line-2); background: var(--fill); border-radius: calc(var(--radius) / 2); }
+.am-lim-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-bg); border-right: 1px solid var(--accent); }
+.am-lim-mark { position: absolute; top: -4px; bottom: -4px; border-left: 2px solid var(--accent); }
+.am-lim.is-over .am-lim-fill { background: var(--err-bg); border-right-color: var(--err); }
+.am-lim.is-over .am-lim-val { color: var(--err); }
+.am-lim-ticks { position: relative; height: 16px; font: 10px/16px var(--font-mono); color: var(--ink-3); }
+.am-lim-ticks span { position: absolute; transform: translateX(-50%); }
+.am-lim-ticks span:first-child { transform: none; }
+.am-lim-note { font-size: 11px; color: var(--ink-2); margin-left: 6px; }
+
+/* ── tree 结构树 ─────────────────────────── */
+.am-tree { font-size: 13px; }
+.am-tree-root { display: flex; justify-content: center; position: relative; padding-bottom: 18px; }
+.am-tree-root::after { content: ""; position: absolute; bottom: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-root--solo { padding-bottom: 12px; }
+.am-tree-root--solo::after { display: none; }
+.am-tree-box {
+  border: var(--bw) solid var(--line); background: var(--paper); padding: 6px 14px; text-align: center;
+  border-radius: var(--radius); font-weight: 600;
+}
+.am-tree-box small { display: block; font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.am-tree-box--root { background: var(--accent-bg); font-size: 15px; padding: 8px 28px; }
+.am-tree-cols { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
+.am-tree-col { position: relative; padding: 18px 8px 0; min-width: 0; }
+.am-tree-col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; border-top: var(--bw) solid var(--line); }
+.am-tree-col:first-child::before { left: 50%; }
+.am-tree-col:last-child::before { right: 50%; }
+.am-tree-col::after { content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-list, .am-tree-list ul { list-style: none; margin: 0; padding: 0; }
+.am-tree-col > .am-tree-list { margin: 8px 0 0 14px; }
+.am-tree-list ul { margin-left: 16px; }
+.am-tree-list li { position: relative; padding: 3px 0 3px 18px; }
+.am-tree-list li::before { content: ""; position: absolute; left: 0; top: 0.95em; width: 12px; border-top: 1px solid var(--ink-3); }
+.am-tree-list li::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--ink-3); }
+.am-tree-list li:last-child::after { bottom: auto; height: 0.95em; }
+.am-tree-tag { font: 11px var(--font-mono); color: var(--ink-3); margin-right: 4px; }
+.am-tree code { font: 12px var(--font-mono); }
+.am-tree-sub { display: block; font-size: 11.5px; color: var(--ink-2); }
+.am-tree-hi > .am-tree-label { color: var(--accent); font-weight: 600; }
+
+/* ── 图（flow / sequence）───────────────── */
+.am-diagram { margin: 0; overflow-x: auto; text-align: center; }
+.am-diagram svg { max-width: 100%; height: auto; font-family: var(--font-sans); }
+.am-diagram text { fill: var(--ink); font-size: 13px; }
+.am-node-shape { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-node--hi .am-node-shape { fill: var(--accent-bg); stroke: var(--accent); }
+.am-node--hi text { fill: var(--accent); font-weight: 600; }
+.am-edge { fill: none; stroke: var(--ink-2); stroke-width: 1.3; }
+.am-edge--dashed { stroke-dasharray: 5 4; }
+.am-arrow { fill: var(--ink-2); }
+.am-edge-label rect { fill: var(--paper); }
+.am-diagram .am-edge-label text { fill: var(--accent); font-size: 11.5px; }
+.am-cluster { fill: var(--fill); stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 4 3; }
+.am-diagram .am-cluster-label { fill: var(--ink-2); font: 11px var(--font-mono); }
+.am-lifeline { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 4 4; }
+.am-actor { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-note { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 1; }
+.am-diagram .am-step { fill: var(--ink-3); font: 10px var(--font-mono); }
+
+/* ── doc 线性讲解 ────────────────────────── */
+.am-doc { max-width: 1120px; margin: 0 auto; padding: 40px 28px 64px; }
+.am-doc-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
+.am-doc-layout--notoc { grid-template-columns: minmax(0, 1fr); max-width: 860px; }
+.am-toc { position: sticky; top: 24px; font-size: 13px; }
+.am-toc a { display: block; color: var(--ink-2); text-decoration: none; padding: 4px 0 4px 10px; border-left: 2px solid var(--line-2); }
+.am-toc a:hover { color: var(--ink); border-left-color: var(--accent); }
+.am-doc-body > .am-panel + .am-panel { margin-top: 20px; }
+
+/* ── 响应式与打印 ─────────────────────────── */
+@media (max-width: 1100px) {
+  .am-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .am-grid > .am-panel { grid-column: auto !important; }
+  .am-grid > .am-panel.am-span-wide { grid-column: 1 / -1 !important; }
+}
+@media (max-width: 760px) {
+  .am-sheet, .am-doc { padding: 56px 12px 24px; }
+  .am-head { padding-right: 0; }
+  .am-grid { grid-template-columns: minmax(0, 1fr); }
+  .am-grid > .am-panel.am-span-wide { grid-column: auto !important; }
+  html[data-theme="blueprint"] .am-frame { padding: 0; border: 0; }
+  html[data-theme="blueprint"] .am-frame::before, html[data-theme="blueprint"] .am-ruler { display: none; }
+  .am-doc-layout { grid-template-columns: minmax(0, 1fr); }
+  .am-toc { position: static; }
+  .am-timeline--h { grid-template-columns: minmax(0, 1fr); }
+  .am-tree-cols { grid-template-columns: minmax(0, 1fr); }
+}
+.am-colophon { text-align: center; padding: 0 0 28px; font: 11px var(--font-mono); color: var(--ink-3); }
+
+@media print {
+  .am-toolbar { display: none; }
+  body { background: var(--paper); }
+  .am-panel { break-inside: avoid; box-shadow: none; }
+}
+.am-panel--bare { border: 0; background: transparent; box-shadow: none; }
+.am-panel--bare > .am-panel-body { padding: 0; }
+.am-panel--bare .am-kv { background: var(--paper); }
+
+</style>
+</head>
+<body>
+<div class="am-toolbar">
+<button class="am-btn" type="button" data-am="theme" data-labels="{&quot;blueprint&quot;:&quot;主题：图纸&quot;,&quot;shadcn&quot;:&quot;主题：卡片&quot;}">主题：卡片</button>
+<button class="am-btn" type="button" data-am="mode" data-labels="{&quot;auto&quot;:&quot;明暗：跟随系统&quot;,&quot;light&quot;:&quot;明暗：亮&quot;,&quot;dark&quot;:&quot;明暗：暗&quot;}">明暗：亮</button>
+<button class="am-btn" type="button" data-am="copy" data-done="已复制 ✓">复制源稿</button>
+</div>
+<main class="am-doc">
+<header class="am-head"><h1>TP1 / TP2 / TP4：mempool 读写与 NUMA 实验方案</h1><p class="am-sub">7 组存储布局 · C 大块分工写入 · D 相同 top-k 并发读取</p><div class="am-head-meta"><span><b>source</b>方案草案 · 2026-10-13 · 尚未实现或运行</span></div><div class="am-intro am-md"><div class="am-md"><p><strong>本轮围绕三个问题设计：共享去重是否省时、多个 rank 读取是否争用、分散 NUMA 是否改善性能。</strong>
+新增真正的 TP1，所有规模固定数据形状。
+主图同时保留独立池、共享池和不同 NUMA 放置。</p>
+</div></div></header>
+<div class="am-doc-layout">
+<nav class="am-toc" aria-label="目录"><a href="#panel-A">A · 核心实验矩阵：7 组布局</a><a href="#panel-B">B · 所有布局共用的数据与运行条件</a><a href="#panel-C">C · 大块写入：主实验与等字节对照</a><a href="#panel-D">D · sparse 读取：各 rank 读相同索引，每个都得到完整结果</a><a href="#panel-E">E · NUMA 证据、计时与正确性</a><a href="#panel-F">F · 执行规模与最终报告</a></nav><div class="am-doc-body">
+<section class="am-panel" id="panel-A">
+<header class="am-panel-head"><span class="am-panel-id">A</span><h2>核心实验矩阵：7 组布局</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>“TP rank”是访问者，“NUMA node”是主机内存节点。
+它们不是同一个概念。
+下表的 NUMA 列表按 rank 0、1、2、3 的顺序排列。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>编号</th>
+<th align="right">并发 TP 数</th>
+<th>mempool 组织</th>
+<th align="right">每侧 pool 数</th>
+<th>pool 的目标 NUMA</th>
+<th>回答的问题</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1-I0</td>
+<td align="right">1</td>
+<td>rank 0 独占一池</td>
+<td align="right">1</td>
+<td>[0]</td>
+<td>真正单访问者基线</td>
+</tr>
+<tr>
+<td>2-I0</td>
+<td align="right">2</td>
+<td>每 rank 独占一池</td>
+<td align="right">2</td>
+<td>[0, 0]</td>
+<td>两份副本集中在 NUMA 0</td>
+</tr>
+<tr>
+<td>2-ID</td>
+<td align="right">2</td>
+<td>每 rank 独占一池</td>
+<td align="right">2</td>
+<td>[0, 2]</td>
+<td>分散两个 NUMA 的影响</td>
+</tr>
+<tr>
+<td>2-S0</td>
+<td align="right">2</td>
+<td>两个 rank 共享一池</td>
+<td align="right">1</td>
+<td>owner 在 0</td>
+<td>同 NUMA 下减少一份副本</td>
+</tr>
+<tr>
+<td>4-I0</td>
+<td align="right">4</td>
+<td>每 rank 独占一池</td>
+<td align="right">4</td>
+<td>[0, 0, 0, 0]</td>
+<td>四份副本集中在 NUMA 0</td>
+</tr>
+<tr>
+<td>4-ID</td>
+<td align="right">4</td>
+<td>每 rank 独占一池</td>
+<td align="right">4</td>
+<td>[0, 2, 4, 6]</td>
+<td>分散四个 NUMA 的影响</td>
+</tr>
+<tr>
+<td>4-S0</td>
+<td align="right">4</td>
+<td>四个 rank 共享一池</td>
+<td align="right">1</td>
+<td>owner 在 0</td>
+<td>同 NUMA 下减少三份副本</td>
+</tr>
+</tbody></table></div>
+<p>TP1 只有一张消费侧 NPU 执行读写。
+它不再用“TP4 组中仅 rank 0 有效”替代。
+TP1 的独立与共享结构相同，只跑一次。
+共享池保持一份完整分配，先固定放在 NUMA 0。</p>
+</div>
+<div class="am-callout am-callout--info" role="note"><div class="am-callout-title">暂定拓扑，等待选择</div><div class="am-callout-body am-md"><p>沿用每侧 NPU 0、1、2、3，TP1/2 取其前缀。
+只改变 mempool 的 NUMA 落点。
+每 rank 使用固定且互不重叠的可用 CPU 集合。
+CPU 集合与池落点分离，整个对照期间保持不变。
+P/D 先沿用 10.120.72.31 和 10.120.72.32。</p>
+</div></div>
+<div class="am-md"><p>固定 NPU 的比较可以观察内存放置的影响。
+若同时更换 NPU，应归为另一组部署拓扑实验。
+“分散 NUMA”不自动意味着每张 NPU 都访问最近的内存。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-B">
+<header class="am-panel-head"><span class="am-panel-id">B</span><h2>所有布局共用的数据与运行条件</h2></header>
+<div class="am-panel-body"><div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>参数</th>
+<th>建议固定值</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>执行</td>
+<td>Graph，block_dim=48</td>
+<td>延续已选的测试方式</td>
+</tr>
+<tr>
+<td>KV 行</td>
+<td>576 个 BF16，即 1152 bytes</td>
+<td>沿用 compact MLA KV</td>
+</tr>
+<tr>
+<td>池形状</td>
+<td>1 层、16 slots、每 slot 65536 行</td>
+<td>各 TP 数量完全相同</td>
+</tr>
+<tr>
+<td>单池有效容量</td>
+<td>1.125 GiB，另计 probe 和分配对齐</td>
+<td>不随 TP 数量改变单池形状</td>
+</tr>
+<tr>
+<td>写入位置</td>
+<td>单个 slot 内的连续目标区，前后带 guard</td>
+<td>观察大块写入，校验越界</td>
+</tr>
+<tr>
+<td>读请求数</td>
+<td>1 和 16</td>
+<td>分开观察低负载与并发压力</td>
+</tr>
+<tr>
+<td>读取 top-k</td>
+<td>每请求恰好 2048 个有效索引</td>
+<td>不混入 padding-only 工作量</td>
+</tr>
+<tr>
+<td>索引与内容</td>
+<td>固定种子，各 rank、各模式一致</td>
+<td>只改变被考察的变量</td>
+</tr>
+<tr>
+<td>层与分片</td>
+<td>一层，沿 token 行连续分块</td>
+<td>避免混入 layer owner 或 feature 分片因素</td>
+</tr>
+</tbody></table></div>
+<p>读 Graph 的请求维度分别为 1 和 16。
+每个子用例的有效数量固定，不用 16 行 padding 模拟真实 batch=1。</p>
+<p>相同 TP 数量下，独立池副本数为 TP 数量，共享池副本数为 1。
+报告同时列出逻辑容量、实际物理贡献和虚拟地址保留量。
+物理分配的对齐空间不计入有效 copy 字节。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-C">
+<header class="am-panel-head"><span class="am-panel-id">C</span><h2>大块写入：主实验与等字节对照</h2></header>
+<div class="am-panel-body"><div class="am-md"><p><strong>主实验固定一个逻辑任务 L。</strong>
+L 取 2048、8192、32768 行，分别为 2.25、9、36 MiB。
+每个大小都覆盖 A 面板的 7 组布局。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>并发 TP 数</th>
+<th>独立池：每 rank 写入量</th>
+<th>独立池合计</th>
+<th>共享池：每 rank 写入量</th>
+<th>共享池合计</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>L</td>
+<td>L</td>
+<td>与独立相同</td>
+<td>L</td>
+</tr>
+<tr>
+<td>2</td>
+<td>L，写各自的完整副本</td>
+<td>2L</td>
+<td>L/2，写互斥部分</td>
+<td>L</td>
+</tr>
+<tr>
+<td>4</td>
+<td>L，写各自的完整副本</td>
+<td>4L</td>
+<td>L/4，写互斥部分</td>
+<td>L</td>
+</tr>
+</tbody></table></div>
+<p>以 32768 行、TP4 共享池为例：</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>rank</th>
+<th>目的行范围</th>
+<th align="right">行数</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>0</td>
+<td>[0, 8192)</td>
+<td align="right">8192</td>
+</tr>
+<tr>
+<td>1</td>
+<td>[8192, 16384)</td>
+<td align="right">8192</td>
+</tr>
+<tr>
+<td>2</td>
+<td>[16384, 24576)</td>
+<td align="right">8192</td>
+</tr>
+<tr>
+<td>3</td>
+<td>[24576, 32768)</td>
+<td align="right">8192</td>
+</tr>
+</tbody></table></div>
+<p>四个 rank 同时写入，覆盖完整目标区，目的地址不重叠。
+源数据提前在各自 HBM 中准备好，计时仅覆盖 HBM→mempool copy。
+分片、metadata 生成、初始化和校验放在计时区外。</p>
+</div>
+<div class="am-callout am-callout--info" role="note"><div class="am-callout-title">为什么还需要等字节对照</div><div class="am-callout-body am-md"><p>主实验中的共享池少写副本，实际 copy 量更少。
+必须另测相同实际字节量，才能观察池模式的并发效率差异。</p>
+</div></div>
+<div class="am-md"><p><strong>等字节对照也固定整组总量为 L。</strong>
+独立与共享都让每个 rank 只写 L/N 行。
+独立模式写各自池内对应的分片，共享模式写公共池内互斥分片。
+这组不要求每个独立池得到完整副本，仅用于 copy 诊断。</p>
+<p>它仍覆盖集中 NUMA、分散 NUMA与共享池三种组织。
+TP1 两种写实验相同，不重复采集。
+这个定义与旧版“每 rank 写 2049 行”的等字节实验不同。
+新旧等字节结果不能直接拼在一起。</p>
+<p>主要比较：</p>
+<ul>
+<li>2-I0 对 2-S0、4-I0 对 4-S0：共享去重的组耗时收益。</li>
+<li>2-I0 对 2-ID、4-I0 对 4-ID：独立池分散 NUMA 的收益。</li>
+<li>1-I0 对 2-S0、4-S0：固定总量 L，多个 writer 能否缩短时间。</li>
+<li>相同 N 的等字节结果：减少重复写之外，池组织有何影响。</li>
+</ul>
+<p>2049 行保留为分片尾部正确性检查，不扩大主要性能矩阵。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-D">
+<header class="am-panel-head"><span class="am-panel-id">D</span><h2>sparse 读取：各 rank 读相同索引，每个都得到完整结果</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>对每个请求，提前生成一组无重复的 2048 个稀疏索引。
+从 65536 行历史中抽样，按生成顺序读取。
+同一请求在所有 rank 上使用完全相同的索引及顺序。
+不同请求可使用不同索引，但跨布局保持一致。</p>
+<p>共享模式的多个 rank 读取同一份物理 KV。
+独立模式的各 rank 从自己的完整副本读取相同逻辑 KV。
+每个 rank 都将全部结果写入自己的 HBM selected buffer。
+<strong>读取不按 rank 分成 1/2 或 1/4。</strong></p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>活跃请求数</th>
+<th align="right">每 rank 的读取量</th>
+<th align="right">TP1 合计</th>
+<th align="right">TP2 合计</th>
+<th align="right">TP4 合计</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td align="right">2.25 MiB</td>
+<td align="right">2.25 MiB</td>
+<td align="right">4.5 MiB</td>
+<td align="right">9 MiB</td>
+</tr>
+<tr>
+<td>16</td>
+<td align="right">36 MiB</td>
+<td align="right">36 MiB</td>
+<td align="right">72 MiB</td>
+<td align="right">144 MiB</td>
+</tr>
+</tbody></table></div>
+<p>同一 N 下，所有池模式和 NUMA 布局的读取字节量相同。
+跨 N 时，总读取量随 N 增长，同时报告耗时与合计有效带宽。
+不能仅凭 TP4 比 TP1 慢就认定共享效率差。</p>
+<p><strong>主结果使用随机离散索引。</strong>
+每个采样批次切换预生成的索引组，所有 rank 同步切换。
+关闭 selected KV 的 HBM 缓存复用，每次都执行 mempool 读取。
+这表示应用层 BM miss，不宣称物理缓存处于冷态。
+连续索引只作为可单独启用的诊断对照。</p>
+</div>
+<div class="am-callout am-callout--info" role="note"><div class="am-callout-title">跨主机读取的暂定范围</div><div class="am-callout-body am-md"><p>主矩阵分别测本地来源、远端来源、各占 1024 行的混合来源。
+P 和 D 消费侧分别测量，不同时发起读压力。
+另一台主机保持池可用，计时期间不提交设备读写。
+混合来源的每请求有效总数仍是 2048。</p>
+</div></div>
+<div class="am-md"><p>远端独立池同样按 reader 的 rank 选择对应副本。
+远端共享池中的所有 reader 指向同一个 owner。
+两台主机采用相同目标 NUMA 列表，但分别记录实际分配证据。
+若本轮选择只测单机，保留相同 7 组矩阵，只关闭远端和混合来源。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-E">
+<header class="am-panel-head"><span class="am-panel-id">E</span><h2>NUMA 证据、计时与正确性</h2></header>
+<div class="am-panel-body"><div class="am-md"><p><strong>先做小规模预检查，再采集性能。</strong>
+自动输出 NPU、CPU 亲和性、pool owner、目标 NUMA 的对应关系。
+检查节点 0、2、4、6 在线且可分配，并验证真实映射和读写。
+CPU 绑核不能随 mempool 的目标 NUMA 一起移动。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>NUMA 证据状态</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>实际页或可用驱动查询证实目标落点</td>
+<td>计入已验证的 NUMA 对照</td>
+</tr>
+<tr>
+<td>证据明确显示落在错误节点</td>
+<td>该组失败，保存诊断</td>
+</tr>
+<tr>
+<td>驱动映射没有可观测的页计数</td>
+<td>可保留采样，标为 requested-only / pending</td>
+</tr>
+</tbody></table></div>
+<p><code>HalMemCreate</code> 日志中的指定 node 作为分配证据保存。
+仅有请求参数、成功返回或 <code>/dev/davinci_manager</code> 映射，不代表落点已核验。
+无法核验时，报告只能比较指定配置，不能宣布 NUMA 因果结论。</p>
+<p><strong>测量建议：3 轮，每轮每用例 20 个采样批次。</strong>
+每批 64 次 Graph replay，暖机 5 次，不计入结果。
+每批控制同步在计时区外，各 rank 记录设备耗时和主机起止时间。</p>
+<p>组耗时使用同机 <code>max(done) - min(start)</code>，再除以 64。
+每 rank 设备时间单列，不相减不同 NPU 或不同主机的时钟。
+组 P50/P95 是批次均摊耗时的分位数，不是服务请求的尾延迟。</p>
+<p>记录启动偏差，目标不超过最短设备批次耗时的 10%。
+不满足的批次保留为诊断，最多重试 3 次。
+仍无法形成并发证据时，该组标为测量无效。
+同时保存各轮原始结果，避免仅比较舍入后的 P50。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>检查</th>
+<th>方法</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>写分片</td>
+<td>覆盖全集、不相交、边界与 2049 行尾部正确</td>
+</tr>
+<tr>
+<td>写结果</td>
+<td>所有 writer 完成后，读回完整目标区并检查 guard</td>
+</tr>
+<tr>
+<td>稀疏读取</td>
+<td>每个 rank 的完整输出与 CPU 预期逐元素比对</td>
+</tr>
+<tr>
+<td>数据换代</td>
+<td>修改内容并切换索引，检查 Graph 未复用旧结果</td>
+</tr>
+<tr>
+<td>跨主机</td>
+<td>来源、slot、index 均编码进测试 pattern</td>
+</tr>
+</tbody></table></div>
+<p>校验和发布同步不进入纯 copy 计时区间。
+性能采集前后都检查正确性，失败不计作性能结果。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-F">
+<header class="am-panel-head"><span class="am-panel-id">F</span><h2>执行规模与最终报告</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>每个 TP2/TP4 的三种组织按三轮轮换顺序执行：</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>轮次</th>
+<th>第 1 组</th>
+<th>第 2 组</th>
+<th>第 3 组</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>独立集中</td>
+<td>共享</td>
+<td>独立分散</td>
+</tr>
+<tr>
+<td>2</td>
+<td>共享</td>
+<td>独立分散</td>
+<td>独立集中</td>
+</tr>
+<tr>
+<td>3</td>
+<td>独立分散</td>
+<td>独立集中</td>
+<td>共享</td>
+</tr>
+</tbody></table></div>
+<p>TP 数量顺序也轮换为 1/2/4、2/4/1、4/1/2。
+每组重新建立池，单池容量和数据保持一致。</p>
+<p>保留三种读取来源时，每个消费侧有 81 个测量组合。
+其中写入主实验 21 个，等字节对照 18 个，读取 42 个。
+两侧共 162 个组合；三轮共 486 次组合执行。</p>
+<p>只测本地来源时，两侧为 106 个组合；三轮共 318 次执行。
+这些计数不含暖机、正确性检查和可选连续索引诊断。</p>
+<p>每台主机仍只需一个自运行入口。
+入口自动完成预检查、7 组切换、采集、汇总及自身进程清理。
+显示整体进度、当前布局、负载、轮次及动态 ETA。
+先用小批次实测估时，不预设固定总运行时长。
+每个完成组合立即落盘，失败后可按精确配置续跑。
+日志保存在 <code>/home/cryang/log/</code>，明确失败或待验证状态。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>报告</th>
+<th>主要展示</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>C 主图</td>
+<td>3 个写入大小 × 7 种布局的组 P50/P95</td>
+</tr>
+<tr>
+<td>C 控制图</td>
+<td>固定总 copy 量的等字节对照</td>
+</tr>
+<tr>
+<td>D 主图</td>
+<td>top-k=2048，1/16 请求，各布局的组耗时</td>
+</tr>
+<tr>
+<td>D 带宽图</td>
+<td>合计有效 copy bytes / 组耗时；与单 TP 比较</td>
+</tr>
+<tr>
+<td>明细</td>
+<td>每 rank 设备耗时、提交偏差、物理贡献与 NUMA 证据</td>
+</tr>
+</tbody></table></div>
+<p>逻辑写入速率使用 L / 组耗时。
+实际 copy 请求带宽使用有效字节总和 / 组耗时。
+读取的合计有效字节为 N × 每 rank 完整读取量。
+不把有效带宽标成硬件总线实测带宽。</p>
+<p>这轮交付聚焦 C/D 组件实验。
+不把旧的 materialize、current 串并行或延迟发布矩阵并入主结果。
+实现需要新增 TP1、每 rank 内存节点列表、独立 CPU 亲和性及固定池形状。
+本页仅提交设计草案，尚未修改 benchmark 实现。</p>
+</div></div>
+</section>
+</div>
+</div>
+</main>
+<footer class="am-colophon">Generated by Answer me with HTML 0.4.3 · 2026-10-13 21:59</footer>
+<textarea id="am-source" hidden readonly aria-hidden="true">---
+template: doc
+theme: shadcn
+mode: light
+lang: zh
+title: TP1 / TP2 / TP4：mempool 读写与 NUMA 实验方案
+subtitle: 7 组存储布局 · C 大块分工写入 · D 相同 top-k 并发读取
+source: 方案草案 · 2026-10-13 · 尚未实现或运行
+---
+**本轮围绕三个问题设计：共享去重是否省时、多个 rank 读取是否争用、分散 NUMA 是否改善性能。**
+新增真正的 TP1，所有规模固定数据形状。
+主图同时保留独立池、共享池和不同 NUMA 放置。
+
+## A 核心实验矩阵：7 组布局
+“TP rank”是访问者，“NUMA node”是主机内存节点。
+它们不是同一个概念。
+下表的 NUMA 列表按 rank 0、1、2、3 的顺序排列。
+
+| 编号 | 并发 TP 数 | mempool 组织 | 每侧 pool 数 | pool 的目标 NUMA | 回答的问题 |
+|---|---:|---|---:|---|---|
+| 1-I0 | 1 | rank 0 独占一池 | 1 | [0] | 真正单访问者基线 |
+| 2-I0 | 2 | 每 rank 独占一池 | 2 | [0, 0] | 两份副本集中在 NUMA 0 |
+| 2-ID | 2 | 每 rank 独占一池 | 2 | [0, 2] | 分散两个 NUMA 的影响 |
+| 2-S0 | 2 | 两个 rank 共享一池 | 1 | owner 在 0 | 同 NUMA 下减少一份副本 |
+| 4-I0 | 4 | 每 rank 独占一池 | 4 | [0, 0, 0, 0] | 四份副本集中在 NUMA 0 |
+| 4-ID | 4 | 每 rank 独占一池 | 4 | [0, 2, 4, 6] | 分散四个 NUMA 的影响 |
+| 4-S0 | 4 | 四个 rank 共享一池 | 1 | owner 在 0 | 同 NUMA 下减少三份副本 |
+
+TP1 只有一张消费侧 NPU 执行读写。
+它不再用“TP4 组中仅 rank 0 有效”替代。
+TP1 的独立与共享结构相同，只跑一次。
+共享池保持一份完整分配，先固定放在 NUMA 0。
+
+```callout info 暂定拓扑，等待选择
+沿用每侧 NPU 0、1、2、3，TP1/2 取其前缀。
+只改变 mempool 的 NUMA 落点。
+每 rank 使用固定且互不重叠的可用 CPU 集合。
+CPU 集合与池落点分离，整个对照期间保持不变。
+P/D 先沿用 10.120.72.31 和 10.120.72.32。
+```
+
+固定 NPU 的比较可以观察内存放置的影响。
+若同时更换 NPU，应归为另一组部署拓扑实验。
+“分散 NUMA”不自动意味着每张 NPU 都访问最近的内存。
+
+## B 所有布局共用的数据与运行条件
+| 参数 | 建议固定值 | 原因 |
+|---|---|---|
+| 执行 | Graph，block_dim=48 | 延续已选的测试方式 |
+| KV 行 | 576 个 BF16，即 1152 bytes | 沿用 compact MLA KV |
+| 池形状 | 1 层、16 slots、每 slot 65536 行 | 各 TP 数量完全相同 |
+| 单池有效容量 | 1.125 GiB，另计 probe 和分配对齐 | 不随 TP 数量改变单池形状 |
+| 写入位置 | 单个 slot 内的连续目标区，前后带 guard | 观察大块写入，校验越界 |
+| 读请求数 | 1 和 16 | 分开观察低负载与并发压力 |
+| 读取 top-k | 每请求恰好 2048 个有效索引 | 不混入 padding-only 工作量 |
+| 索引与内容 | 固定种子，各 rank、各模式一致 | 只改变被考察的变量 |
+| 层与分片 | 一层，沿 token 行连续分块 | 避免混入 layer owner 或 feature 分片因素 |
+
+读 Graph 的请求维度分别为 1 和 16。
+每个子用例的有效数量固定，不用 16 行 padding 模拟真实 batch=1。
+
+相同 TP 数量下，独立池副本数为 TP 数量，共享池副本数为 1。
+报告同时列出逻辑容量、实际物理贡献和虚拟地址保留量。
+物理分配的对齐空间不计入有效 copy 字节。
+
+## C 大块写入：主实验与等字节对照
+**主实验固定一个逻辑任务 L。**
+L 取 2048、8192、32768 行，分别为 2.25、9、36 MiB。
+每个大小都覆盖 A 面板的 7 组布局。
+
+| 并发 TP 数 | 独立池：每 rank 写入量 | 独立池合计 | 共享池：每 rank 写入量 | 共享池合计 |
+|---|---|---|---|---|
+| 1 | L | L | 与独立相同 | L |
+| 2 | L，写各自的完整副本 | 2L | L/2，写互斥部分 | L |
+| 4 | L，写各自的完整副本 | 4L | L/4，写互斥部分 | L |
+
+以 32768 行、TP4 共享池为例：
+
+| rank | 目的行范围 | 行数 |
+|---|---|---:|
+| 0 | [0, 8192) | 8192 |
+| 1 | [8192, 16384) | 8192 |
+| 2 | [16384, 24576) | 8192 |
+| 3 | [24576, 32768) | 8192 |
+
+四个 rank 同时写入，覆盖完整目标区，目的地址不重叠。
+源数据提前在各自 HBM 中准备好，计时仅覆盖 HBM→mempool copy。
+分片、metadata 生成、初始化和校验放在计时区外。
+
+```callout info 为什么还需要等字节对照
+主实验中的共享池少写副本，实际 copy 量更少。
+必须另测相同实际字节量，才能观察池模式的并发效率差异。
+```
+
+**等字节对照也固定整组总量为 L。**
+独立与共享都让每个 rank 只写 L/N 行。
+独立模式写各自池内对应的分片，共享模式写公共池内互斥分片。
+这组不要求每个独立池得到完整副本，仅用于 copy 诊断。
+
+它仍覆盖集中 NUMA、分散 NUMA与共享池三种组织。
+TP1 两种写实验相同，不重复采集。
+这个定义与旧版“每 rank 写 2049 行”的等字节实验不同。
+新旧等字节结果不能直接拼在一起。
+
+主要比较：
+
+- 2-I0 对 2-S0、4-I0 对 4-S0：共享去重的组耗时收益。
+- 2-I0 对 2-ID、4-I0 对 4-ID：独立池分散 NUMA 的收益。
+- 1-I0 对 2-S0、4-S0：固定总量 L，多个 writer 能否缩短时间。
+- 相同 N 的等字节结果：减少重复写之外，池组织有何影响。
+
+2049 行保留为分片尾部正确性检查，不扩大主要性能矩阵。
+
+## D sparse 读取：各 rank 读相同索引，每个都得到完整结果
+对每个请求，提前生成一组无重复的 2048 个稀疏索引。
+从 65536 行历史中抽样，按生成顺序读取。
+同一请求在所有 rank 上使用完全相同的索引及顺序。
+不同请求可使用不同索引，但跨布局保持一致。
+
+共享模式的多个 rank 读取同一份物理 KV。
+独立模式的各 rank 从自己的完整副本读取相同逻辑 KV。
+每个 rank 都将全部结果写入自己的 HBM selected buffer。
+**读取不按 rank 分成 1/2 或 1/4。**
+
+| 活跃请求数 | 每 rank 的读取量 | TP1 合计 | TP2 合计 | TP4 合计 |
+|---|---:|---:|---:|---:|
+| 1 | 2.25 MiB | 2.25 MiB | 4.5 MiB | 9 MiB |
+| 16 | 36 MiB | 36 MiB | 72 MiB | 144 MiB |
+
+同一 N 下，所有池模式和 NUMA 布局的读取字节量相同。
+跨 N 时，总读取量随 N 增长，同时报告耗时与合计有效带宽。
+不能仅凭 TP4 比 TP1 慢就认定共享效率差。
+
+**主结果使用随机离散索引。**
+每个采样批次切换预生成的索引组，所有 rank 同步切换。
+关闭 selected KV 的 HBM 缓存复用，每次都执行 mempool 读取。
+这表示应用层 BM miss，不宣称物理缓存处于冷态。
+连续索引只作为可单独启用的诊断对照。
+
+```callout info 跨主机读取的暂定范围
+主矩阵分别测本地来源、远端来源、各占 1024 行的混合来源。
+P 和 D 消费侧分别测量，不同时发起读压力。
+另一台主机保持池可用，计时期间不提交设备读写。
+混合来源的每请求有效总数仍是 2048。
+```
+
+远端独立池同样按 reader 的 rank 选择对应副本。
+远端共享池中的所有 reader 指向同一个 owner。
+两台主机采用相同目标 NUMA 列表，但分别记录实际分配证据。
+若本轮选择只测单机，保留相同 7 组矩阵，只关闭远端和混合来源。
+
+## E NUMA 证据、计时与正确性
+**先做小规模预检查，再采集性能。**
+自动输出 NPU、CPU 亲和性、pool owner、目标 NUMA 的对应关系。
+检查节点 0、2、4、6 在线且可分配，并验证真实映射和读写。
+CPU 绑核不能随 mempool 的目标 NUMA 一起移动。
+
+| NUMA 证据状态 | 处理 |
+|---|---|
+| 实际页或可用驱动查询证实目标落点 | 计入已验证的 NUMA 对照 |
+| 证据明确显示落在错误节点 | 该组失败，保存诊断 |
+| 驱动映射没有可观测的页计数 | 可保留采样，标为 requested-only / pending |
+
+`HalMemCreate` 日志中的指定 node 作为分配证据保存。
+仅有请求参数、成功返回或 `/dev/davinci_manager` 映射，不代表落点已核验。
+无法核验时，报告只能比较指定配置，不能宣布 NUMA 因果结论。
+
+**测量建议：3 轮，每轮每用例 20 个采样批次。**
+每批 64 次 Graph replay，暖机 5 次，不计入结果。
+每批控制同步在计时区外，各 rank 记录设备耗时和主机起止时间。
+
+组耗时使用同机 `max(done) - min(start)`，再除以 64。
+每 rank 设备时间单列，不相减不同 NPU 或不同主机的时钟。
+组 P50/P95 是批次均摊耗时的分位数，不是服务请求的尾延迟。
+
+记录启动偏差，目标不超过最短设备批次耗时的 10%。
+不满足的批次保留为诊断，最多重试 3 次。
+仍无法形成并发证据时，该组标为测量无效。
+同时保存各轮原始结果，避免仅比较舍入后的 P50。
+
+| 检查 | 方法 |
+|---|---|
+| 写分片 | 覆盖全集、不相交、边界与 2049 行尾部正确 |
+| 写结果 | 所有 writer 完成后，读回完整目标区并检查 guard |
+| 稀疏读取 | 每个 rank 的完整输出与 CPU 预期逐元素比对 |
+| 数据换代 | 修改内容并切换索引，检查 Graph 未复用旧结果 |
+| 跨主机 | 来源、slot、index 均编码进测试 pattern |
+
+校验和发布同步不进入纯 copy 计时区间。
+性能采集前后都检查正确性，失败不计作性能结果。
+
+## F 执行规模与最终报告
+每个 TP2/TP4 的三种组织按三轮轮换顺序执行：
+
+| 轮次 | 第 1 组 | 第 2 组 | 第 3 组 |
+|---|---|---|---|
+| 1 | 独立集中 | 共享 | 独立分散 |
+| 2 | 共享 | 独立分散 | 独立集中 |
+| 3 | 独立分散 | 独立集中 | 共享 |
+
+TP 数量顺序也轮换为 1/2/4、2/4/1、4/1/2。
+每组重新建立池，单池容量和数据保持一致。
+
+保留三种读取来源时，每个消费侧有 81 个测量组合。
+其中写入主实验 21 个，等字节对照 18 个，读取 42 个。
+两侧共 162 个组合；三轮共 486 次组合执行。
+
+只测本地来源时，两侧为 106 个组合；三轮共 318 次执行。
+这些计数不含暖机、正确性检查和可选连续索引诊断。
+
+每台主机仍只需一个自运行入口。
+入口自动完成预检查、7 组切换、采集、汇总及自身进程清理。
+显示整体进度、当前布局、负载、轮次及动态 ETA。
+先用小批次实测估时，不预设固定总运行时长。
+每个完成组合立即落盘，失败后可按精确配置续跑。
+日志保存在 `/home/cryang/log/`，明确失败或待验证状态。
+
+| 报告 | 主要展示 |
+|---|---|
+| C 主图 | 3 个写入大小 × 7 种布局的组 P50/P95 |
+| C 控制图 | 固定总 copy 量的等字节对照 |
+| D 主图 | top-k=2048，1/16 请求，各布局的组耗时 |
+| D 带宽图 | 合计有效 copy bytes / 组耗时；与单 TP 比较 |
+| 明细 | 每 rank 设备耗时、提交偏差、物理贡献与 NUMA 证据 |
+
+逻辑写入速率使用 L / 组耗时。
+实际 copy 请求带宽使用有效字节总和 / 组耗时。
+读取的合计有效字节为 N × 每 rank 完整读取量。
+不把有效带宽标成硬件总线实测带宽。
+
+这轮交付聚焦 C/D 组件实验。
+不把旧的 materialize、current 串并行或延迟发布矩阵并入主结果。
+实现需要新增 TP1、每 rank 内存节点列表、独立 CPU 亲和性及固定池形状。
+本页仅提交设计草案，尚未修改 benchmark 实现。
+</textarea>
+<script>
+(() => {
+  const root = document.documentElement;
+  const cycle = (list, cur) => list[(list.indexOf(cur) + 1) % list.length];
+  const label = (btn, value) => {
+    const map = JSON.parse(btn.dataset.labels || '{}');
+    btn.textContent = map[value] || value;
+  };
+  const bind = (name, attr, values) => {
+    const btn = document.querySelector(`[data-am="${name}"]`);
+    if (!btn) return;
+    label(btn, root.getAttribute(attr));
+    btn.addEventListener('click', () => {
+      const next = cycle(values, root.getAttribute(attr));
+      root.setAttribute(attr, next);
+      label(btn, next);
+    });
+  };
+  bind('theme', 'data-theme', ['blueprint', 'shadcn']);
+  bind('mode', 'data-mode', ['auto', 'light', 'dark']);
+
+  const copyBtn = document.querySelector('[data-am="copy"]');
+  copyBtn?.addEventListener('click', async () => {
+    const text = document.getElementById('am-source').value;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = Object.assign(document.createElement('textarea'), { value: text });
+      document.body.append(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    const original = copyBtn.textContent;
+    copyBtn.textContent = copyBtn.dataset.done;
+    setTimeout(() => { copyBtn.textContent = original; }, 1400);
+  });
+})();
+</script>
+</body>
+</html>

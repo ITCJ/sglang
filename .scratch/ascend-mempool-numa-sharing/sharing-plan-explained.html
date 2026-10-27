@@ -1,0 +1,1206 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="shadcn" data-mode="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Answer me with HTML 0.4.3">
+<title>sharing_plan.py：从 NUMA 配置到共享池计划</title>
+<style>
+html[data-theme="blueprint"], html[data-theme="blueprint"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 0px;
+  --shadow: none;
+  --bw: 1.5px;
+  --head-font: var(--font-sans);
+  --bg: #f6f6f3;
+  --paper: #ffffff;
+  --ink: #16181d;
+  --ink-2: #4b5260;
+  --ink-3: #8b929e;
+  --line: #1d2026;
+  --line-2: #d6dae1;
+  --fill: #f3f5f8;
+  --accent: #1d5fbf;
+  --accent-bg: #e4ecf8;
+  --ok: #1d5fbf;
+  --ok-bg: #e4ecf8;
+  --err: #c62828;
+  --err-bg: #fbeaea;
+  --warn: #a8620a;
+  --warn-bg: #fdf3e2;
+  --head-bg: #16181d;
+  --head-fg: #ffffff;
+}
+html[data-theme="blueprint"][data-mode="dark"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="blueprint"][data-mode="auto"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+}
+
+html[data-theme="shadcn"], html[data-theme="shadcn"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 8px;
+  --shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --bw: 1px;
+  --head-font: var(--font-sans);
+  --bg: #fafafa;
+  --paper: #ffffff;
+  --ink: #09090b;
+  --ink-2: #71717a;
+  --ink-3: #a1a1aa;
+  --line: #e4e4e7;
+  --line-2: #f0f0f2;
+  --fill: #f4f4f5;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --ok: #16a34a;
+  --ok-bg: #f0fdf4;
+  --err: #dc2626;
+  --err-bg: #fef2f2;
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --head-bg: #18181b;
+  --head-fg: #fafafa;
+}
+html[data-theme="shadcn"][data-mode="dark"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="shadcn"][data-mode="auto"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+}
+
+/* Answer me with HTML base — 只引用主题变量，禁止写死颜色（主题 token 见 themes/index.js） */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd { font-family: var(--font-mono); }
+
+/* ── 工具栏 ─────────────────────────────── */
+.am-toolbar {
+  position: fixed; top: 12px; right: 12px; z-index: 10; display: flex; gap: 6px;
+}
+.am-btn {
+  font: 12px/1 var(--font-sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding: 7px 10px; cursor: pointer;
+}
+.am-btn:hover { border-color: var(--ink-3); }
+.am-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── 页头 ───────────────────────────────── */
+.am-head { margin: 0 0 20px; padding-right: 260px; }
+.am-head h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; }
+.am-sub { margin: 4px 0 0; color: var(--ink-2); }
+.am-head-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 12px; color: var(--ink-2); }
+.am-head-meta b { font-family: var(--font-mono); font-weight: 400; color: var(--ink-3); margin-right: 6px; }
+.am-intro { margin-top: 12px; max-width: 80ch; }
+
+/* ── sheet 图纸板 ────────────────────────── */
+.am-sheet { max-width: 1680px; margin: 0 auto; padding: 32px 28px 40px; }
+.am-frame { position: relative; }
+.am-grid {
+  display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 20px; align-items: start;
+}
+.am-ruler { display: none; }
+html[data-theme="blueprint"] .am-frame { border: 1px solid var(--line); padding: 30px; }
+html[data-theme="blueprint"] .am-frame::before {
+  content: ""; position: absolute; inset: 18px; border: 1px solid var(--line); pointer-events: none;
+}
+html[data-theme="blueprint"] .am-ruler {
+  display: flex; position: absolute; font: 10px/1 var(--font-mono); color: var(--ink-3);
+}
+.am-ruler span { flex: 1; display: flex; align-items: center; justify-content: center; }
+.am-ruler--top, .am-ruler--bottom { left: 18px; right: 18px; height: 18px; }
+.am-ruler--top { top: 0; }
+.am-ruler--bottom { bottom: 0; }
+.am-ruler--left, .am-ruler--right { top: 18px; bottom: 18px; width: 18px; flex-direction: column; }
+.am-ruler--left { left: 0; }
+.am-ruler--right { right: 0; }
+.am-ruler--top span + span, .am-ruler--bottom span + span { border-left: 1px solid var(--line); }
+.am-ruler--left span + span, .am-ruler--right span + span { border-top: 1px solid var(--line); }
+
+/* ── 面板 ───────────────────────────────── */
+.am-panel {
+  background: var(--paper); border: var(--bw) solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); min-width: 0; overflow: hidden;
+}
+.am-panel-head {
+  display: flex; align-items: stretch; gap: 0; border-bottom: var(--bw) solid var(--line); min-height: 34px;
+}
+.am-panel-id {
+  display: flex; align-items: center; justify-content: center; min-width: 34px; padding: 0 8px;
+  background: var(--head-bg); color: var(--head-fg); font-weight: 600; font-size: 14px;
+}
+html[data-theme="shadcn"] .am-panel-id { border-radius: 6px; min-width: 24px; height: 24px; margin: 9px 0 9px 14px; font-size: 12px; }
+html[data-theme="shadcn"] .am-panel-head { border-bottom-width: 1px; }
+.am-panel-head h2 { margin: 0; padding: 7px 12px; font-size: 15px; font-weight: 600; flex: 1; display: flex; align-items: center; }
+.am-panel-meta { align-self: center; padding: 0 12px; font: 11px/1.3 var(--font-mono); color: var(--ink-2); text-align: right; }
+.am-panel-body { padding: 14px 16px 16px; }
+.am-panel-body > * + * { margin-top: 12px; }
+
+/* ── Markdown 正文 ───────────────────────── */
+.am-md > :first-child { margin-top: 0; }
+.am-md > :last-child { margin-bottom: 0; }
+.am-md p { margin: 0 0 8px; }
+.am-md ul, .am-md ol { margin: 0 0 8px; padding-left: 20px; }
+.am-md li + li { margin-top: 3px; }
+.am-md h3, .am-md h4 { margin: 14px 0 6px; font-size: 13px; }
+.am-md a { color: var(--accent); }
+.am-md blockquote { margin: 0 0 8px; padding: 2px 12px; border-left: 3px solid var(--line-2); color: var(--ink-2); }
+.am-md :not(pre) > code { font-size: 0.9em; background: var(--fill); padding: 1px 5px; border-radius: 4px; }
+.am-md hr { border: 0; border-top: 1px solid var(--line-2); margin: 12px 0; }
+.am-md table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.am-md th {
+  text-align: left; font: 11px/1.3 var(--font-mono); color: var(--ink-2); font-weight: 400;
+  padding: 6px 10px; border-bottom: 1px solid var(--line-2);
+}
+.am-md td { padding: 7px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.am-md tbody tr:nth-child(even) td { background: var(--fill); }
+.am-table-wrap { overflow-x: auto; }
+.am-code {
+  margin: 0; padding: 12px 14px; background: var(--fill); border: 1px solid var(--line-2);
+  border-radius: var(--radius); overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+}
+
+/* ── 状态徽章 ok / no / warn ──────────────── */
+.am-status { white-space: nowrap; font-weight: 500; }
+.am-status--ok { color: var(--ok); }
+.am-status--no { color: var(--err); }
+.am-status--warn { color: var(--warn); }
+.am-status-icon { display: inline-block; width: 1.1em; font-weight: 700; }
+
+/* ── callout ─────────────────────────────── */
+.am-callout {
+  border: 1px solid var(--line-2); border-left: 3px solid var(--accent); background: var(--accent-bg);
+  padding: 10px 14px; border-radius: var(--radius);
+}
+.am-callout--ok { border-left-color: var(--ok); background: var(--ok-bg); }
+.am-callout--warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.am-callout--err { border-left-color: var(--err); background: var(--err-bg); }
+.am-callout-title { font-weight: 600; margin-bottom: 4px; }
+
+/* ── kv 标题栏格 ─────────────────────────── */
+.am-kv {
+  display: grid; grid-template-columns: repeat(var(--kv-cols, 2), minmax(0, 1fr)); margin: 0;
+  border-top: var(--bw) solid var(--line); border-left: var(--bw) solid var(--line);
+}
+.am-kv-cell { border-right: var(--bw) solid var(--line); border-bottom: var(--bw) solid var(--line); padding: 6px 10px 8px; min-width: 0; }
+.am-kv-cell--wide { grid-column: 1 / -1; }
+.am-kv dt { font: 11px/1.4 var(--font-mono); color: var(--ink-2); }
+.am-kv dd { margin: 2px 0 0; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.am-kv-cell--wide dd { font-size: 17px; font-weight: 600; }
+html[data-theme="shadcn"] .am-kv { border-color: var(--line); border-radius: var(--radius); overflow: hidden; }
+
+/* ── timeline ────────────────────────────── */
+.am-timeline { list-style: none; margin: 0; padding: 0; }
+.am-timeline--h { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); padding-top: 4px; }
+.am-timeline--h li { position: relative; text-align: center; padding: 0 6px; }
+.am-timeline--h li::before {
+  content: ""; position: absolute; top: 31px; left: 0; right: 0; border-top: var(--bw) solid var(--line);
+}
+.am-timeline--h li:first-child::before { left: 50%; }
+.am-timeline--h li:last-child::before { right: 50%; }
+.am-tl-when { display: block; font-size: 15px; font-weight: 500; height: 24px; }
+.am-tl-dot {
+  position: relative; display: block; width: 11px; height: 11px; margin: 2px auto 8px;
+  border: var(--bw) solid var(--line); border-radius: 50%; background: var(--paper);
+}
+.am-tl-item--hi .am-tl-dot { background: var(--accent); border-color: var(--accent); }
+.am-tl-title { display: block; font-size: 12.5px; font-weight: 500; }
+.am-tl-text { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.45; }
+.am-timeline--v li { position: relative; padding: 0 0 14px 22px; }
+.am-timeline--v li::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: -6px; border-left: var(--bw) solid var(--line-2); }
+.am-timeline--v li:last-child::before { display: none; }
+.am-timeline--v .am-tl-dot { position: absolute; left: 0; top: 4px; margin: 0; }
+.am-timeline--v .am-tl-when { display: inline; height: auto; font: 12px var(--font-mono); color: var(--ink-2); margin-right: 8px; }
+.am-timeline--v .am-tl-title { display: inline; font-size: 14px; }
+.am-timeline--v .am-tl-text { margin-top: 2px; }
+
+/* ── annot 句子标注 ──────────────────────── */
+.am-annot + .am-annot { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.am-annot-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.am-annot-meta { font: 11px var(--font-mono); font-weight: 400; color: var(--ink-2); }
+.am-annot-scroll { overflow-x: auto; }
+.am-annot-line {
+  position: relative; display: inline-block; white-space: pre; font: 14px/1.6 var(--font-mono);
+  padding-bottom: calc(var(--rows, 0) * 17px + 14px);
+}
+.am-annot-line--wrap { display: block; white-space: normal; padding-bottom: 10px; }
+.am-annot-line--wrap .am-seg { white-space: nowrap; }
+.am-seg { position: relative; }
+.am-seg::after {
+  content: ""; position: absolute; left: 1px; right: 1px; top: calc(100% + 1px); height: 5px;
+  border: 1px solid var(--accent); border-top: 0;
+}
+.am-seg-n {
+  position: absolute; left: 0; top: calc(100% + 8px + var(--row, 0) * 17px);
+  font: 11px/16px var(--font-sans); color: var(--accent); white-space: nowrap;
+}
+.am-seg--err { color: var(--err); }
+.am-seg--err::after { border-color: var(--err); }
+.am-seg--err .am-seg-n { color: var(--err); }
+.am-annot-caption { font-size: 12px; color: var(--ink-2); }
+
+/* ── limits 限值条 ───────────────────────── */
+.am-lim + .am-lim { margin-top: 14px; }
+.am-lim-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; margin-bottom: 4px; }
+.am-lim-val { font: 12px var(--font-mono); color: var(--accent); white-space: nowrap; }
+.am-lim-track { position: relative; height: 12px; border: 1px solid var(--line-2); background: var(--fill); border-radius: calc(var(--radius) / 2); }
+.am-lim-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-bg); border-right: 1px solid var(--accent); }
+.am-lim-mark { position: absolute; top: -4px; bottom: -4px; border-left: 2px solid var(--accent); }
+.am-lim.is-over .am-lim-fill { background: var(--err-bg); border-right-color: var(--err); }
+.am-lim.is-over .am-lim-val { color: var(--err); }
+.am-lim-ticks { position: relative; height: 16px; font: 10px/16px var(--font-mono); color: var(--ink-3); }
+.am-lim-ticks span { position: absolute; transform: translateX(-50%); }
+.am-lim-ticks span:first-child { transform: none; }
+.am-lim-note { font-size: 11px; color: var(--ink-2); margin-left: 6px; }
+
+/* ── tree 结构树 ─────────────────────────── */
+.am-tree { font-size: 13px; }
+.am-tree-root { display: flex; justify-content: center; position: relative; padding-bottom: 18px; }
+.am-tree-root::after { content: ""; position: absolute; bottom: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-root--solo { padding-bottom: 12px; }
+.am-tree-root--solo::after { display: none; }
+.am-tree-box {
+  border: var(--bw) solid var(--line); background: var(--paper); padding: 6px 14px; text-align: center;
+  border-radius: var(--radius); font-weight: 600;
+}
+.am-tree-box small { display: block; font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.am-tree-box--root { background: var(--accent-bg); font-size: 15px; padding: 8px 28px; }
+.am-tree-cols { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
+.am-tree-col { position: relative; padding: 18px 8px 0; min-width: 0; }
+.am-tree-col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; border-top: var(--bw) solid var(--line); }
+.am-tree-col:first-child::before { left: 50%; }
+.am-tree-col:last-child::before { right: 50%; }
+.am-tree-col::after { content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-list, .am-tree-list ul { list-style: none; margin: 0; padding: 0; }
+.am-tree-col > .am-tree-list { margin: 8px 0 0 14px; }
+.am-tree-list ul { margin-left: 16px; }
+.am-tree-list li { position: relative; padding: 3px 0 3px 18px; }
+.am-tree-list li::before { content: ""; position: absolute; left: 0; top: 0.95em; width: 12px; border-top: 1px solid var(--ink-3); }
+.am-tree-list li::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--ink-3); }
+.am-tree-list li:last-child::after { bottom: auto; height: 0.95em; }
+.am-tree-tag { font: 11px var(--font-mono); color: var(--ink-3); margin-right: 4px; }
+.am-tree code { font: 12px var(--font-mono); }
+.am-tree-sub { display: block; font-size: 11.5px; color: var(--ink-2); }
+.am-tree-hi > .am-tree-label { color: var(--accent); font-weight: 600; }
+
+/* ── 图（flow / sequence）───────────────── */
+.am-diagram { margin: 0; overflow-x: auto; text-align: center; }
+.am-diagram svg { max-width: 100%; height: auto; font-family: var(--font-sans); }
+.am-diagram text { fill: var(--ink); font-size: 13px; }
+.am-node-shape { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-node--hi .am-node-shape { fill: var(--accent-bg); stroke: var(--accent); }
+.am-node--hi text { fill: var(--accent); font-weight: 600; }
+.am-edge { fill: none; stroke: var(--ink-2); stroke-width: 1.3; }
+.am-edge--dashed { stroke-dasharray: 5 4; }
+.am-arrow { fill: var(--ink-2); }
+.am-edge-label rect { fill: var(--paper); }
+.am-diagram .am-edge-label text { fill: var(--accent); font-size: 11.5px; }
+.am-cluster { fill: var(--fill); stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 4 3; }
+.am-diagram .am-cluster-label { fill: var(--ink-2); font: 11px var(--font-mono); }
+.am-lifeline { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 4 4; }
+.am-actor { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-note { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 1; }
+.am-diagram .am-step { fill: var(--ink-3); font: 10px var(--font-mono); }
+
+/* ── doc 线性讲解 ────────────────────────── */
+.am-doc { max-width: 1120px; margin: 0 auto; padding: 40px 28px 64px; }
+.am-doc-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
+.am-doc-layout--notoc { grid-template-columns: minmax(0, 1fr); max-width: 860px; }
+.am-toc { position: sticky; top: 24px; font-size: 13px; }
+.am-toc a { display: block; color: var(--ink-2); text-decoration: none; padding: 4px 0 4px 10px; border-left: 2px solid var(--line-2); }
+.am-toc a:hover { color: var(--ink); border-left-color: var(--accent); }
+.am-doc-body > .am-panel + .am-panel { margin-top: 20px; }
+
+/* ── 响应式与打印 ─────────────────────────── */
+@media (max-width: 1100px) {
+  .am-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .am-grid > .am-panel { grid-column: auto !important; }
+  .am-grid > .am-panel.am-span-wide { grid-column: 1 / -1 !important; }
+}
+@media (max-width: 760px) {
+  .am-sheet, .am-doc { padding: 56px 12px 24px; }
+  .am-head { padding-right: 0; }
+  .am-grid { grid-template-columns: minmax(0, 1fr); }
+  .am-grid > .am-panel.am-span-wide { grid-column: auto !important; }
+  html[data-theme="blueprint"] .am-frame { padding: 0; border: 0; }
+  html[data-theme="blueprint"] .am-frame::before, html[data-theme="blueprint"] .am-ruler { display: none; }
+  .am-doc-layout { grid-template-columns: minmax(0, 1fr); }
+  .am-toc { position: static; }
+  .am-timeline--h { grid-template-columns: minmax(0, 1fr); }
+  .am-tree-cols { grid-template-columns: minmax(0, 1fr); }
+}
+.am-colophon { text-align: center; padding: 0 0 28px; font: 11px var(--font-mono); color: var(--ink-3); }
+
+@media print {
+  .am-toolbar { display: none; }
+  body { background: var(--paper); }
+  .am-panel { break-inside: avoid; box-shadow: none; }
+}
+.am-panel--bare { border: 0; background: transparent; box-shadow: none; }
+.am-panel--bare > .am-panel-body { padding: 0; }
+.am-panel--bare .am-kv { background: var(--paper); }
+
+</style>
+</head>
+<body>
+<div class="am-toolbar">
+<button class="am-btn" type="button" data-am="theme" data-labels="{&quot;blueprint&quot;:&quot;主题：图纸&quot;,&quot;shadcn&quot;:&quot;主题：卡片&quot;}">主题：卡片</button>
+<button class="am-btn" type="button" data-am="mode" data-labels="{&quot;auto&quot;:&quot;明暗：跟随系统&quot;,&quot;light&quot;:&quot;明暗：亮&quot;,&quot;dark&quot;:&quot;明暗：暗&quot;}">明暗：亮</button>
+<button class="am-btn" type="button" data-am="copy" data-done="已复制 ✓">复制源稿</button>
+</div>
+<main class="am-doc">
+<header class="am-head"><h1>sharing_plan.py：从 NUMA 配置到共享池计划</h1><p class="am-sub">先确定节点，再决定分组；用一个四 rank 示例贯穿代码</p><div class="am-head-meta"><span><b>source</b>ticket02-1 · d328af12bd · 代码讲解</span></div><div class="am-intro am-md"><div class="am-md"><p><code>sharing_plan.py</code> 计算每个 rank 应加入哪个池。
+它还计算 owner、BM 编号、内存大小、probe 和端口。
+本模块只生成计划；BM 分配和设备映射由后续启动代码执行。</p>
+</div></div></header>
+<div class="am-doc-layout">
+<nav class="am-toc" aria-label="目录"><a href="#panel-A">A · 先看调用顺序</a><a href="#panel-B">B · 五个数据结构各管一层</a><a href="#panel-C">C · 配置读取：先验格式，再验拓扑</a><a href="#panel-D">D · plan：先分配，再分组</a><a href="#panel-E">E · 三种编号与内存所有权</a><a href="#panel-F">F · 端口：兼容旧公式，隔开共享成员</a><a href="#panel-G">G · P/D 身份为什么不含 host 和 NUMA</a><a href="#panel-H">H · report 与当前服务边界</a></nav><div class="am-doc-body">
+<section class="am-panel" id="panel-A">
+<header class="am-panel-head"><span class="am-panel-id">A</span><h2>先看调用顺序</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>建议先读文件后半部分的 <code>MempoolNumaConfig</code>。
+它接收输入，再通过 <code>plan()</code> 返回 <code>SharingPlan</code>。
+最后读计划上的校验和报告方法。</p>
+</div>
+<figure class="am-diagram am-flow"><svg viewBox="0 0 973 180" width="973" height="180" role="img" aria-label="流程图：环境变量与映射文件、from_environment、MempoolNumaConfig、plan、主机拓扑与KV布局、SharingPlan、validate_peer、对侧计划" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am1-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><g></g><g><g data-step="0"><path class="am-edge" d="M159,31.5 L170.5,31.5 Q182,31.5 193.5,31.5 L205,31.5" marker-end="url(#am1-arrow)"/></g><g data-step="1"><path class="am-edge" d="M341.7,31.5 L353.2,31.5 Q364.7,31.5 376.2,31.5 L387.7,31.5" marker-end="url(#am1-arrow)"/></g><g data-step="2"><path class="am-edge" d="M544.9,31.5 L556.4,31.5 Q567.9,31.5 581.8,40.5 L595.8,49.5" marker-end="url(#am1-arrow)"/></g><g data-step="3"><path class="am-edge" d="M534.6,102.5 L551.3,102.5 Q567.9,102.5 581.8,93.5 L595.8,84.5" marker-end="url(#am1-arrow)"/></g><g data-step="4"><path class="am-edge" d="M654.9,67 L666.4,67 Q677.9,67 689.4,67 L700.9,67" marker-end="url(#am1-arrow)"/></g><g data-step="5"><path class="am-edge" d="M788.3,84.5 L807,93.5 Q825.7,102.5 845.5,111.5 L865.3,120.5" marker-end="url(#am1-arrow)"/></g><g data-step="6"><path class="am-edge" d="M791.8,148 L808.8,148 Q825.7,148 837.2,146.5 L848.7,145.1" marker-end="url(#am1-arrow)"/></g><g data-step="7"><path class="am-edge" d="M802.7,60.1 L814.2,58.6 Q825.7,57 848.8,57 L871.8,57" marker-end="url(#am1-arrow)"/></g></g><g><g class="am-node am-node--rect" data-key="环境变量与映射文件" data-step="0"><rect class="am-node-shape" x="14" y="14" width="145" height="35" rx="3"/><text x="86.5" y="31.5" text-anchor="middle" dominant-baseline="central">环境变量与映射文件</text></g><g class="am-node am-node--rect" data-key="from_environment" data-step="0"><rect class="am-node-shape" x="205" y="14" width="136.7" height="35" rx="3"/><text x="273.3" y="31.5" text-anchor="middle" dominant-baseline="central">from_environment</text></g><g class="am-node am-node--rect" data-key="MempoolNumaConfig" data-step="1"><rect class="am-node-shape" x="387.7" y="14" width="157.2" height="35" rx="3"/><text x="466.3" y="31.5" text-anchor="middle" dominant-baseline="central">MempoolNumaConfig</text></g><g class="am-node am-node--rect" data-key="plan" data-step="2"><rect class="am-node-shape" x="590.9" y="49.5" width="64" height="35" rx="3"/><text x="622.9" y="67" text-anchor="middle" dominant-baseline="central">plan</text></g><g class="am-node am-node--rect" data-key="主机拓扑与KV布局" data-step="3"><rect class="am-node-shape" x="398" y="85" width="136.7" height="35" rx="3"/><text x="466.3" y="102.5" text-anchor="middle" dominant-baseline="central">主机拓扑与KV布局</text></g><g class="am-node am-node--rect" data-key="SharingPlan" data-step="4"><rect class="am-node-shape" x="700.9" y="49.5" width="101.8" height="35" rx="3"/><text x="751.8" y="67" text-anchor="middle" dominant-baseline="central">SharingPlan</text></g><g class="am-node am-node--rect" data-key="validate_peer" data-step="5"><rect class="am-node-shape" x="848.7" y="120.5" width="110.2" height="35" rx="3"/><text x="903.8" y="138" text-anchor="middle" dominant-baseline="central">validate_peer</text></g><g class="am-node am-node--rect" data-key="对侧计划" data-step="6"><rect class="am-node-shape" x="711.8" y="130.5" width="80" height="35" rx="3"/><text x="751.8" y="148" text-anchor="middle" dominant-baseline="central">对侧计划</text></g><g class="am-node am-node--rect" data-key="report" data-step="7"><rect class="am-node-shape" x="871.8" y="39.5" width="64" height="35" rx="3"/><text x="903.8" y="57" text-anchor="middle" dominant-baseline="central">report</text></g></g></svg></figure>
+<div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>入口</th>
+<th>代码位置</th>
+<th>负责什么</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>from_environment()</code></td>
+<td>246行</td>
+<td>读取环境与 JSON 文件，检查输入格式</td>
+</tr>
+<tr>
+<td><code>plan()</code></td>
+<td>289行</td>
+<td>结合拓扑解析分配，生成共享组</td>
+</tr>
+<tr>
+<td><code>validate_peer()</code></td>
+<td>113行</td>
+<td>对比已经取得的 P/D 计划</td>
+</tr>
+<tr>
+<td><code>report()</code></td>
+<td>181行</td>
+<td>计算并输出每个 rank 的计划信息</td>
+</tr>
+</tbody></table></div>
+<p><code>validate_peer()</code> 本身不联网。
+调用者需要先拿到两侧计划，再显式调用它。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-B">
+<header class="am-panel-head"><span class="am-panel-id">B</span><h2>五个数据结构各管一层</h2></header>
+<div class="am-panel-body"><div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>类型</th>
+<th>主要字段</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>MempoolNumaConfig</code></td>
+<td>share、旧列表、显式 map</td>
+<td>用户的配置输入</td>
+</tr>
+<tr>
+<td><code>HostTopology</code></td>
+<td>host、ranks、online_nodes</td>
+<td>一台物理主机的已知拓扑</td>
+</tr>
+<tr>
+<td><code>RankNuma</code></td>
+<td>host、rank、numa_node</td>
+<td>一个全局 TP rank 的节点分配</td>
+</tr>
+<tr>
+<td><code>SharingGroup</code></td>
+<td>host、numa_node、members、nic_offset</td>
+<td>本侧共享一份 KV 的成员组</td>
+</tr>
+<tr>
+<td><code>SharingPlan</code></td>
+<td>role、身份、layout、assignments、groups</td>
+<td>本侧整个 TP 实例的规划结果</td>
+</tr>
+</tbody></table></div>
+<p>这些 dataclass 使用 <code>frozen=True</code>。
+正常调用不能重新赋值字段，成员集合也用 tuple 保存。
+这样有助于保持启动后的分组稳定。
+<code>frozen=True</code> 不自动验证数据；完整校验由入口方法完成。</p>
+<p>一个 <code>SharingPlan</code> 只对应一个 role、instance 和 KV identity。
+这些值约束整个计划，所以无需重复放进每个组的字典键。
+规划器不会跨独立实例合并共享池。</p>
+<p><code>host</code> 由调用者提供，必须表示真实物理主机。
+本模块不会自动探测远端主机，也不会识别主机别名。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-C">
+<header class="am-panel-head"><span class="am-panel-id">C</span><h2>配置读取：先验格式，再验拓扑</h2></header>
+<div class="am-panel-body"><div class="am-md"><p><code>from_environment()</code> 只接受字面值 <code>0</code> 和 <code>1</code>。
+没有共享开关时，默认取 <code>0</code>。
+<code>true</code>、<code>01</code>、带空格的 <code>1</code> 都会报错。</p>
+<p>显式 map 是一个 JSON 数组：</p>
+</div>
+<pre class="am-code"><code data-lang="json">[
+  {&quot;host&quot;: &quot;host-a&quot;, &quot;rank&quot;: 0, &quot;node&quot;: 0},
+  {&quot;host&quot;: &quot;host-a&quot;, &quot;rank&quot;: 1, &quot;node&quot;: 2}
+]</code></pre>
+<div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>检查阶段</th>
+<th>检查内容</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>读取环境</td>
+<td>share 值合法；map 与旧节点列表互斥</td>
+</tr>
+<tr>
+<td>读取 JSON</td>
+<td>非空数组；每条只有 host/rank/node</td>
+</tr>
+<tr>
+<td><code>_unique_fields()</code></td>
+<td>同一 JSON 对象中不能重复出现 node 等字段</td>
+</tr>
+<tr>
+<td><code>RankNuma.validate()</code></td>
+<td>host 非空；rank 是非负整数；node 在0到126内</td>
+</tr>
+<tr>
+<td><code>plan()</code></td>
+<td>ranks 完整且唯一；host 匹配；节点在线</td>
+</tr>
+</tbody></table></div>
+<p><code>type(rank) is int</code> 会拒绝布尔值。
+Python 把 bool 视为 int 的子类，直接用 <code>isinstance</code> 会接受 <code>True</code>。</p>
+<p><code>parse_numa_nodes()</code> 位于20行。
+它解析旧列表，并对照 <code>0-3,6</code> 形式的在线节点范围。
+旧列表不能重复节点；显式 map 允许多个 ranks 使用同一节点。
+因此不要用旧列表 <code>0,0,2,2</code> 表达逐 rank 映射。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>输入情况</th>
+<th>独立模式</th>
+<th>共享模式</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>未指定节点</td>
+<td><code>-1</code> 表示默认分配</td>
+<td>报错</td>
+</tr>
+<tr>
+<td>旧列表无效或拓扑未知</td>
+<td>记录告警，回退默认分配</td>
+<td>报错</td>
+</tr>
+<tr>
+<td>显式 map 无效</td>
+<td>报错</td>
+<td>报错</td>
+</tr>
+</tbody></table></div>
+<p><code>-1</code> 是独立模式内部生成的占位值。
+它不能出现在用户提交的显式 map 中。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-D">
+<header class="am-panel-head"><span class="am-panel-id">D</span><h2>plan：先分配，再分组</h2></header>
+<div class="am-panel-body"><div class="am-md"><p><code>plan()</code> 先检查 TP 大小、role、身份、pool ID 和端口。
+随后建立 <code>rank_hosts</code>，确保每个全局 rank 恰好归属一台主机。</p>
+<p>如果配置了显式 map，就逐条核对 host 和在线节点。
+否则按旧列表计算：</p>
+</div>
+<pre class="am-code"><code data-lang="python">node = nodes[rank % len(nodes)]</code></pre>
+<div class="am-md"><p>这里的 rank 是全局 TP rank。
+到下一台主机后也不重新从列表头开始轮转。</p>
+<p>四个 ranks 使用旧列表 <code>0,2</code>：</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>TP rank</th>
+<th>0</th>
+<th>1</th>
+<th>2</th>
+<th>3</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>分配的 NUMA node</td>
+<td>0</td>
+<td>2</td>
+<td>0</td>
+<td>2</td>
+</tr>
+<tr>
+<td>share=0 的组</td>
+<td><code>(0,)</code></td>
+<td><code>(1,)</code></td>
+<td><code>(2,)</code></td>
+<td><code>(3,)</code></td>
+</tr>
+<tr>
+<td>share=1 的组</td>
+<td><code>(0,2)</code></td>
+<td><code>(1,3)</code></td>
+<td><code>(0,2)</code></td>
+<td><code>(1,3)</code></td>
+</tr>
+</tbody></table></div>
+<p>分组的关键代码位于393行：</p>
+</div>
+<pre class="am-code"><code data-lang="python">key = (
+    assignment.host,
+    assignment.numa_node,
+    -1 if self.mempool_share else assignment.rank,
+)</code></pre>
+<div class="am-md"><p>开启共享时，第三项统一为 <code>-1</code>，同机同节点的键相同。
+关闭共享时，第三项使用 rank，每个 rank 的键都不同。
+分配结果保持相同，只改变存储副本的规划方式。</p>
+<p>分组前先按 rank 排序。
+因此成员顺序固定，<code>members[0]</code> 就是 owner。
+本例两个组的 owner 分别是 TP rank 0 和1。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-E">
+<header class="am-panel-head"><span class="am-panel-id">E</span><h2>三种编号与内存所有权</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>不要把全局 TP rank 当作 BM participant。
+BM participant 在每个共享组内部单独编号。</p>
+</div>
+<pre class="am-code"><code data-lang="python">member = 组内位置                 # 0 .. g-1
+side = 0 if role == &quot;prefill&quot; else 1
+participant = side * g + member  # 0 .. 2g-1
+owner_participant = side * g</code></pre>
+<div class="am-md"><p>以成员 <code>(0,2)</code> 为例，g=2：</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>进程</th>
+<th>TP rank</th>
+<th>member</th>
+<th>BM participant</th>
+<th>计划贡献</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>P0</td>
+<td>0</td>
+<td>0</td>
+<td>0</td>
+<td>完整 P pool</td>
+</tr>
+<tr>
+<td>P2</td>
+<td>2</td>
+<td>1</td>
+<td>1</td>
+<td>0</td>
+</tr>
+<tr>
+<td>D0</td>
+<td>0</td>
+<td>0</td>
+<td>2</td>
+<td>完整 D pool</td>
+</tr>
+<tr>
+<td>D2</td>
+<td>2</td>
+<td>1</td>
+<td>3</td>
+<td>0</td>
+</tr>
+</tbody></table></div>
+<p>每侧只规划一个物理 owner。
+owner 表示内存贡献者；实际写入由后续 writer 分工决定。
+其他成员将映射 owner 的存储；映射操作尚未接入。
+共享不会把每个请求可用的 token 容量除以 g。</p>
+<p><code>group_layout()</code> 位于155行。
+它保留原 prompt/decode 布局，只扩展 probe 空间：</p>
+</div>
+<pre class="am-code"><code data-lang="python">probe_bytes = max(base_probe_bytes, 64 * g)
+probe_offset = payload_bytes_of_side + 64 * member
+contribution = align_up(payload_bytes_of_side + probe_bytes, alignment)
+rank_stride = max(P_contribution, D_contribution)</code></pre>
+<div class="am-md"><p>每名成员有独立64字节 probe 区间，避免互相覆盖。
+这些区间位于 owner 的 payload 之后。
+零贡献成员不会单独分配一块 probe 内存。
+当前代码只预留区间；实际写入协议由02-2接入。</p>
+<p><code>PoolLayout</code> 原来的0/1参数在这里表示逻辑 P/D side。
+因此 <code>layout.contribution_bytes(side)</code> 仍成立。
+BM participant 需要在后续 manager 中转换到对应 owner。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-F">
+<header class="am-panel-head"><span class="am-panel-id">F</span><h2>端口：兼容旧公式，隔开共享成员</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>每组使用 owner rank 确定 store 端口：</p>
+</div>
+<pre class="am-code"><code data-lang="python">store_port = base_port + owner_tp_rank</code></pre>
+<div class="am-md"><p>NIC 沿用已验证组件的分配方式。
+每名成员预留 <code>2g</code> 个端口，一组预留 <code>2g²</code> 个端口。
+<code>nic_offset</code> 累加前面各组的预留范围。</p>
+</div>
+<pre class="am-code"><code data-lang="python">nic_base = nic_port + group.nic_offset + 2 * g * member
+actual_nic_port = nic_base + participant</code></pre>
+<div class="am-md"><p>本例用默认基址19000和25670：</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>TP rank</th>
+<th>共享组</th>
+<th>store</th>
+<th>P NIC</th>
+<th>D NIC</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>0</td>
+<td><code>(0,2)</code></td>
+<td>19000</td>
+<td>25670</td>
+<td>25672</td>
+</tr>
+<tr>
+<td>1</td>
+<td><code>(1,3)</code></td>
+<td>19001</td>
+<td>25678</td>
+<td>25680</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>(0,2)</code></td>
+<td>19000</td>
+<td>25675</td>
+<td>25677</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>(1,3)</code></td>
+<td>19001</td>
+<td>25683</td>
+<td>25685</td>
+</tr>
+</tbody></table></div>
+<p>以上端口已用当前代码运行核对。
+g=1时，每组预留两个端口，保留旧独立模式的公式。</p>
+<p><code>plan()</code> 检查端口上限和 store/NIC 范围重叠。
+<code>validate_peer()</code> 再检查两侧实际的 <code>(host, port)</code> 冲突。
+它不探测端口是否已被其他服务占用。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-G">
+<header class="am-panel-head"><span class="am-panel-id">G</span><h2>P/D 身份为什么不含 host 和 NUMA</h2></header>
+<div class="am-panel-body"><div class="am-md"><p><code>group_identity()</code> 位于164行。
+它把逻辑配置序列化后计算 SHA-256。
+排序 JSON 字段可使相同配置稳定得到相同摘要。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>进入摘要</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>version</td>
+<td>区分身份格式</td>
+</tr>
+<tr>
+<td>instance_id、kv_identity</td>
+<td>区分实例和逻辑 KV 身份</td>
+</tr>
+<tr>
+<td>tp_size、mempool_share、members</td>
+<td>固定 TP 模式及成员关系</td>
+</tr>
+<tr>
+<td>pool_id、完整 group layout</td>
+<td>固定池配置及容量/probe/stride</td>
+</tr>
+<tr>
+<td>writer_rule</td>
+<td>约定写入分工规则</td>
+</tr>
+</tbody></table></div>
+<p>P/D 可以部署在不同主机，也可以使用不同 NUMA 编号。
+只要它们属于同一个逻辑组，就需要相同摘要。
+所以 role、host 和 NUMA node 不进入这份摘要。
+端口也不在摘要中，由单独的兼容校验检查。</p>
+<p><code>validate_peer()</code> 要求双方 role 相反。
+它还比较身份、共享开关、layout、pool ID、store 基址和成员集合。
+P 侧 <code>(0,2)/(1,3)</code> 不能搭配 D 侧 <code>(0,1)/(2,3)</code>。
+不同物理主机可以使用相同数字端口。</p>
+<p><code>kv_identity</code> 当前来自调用者。
+摘要没有读取模型权重，也没有比较真实 KV 内容。
+<code>writer_rule</code> 当前只是合同标签；本文件没有执行分片写入。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-H">
+<header class="am-panel-head"><span class="am-panel-id">H</span><h2>report 与当前服务边界</h2></header>
+<div class="am-panel-body"><div class="am-md"><p><code>report()</code> 把组级信息展开为逐 rank 的字典。
+它调用同一组 layout、身份和端口计算函数。
+然后按全局 rank 排序，汇总本侧的计划贡献。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>输出</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>group、owner_tp_rank</td>
+<td>共享对象及物理 owner</td>
+</tr>
+<tr>
+<td>participant、owner_participant、world_size</td>
+<td>BM 组内身份</td>
+</tr>
+<tr>
+<td>contribution_bytes、rank_stride_bytes</td>
+<td>计划贡献与最大 stride</td>
+</tr>
+<tr>
+<td>probe_offset、store_port、nic_port</td>
+<td>计划偏移及端口</td>
+</tr>
+<tr>
+<td>pool_identity</td>
+<td>逻辑配置摘要</td>
+</tr>
+<tr>
+<td>allocation_status</td>
+<td>固定为 <code>planned</code></td>
+</tr>
+<tr>
+<td>placement_verified</td>
+<td>固定为 <code>false</code></td>
+</tr>
+</tbody></table></div>
+<p><code>report()</code> 不会自动调用 <code>validate_peer()</code>。
+报告成功只说明本侧计划已生成。
+启动流程仍需交换对侧计划，并显式校验。</p>
+<p><code>require_rank_pair_startup()</code> 位于237行。
+当前生产 config 和 manager 会调用这个阶段检查。
+<code>share=1</code> 或显式 map 会报错并指向02-2。
+旧分配器因此不会静默忽略新的配置意图。</p>
+<p>规划入口与真实分配入口目前是分开的。
+02-2将实现计划交换、BM 分配、映射和组生命周期。
+本文件提供它们需要共同遵守的配置与编号合同。</p>
+</div></div>
+</section>
+</div>
+</div>
+</main>
+<footer class="am-colophon">Generated by Answer me with HTML 0.4.3 · 2026-10-14 19:54</footer>
+<textarea id="am-source" hidden readonly aria-hidden="true">---
+template: doc
+theme: shadcn
+mode: light
+lang: zh
+title: sharing_plan.py：从 NUMA 配置到共享池计划
+subtitle: 先确定节点，再决定分组；用一个四 rank 示例贯穿代码
+source: ticket02-1 · d328af12bd · 代码讲解
+---
+
+`sharing_plan.py` 计算每个 rank 应加入哪个池。
+它还计算 owner、BM 编号、内存大小、probe 和端口。
+本模块只生成计划；BM 分配和设备映射由后续启动代码执行。
+
+## A 先看调用顺序
+
+建议先读文件后半部分的 `MempoolNumaConfig`。
+它接收输入，再通过 `plan()` 返回 `SharingPlan`。
+最后读计划上的校验和报告方法。
+
+```flow LR
+环境变量与映射文件 -&gt; from_environment
+from_environment -&gt; MempoolNumaConfig
+MempoolNumaConfig -&gt; plan
+主机拓扑与KV布局 -&gt; plan
+plan -&gt; SharingPlan
+SharingPlan -&gt; validate_peer
+对侧计划 -&gt; validate_peer
+SharingPlan -&gt; report
+```
+
+| 入口 | 代码位置 | 负责什么 |
+|---|---|---|
+| `from_environment()` | 246行 | 读取环境与 JSON 文件，检查输入格式 |
+| `plan()` | 289行 | 结合拓扑解析分配，生成共享组 |
+| `validate_peer()` | 113行 | 对比已经取得的 P/D 计划 |
+| `report()` | 181行 | 计算并输出每个 rank 的计划信息 |
+
+`validate_peer()` 本身不联网。
+调用者需要先拿到两侧计划，再显式调用它。
+
+## B 五个数据结构各管一层
+
+| 类型 | 主要字段 | 含义 |
+|---|---|---|
+| `MempoolNumaConfig` | share、旧列表、显式 map | 用户的配置输入 |
+| `HostTopology` | host、ranks、online_nodes | 一台物理主机的已知拓扑 |
+| `RankNuma` | host、rank、numa_node | 一个全局 TP rank 的节点分配 |
+| `SharingGroup` | host、numa_node、members、nic_offset | 本侧共享一份 KV 的成员组 |
+| `SharingPlan` | role、身份、layout、assignments、groups | 本侧整个 TP 实例的规划结果 |
+
+这些 dataclass 使用 `frozen=True`。
+正常调用不能重新赋值字段，成员集合也用 tuple 保存。
+这样有助于保持启动后的分组稳定。
+`frozen=True` 不自动验证数据；完整校验由入口方法完成。
+
+一个 `SharingPlan` 只对应一个 role、instance 和 KV identity。
+这些值约束整个计划，所以无需重复放进每个组的字典键。
+规划器不会跨独立实例合并共享池。
+
+`host` 由调用者提供，必须表示真实物理主机。
+本模块不会自动探测远端主机，也不会识别主机别名。
+
+## C 配置读取：先验格式，再验拓扑
+
+`from_environment()` 只接受字面值 `0` 和 `1`。
+没有共享开关时，默认取 `0`。
+`true`、`01`、带空格的 `1` 都会报错。
+
+显式 map 是一个 JSON 数组：
+
+```json
+[
+  {&quot;host&quot;: &quot;host-a&quot;, &quot;rank&quot;: 0, &quot;node&quot;: 0},
+  {&quot;host&quot;: &quot;host-a&quot;, &quot;rank&quot;: 1, &quot;node&quot;: 2}
+]
+```
+
+| 检查阶段 | 检查内容 |
+|---|---|
+| 读取环境 | share 值合法；map 与旧节点列表互斥 |
+| 读取 JSON | 非空数组；每条只有 host/rank/node |
+| `_unique_fields()` | 同一 JSON 对象中不能重复出现 node 等字段 |
+| `RankNuma.validate()` | host 非空；rank 是非负整数；node 在0到126内 |
+| `plan()` | ranks 完整且唯一；host 匹配；节点在线 |
+
+`type(rank) is int` 会拒绝布尔值。
+Python 把 bool 视为 int 的子类，直接用 `isinstance` 会接受 `True`。
+
+`parse_numa_nodes()` 位于20行。
+它解析旧列表，并对照 `0-3,6` 形式的在线节点范围。
+旧列表不能重复节点；显式 map 允许多个 ranks 使用同一节点。
+因此不要用旧列表 `0,0,2,2` 表达逐 rank 映射。
+
+| 输入情况 | 独立模式 | 共享模式 |
+|---|---|---|
+| 未指定节点 | `-1` 表示默认分配 | 报错 |
+| 旧列表无效或拓扑未知 | 记录告警，回退默认分配 | 报错 |
+| 显式 map 无效 | 报错 | 报错 |
+
+`-1` 是独立模式内部生成的占位值。
+它不能出现在用户提交的显式 map 中。
+
+## D plan：先分配，再分组
+
+`plan()` 先检查 TP 大小、role、身份、pool ID 和端口。
+随后建立 `rank_hosts`，确保每个全局 rank 恰好归属一台主机。
+
+如果配置了显式 map，就逐条核对 host 和在线节点。
+否则按旧列表计算：
+
+```python
+node = nodes[rank % len(nodes)]
+```
+
+这里的 rank 是全局 TP rank。
+到下一台主机后也不重新从列表头开始轮转。
+
+四个 ranks 使用旧列表 `0,2`：
+
+| TP rank | 0 | 1 | 2 | 3 |
+|---|---|---|---|---|
+| 分配的 NUMA node | 0 | 2 | 0 | 2 |
+| share=0 的组 | `(0,)` | `(1,)` | `(2,)` | `(3,)` |
+| share=1 的组 | `(0,2)` | `(1,3)` | `(0,2)` | `(1,3)` |
+
+分组的关键代码位于393行：
+
+```python
+key = (
+    assignment.host,
+    assignment.numa_node,
+    -1 if self.mempool_share else assignment.rank,
+)
+```
+
+开启共享时，第三项统一为 `-1`，同机同节点的键相同。
+关闭共享时，第三项使用 rank，每个 rank 的键都不同。
+分配结果保持相同，只改变存储副本的规划方式。
+
+分组前先按 rank 排序。
+因此成员顺序固定，`members[0]` 就是 owner。
+本例两个组的 owner 分别是 TP rank 0 和1。
+
+## E 三种编号与内存所有权
+
+不要把全局 TP rank 当作 BM participant。
+BM participant 在每个共享组内部单独编号。
+
+```python
+member = 组内位置                 # 0 .. g-1
+side = 0 if role == &quot;prefill&quot; else 1
+participant = side * g + member  # 0 .. 2g-1
+owner_participant = side * g
+```
+
+以成员 `(0,2)` 为例，g=2：
+
+| 进程 | TP rank | member | BM participant | 计划贡献 |
+|---|---|---|---|---|
+| P0 | 0 | 0 | 0 | 完整 P pool |
+| P2 | 2 | 1 | 1 | 0 |
+| D0 | 0 | 0 | 2 | 完整 D pool |
+| D2 | 2 | 1 | 3 | 0 |
+
+每侧只规划一个物理 owner。
+owner 表示内存贡献者；实际写入由后续 writer 分工决定。
+其他成员将映射 owner 的存储；映射操作尚未接入。
+共享不会把每个请求可用的 token 容量除以 g。
+
+`group_layout()` 位于155行。
+它保留原 prompt/decode 布局，只扩展 probe 空间：
+
+```python
+probe_bytes = max(base_probe_bytes, 64 * g)
+probe_offset = payload_bytes_of_side + 64 * member
+contribution = align_up(payload_bytes_of_side + probe_bytes, alignment)
+rank_stride = max(P_contribution, D_contribution)
+```
+
+每名成员有独立64字节 probe 区间，避免互相覆盖。
+这些区间位于 owner 的 payload 之后。
+零贡献成员不会单独分配一块 probe 内存。
+当前代码只预留区间；实际写入协议由02-2接入。
+
+`PoolLayout` 原来的0/1参数在这里表示逻辑 P/D side。
+因此 `layout.contribution_bytes(side)` 仍成立。
+BM participant 需要在后续 manager 中转换到对应 owner。
+
+## F 端口：兼容旧公式，隔开共享成员
+
+每组使用 owner rank 确定 store 端口：
+
+```python
+store_port = base_port + owner_tp_rank
+```
+
+NIC 沿用已验证组件的分配方式。
+每名成员预留 `2g` 个端口，一组预留 `2g²` 个端口。
+`nic_offset` 累加前面各组的预留范围。
+
+```python
+nic_base = nic_port + group.nic_offset + 2 * g * member
+actual_nic_port = nic_base + participant
+```
+
+本例用默认基址19000和25670：
+
+| TP rank | 共享组 | store | P NIC | D NIC |
+|---|---|---|---|---|
+| 0 | `(0,2)` | 19000 | 25670 | 25672 |
+| 1 | `(1,3)` | 19001 | 25678 | 25680 |
+| 2 | `(0,2)` | 19000 | 25675 | 25677 |
+| 3 | `(1,3)` | 19001 | 25683 | 25685 |
+
+以上端口已用当前代码运行核对。
+g=1时，每组预留两个端口，保留旧独立模式的公式。
+
+`plan()` 检查端口上限和 store/NIC 范围重叠。
+`validate_peer()` 再检查两侧实际的 `(host, port)` 冲突。
+它不探测端口是否已被其他服务占用。
+
+## G P/D 身份为什么不含 host 和 NUMA
+
+`group_identity()` 位于164行。
+它把逻辑配置序列化后计算 SHA-256。
+排序 JSON 字段可使相同配置稳定得到相同摘要。
+
+| 进入摘要 | 用途 |
+|---|---|
+| version | 区分身份格式 |
+| instance_id、kv_identity | 区分实例和逻辑 KV 身份 |
+| tp_size、mempool_share、members | 固定 TP 模式及成员关系 |
+| pool_id、完整 group layout | 固定池配置及容量/probe/stride |
+| writer_rule | 约定写入分工规则 |
+
+P/D 可以部署在不同主机，也可以使用不同 NUMA 编号。
+只要它们属于同一个逻辑组，就需要相同摘要。
+所以 role、host 和 NUMA node 不进入这份摘要。
+端口也不在摘要中，由单独的兼容校验检查。
+
+`validate_peer()` 要求双方 role 相反。
+它还比较身份、共享开关、layout、pool ID、store 基址和成员集合。
+P 侧 `(0,2)/(1,3)` 不能搭配 D 侧 `(0,1)/(2,3)`。
+不同物理主机可以使用相同数字端口。
+
+`kv_identity` 当前来自调用者。
+摘要没有读取模型权重，也没有比较真实 KV 内容。
+`writer_rule` 当前只是合同标签；本文件没有执行分片写入。
+
+## H report 与当前服务边界
+
+`report()` 把组级信息展开为逐 rank 的字典。
+它调用同一组 layout、身份和端口计算函数。
+然后按全局 rank 排序，汇总本侧的计划贡献。
+
+| 输出 | 含义 |
+|---|---|
+| group、owner_tp_rank | 共享对象及物理 owner |
+| participant、owner_participant、world_size | BM 组内身份 |
+| contribution_bytes、rank_stride_bytes | 计划贡献与最大 stride |
+| probe_offset、store_port、nic_port | 计划偏移及端口 |
+| pool_identity | 逻辑配置摘要 |
+| allocation_status | 固定为 `planned` |
+| placement_verified | 固定为 `false` |
+
+`report()` 不会自动调用 `validate_peer()`。
+报告成功只说明本侧计划已生成。
+启动流程仍需交换对侧计划，并显式校验。
+
+`require_rank_pair_startup()` 位于237行。
+当前生产 config 和 manager 会调用这个阶段检查。
+`share=1` 或显式 map 会报错并指向02-2。
+旧分配器因此不会静默忽略新的配置意图。
+
+规划入口与真实分配入口目前是分开的。
+02-2将实现计划交换、BM 分配、映射和组生命周期。
+本文件提供它们需要共同遵守的配置与编号合同。
+</textarea>
+<script>
+(() => {
+  const root = document.documentElement;
+  const cycle = (list, cur) => list[(list.indexOf(cur) + 1) % list.length];
+  const label = (btn, value) => {
+    const map = JSON.parse(btn.dataset.labels || '{}');
+    btn.textContent = map[value] || value;
+  };
+  const bind = (name, attr, values) => {
+    const btn = document.querySelector(`[data-am="${name}"]`);
+    if (!btn) return;
+    label(btn, root.getAttribute(attr));
+    btn.addEventListener('click', () => {
+      const next = cycle(values, root.getAttribute(attr));
+      root.setAttribute(attr, next);
+      label(btn, next);
+    });
+  };
+  bind('theme', 'data-theme', ['blueprint', 'shadcn']);
+  bind('mode', 'data-mode', ['auto', 'light', 'dark']);
+
+  const copyBtn = document.querySelector('[data-am="copy"]');
+  copyBtn?.addEventListener('click', async () => {
+    const text = document.getElementById('am-source').value;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = Object.assign(document.createElement('textarea'), { value: text });
+      document.body.append(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    const original = copyBtn.textContent;
+    copyBtn.textContent = copyBtn.dataset.done;
+    setTimeout(() => { copyBtn.textContent = original; }, 1400);
+  });
+})();
+</script>
+</body>
+</html>

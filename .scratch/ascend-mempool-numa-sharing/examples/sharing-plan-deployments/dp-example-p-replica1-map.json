@@ -1,0 +1,42 @@
+[
+  {
+    "host": "dp-example-p",
+    "rank": 0,
+    "node": 2
+  },
+  {
+    "host": "dp-example-p",
+    "rank": 1,
+    "node": 2
+  },
+  {
+    "host": "dp-example-p",
+    "rank": 2,
+    "node": 2
+  },
+  {
+    "host": "dp-example-p",
+    "rank": 3,
+    "node": 2
+  },
+  {
+    "host": "dp-example-p",
+    "rank": 4,
+    "node": 3
+  },
+  {
+    "host": "dp-example-p",
+    "rank": 5,
+    "node": 3
+  },
+  {
+    "host": "dp-example-p",
+    "rank": 6,
+    "node": 3
+  },
+  {
+    "host": "dp-example-p",
+    "rank": 7,
+    "node": 3
+  }
+]

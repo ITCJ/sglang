@@ -4,12 +4,19 @@
 **Status:** ready-for-agent
 **State:** open
 
-**Current stage (2026-10-12):** Tickets 01–03 and
+**Current stage (2026-10-14):** Tickets 01–03 and
 [10: GLM-5.2 algorithm adaptation](issues/10-glm52-indexer-sharing.md) are accepted
 and closed. The user confirmed ticket10 closure after GLM-5.2 full automated
 acceptance and the agreed GLM-5.1 quick regression, including remaining manual
-checks. [04](issues/04-single-request-graph-decode.md) is now unblocked and has not
-started. Ticket09 remains deferred. The overall feature remains open.
+checks. On 2026-10-12 the user prioritized
+[MLA NUMA sharing](../ascend-mempool-numa-sharing/spec.md) before
+[04](issues/04-single-request-graph-decode.md), which has not started. Its prior
+03/10 blockers are closed; the new sharing delivery now comes first. The user
+accepted sharing ticket01 on 2026-10-14, retaining its unverified physical NUMA
+placement evidence. Sharing ticket02 can start; sharing03 still gates original04.
+The default deployment assigns two TP ranks per NUMA node, with a separate
+startup switch controlling shared versus per-rank storage. Ticket09 remains
+deferred. The overall feature remains open.
 
 **Historical review (2026-09-28):** [Design and code review](design-review-2026-09-28.md)
 records the findings that informed subsequent work. Unapproved proposals there do

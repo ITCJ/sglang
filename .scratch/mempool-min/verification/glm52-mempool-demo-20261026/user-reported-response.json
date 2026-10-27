@@ -1,0 +1,69 @@
+{
+  "provenance": {
+    "source": "User-pasted command and response; not a direct read of the NPU log files",
+    "received_date": "2026-10-26",
+    "host": "npu1-31",
+    "working_directory": "/home/cryang/ascend-sglang-script",
+    "endpoint": "http://10.120.72.31:6699/generate",
+    "log_root": "/home/cryang/log/mempool-demo/glm52-mempool-demo",
+    "released_script_commit": "42a1511ab1479bcefa1c8ec5596ba97ac8ec0fc1",
+    "required_sglang_commit": "7275f29a05",
+    "remote_git_shas_reported_in_this_output": false
+  },
+  "request": {
+    "question": "盒子里有25支铅笔，送出7支，剩下的平均分给3人。每人几支？请简短说明计算过程。",
+    "prompt_tokens": 128,
+    "sampling_params": {
+      "temperature": 0,
+      "max_new_tokens": 128
+    },
+    "stream": false,
+    "input_encoding": "GLM chat template with enable_thinking=false; blank tokens inserted at the start of user content to align to page_size=128",
+    "input_ids_in_pasted_output": false
+  },
+  "readiness_response": {
+    "ready": true,
+    "error": null
+  },
+  "response": {
+    "text": "每人分6支。\n\n计算过程：\n1. 先算剩下的铅笔数：25 - 7 = 18（支）\n2. 再算每人分得的支数：18 ÷ 3 = 6（支）",
+    "output_ids": [
+      109089, 98363, 21, 98775, 3407, 99653, 99129, 28213,
+      16, 13, 110589, 98849, 109849, 122303, 98469, 5122,
+      99446, 481, 220, 22, 284, 220, 99243, 9904,
+      98775, 23020, 17, 13, 104424, 98849, 109089, 98363,
+      112524, 98775, 98469, 5122, 99243, 1683, 115, 220,
+      18, 284, 220, 21, 9904, 98775, 7552, 154827
+    ],
+    "meta_info": {
+      "id": "glm52-mempool-demo-1",
+      "finish_reason": {
+        "type": "stop",
+        "matched": 154827
+      },
+      "prompt_tokens": 128,
+      "weight_version": "default",
+      "num_retractions": 0,
+      "reasoning_tokens": 0,
+      "completion_tokens": 48,
+      "cached_tokens": 0,
+      "weight_versions": [
+        {
+          "version": "default",
+          "start": 0,
+          "end": 48
+        }
+      ],
+      "cached_tokens_details": null,
+      "dp_rank": null,
+      "e2e_latency": 11.120827391045168,
+      "response_sent_to_client_ts": 1792952142.0508866
+    }
+  },
+  "assessment": {
+    "manual_single_request_smoke": "passed",
+    "arithmetic": "correct: (25 - 7) / 3 = 6",
+    "graph_replay": "Not observable in this response; the earlier automated acceptance report contains the Graph evidence",
+    "scope": "One natural-language cold request, normal stop, no retractions; not a performance benchmark or prefix test"
+  }
+}

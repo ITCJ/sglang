@@ -1,0 +1,113 @@
+{
+  "status": "passed",
+  "role": "decode",
+  "mode": "prefix-acceptance",
+  "coverage": "ticket02 cold prefix save",
+  "user_accepted": false,
+  "stages": [
+    "fetch",
+    "reference",
+    "target"
+  ],
+  "identity": {
+    "run_id": "ticket02-002",
+    "mode": "prefix-acceptance",
+    "config": {
+      "prefill_host": "10.120.72.31",
+      "decode_host": "10.120.72.32",
+      "model_path": "/data_lib/data/models/GLM-5.2-w4a8",
+      "interface": "bond4",
+      "numa_nodes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "main_port": 6699,
+      "control_port": 16700,
+      "runner_port": 18891,
+      "prefill_port": 8000,
+      "decode_port": 8001,
+      "bootstrap_port": 8995,
+      "prompt_capacity": 8192,
+      "decode_capacity": 128,
+      "page_size": 128,
+      "context_length": 8448,
+      "max_total_tokens": 16384,
+      "operation_timeout": 600.0,
+      "startup_timeout": 7200.0,
+      "prefix_pages": 40,
+      "verify_prefix": true
+    },
+    "git_sha": "87157b7365a78aa336d9558e1ce9f820bee2fdd4",
+    "tracked_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked_sha256": {},
+    "model": {
+      "indexer_ids": [
+        0,
+        1,
+        2,
+        6,
+        10,
+        14,
+        18,
+        22,
+        26,
+        30,
+        34,
+        38,
+        42,
+        46,
+        50,
+        54,
+        58,
+        62,
+        66,
+        70,
+        74
+      ],
+      "manifest": {
+        "chat_template.jinja": "172dc74a35e1752df75ecfb2b2cf9326d2852bb1379868ebeec9571654489679",
+        "config.json": "817f5fb39ca5d4c4b5648de89ca00deaea7537d8c2f130172a459252a05c1073",
+        "generation_config.json": "ac76b43d8683d3b930126870fc8be73d8679308fe752fa1f381096d8354f6a55",
+        "quant_model_description.json": "fe2531095c6ff6e674c8f5e4a21c7ec354dd6d003e60aaf4450087a0e4344b70",
+        "tokenizer.json": "19e773648cb4e65de8660ea6365e10acca112d42a854923df93db4a6f333a82d",
+        "tokenizer_config.json": "98b1271574f41abf89427ae2dda030d94dc9478f0edc5a8bd240db213c6fd5fc"
+      }
+    },
+    "versions": {
+      "torch": "2.10.0+cpu",
+      "torch-npu": "2.10.0",
+      "sgl-kernel-npu": "2026.9.0",
+      "memfabric-hybrid": "1.1.4"
+    }
+  },
+  "identity_check": {
+    "status": "passed",
+    "local_role": "decode",
+    "differences": []
+  },
+  "memory_budget": {
+    "bm_bytes": 17179869184,
+    "verification_bytes": 0,
+    "required_bytes": 17179869184
+  },
+  "timeout_fail_stop": {
+    "status": "passed",
+    "rid": "ticket02-002-5",
+    "room": 1072812384372664,
+    "reason": "SR heartbeat timeout",
+    "retained_native_ranks": 16,
+    "retained_all_quotas": true,
+    "automatic_free": false,
+    "process_cleanup_verified": true
+  },
+  "paired_process_cleanup": "passed; both owned groups stopped",
+  "accuracy": "full output IDs equal to same-length formal reference",
+  "hardware_execution": "completed by user runner",
+  "prefix": "content/lifecycle checked"
+}

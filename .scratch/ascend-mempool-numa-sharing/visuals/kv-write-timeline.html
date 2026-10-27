@@ -1,0 +1,81 @@
+<div id="kv-write-timeline">
+  <style>
+    #kv-write-timeline { color: var(--foreground); }
+    #kv-write-timeline .kv-caption { margin-bottom: 16px; }
+    #kv-write-timeline .kv-lanes {
+      display: grid;
+      grid-template-columns: 66px minmax(0, 1fr) 80px;
+      column-gap: 12px;
+      row-gap: 12px;
+      align-items: stretch;
+    }
+    #kv-write-timeline .kv-axis { grid-column: 2 / 4; grid-row: 1; color: var(--muted-foreground); }
+    #kv-write-timeline .kv-lane-label { align-self: center; font-weight: 500; }
+    #kv-write-timeline .kv-compute-label { grid-column: 1; grid-row: 2; }
+    #kv-write-timeline .kv-write-label { grid-column: 1; grid-row: 3; }
+    #kv-write-timeline .kv-compute {
+      grid-column: 2;
+      grid-row: 2;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 14px 10px;
+      background: color-mix(in srgb, var(--viz-series-1) 15%, transparent);
+      text-align: center;
+    }
+    #kv-write-timeline .kv-operation { flex: 1 1 100px; }
+    #kv-write-timeline .kv-write {
+      grid-column: 2;
+      grid-row: 3;
+      padding: 14px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: color-mix(in srgb, var(--viz-series-2) 15%, transparent);
+      text-align: center;
+    }
+    #kv-write-timeline .kv-join {
+      grid-column: 3;
+      grid-row: 2 / 4;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 10px;
+      border-left: 1px solid var(--border);
+      padding-left: 12px;
+      text-align: center;
+    }
+    #kv-write-timeline .kv-tp { font-weight: 500; }
+    #kv-write-timeline .kv-footer { margin-top: 12px; color: var(--muted-foreground); }
+    @media (max-width: 420px) {
+      #kv-write-timeline .kv-lanes { grid-template-columns: 52px minmax(0, 1fr) 66px; column-gap: 8px; }
+      #kv-write-timeline .kv-join { padding-left: 8px; }
+      #kv-write-timeline .kv-compute { flex-direction: column; }
+      #kv-write-timeline .kv-operation { flex: none; }
+      #kv-write-timeline .kv-next { transform: rotate(90deg); }
+    }
+  </style>
+  <h3>每个 rank：计算和写入同时进行</h3>
+  <div class="kv-caption text-small">起点：本地已经算好位置 100 的 compact KV</div>
+  <div class="kv-lanes" role="img" aria-label="每个 rank 在新 KV 就绪后，同时执行本步计算和共享池写入。本步计算依次选择 token、获取历史 KV 和本地新 KV、执行 attention。写入保存本 rank 负责的新 KV 分片。两条任务都完成后进入已有 TP 通信。时间长度仅为顺序示意，不代表测量结果。">
+    <div class="kv-axis text-small">同时开始 → 两条任务都完成 → 原有 TP</div>
+    <div class="kv-lane-label kv-compute-label">本步<br>计算</div>
+    <div class="kv-compute">
+      <span class="kv-operation">选 token<br><span class="text-small">indexer / top-k</span></span>
+      <span class="kv-next" aria-hidden="true">→</span>
+      <span class="kv-operation">取历史 KV<br>＋本地位置 100</span>
+      <span class="kv-next" aria-hidden="true">→</span>
+      <span class="kv-operation">attention<br>及输出投影</span>
+    </div>
+    <div class="kv-join">
+      <span class="text-small">计算完成<br>且本 rank<br>写入完成</span>
+      <span aria-hidden="true">↓</span>
+      <span class="kv-tp">已有<br>TP 通信</span>
+    </div>
+    <div class="kv-lane-label kv-write-label">保存到<br>共享池</div>
+    <div class="kv-write">位置 100 的新 KV<br>只写自己负责的分片 → BM</div>
+  </div>
+  <div class="kv-footer text-small">顺序示意，条带长度不代表实测耗时。</div>
+</div>
