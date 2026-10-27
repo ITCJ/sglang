@@ -5,7 +5,7 @@ template: doc
 theme: blueprint
 lang: zh
 date: 2026-10-27
-status: ticket01、03已关闭；02待单独确认；04代码与CPU检查完成；待用户NPU验收
+status: ticket01、03已关闭；02待单独确认；04完整NPU自动验收通过；待用户关闭确认
 ---
 
 **当前四票与 sparse 阶段 0 一致，但没有覆盖后续全部目标。**
@@ -44,7 +44,7 @@ ticket03的007已把首层大范围差异定位到reduce-scatter。
 
 用户接受已验证功能与已知限制，授权关闭03并停止扩大基础设施排查。
 04按同长度逻辑题与独立标准答案实现完整验收，数据内容和生命周期继续严格检查。
-旧CLI与failed报告保留；新题入口尚未实现，阶段0完整验收仍未通过。
+旧CLI与failed报告保留；ticket04-002完整NPU自动验收通过，等待用户确认关闭。
 
 ## B 最小空闲 slot 0 与 page 的关系
 
@@ -108,6 +108,15 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 共享后分片解析组映射；Router 仍只处理逻辑位置和不透明描述符。
 
 ## D 名称、验收与实施票怎样对应
+
+**2026-10-27 ticket04：第29步，用户回传完整NPU自动验收通过。**
+
+ticket04-002的FULL_ACCEPTANCE总状态与V1–V10全部passed。
+参考组冷算A/C各17个IDs且完全一致；长生成、超时保护与双端清理均passed。
+[用户原文和摘要](verification/ticket04-002-20261027/README.md)已归档；逐rank明细仍保存在远端。
+
+本次范围为sparse阶段0/L0；001失败和旧03数值限制保留。
+04保持needs-info/open，等待用户确认关闭；本轮无源码变更，未重跑CPU或NPU测试。
 
 **2026-10-27 ticket04：第28步，tokenizer修复两轴审核完成。**
 
@@ -939,7 +948,7 @@ K1 是原文的共享接入标记，不代表“阶段 1”。
 
 | 功能名称（原文标记） | 当前本地承接 | 状态与边界 |
 |---|---|---|
-| 基础请求流程（阶段 0） | mempool-min 01 → 02 → 03 → 04 | 01 已关闭；02 待关闭确认；03 两轮 C 输出失败，待首层诊断；04 待实施 |
+| 基础请求流程（阶段 0） | mempool-min 01 → 02 → 03 → 04 | 01 已关闭；02 待关闭确认；03 按已知限制关闭；04 完整NPU自动验收通过，待关闭确认 |
 | 共享存储接入（K1） | 旧 NUMA 共享 02 有部分相关范围 | 尚无覆盖完整共享接入的新控制路径集成票 |
 | 远端 prefix 与布局调整（阶段 1） | 本 feature 尚未拆票 | 包含 page-first |
 | 分块与流水（阶段 2） | 本 feature 尚未拆票 | 包含逐 chunk 推进、提前首 token |
@@ -953,7 +962,7 @@ K1 是原文的共享接入标记，不代表“阶段 1”。
 四票已原位重编，保留编号、历史记录和直接依赖。
 
 ticket01已经用户确认NPU验收并关闭；02自动化NPU验收通过，等待单独关闭确认。
-ticket03按2026-10-27用户授权的功能范围和已知数值限制关闭；04保持open、可开始。
+ticket03按2026-10-27用户授权的功能范围和已知数值限制关闭；04自动化NPU验收通过，待关闭确认。
 
 现有 NPU 数据路径与共享组件证据不计为这四票完成。
 逐票职责、数据流、验收与启动安排见[四票详细回顾](stage-0-ticket-review.html)。
@@ -964,7 +973,7 @@ ticket03按2026-10-27用户授权的功能范围和已知数值限制关闭；04
 | [01 冷请求与显式释放](issues/01-cold-request-lifecycle.md) | 冷请求、统一页、原生 warmup；CPU、双轴 review 与用户 NPU 验收 | 本票已关闭 | 7275f29a05：自动化验收通过，2026-10-26 用户确认；user_accepted=true |
 | [02 prompt 保存](issues/02-prompt-prefix-save.md) | Index K 写回、40 页 prefix、异步 admit/publish；用户回传双机 NPU 验收通过 | 功能与自动化验收完成；等待用户确认关闭 | 87157b7365、ticket02-002；CPU 440 项、两轴 review 与 NPU 报告通过；NUMA 落点未验证，State=open |
 | [03 命中恢复与后缀](issues/03-prefix-restore-and-suffix.md) | 内容/生命周期、007归约定位及映射/副本控制通过；简单A/C语义通过 | 本票按用户授权范围关闭；原C输出差异保留 | State=closed；已接受数值限制，不表示旧严格报告通过 |
-| [04 完整自运行验收](issues/04-full-demo-acceptance.md) | 逻辑ABCE、独立答案/稳定性、V1–V10、隔离故障和完整入口；tokenizer修复后470项CPU通过 | 用户以ticket04-002重测完整NPU验收并确认 | State=open，Status=needs-info；001输入生成失败，V1–V10未执行 |
+| [04 完整自运行验收](issues/04-full-demo-acceptance.md) | 逻辑ABCE、V1–V10、稳定性、长生成、独立故障与双端清理全部NPU通过；470项CPU通过 | 用户确认关闭 | State=open，Status=needs-info；ticket04-002用户回传passed，001失败保留 |
 
 每次实现后立即更新本表，分别记录代码、CPU 检查与用户 NPU 验收。
 只有用户确认对应 NPU 验收后，才关闭该票并解锁下游。

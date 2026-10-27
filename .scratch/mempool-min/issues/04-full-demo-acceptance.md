@@ -14,7 +14,7 @@
 **State:** open
 
 **进入条件（2026-10-27）：** 03已按用户授权、007归约定位证据及明确范围限制关闭，
-解除本票直接阻塞。04仍待实施和用户NPU验收；新输出判定按
+解除本票直接阻塞。04已实现，ticket04-002自动化NPU验收通过，等待用户关闭确认；新输出判定按
 [同长度逻辑题约定](../output-verification-policy.md)，不追溯更改旧报告。
 
 **本轮依据：** 2026-10-23 用户确认[四票详细回顾](../stage-0-ticket-review.md)，
@@ -164,6 +164,20 @@ publish／finished／free_ack 和 D 每步负载必须可追溯。跨机裸时�
   整个 mempool demo min 经用户确认验收后才可删除，不能因阶段 0 结束提前删除。
 
 ## Comments
+
+### 2026-10-27：ticket04-002完整NPU自动验收通过，等待关闭确认
+
+用户在npu1-31回传full-acceptance终端输出，沿用31/32配置，run_id=ticket04-002。
+总结果与V1–V10全部passed；长生成、timeout_fail_stop、paired_cleanup均passed。
+参考组同条件冷算A/C各17个输出IDs，完全相等、无首差，stability=passed。
+终端覆盖fetch、reference、target、capacity、timeout阶段。
+[本次证据](../verification/ticket04-002-20261027/README.md)保存用户原文与摘要。
+远端完整报告为/home/cryang/log/mempool-min/ticket04-002/prefill/v1-v10.json。
+最近交付版本3da1fd61be；终端未包含实际commit，版本身份仍以两机identity.json为准。
+此次只收到终端摘要，未把它标成原始逐rank日志的独立复核。
+代码、470项CPU与两轴审核已通过；本轮仅更新记录，无源码改动，不重复运行测试。
+Status保持needs-info，State保持open，等待用户明确确认关闭后勾选最终验收项。
+范围仅sparse阶段0/L0；001失败、旧03输出差异与NUMA物理落点未验证记录保留。
 
 ### 2026-10-27：ticket04-001输入生成失败；修复模板API返回值
 

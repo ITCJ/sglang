@@ -5,18 +5,22 @@ template: doc
 theme: blueprint
 lang: zh
 date: 2026-10-27
-status: tokenizer修复、470项CPU通过；等待用户NPU重测
+status: ticket04-002完整NPU自动验收通过；等待用户确认关闭
 ---
 
 **同一入口新增 `full-acceptance`，自动完成阶段 0 的完整验收。**
 每机一条命令，依次运行独立参考组、目标组、容量故障和超时故障。
 结果按 [输出约定](output-verification-policy.md) 判定。
-本票保持 open，等待用户 NPU 验收和确认。
+本票完整 NPU 自动验收已通过，保持 open 等待用户确认关闭。
 
 用户首轮 `ticket04-001` 在输入生成阶段失败，V1–V10 均未执行。
 已修复模板 API 默认返回字典导致的误比较。
 [修复记录](verification/ticket04-tokenizer-20261027/README.md)保存复现与检查证据。
-以下命令使用新的 `ticket04-002`，请在两机更新后重跑。
+
+用户回传 `ticket04-002` 的完整结果：V1–V10 全部通过。
+稳定性、长生成、超时保护与双端清理也全部通过。
+[本次 NPU 记录](verification/ticket04-002-20261027/README.md)保存终端原文与摘要。
+以下保留本次运行命令；再次运行时使用新的 run-id。
 
 ## A 功能源码阅读顺序
 
@@ -177,5 +181,8 @@ Main的 `/ready` 表示控制与注册就绪。
 [检查记录](verification/ticket04-cpu-20261027/checks.json)包含源码摘要和实际日志。
 [两轴审核](verification/ticket04-cpu-20261027/review.md)保留发现、修复和复核结论。
 公开GLM-5.2 tokenizer在本地通过完整输入生成。
-用户机器尚待重测；模型答案、远端BM和NPU Graph尚未通过本票验收。
-用户执行完整测试并确认后，才更新本票硬件状态并关闭。
+
+用户已回传ticket04-002完整NPU自动验收通过。
+参考组冷算A/C各17个输出IDs且完全一致；这不代表全部参考/目标IDs相同。
+逐rank明细仍保存在远端，本地归档的是用户终端摘要。
+等待用户确认后关闭本票。

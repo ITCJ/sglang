@@ -1,0 +1,30 @@
+{
+  "status": "passed",
+  "stability": {
+    "status": "passed",
+    "ids": {
+      "equal": true,
+      "reference_length": 17,
+      "target_length": 17,
+      "first_difference": null
+    },
+    "comparison": "reference A versus reference C; same conditions",
+    "action": "none"
+  },
+  "long_generation": "passed",
+  "timeout_fail_stop": "passed",
+  "paired_cleanup": "passed",
+  "checks": {
+    "V1": "passed",
+    "V2": "passed",
+    "V3": "passed",
+    "V4": "passed",
+    "V5": "passed",
+    "V6": "passed",
+    "V7": "passed",
+    "V8": "passed",
+    "V9": "passed",
+    "V10": "passed"
+  },
+  "report": "/home/cryang/log/mempool-min/ticket04-002/prefill/v1-v10.json"
+}

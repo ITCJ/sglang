@@ -1,0 +1,15 @@
+root@npu1-31:/home/cryang/sglang# bash ascend-mempool-test/scripts/run_mempool_min.sh \
+>   --role prefill --mode full-acceptance \
+>   --config /home/cryang/mempool-min-ticket01-3132.json \
+>   --run-id ticket04-002
+Waiting for peer at 10.120.72.31:18891
+START fetch pid=327767 log=/home/cryang/log/mempool-min/ticket04-002/prefill/fetch/fetch.log
+START launcher pid=327877 log=/home/cryang/log/mempool-min/ticket04-002/prefill/reference/launcher.log
+START reference-router pid=341420 log=/home/cryang/log/mempool-min/ticket04-002/prefill/reference/reference-router.log
+START router pid=342232 log=/home/cryang/log/mempool-min/ticket04-002/prefill/target/router.log
+START launcher pid=342233 log=/home/cryang/log/mempool-min/ticket04-002/prefill/target/launcher.log
+START router pid=356581 log=/home/cryang/log/mempool-min/ticket04-002/prefill/capacity/router.log
+START launcher pid=356725 log=/home/cryang/log/mempool-min/ticket04-002/prefill/capacity/launcher.log
+START router pid=370594 log=/home/cryang/log/mempool-min/ticket04-002/prefill/timeout/router.log
+START launcher pid=370595 log=/home/cryang/log/mempool-min/ticket04-002/prefill/timeout/launcher.log
+FULL_ACCEPTANCE {"status": "passed", "stability": {"status": "passed", "ids": {"equal": true, "reference_length": 17, "target_length": 17, "first_difference": null}, "comparison": "reference A versus reference C; same conditions", "action": "none"}, "long_generation": "passed", "timeout_fail_stop": "passed", "paired_cleanup": "passed", "checks": {"V1": "passed", "V2": "passed", "V3": "passed", "V4": "passed", "V5": "passed", "V6": "passed", "V7": "passed", "V8": "passed", "V9": "passed", "V10": "passed"}, "report": "/home/cryang/log/mempool-min/ticket04-002/prefill/v1-v10.json"}
