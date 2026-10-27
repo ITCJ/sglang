@@ -64,6 +64,7 @@ class SchedulerOutputStreamer:
     # detokenizer. None otherwise. (Rust-specific state lives in RustServer.)
     rust_server: Optional[RustServer] = None
     _test_stream_output_count: int = 0
+    on_generation_sent: Optional[Callable[[Any], None]] = None
 
     def __post_init__(self) -> None:
         if self.has_additional_customized_info and self.rust_server is not None:
@@ -213,6 +214,8 @@ class SchedulerOutputStreamer:
                 self.rust_server.push_generation(payload)
             else:
                 self.send_to_detokenizer.send_output(payload)
+            if self.on_generation_sent is not None:
+                self.on_generation_sent(payload)
 
     def build_additional_customized_info(self, reqs: List[Req]) -> dict[str, list]:
         """Return fields aligned with the emitted requests in ``reqs``.

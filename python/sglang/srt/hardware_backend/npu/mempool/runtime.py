@@ -158,6 +158,7 @@ class MempoolRuntime:
         self.layout = manager.layout.layout_for_rank(manager.rank)
         if kernels is not None and len(kernels) != self.layout.layers:
             raise ValueError("one kernel is required per local layer")
+        self.perf: Any = None
         self.start_layer = start_layer
         self.max_context_len = max_context_len
         self.row_slot = torch.full(
@@ -484,6 +485,9 @@ class MempoolRuntime:
                     self._bindings[write.req_pool_idx].submitted + write.rows
                 )
         self._active = _Forward(tuple(writes), replay, capture)
+        if self.perf is not None and writes:
+            self.perf.step += 1
+            self.perf.mark("forward_begin", self.perf.rid, step=self.perf.step)
 
     def write_layer(
         self, layer_id: int, k: Tensor, k_rope: Tensor, forward_batch: Any
@@ -584,6 +588,17 @@ class MempoolRuntime:
                     positions=local_pos,
                     valid=index_valid,
                 )
+
+        if (
+            self.perf is not None
+            and active.writes
+            and self.manager.rank == 0
+            and len(active.layers) == self.layout.layers
+            and active.index_layers == set(self._index_writers)
+        ):
+            completion = self._event_factory()
+            completion.record()
+            self.perf.device("write_complete", completion, step=self.perf.step)
 
     def selected_kv_valid(
         self, layer_id: int, req_rows: Tensor, positions: Tensor
@@ -766,6 +781,8 @@ class MempoolRuntime:
         range_errors = self._range_errors.clone() if self.manager.rank == 0 else None
         event = self._event_factory()
         event.record()
+        if self.perf is not None and active.writes:
+            self.perf.device("forward_end", event, step=self.perf.step)
         self._pending.append(
             _Completion(
                 event,
@@ -785,9 +802,15 @@ class MempoolRuntime:
 
     def poll_completed(self) -> list[int]:
         """Validate completed per-layer counts and publish local progress facts."""
+        if self.perf is not None:
+            self.perf.poll()
         completed = []
         while self._pending and self._pending[0].event.query():
             item = self._pending[0]
+            # Completion can become true between the first perf poll and this
+            # successful runtime query. Observe it before publishing/freeing.
+            if self.perf is not None:
+                self.perf.poll()
             if item.range_errors is not None and bool(item.range_errors.cpu().any()):
                 self.fault = "mempool write range/counts differ from expected rows"
                 raise RuntimeError(self.fault)

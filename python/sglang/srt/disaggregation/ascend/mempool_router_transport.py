@@ -15,6 +15,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from .mempool_native_reservation import NativeReservations
+from .mempool_perf import PerfTrace
 from .mempool_prefill_restore import PrefillRestore, install_prefill_cache
 from .mempool_router import MainRouter, RequestRejected
 from .mempool_router_protocol import CONFIG_ENV, RUN_ENV, RouterConfig, model_digest
@@ -145,6 +146,14 @@ def attach_subrouter(
         prefix=prefix,
         restore=restore,
     )
+    if config.perf:
+        trace = PerfTrace(role, control.local.tp_rank)
+        shard.perf = trace
+        runtime.perf = (
+            trace if role == "prefill" or control.local.tp_rank == 0 else None
+        )
+        service.perf = trace
+        service.kv_manager.mempool_perf = trace
     connection = (
         SRConnection(config.control_endpoint, role, control.local.session)
         if control.local.tp_rank == 0
@@ -179,6 +188,26 @@ def attach_subrouter(
         replicas=config.replicas(),
         graph=not args.disable_cuda_graph,
     )
+    if config.perf:
+        import torch
+
+        registration["perf_controls"] = dict(
+            torch_deterministic=torch.are_deterministic_algorithms_enabled(),
+            requested={
+                name: getattr(args, name, None)
+                for name in (
+                    "tp_size",
+                    "dp_size",
+                    "enable_dp_attention",
+                    "chunked_prefill_size",
+                    "cuda_graph_bs",
+                    "cuda_graph_bs_decode",
+                    "disable_cuda_graph",
+                    "enable_deterministic_inference",
+                    "stream_interval",
+                )
+            },
+        )
     if config.prefix_pages:
         registration.update(
             prefix_pages=config.prefix_pages if role == "prefill" else 0,
@@ -245,6 +274,7 @@ class MainServer:
     async def generate(self, request: Any) -> Any:
         from aiohttp import web
 
+        received = time.monotonic_ns()
         try:
             payload = await request.json()
             admitted = self.router.submit(payload)
@@ -252,12 +282,19 @@ class MainServer:
             return web.json_response(dict(error=str(exc)), status=exc.status)
         except (ValueError, TypeError):
             return web.json_response(dict(error="invalid request JSON"), status=400)
+        if self.router.perf is not None:
+            self.router.perf.mark("request", admitted["rid"], at=received)
         future = asyncio.get_running_loop().create_future()
         self.clients[admitted["rid"]] = future
         # Disconnecting a client must not cancel inference, manufacture a drain
         # or release a reservation. The pump keeps running to real completion.
         result = await asyncio.shield(future)
-        return web.json_response(result)
+        response = web.json_response(result)
+        if self.router.perf is not None:
+            await response.prepare(request)
+            await response.write_eof()
+            self.router.perf.mark("response_sent", admitted["rid"])
+        return response
 
     async def status(self, request: Any) -> Any:
         from aiohttp import web
@@ -293,6 +330,9 @@ class MainServer:
                 ignore_eos=request["ignore_eos"],
             ),
         )
+
+        if self.router.config.perf:
+            body["sampling_params"].update(stop=[], stop_regex=[])
 
         async def post(role: str) -> dict[str, Any]:
             async with self.http.post(
@@ -342,6 +382,13 @@ class MainServer:
                         self.routes[role] = route
                     elif role not in self.routes:
                         raise ValueError("message from unregistered SR")
+                    if self.router.perf is not None and "rid" in message:
+                        self.router.perf.mark(
+                            message["kind"],
+                            message["rid"],
+                            role=role,
+                            op_id=message["op_id"],
+                        )
                     self.router.receive(message)
                 self.router.check_timeouts()
                 while self.router.outbox:
@@ -350,6 +397,13 @@ class MainServer:
                         [self.routes[command["role"]], json.dumps(command).encode()],
                         flags=Flag.NOBLOCK,
                     )
+                    if self.router.perf is not None:
+                        self.router.perf.mark(
+                            command["kind"] + "_send",
+                            command["rid"],
+                            role=command["role"],
+                            op_id=command["op_id"],
+                        )
                 while self.router.launches:
                     job = asyncio.create_task(
                         self.infer(self.router.launches.popleft())

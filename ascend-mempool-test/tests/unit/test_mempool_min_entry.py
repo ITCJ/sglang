@@ -158,6 +158,21 @@ class TestPreflightIdentity(unittest.TestCase):
             self.assertEqual(report["status"], "passed")
             self.assertEqual(report["differences"], [])
 
+    def test_perf_round_mismatch_fails_before_any_model_start(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            instance = self.make_runner(
+                root, change=lambda identity: identity.update(perf_rounds=6)
+            )
+            instance.args.mode = "perf"
+            instance.args.perf_rounds = 5
+            with self.environment(), self.assertRaisesRegex(ValueError, "perf_rounds"):
+                instance.preflight()
+            evidence = json.loads((root / "identity-diff.json").read_text())
+            self.assertEqual(
+                [item["field"] for item in evidence["differences"]], ["perf_rounds"]
+            )
+
     def test_peer_disconnect_still_preserves_local_identity(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

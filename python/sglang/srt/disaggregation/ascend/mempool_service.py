@@ -79,6 +79,7 @@ class MempoolPDService:
         self.control = control
         self.clock = clock
         self.bootstrap_timeout = bootstrap_timeout
+        self.perf: Any = None
         self._native_release = native_release
         self._drain_host = drain_host
         self._synchronize = synchronize
@@ -366,6 +367,8 @@ class MempoolPDService:
                 req.bootstrap_room,
             )
         record.transfer_ready = True
+        if self.perf is not None:
+            self.perf.once("handoff_ready", req.rid)
         state = self._protocol(record)
         return state is not None and state.phase == "DECODING" and not record.cancel
 
@@ -471,6 +474,8 @@ class MempoolPDService:
                 self.control.local.tp_rank,
                 req.bootstrap_room,
             )
+        if handoff and self.perf is not None:
+            self.perf.once("handoff_complete", req.rid)
         record.handoff |= handoff
         return True
 
@@ -619,6 +624,12 @@ class MempoolPDService:
     def advance(self) -> None:
         """Run one complete scheduler tick, preserving faults for same-side consensus."""
         self._tick_started = self.clock()
+        if (
+            self.perf is not None
+            and self.control.local.role == "decode"
+            and self.control.local.tp_rank == 0
+        ):
+            self.scheduler.output_streamer.on_generation_sent = self.perf.output_sent
         facts: list[RequestObservation] = []
         try:
             facts = self._observations()
@@ -734,6 +745,8 @@ class MempoolPDService:
             if self.subrouter is not None and self.subrouter.shard.restore is not None:
                 self.subrouter.shard.restore.native_released(record.req)
             record.native_freed = True
+            if self.perf is not None:
+                self.perf.mark("hbm_release", record.req.rid)
             logger.info(
                 "mempool native_free role=%s rank=%s room=%s attempt=%s",
                 self.control.local.role,

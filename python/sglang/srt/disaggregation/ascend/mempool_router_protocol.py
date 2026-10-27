@@ -43,8 +43,13 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     prefix_pages: int = 0
     verify_prefix: bool = False
     match_prefix: bool = False
+    perf: bool = False
 
     def __post_init__(self) -> None:
+        if type(self.perf) is not bool or (
+            self.perf and (not self.match_prefix or self.verify_prefix)
+        ):
+            raise ValueError("perf requires prefix matching without heavy verification")
         if type(self.match_prefix) is not bool or (
             self.match_prefix and not self.prefix_pages
         ):

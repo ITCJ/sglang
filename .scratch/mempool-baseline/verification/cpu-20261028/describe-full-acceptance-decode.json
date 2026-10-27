@@ -1,0 +1,70 @@
+{
+  "role": "decode",
+  "mode": "full-acceptance",
+  "config": {
+    "prefill_host": "<P_HOST>",
+    "decode_host": "<D_HOST>",
+    "model_path": "/data_lib/data/models/GLM-5.2-w4a8",
+    "interface": "bond4",
+    "numa_nodes": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "main_port": 6699,
+    "control_port": 16700,
+    "runner_port": 18891,
+    "prefill_port": 8000,
+    "decode_port": 8001,
+    "bootstrap_port": 8995,
+    "prompt_capacity": 8192,
+    "decode_capacity": 128,
+    "page_size": 128,
+    "context_length": 8448,
+    "max_total_tokens": 16384,
+    "operation_timeout": 600.0,
+    "startup_timeout": 7200.0,
+    "prefix_pages": 40,
+    "verify_prefix": true,
+    "match_prefix": true,
+    "perf": false
+  },
+  "logs": "/home/cryang/log/mempool-min/baseline01-20261028-001/decode",
+  "memory_budget": {
+    "bm_bytes": 17179869184,
+    "verification_bytes": 0,
+    "required_bytes": 17179869184
+  },
+  "output_policy": "mempool-min-logical-2026-10-27-v1",
+  "acceptance_controls": "one skipped allocator page; fill submitted after native_freed",
+  "stages": [
+    "paired preflight",
+    "P-only/D-only/mixed NPU fetch",
+    "independent logical ABCE + load/EOS reference",
+    "Main/SR logical ABCE + load/EOS target and cleanup",
+    "isolated registration-capacity rejection",
+    "isolated timeout/fail-stop and paired cleanup",
+    "V1-V10 evidence and independent answers"
+  ],
+  "service_command": [
+    "bash",
+    "/private/tmp/sglang-mempool-perf-20261028/ascend-mempool-test/scripts/run_service.sh",
+    "decode",
+    "formal"
+  ],
+  "target_environment": {
+    "PREFILL_CAPACITY": "8192",
+    "DECODE_CAPACITY": "128",
+    "CONTEXT_LENGTH": "8448",
+    "MAX_TOTAL_TOKENS": "16384",
+    "PAGE_SIZE": "128",
+    "SKIP_SERVER_WARMUP": "0",
+    "SGLANG_NPU_MEMPOOL_ROUTER_CONFIG": "/home/cryang/log/mempool-min/baseline01-20261028-001/decode/effective-config.json",
+    "SGLANG_NPU_MEMPOOL_ROUTER_RUN_ID": "baseline01-20261028-001"
+  }
+}

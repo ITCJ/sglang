@@ -15,6 +15,7 @@ from typing import Any, Callable
 
 import msgspec
 
+from .mempool_perf import PerfTrace
 from .mempool_router_protocol import PRODUCERS, ROLES, RouterConfig, page_hashes
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,7 @@ class MainRouter:
             clock,
             hasher,
         )
+        self.perf = PerfTrace("main") if config.perf else None
         self.registrations: dict[str, dict[str, Any]] = {}
         self.ledger: dict[str, Quota] = {}
         self.directory: dict[str, dict[str, Any]] = {}
@@ -397,6 +399,10 @@ class MainRouter:
             command=command, sent=self.clock(), ack=None
         )
         self.outbox.append(command)
+        if self.perf is not None:
+            self.perf.mark(
+                "op_queued", request["rid"], role=role, kind=kind, op_id=self.next_op
+            )
         self.active["trace"].append(dict(kind=kind, role=role, op_id=self.next_op))
 
     def status(self) -> dict[str, Any]:
@@ -671,6 +677,10 @@ class MainRouter:
             )
         )
         if not pages:
+            if self.perf is not None:
+                self.perf.mark(
+                    "publish", active["request"]["rid"], pages=0, skipped=True
+                )
             active["admit_complete"] = True
             self._free_after_save()
 
@@ -740,6 +750,13 @@ class MainRouter:
             )
         for value in admit["parents"]:
             self.directory[value]["prefix"]["lock_ops"].remove(command["op_id"])
+        if self.perf is not None:
+            self.perf.mark(
+                "publish",
+                active["request"]["rid"],
+                pages=len(targets),
+                op_id=command["op_id"],
+            )
         active["admit_complete"] = True
         self._free_after_save()
 

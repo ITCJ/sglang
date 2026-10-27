@@ -836,10 +836,25 @@ class AscendKVManager(MooncakeKVManager):
 
 
 class AscendKVSender(MooncakeKVSender):
-    pass
+    def send(self, kv_indices, state_indices=None, num_kv_tokens=None):
+        trace = getattr(self.kv_mgr, "mempool_perf", None)
+        if trace is not None and trace.room == self.bootstrap_room:
+            trace.once("send_begin", trace.rid)
+        return super().send(kv_indices, state_indices, num_kv_tokens)
 
 
 class AscendKVReceiver(MooncakeKVReceiver):
+    def poll(self):
+        result = super().poll()
+        trace = getattr(self.kv_mgr, "mempool_perf", None)
+        if (
+            trace is not None
+            and trace.room == self.bootstrap_room
+            and result == KVPoll.Success
+        ):
+            trace.once("index_ready", trace.rid)
+        return result
+
     def send_metadata(
         self,
         kv_indices: npt.NDArray[np.int32],

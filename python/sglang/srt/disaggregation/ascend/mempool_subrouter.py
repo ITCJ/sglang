@@ -51,6 +51,7 @@ class RouterShard:
         self.dispatch: dict[str, Any] | None = None
         self.identity: RequestIdentity | None = None
         self.req: Any = None
+        self.perf: Any = None
         self.sent_events: set[str] = set()
         self.bootstrap = bootstrap
         self.prefix = prefix
@@ -156,6 +157,9 @@ class RouterShard:
     ) -> dict[str, Any] | None:
         role, rank = self.control.local.role, self.control.local.tp_rank
         kind = command["kind"]
+        if self.perf is not None:
+            self.perf.begin(command["rid"], command["room"])
+            self.perf.once(kind + "_begin", command["rid"], op_id=command["op_id"])
         result: dict[str, Any] = dict(rank=rank)
         if kind == "alloc":
             if self.request is not None:
@@ -227,6 +231,8 @@ class RouterShard:
                 self.dispatch = command
             elif kind == "ready":
                 self.control.router_ready(self._binding(command))
+                if self.perf is not None:
+                    self.perf.once("prompt_ready", command["rid"])
             elif kind == "admit":
                 receipt = self._admit(command=command, prefix_pages=prefix_pages)
                 if receipt is None:
@@ -250,6 +256,8 @@ class RouterShard:
                 self.sent_events.clear()
             else:
                 raise ValueError(f"unsupported Router command {kind}")
+        if self.perf is not None:
+            self.perf.once(kind + "_end", command["rid"], op_id=command["op_id"])
         logger.info(
             "mempool sr role=%s rank=%s event=%s rid=%s room=%s attempt=%s op_id=%s free=%s",
             role,
@@ -435,6 +443,8 @@ class RouterShard:
                     self.control.transfer_succeeded(self.identity)
                 if state.prompt_written == state.prompt_limit:
                     self.control.start_decode(self.identity)
+                    if self.perf is not None:
+                        self.perf.once("gate_ready", self.request["rid"])
         elif state.phase == "DECODING" and all_fact("release"):
             if all_fact("drained") and all_fact("writes_done"):
                 self.effect("native_release", room)
@@ -493,6 +503,15 @@ class MempoolSubrouter:
         try:
             if leader:
                 incoming = self.receive()
+                if self.shard.perf is not None:
+                    for message in incoming:
+                        if message["kind"] == "dispatch":
+                            self.shard.perf.begin(message["rid"], message["room"])
+                            self.shard.perf.once(
+                                "dispatch_received",
+                                message["rid"],
+                                op_id=message["op_id"],
+                            )
                 if incoming:
                     self.last_main = self.clock()
                 if not self.registered:
@@ -646,6 +665,8 @@ class MempoolSubrouter:
                     "ranks": [r["events"][index] for r in committed],
                 }
             )
+            if self.shard.perf is not None:
+                self.shard.perf.mark(event["kind"] + "_send", dispatch["rid"])
         if self.clock() - self.last_sent >= 1:
             if self.registered:
                 self.send(dict(envelope, kind="heartbeat"))

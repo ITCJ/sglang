@@ -99,6 +99,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "prefix-acceptance",
             "reuse-acceptance",
             "full-acceptance",
+            "perf",
         ),
         required=True,
     )
@@ -108,7 +109,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--log-root", type=Path, default=Path("/home/cryang/log/mempool-min")
     )
     parser.add_argument("--describe", action="store_true")
+    parser.add_argument("--perf-rounds", type=int, default=5)
     args = parser.parse_args(argv)
+    if args.perf_rounds < 5:
+        parser.error("perf requires at least five rounds (first excluded)")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", args.run_id):
         parser.error("run-id must be a simple new directory name")
     if not args.log_root.resolve().is_relative_to(Path("/home/cryang/log").resolve()):
@@ -276,6 +280,8 @@ class Runner:
                 for name in ("torch", "torch-npu", "sgl-kernel-npu", "memfabric-hybrid")
             },
         )
+        if self.args.mode == "perf":
+            identity["perf_rounds"] = self.args.perf_rounds
         write_json(self.root / "identity.json", identity)
         self.report["identity"] = identity
         self.peer.send("identity", value=identity)
@@ -922,6 +928,11 @@ class Runner:
 
     def run(self) -> None:
         self.preflight()
+        if self.args.mode == "perf":
+            from mempool_perf_runner import run
+
+            run(self)
+            return
         if self.full:
             self.run_full()
             return
@@ -957,7 +968,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     config = RouterConfig.read(str(args.config))
     root = args.log_root / args.run_id / args.role
     requested = msgspec.to_builtins(config)
-    if args.mode in ("prefix-acceptance", "reuse-acceptance", "full-acceptance"):
+    if args.mode == "perf":
+        config = msgspec.structs.replace(
+            config, prefix_pages=40, verify_prefix=False, match_prefix=True, perf=True
+        )
+    elif config.perf:
+        raise ValueError("perf instrumentation requires --mode perf")
+    elif args.mode in ("prefix-acceptance", "reuse-acceptance", "full-acceptance"):
         config = msgspec.structs.replace(
             config,
             prefix_pages=40,
@@ -987,6 +1004,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                         else "none"
                     ),
                     stages=[
+                        "paired preflight and Ascend topology",
+                        "independent ABCE reference (outside timing)",
+                        f"{args.perf_rounds} restarted ABCE rounds; first excluded",
+                        "strict V1/V3/V6 and 128-token length checks",
+                        "offline samples/report and paired cleanup",
+                    ]
+                    if args.mode == "perf"
+                    else [
                         "paired preflight",
                         "P-only/D-only/mixed NPU fetch",
                         "independent logical ABCE + load/EOS reference",
@@ -1073,6 +1098,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(report["error"], file=sys.stderr)
         return 1
     finally:
+        if args.mode == "perf" and not (root / "baseline.md").exists():
+            from mempool_perf_report import generate_report
+
+            generate_report(root)
         if args.mode == "full-acceptance" and args.role == "prefill":
             report["acceptance"] = verify_mempool_full.summarize(root)
             write_json(root / "v1-v10.json", report["acceptance"])

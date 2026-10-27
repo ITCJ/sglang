@@ -49,6 +49,36 @@ def prefill_batch(lengths=(2, 1), prefixes=(0, 0), rows=(1, 2)):
 class TestMempoolRuntime(unittest.TestCase):
     """Use real binding/index/counter logic with fake BM and device completion."""
 
+    def test_perf_observes_completion_before_row_release_when_query_turns_ready(self):
+        """A device completing between perf and owner queries must not log after free."""
+        import json
+
+        from ascend_mempool_pd.mempool_perf import PerfTrace
+
+        runtime, _, events = self.make_runtime(rank=0, layers=1)
+        runtime.perf = PerfTrace("prefill", clock=iter(range(1000)).__next__)
+        runtime.perf.begin("request", 1)
+        binding = runtime.bind(1, slot=0, prompt_tokens=2)
+        with self.assertLogs("ascend_mempool_pd.mempool_perf", level="INFO") as logs:
+            runtime.begin_forward([KVWriteExpectation(1, 0, 2)])
+            k = torch.ones((2, 2), dtype=torch.bfloat16)
+            runtime.write_layer(5, k, k, prefill_batch((2,), (0,), (1,)))
+            runtime.end_forward()
+            completion = events[-1]
+            calls = iter((False, True, True))
+            completion.query = lambda: next(calls, True)
+            events[-2].done = True
+            runtime.poll_completed()
+            receipt = runtime.detach_row(binding)
+            runtime.perf.mark("hbm_release", "request")
+        values = [json.loads(line.split("data=", 1)[1]) for line in logs.output]
+        end = [e for e in values if e["event"] == "forward_end"]
+        released = [e for e in values if e["event"] == "hbm_release"]
+        self.assertEqual(receipt.completed, 2)
+        self.assertEqual(len(end), 1)
+        self.assertLess(end[0]["mono_ns"], released[0]["mono_ns"])
+        self.assertFalse(runtime.perf.pending)
+
     def test_suffix_counts_only_computed_rows_and_retains_its_range_after_detach(self):
         runtime, targets, events = self.make_runtime(rank=0, layers=1)
         binding = runtime.bind(1, slot=3, prompt_tokens=6, start_position=4)
