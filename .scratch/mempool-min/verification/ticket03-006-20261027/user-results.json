@@ -1,0 +1,34 @@
+{
+  "run": "ticket03-006-post-attention",
+  "source": "User pasted P/D terminal output; raw remote files not downloaded",
+  "expected_delivery_commit": "7229eb70f0",
+  "remote_git_sha_verified": false,
+  "purpose": "post-attention diagnosis; not acceptance",
+  "status": "failed",
+  "prefill_outer_error": "TimeoutError: timed out",
+  "decode_outer_error": "RuntimeError: NPU service exited unexpectedly with 137",
+  "probe_error": {
+    "rid": "ticket03-006-post-attention-1",
+    "hook": "_layer0_pre",
+    "error": "ValueError: quantization settings exceed digest scratch budget",
+    "ranks_visible_before_terminal_truncation": [0, 1, 10, 11, 12, 13, 14, 15, 2, 3, 4, 5, 6],
+    "all_rank_error_files_not_available_locally": true
+  },
+  "reuse_diagnostic": {
+    "complete": false,
+    "prefix_complete": false,
+    "parse_errors": 0,
+    "all_16_reported_ranks_incomplete": true,
+    "cold_and_reused_operator_checkpoints_missing": true
+  },
+  "post_diagnostic": {"complete": false, "checks_ok": false},
+  "interpretation": {
+    "confirmed": "The new diagnostic raised while hashing a configuration Mapping on the first A layer-0 entry. This is a diagnostic-tool failure, not evidence about the original A/C numerical mismatch.",
+    "decode_exit_137": "Cause unverified; the supplied output alone does not establish OOM or which process sent SIGKILL.",
+    "numeric_hypotheses": "Not evaluated by this run: no usable boundary comparisons",
+    "cleanup_verified": false
+  },
+  "hardware_retest": "pending",
+  "ticket03_state": "open",
+  "ticket04_unlocked": false
+}

@@ -353,3 +353,12 @@ Mac 本机验证和两轴审核记录见 ../verification/ticket03-normal-abc-202
 本机482项CPU回归通过；含TP16、4096/128逻辑行归属与ModelSlim真实配置宿主的负向用例。
 CPU验证诊断工具，不是NPU数值复现；最终检查和两轴审核记录在
 ../verification/ticket03-post-attention-20261027/。006 NPU尚未运行，03保持open，04不解锁。
+
+### 2026-10-27：006探针在配置摘要阶段失败
+
+用户回传P的外层TimeoutError，以及首个A在_layer0_pre中抛出
+ValueError: quantization settings exceed digest scratch budget。
+16rank汇总均不完整，旧/新算子比较数据缺失；不能把changed=0解释成数值一致。
+D报告服务退出137，当前贴文不能确认OOM或SIGKILL来源，清理成功也未得到本轮完整报告确认。
+[用户回传摘录](../verification/ticket03-006-20261027/user-results.json)单独保存；未取得远端完整文件。
+本轮没有评价原数值候选，03保持open，04不解锁。
