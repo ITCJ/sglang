@@ -62,6 +62,7 @@ def padded_messages(
             template_ids = tokenizer.apply_chat_template(
                 value[0],
                 tokenize=True,
+                return_dict=False,
                 add_generation_prompt=True,
                 enable_thinking=False,
             )

@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/private/tmp/mempool-ticket04-tokenizer-fix/minimal.py", line 5, in <module>
+    logical.padded_messages(tokenizer, [dict(role='user', content='Compute 2 + 3.\n' + logical.PAD)], 128)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/scripts/mempool_logical_cases.py", line 69, in padded_messages
+    raise ValueError("template tokenization differs from saved input IDs")
+ValueError: template tokenization differs from saved input IDs

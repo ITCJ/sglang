@@ -1,0 +1,8 @@
+test_abce_uses_exact_whole_templates_and_suffix_changes_the_answer (test_mempool_full.TestLogicalFixtures.test_abce_uses_exact_whole_templates_and_suffix_changes_the_answer) ... ok
+test_load_and_early_eos_have_separate_coverage (test_mempool_full.TestLogicalFixtures.test_load_and_early_eos_have_separate_coverage) ... ok
+test_real_transformers_templates_keep_exact_ids_across_return_defaults (test_mempool_full.TestLogicalFixtures.test_real_transformers_templates_keep_exact_ids_across_return_defaults) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 2.038s
+
+OK

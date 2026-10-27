@@ -47,6 +47,48 @@ class CharacterTokenizer:
 
 
 class TestLogicalFixtures(unittest.TestCase):
+    def test_real_transformers_templates_keep_exact_ids_across_return_defaults(self):
+        from tokenizers import Tokenizer, models, pre_tokenizers
+        from transformers import PreTrainedTokenizerFast
+
+        backend = Tokenizer(
+            models.BPE(
+                vocab={
+                    char: i
+                    for i, char in enumerate(
+                        sorted(pre_tokenizers.ByteLevel.alphabet())
+                    )
+                },
+                merges=[],
+            )
+        )
+        backend.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
+        tokenizer = PreTrainedTokenizerFast(tokenizer_object=backend)
+        tokenizer.chat_template = (
+            "{% for m in messages %}"
+            "{{ '<' + m['role'] + '>' + m['content'] + '<end>\\n' }}"
+            "{% endfor %}"
+            "{% if add_generation_prompt %}{{ '<assistant>' }}{% endif %}"
+        )
+        cases = logical.make_cases(tokenizer, 128) + logical.make_controls(
+            tokenizer, 128
+        )
+        self.assertEqual(
+            [len(case["input_ids"]) for case in cases],
+            [4096, 5120, 4096, 4096, 4096, 128],
+        )
+        self.assertEqual(cases[0]["input_ids"], cases[1]["input_ids"][:4096])
+        self.assertEqual(cases[0]["input_ids"], cases[2]["input_ids"])
+        for case in cases:
+            encoded = tokenizer.apply_chat_template(
+                case["messages"],
+                tokenize=True,
+                return_dict=True,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            )
+            self.assertEqual(case["input_ids"], encoded["input_ids"])
+
     def test_abce_uses_exact_whole_templates_and_suffix_changes_the_answer(self):
         tokenizer = CharacterTokenizer()
         cases = logical.make_cases(tokenizer, 128)

@@ -109,6 +109,36 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 
 ## D 名称、验收与实施票怎样对应
 
+**2026-10-27 ticket04：第28步，tokenizer修复两轴审核完成。**
+
+Standards与Spec各0项发现，470项CPU与公开GLM-5.2完整输入验证通过。
+修复仅独立Ascend脚本一行，新增真实API回归；无主线功能改动。
+交付页提供ticket04-002双机重测命令，001失败记录保留；等待用户NPU验收确认，04保持open。
+
+**2026-10-27 ticket04：第27步，修复后完整470项CPU回归通过。**
+
+完整470项CPU回归通过（44.284秒），两文件静态检查及源码strict mypy通过。
+修复证据保留ticket04-001用户失败、公开GLM-5.2复现和真实API回归red/green；两轴审核待完成。
+双机重测命令已改用ticket04-002；本地tokenizer通过不代表NPU内容、Graph和模型答案验收，04继续needs-info/open。
+
+**2026-10-27 ticket04：第26步，公开GLM-5.2真实tokenizer验证通过。**
+
+真实GLM-5.2 tokenizer完整ABCE和两个控制输入通过，长度为4096/5120/4096/4096/4096/128，B精确包含A前缀。
+新增真实Transformers API回归在修复前失败、修复后通过；测试按仓库格式整理。
+完整CPU回归与审核正在执行；用户NPU尚未重测，ticket04仍needs-info/open。
+
+**2026-10-27 ticket04：第25步，显式固定模板API返回IDs列表。**
+
+模板校验传入return_dict=False，兼容返回值默认配置变化；仍逐token核对保存的IDs，未放宽长度与前缀合同。
+功能改动仅一行，位于独立Ascend验收工具，无主线或服务源码改动。
+真实API回归已在修复前失败；正在验证公开GLM-5.2完整fixture和CPU回归，NPU重测待用户执行。
+
+**2026-10-27 ticket04：第24步，记录ticket04-001输入生成失败并补充真实API回归。**
+
+用户在31/32运行ticket04-001，模板IDs校验失败，V1–V10均not-run。
+公开GLM-5.2 tokenizer在本地复现同一错误；Transformers 5.12.1默认返回BatchEncoding，旧代码误比较字段名。
+新增真实Transformers轻量tokenizer回归，先验证旧代码失败；修复与NPU重测待完成。
+
 **2026-10-27 ticket04：第23步，完整CPU与最终两轴审核通过。**
 
 完整469项CPU回归通过，耗时42.440秒；9文件静态与7模块strict mypy通过。
@@ -934,7 +964,7 @@ ticket03按2026-10-27用户授权的功能范围和已知数值限制关闭；04
 | [01 冷请求与显式释放](issues/01-cold-request-lifecycle.md) | 冷请求、统一页、原生 warmup；CPU、双轴 review 与用户 NPU 验收 | 本票已关闭 | 7275f29a05：自动化验收通过，2026-10-26 用户确认；user_accepted=true |
 | [02 prompt 保存](issues/02-prompt-prefix-save.md) | Index K 写回、40 页 prefix、异步 admit/publish；用户回传双机 NPU 验收通过 | 功能与自动化验收完成；等待用户确认关闭 | 87157b7365、ticket02-002；CPU 440 项、两轴 review 与 NPU 报告通过；NUMA 落点未验证，State=open |
 | [03 命中恢复与后缀](issues/03-prefix-restore-and-suffix.md) | 内容/生命周期、007归约定位及映射/副本控制通过；简单A/C语义通过 | 本票按用户授权范围关闭；原C输出差异保留 | State=closed；已接受数值限制，不表示旧严格报告通过 |
-| [04 完整自运行验收](issues/04-full-demo-acceptance.md) | 逻辑ABCE、独立答案/稳定性、V1–V10、隔离容量/超时和完整入口；469项CPU及两轴审核通过 | 用户执行最终NPU完整验收并确认 | State=open，Status=needs-info；NPU未运行，不以CPU替代 |
+| [04 完整自运行验收](issues/04-full-demo-acceptance.md) | 逻辑ABCE、独立答案/稳定性、V1–V10、隔离故障和完整入口；tokenizer修复后470项CPU通过 | 用户以ticket04-002重测完整NPU验收并确认 | State=open，Status=needs-info；001输入生成失败，V1–V10未执行 |
 
 每次实现后立即更新本表，分别记录代码、CPU 检查与用户 NPU 验收。
 只有用户确认对应 NPU 验收后，才关闭该票并解锁下游。

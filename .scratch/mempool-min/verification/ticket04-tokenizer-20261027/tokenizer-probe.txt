@@ -1,0 +1,8 @@
+transformers: 5.12.1
+return_dict default: True
+default type: BatchEncoding
+list(default): ['input_ids', 'attention_mask']
+default input_ids equals encoded: True
+explicit type: list
+explicit equals encoded: True
+render stable: True

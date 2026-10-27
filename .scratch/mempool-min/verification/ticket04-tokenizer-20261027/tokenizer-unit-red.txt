@@ -1,0 +1,23 @@
+test_real_transformers_templates_keep_exact_ids_across_return_defaults (test_mempool_full.TestLogicalFixtures.test_real_transformers_templates_keep_exact_ids_across_return_defaults) ... ERROR
+
+======================================================================
+ERROR: test_real_transformers_templates_keep_exact_ids_across_return_defaults (test_mempool_full.TestLogicalFixtures.test_real_transformers_templates_keep_exact_ids_across_return_defaults)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/tests/unit/test_mempool_full.py", line 71, in test_real_transformers_templates_keep_exact_ids_across_return_defaults
+    cases = logical.make_cases(tokenizer, 128) + logical.make_controls(tokenizer, 128)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/scripts/mempool_logical_cases.py", line 123, in make_cases
+    a = make(
+        ^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/scripts/mempool_logical_cases.py", line 92, in make
+    messages, text, ids = padded_messages(tokenizer, messages, size)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang/ascend-mempool-test/scripts/mempool_logical_cases.py", line 69, in padded_messages
+    raise ValueError("template tokenization differs from saved input IDs")
+ValueError: template tokenization differs from saved input IDs
+
+----------------------------------------------------------------------
+Ran 1 test in 0.970s
+
+FAILED (errors=1)

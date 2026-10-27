@@ -5,13 +5,18 @@ template: doc
 theme: blueprint
 lang: zh
 date: 2026-10-27
-status: 实现、469项CPU及两轴review通过；等待用户NPU验收
+status: tokenizer修复、470项CPU通过；等待用户NPU重测
 ---
 
 **同一入口新增 `full-acceptance`，自动完成阶段 0 的完整验收。**
 每机一条命令，依次运行独立参考组、目标组、容量故障和超时故障。
 结果按 [输出约定](output-verification-policy.md) 判定。
 本票保持 open，等待用户 NPU 验收和确认。
+
+用户首轮 `ticket04-001` 在输入生成阶段失败，V1–V10 均未执行。
+已修复模板 API 默认返回字典导致的误比较。
+[修复记录](verification/ticket04-tokenizer-20261027/README.md)保存复现与检查证据。
+以下命令使用新的 `ticket04-002`，请在两机更新后重跑。
 
 ## A 功能源码阅读顺序
 
@@ -80,7 +85,7 @@ P机：
 bash ascend-mempool-test/scripts/run_mempool_min.sh \
   --role prefill --mode full-acceptance \
   --config /home/cryang/mempool-min-ticket01-3132.json \
-  --run-id ticket04-001
+  --run-id ticket04-002
 ```
 
 D机：
@@ -89,7 +94,7 @@ D机：
 bash ascend-mempool-test/scripts/run_mempool_min.sh \
   --role decode --mode full-acceptance \
   --config /home/cryang/mempool-min-ticket01-3132.json \
-  --run-id ticket04-001
+  --run-id ticket04-002
 ```
 
 其他部署使用 [完整配置模板](../../ascend-mempool-test/configs/mempool-min-full.example.json)。
@@ -111,7 +116,7 @@ bash ascend-mempool-test/scripts/run_mempool_min.sh \
 
 ## D 报告与回传材料
 
-日志根目录为 `/home/cryang/log/mempool-min/ticket04-001/`。
+日志根目录为 `/home/cryang/log/mempool-min/ticket04-002/`。
 P终端打印 `FULL_ACCEPTANCE`，列出V1–V10状态与报告位置。
 
 | 文件／目录 | 内容 |
@@ -160,12 +165,17 @@ Main的 `/ready` 表示控制与注册就绪。
 
 ## F 验证状态
 
-完整469项CPU测试通过，耗时42.440秒。
+最新修复后完整470项CPU测试通过，耗时44.284秒。
+本次两文件lint、format、isort、3.9语法和源码strict mypy通过。
+[修复审核](verification/ticket04-tokenizer-20261027/review.md)的两轴均0项发现。
+
+原实现检查记录如下：469项CPU通过，耗时42.440秒。
 9个Python文件通过lint、format、isort和3.9语法检查。
 7个源码模块通过strict mypy；两轴review均0项未解决。
 超长拒绝的独立性和同条件稳定性诊断已按审核修复。
 
 [检查记录](verification/ticket04-cpu-20261027/checks.json)包含源码摘要和实际日志。
 [两轴审核](verification/ticket04-cpu-20261027/review.md)保留发现、修复和复核结论。
-实际GLM tokenizer、模型答案、远端BM和NPU Graph均尚未运行本票验收。
+公开GLM-5.2 tokenizer在本地通过完整输入生成。
+用户机器尚待重测；模型答案、远端BM和NPU Graph尚未通过本票验收。
 用户执行完整测试并确认后，才更新本票硬件状态并关闭。

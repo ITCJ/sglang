@@ -165,6 +165,17 @@ publish／finished／free_ack 和 D 每步负载必须可追溯。跨机裸时�
 
 ## Comments
 
+### 2026-10-27：ticket04-001输入生成失败；修复模板API返回值
+
+用户在31/32以72fd610af8执行完整验收，模板IDs校验报错，服务未启动，V1–V10均not-run。
+公开GLM-5.2 tokenizer与Transformers 5.12.1在本地复现同一异常。
+默认返回BatchEncoding，旧代码将其字段名当成IDs；显式return_dict=False后严格比较通过。
+真实API回归完成red/green，公开GLM-5.2全部六个精确长度输入及B前缀通过。
+完整470项CPU测试通过（44.284秒），静态检查通过；Standards/Spec复核均0项发现。
+修改仅在独立Ascend验收工具，无主线和服务源码改动。
+[修复证据](../verification/ticket04-tokenizer-20261027/README.md)保留用户失败与本地复现。
+等待用户使用新run-id=ticket04-002重测；Status仍needs-info，State仍open。
+
 ### 2026-10-27：代码、完整CPU和两轴审核交付；等待NPU验收
 
 完整469项CPU回归通过（42.440秒）；9文件lint/format/isort/3.9语法和7模块strict mypy通过。

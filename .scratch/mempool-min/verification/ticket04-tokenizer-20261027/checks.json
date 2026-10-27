@@ -1,0 +1,37 @@
+{
+  "baseline": "72fd610af89f038f8c41311a342d132585c9ac25",
+  "transformers": "5.12.1",
+  "reproduction": "Public GLM-5.2 tokenizer: complete ABCE and minimal 128-token input reproduce the user error before the fix; full fixture generation passes after the fix.",
+  "cpu": {
+    "status": "passed",
+    "tests": 470,
+    "seconds": 44.284,
+    "command": "python3 /private/tmp/mempool-ticket04/run.py tokenizer-cpu-final -m unittest discover -s ascend-mempool-test/tests/unit -v",
+    "log": "tokenizer-cpu-final.txt"
+  },
+  "static": {
+    "status": "passed",
+    "checks": [
+      "ruff F/UP037",
+      "ruff format",
+      "isort",
+      "strict mypy source module (3.10 target; installed mypy warns about repo 3.9 setting)",
+      "Python 3.9 AST"
+    ]
+  },
+  "source_sha256": {
+    "ascend-mempool-test/scripts/mempool_logical_cases.py": "3cb9aaf01d5627c68a13ba8c842172f061775ab908ad649fd86d925665f0c242",
+    "ascend-mempool-test/tests/unit/test_mempool_full.py": "cad17f7bb5aca4a16b1d31fe5f006711e0c416bcc10105a9753a697c95d2b16c"
+  },
+  "hardware": {
+    "user_run": "ticket04-001",
+    "status": "fixture generation failed before services; V1\u2013V10 not-run",
+    "rerun": "pending",
+    "user_accepted": false
+  },
+  "review": {
+    "standards_unresolved": 0,
+    "spec_unresolved": 0,
+    "log": "review.md"
+  }
+}

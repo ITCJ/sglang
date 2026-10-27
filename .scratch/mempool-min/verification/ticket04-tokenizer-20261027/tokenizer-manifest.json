@@ -1,0 +1,21 @@
+{
+  "model": "zai-org/GLM-5.2",
+  "revision": "cf457fa734ab149ffef225f80893eb38c6ff5cdc",
+  "files": [
+    {
+      "file": "tokenizer.json",
+      "size": 20217442,
+      "sha256": "19e773648cb4e65de8660ea6365e10acca112d42a854923df93db4a6f333a82d"
+    },
+    {
+      "file": "tokenizer_config.json",
+      "size": 761,
+      "sha256": "98b1271574f41abf89427ae2dda030d94dc9478f0edc5a8bd240db213c6fd5fc"
+    },
+    {
+      "file": "chat_template.jinja",
+      "size": 5076,
+      "sha256": "172dc74a35e1752df75ecfb2b2cf9326d2852bb1379868ebeec9571654489679"
+    }
+  ]
+}
