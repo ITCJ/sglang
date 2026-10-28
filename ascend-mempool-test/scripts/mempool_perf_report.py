@@ -9,6 +9,13 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from mempool_perf_outputs import (
+    OUTPUT_POLICY,
+    STRICT_POLICY,
+    compare_outputs,
+    output_analysis,
+)
+
 CASES = ("A", "B", "C", "E")
 MAIN = (
     "T_main_e2e",
@@ -80,8 +87,14 @@ def check_sample(
     result: dict,
     snapshot: dict,
     previous: dict,
+    *,
+    strict_ids: bool = True,
 ) -> str:
     """V1/V3/V6 only; no tensor readbacks or copy-adapter probes."""
+    if not all(
+        isinstance(value, dict) for value in (reference, result, snapshot, previous)
+    ):
+        raise ValueError("missing/malformed response or state snapshot")
     ids = result.get("output_ids")
     for label, response in (("output", result), ("reference", reference)):
         output, meta = response.get("output_ids"), response.get("meta_info", {})
@@ -97,7 +110,7 @@ def check_sample(
                 label
                 + " must contain exactly 128 IDs, correct prompt length and finish by length"
             )
-    if ids != reference.get("output_ids"):
+    if strict_ids and ids != reference.get("output_ids"):
         first = next(
             (
                 i
@@ -151,6 +164,27 @@ def check_sample(
     if not previous.keys() <= directory.keys():
         raise ValueError("V6 retained prefix disappeared")
     return str(done["rid"])
+
+
+def assess_sample(
+    case: str,
+    fixture: dict,
+    reference: dict,
+    result: dict,
+    snapshot: dict,
+    previous: dict,
+) -> dict:
+    """Record independent logical/state checks; an ID mismatch is diagnostic only."""
+    diagnostic = compare_outputs(fixture, reference, result)
+    errors = list(diagnostic["errors"])
+    rid = ""
+    try:
+        rid = check_sample(
+            case, fixture, reference, result, snapshot, previous, strict_ids=False
+        )
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
+        errors.append(f"{type(exc).__name__}: {exc}")
+    return dict(rid=rid, valid=not errors, errors=errors, output_diagnostics=diagnostic)
 
 
 def read_events(root: Path) -> list[dict]:
@@ -389,6 +423,10 @@ def build_report(root: Path, explanations: dict[str, str] | None = None) -> dict
     cases = read_json(root / "cases.json")
     references = read_json(root / "reference/responses.json")["results"]
     manifest = read_json(root / "perf-manifest.json")
+    policy = manifest.get("output_policy", STRICT_POLICY)
+    if policy not in (OUTPUT_POLICY, STRICT_POLICY):
+        raise ValueError(f"unknown output policy: {policy}")
+    diagnostic_outputs = policy == OUTPUT_POLICY
     a, b, c, e = [item["input_ids"] for item in cases]
     if (
         list(map(len, (a, b, c, e))) != [4096, 5120, 4096, 4096]
@@ -478,6 +516,7 @@ def build_report(root: Path, explanations: dict[str, str] | None = None) -> dict
                 warmup=round_number == 1,
             )
             rows = []
+            errors = []
             try:
                 saved = outcome["samples"][index]
                 if saved.get("case") != case:
@@ -486,13 +525,37 @@ def build_report(root: Path, explanations: dict[str, str] | None = None) -> dict
                     {
                         k: v
                         for k, v in saved.items()
-                        if k in ("rid", "result", "snapshot", "error")
+                        if k
+                        in ("rid", "result", "snapshot", "error", "execution_error")
                     }
                 )
+                if diagnostic_outputs and "result" in record:
+                    assessed = assess_sample(
+                        case,
+                        cases[index],
+                        references[index],
+                        record["result"],
+                        record.get("snapshot", {}),
+                        previous,
+                    )
+                    record["output_diagnostics"] = assessed["output_diagnostics"]
+                    errors.extend(assessed["errors"])
+                    if assessed["rid"] and assessed["rid"] != record["rid"]:
+                        errors.append("timing RID differs from completed request RID")
                 if record.get("rid") and "result" in record:
                     request_samples(events, record, round_number, rows)
                 if invalid:
                     raise ValueError("earlier round failure: " + invalid)
+                if diagnostic_outputs:
+                    if saved.get("execution_error"):
+                        errors.append(saved["execution_error"])
+                    if "result" not in record:
+                        errors.append(saved.get("error", "request not run/no response"))
+                    if errors:
+                        raise ValueError("; ".join(errors))
+                    record.pop("error", None)
+                    record["valid"] = True
+                    continue
                 if saved.get("error"):
                     raise ValueError(saved["error"])
                 expected_rid = check_sample(
@@ -508,10 +571,14 @@ def build_report(root: Path, explanations: dict[str, str] | None = None) -> dict
                 previous = saved["snapshot"]["directory"]
                 record["valid"] = True
             except (ValueError, KeyError, IndexError, TypeError) as exc:
-                invalid = str(exc)
-                record.update(valid=False, error=invalid)
+                if str(exc) not in errors and str(exc) != "; ".join(errors):
+                    errors.append(str(exc))
+                error = "; ".join(errors)
+                if not diagnostic_outputs:
+                    invalid = error
+                record.update(valid=False, error=error)
                 for sample in rows:
-                    sample.update(valid=False, reason=invalid)
+                    sample.update(valid=False, reason=error)
                 rows.append(
                     dict(
                         round=round_number,
@@ -522,11 +589,14 @@ def build_report(root: Path, explanations: dict[str, str] | None = None) -> dict
                         clock=None,
                         valid=False,
                         warmup=round_number == 1,
-                        reason=invalid,
+                        reason=error,
                     )
                 )
-            records.append(record)
-            samples.extend(rows)
+            finally:
+                if diagnostic_outputs and isinstance(record.get("snapshot"), dict):
+                    previous = record["snapshot"].get("directory", previous)
+                records.append(record)
+                samples.extend(rows)
     grouped: dict[tuple[str, str], list[float]] = defaultdict(list)
     for sample in samples:
         if sample["valid"] and not sample["warmup"]:
@@ -573,10 +643,22 @@ def build_report(root: Path, explanations: dict[str, str] | None = None) -> dict
             "max/min > 1.5 needs a recorded explanation (or additional rounds and re-evaluation)"
         )
     invalid_count = sum(not r["valid"] for r in records)
+    if diagnostic_outputs and invalid_count:
+        failures.append(
+            f"{invalid_count} requests failed recorded checks (including warmup)"
+        )
+    outputs = (
+        output_analysis(cases, references, records) if diagnostic_outputs else None
+    )
+    if outputs is not None:
+        write_json(root / "output-analysis.json", outputs)
     result = dict(
-        schema=1,
+        schema=2 if diagnostic_outputs else 1,
         status="failed" if failures else "passed",
         user_accepted=False,
+        output_policy=policy,
+        execution_complete=all("result" in r for r in records),
+        output_stability=outputs["stability"] if outputs is not None else [],
         invalid_samples=invalid_count,
         warmup_samples=sum(r["warmup"] for r in records),
         failures=failures,
@@ -601,7 +683,8 @@ def render_markdown(
     lines = [
         "# 阶段 0 单请求基线（Ascend NPU）",
         "",
-        f"状态：**{report['status']}**；用户 NPU 验收：待确认。",
+        f"自动检查：**{report['status']}**；用户 NPU 验收：待用户决定（user_accepted=false）。",
+        f"ABCE 全轮响应收集完整：{report['execution_complete']}；输出策略：{report['output_policy']}。",
         f"有效统计排除第1轮预热；无效样本 {report['invalid_samples']}。重启整套服务清空 prefix。",
         "",
         "## 版本 / 配置 / 拓扑",
@@ -653,6 +736,50 @@ def render_markdown(
                 "",
                 "```json",
                 json.dumps(controls, ensure_ascii=False, indent=2),
+                "```",
+            ]
+        )
+    if report["output_policy"] == OUTPUT_POLICY:
+        outputs = read_json(root / "output-analysis.json")
+        lines.extend(
+            [
+                "",
+                "## 输出与逻辑答案",
+                "",
+                "完整128-token序列不一致仅作记录，不导致跳过C/E或停止轮次。逻辑答案按开头第一个JSON对象与独立标准答案逐字段、逐类型比较；不搜索后文补救错误答案。续写原文保留，不对其逻辑正确性作保证。",
+                "",
+                "参考与实际完整text/IDs、解析答案及续写见 `output-analysis.json`；原始响应仍保存在reference/responses.json和各轮outcome.json。首差使用从0开始的索引。",
+                "",
+                "| round | case | 参考逻辑 | 实际逻辑 | 完整IDs一致 | 首差索引 | 样本检查 |",
+                "|---:|---|---|---|---|---:|---|",
+            ]
+        )
+        for record in report["requests"]:
+            diagnostic = record.get("output_diagnostics", {})
+            difference = diagnostic.get("ids", {})
+            lines.append(
+                f"| {record['round']} | {record['case']} | "
+                f"{diagnostic.get('reference', {}).get('status', 'not-run')} | "
+                f"{diagnostic.get('actual', {}).get('status', 'not-run')} | "
+                f"{difference.get('equal', 'unknown')} | {difference.get('first_difference')} | "
+                f"{'valid' if record['valid'] else 'invalid'} |"
+            )
+        lines.extend(
+            [
+                "",
+                "### 跨轮输出稳定性（包含预热和无效样本）",
+                "",
+                "相同ID序列归为一组；每轮与首个实际输出的首差、逻辑答案分组均保留。稳定性差异本身只作诊断。参考A/C同输入比较单独保留。",
+                "",
+                "```json",
+                json.dumps(
+                    dict(
+                        reference_A_vs_C=outputs["reference_A_vs_C"],
+                        stability=outputs["stability"],
+                    ),
+                    ensure_ascii=False,
+                    indent=2,
+                ),
                 "```",
             ]
         )
@@ -775,7 +902,9 @@ def render_markdown(
             "- 阶段0不支持显式rank_numa_map，现有8 NUMA连续均分只有一套5轮。K1将改变NUMA使用与共享；注册分配不证明物理页落点。",
             "- Ascend环境以驱动/CANN/torch-npu/HCCL/MemFabric及NPU互联为准，CUDA/nvidia-smi/GPUDirect不适用。RDMA/设备直传是否启用须看归档证据，未观察到就标未知。",
             "- 计时日志与非阻塞event查询有成本；各版本必须原样使用同入口。T_wt与forward可重叠，不是可相加的分段。",
-            "- V3严格比较128-token完整IDs；此前阶段0逻辑答案验收不等于本票V3通过。",
+            "- 输出采用core-answer-v1：核心答案与标准答案核对，强制128-token续写差异仅记录；逻辑或结构检查失败仍标无效，计时值保留。"
+            if report["output_policy"] == OUTPUT_POLICY
+            else "- 此归档采用旧版严格128-token完整IDs策略；离线重算保持历史判定，不追认用户验收。",
             "",
             "原始数据：`samples.jsonl`；每轮`events*.jsonl`、三个进程日志、`outcome.json`。离线重跑不需NPU。",
             "",
@@ -799,6 +928,16 @@ def generate_report(root: Path, explanations: dict[str, str] | None = None) -> d
             requests=[],
         )
         write_json(root / "perf-report.json", result)
+        write_json(
+            root / "output-analysis.json",
+            dict(
+                schema=1,
+                user_accepted=False,
+                status="incomplete",
+                failures=result["failures"],
+                note="inspect reference/responses.json and round-*/outcome.json for raw outputs",
+            ),
+        )
         if not (root / "samples.jsonl").exists():
             (root / "samples.jsonl").write_text("")
         (root / "baseline.md").write_text(

@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any
 
 import mempool_logical_cases
-from mempool_perf_report import CASES, check_sample, generate_report, write_json
+from mempool_perf_outputs import OUTPUT_POLICY, compare_outputs
+from mempool_perf_report import CASES, assess_sample, generate_report, write_json
 from run_mempool_min import REPO, RUN_ENV, SCRIPTS, request_json, service_environment
 from run_ticket10 import receive_log, send_log, wait_http
 from ticket10_processes import Processes
@@ -145,19 +146,15 @@ def run_round(runner: Any, number: int) -> None:
             outcome["initial"] = request_json(base + "/status")
             write_json(root / "outcome.json", outcome)
             previous: dict[str, Any] = {}
-            failed = ""
+            round_error = ""
             if (
                 outcome["initial"]["directory"]
                 or outcome["initial"]["ledger"]["p_prefix"]["outstanding"]
             ):
-                failed = "prefix did not reset to empty after service restart"
+                round_error = "prefix did not reset to empty after service restart"
             for index, case in enumerate(CASES):
                 record: dict[str, Any] = dict(case=case, rid="", valid=False)
                 outcome["samples"].append(record)
-                if failed:
-                    record["error"] = "not run after earlier failure: " + failed
-                    write_json(root / "outcome.json", outcome)
-                    continue
                 try:
                     watch()
                     fixture = runner.cases[index]
@@ -168,13 +165,17 @@ def run_round(runner: Any, number: int) -> None:
                         },
                         timeout=config.operation_timeout,
                     )
+                    record["output_diagnostics"] = compare_outputs(
+                        fixture, runner.reference[index], record["result"]
+                    )
+                    record["rid"] = record["result"].get("meta_info", {}).get("id", "")
                     # Archive before assertions, including malformed responses.
                     write_json(root / "outcome.json", outcome)
                     record["snapshot"] = request_json(base + "/status", timeout=30)
                     if record["snapshot"]["completed"]:
                         record["rid"] = record["snapshot"]["completed"][-1]["rid"]
                     write_json(root / "outcome.json", outcome)
-                    record["rid"] = check_sample(
+                    assessed = assess_sample(
                         case,
                         fixture,
                         runner.reference[index],
@@ -182,13 +183,33 @@ def run_round(runner: Any, number: int) -> None:
                         record["snapshot"],
                         previous,
                     )
+                    if assessed["rid"]:
+                        record["rid"] = assessed["rid"]
+                    record.update(
+                        valid=assessed["valid"],
+                        errors=assessed["errors"],
+                        output_diagnostics=assessed["output_diagnostics"],
+                    )
+                    if round_error:
+                        record["errors"].append(round_error)
+                        record["valid"] = False
                     previous = record["snapshot"]["directory"]
-                    record["valid"] = True
                 except Exception as exc:
-                    failed = f"{type(exc).__name__}: {exc}"
-                    record["error"] = failed
+                    record["execution_error"] = f"{type(exc).__name__}: {exc}"
+                    record["errors"] = [record["execution_error"]]
+                    record["valid"] = False
+                if not record["valid"]:
+                    record["error"] = "; ".join(record["errors"])
                     print(
-                        f"PERF_INVALID round={number} case={case} {failed}", flush=True
+                        f"PERF_INVALID round={number} case={case} {record['error']}",
+                        flush=True,
+                    )
+                difference = record.get("output_diagnostics", {}).get("ids", {})
+                if difference.get("equal") is False:
+                    print(
+                        f"PERF_OUTPUT_DIFFERENCE round={number} case={case} "
+                        f"first={difference['first_difference']} diagnostic_only=true",
+                        flush=True,
                     )
                 write_json(root / "outcome.json", outcome)
             peer.send("perf-round-done", round=number)
@@ -228,7 +249,7 @@ def run(runner: Any) -> None:
     """Reference outside timings, then five independently restarted ABCE rounds."""
     runner.report.update(
         coverage="stage0 serial ABCE perf; not full functional acceptance",
-        output_policy="strict 128 complete IDs against independent formal reference",
+        output_policy=OUTPUT_POLICY,
     )
     topology(runner.root, runner.config.interface)
     if runner.is_p:
@@ -250,7 +271,11 @@ def run(runner: Any) -> None:
     else:
         send_log(runner.peer, runner.root / "topology.json")
     manifest = dict(
-        schema=1,
+        schema=2,
+        output_policy=OUTPUT_POLICY,
+        output_difference="diagnostic only; continue ABCE and all rounds",
+        logical_answer="first JSON object versus independent expected_answer; tail retained",
+        acceptance="user review; automated check results are not user acceptance",
         rounds=runner.args.perf_rounds,
         warmup_rounds=[1],
         case_order=list(CASES),
@@ -276,11 +301,21 @@ def run(runner: Any) -> None:
             status=report["status"],
             invalid_samples=report["invalid_samples"],
         )
-        for filename in ("baseline.md", "samples.jsonl", "perf-report.json"):
+        for filename in (
+            "baseline.md",
+            "samples.jsonl",
+            "perf-report.json",
+            "output-analysis.json",
+        ):
             send_log(runner.peer, runner.root / filename)
     else:
         report = runner.peer.expect("perf-result")
-        for filename in ("baseline.md", "samples.jsonl", "perf-report.json"):
+        for filename in (
+            "baseline.md",
+            "samples.jsonl",
+            "perf-report.json",
+            "output-analysis.json",
+        ):
             receive_log(runner.peer, runner.root / filename)
     runner.peer.barrier("perf-report-archived")
     runner.report.update(
@@ -292,5 +327,5 @@ def run(runner: Any) -> None:
     )
     if report["status"] != "passed":
         raise ValueError(
-            "perf acceptance incomplete; inspect baseline.md, invalid samples and stability explanations"
+            "perf run recorded failed checks; inspect baseline.md and output-analysis.json for user review"
         )

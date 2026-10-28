@@ -1,6 +1,6 @@
 # 票 01：阶段 0 单请求对照基线（Ascend NPU）
 
-**Status:** needs-info
+**Status:** ready-for-user-run
 **State:** open
 **Blocked by:** 无；用户确认阶段 0 完成，明确授权先做基线。
 **Spec:** [spec.md](../spec.md)
@@ -40,3 +40,15 @@ Standards/Spec最终均0项阻断，详见[本地记录](../verification/cpu-202
 
 **等待用户执行NPU验收。** 尚无真实性能样本、拓扑实测或baseline.md硬件报告。
 所有硬件完成项保持未勾选，ticket保持open；不解锁K1功能实现。
+
+### baseline01-001 回传与用户更新输出规则
+
+首次真实NPU运行前4轮B核心答案均正确，目标完整IDs跨轮一致，但从索引30起与参考不同；
+旧规则使C/E跳过，第5轮又因BadStatusLine中断。原失败记录保留，详见
+[回传分析](../verification/baseline01-001/diagnosis.md)。readiness修复已提交ddbee124b2。
+
+用户明确允许完整IDs差异只记录，并要求继续5轮ABCE、首轮预热、轮间整套重启。
+新core-answer-v1分别核对参考/实际开头JSON的独立标准答案，保留全部续写；
+逻辑或结构失败记录但不主动跳过后续请求。离线报告保存首差和跨轮稳定性，
+output-analysis.json包含完整参考/实际输出并传给D端。最终验收由用户决定。
+新规则尚待NPU重跑；不因本地检查通过关闭本票。

@@ -13,6 +13,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 import mempool_perf_report as report
+from mempool_perf_outputs import OUTPUT_POLICY, core_answer
 
 
 def event(name, rid, ms, process="main", rank=0, **data):
@@ -198,6 +199,39 @@ def archive(tmp_path):
     return tmp_path
 
 
+@pytest.fixture
+def diagnostic_archive(archive):
+    """The current output policy is explicit; old archives retain strict checks."""
+    cases = report.read_json(archive / "cases.json")
+    answers = [
+        dict(place="harbor", pencils=22, route="north"),
+        dict(place="harbor", pencils=25, route="south"),
+        dict(place="harbor", pencils=22, route="north"),
+        dict(place="meadow", pencils=27, route="south"),
+    ]
+    for fixture, answer in zip(cases, answers):
+        fixture["expected_answer"] = answer
+    report.write_json(archive / "cases.json", cases)
+    reference = report.read_json(archive / "reference/responses.json")
+    reference["cases"] = cases
+    for response, answer in zip(reference["results"], answers):
+        response["text"] = json.dumps(answer) + "Reference continuation."
+    report.write_json(archive / "reference/responses.json", reference)
+    report.write_json(
+        archive / "perf-manifest.json", dict(rounds=5, output_policy=OUTPUT_POLICY)
+    )
+    for number in range(1, 6):
+        path = archive / f"round-{number:02d}/outcome.json"
+        outcome = report.read_json(path)
+        for record, answer in zip(outcome["samples"], answers):
+            record["result"]["text"] = json.dumps(answer) + "Actual continuation."
+            record["snapshot"]["completed"][-1]["result"] = copy.deepcopy(
+                record["result"]
+            )
+        report.write_json(path, outcome)
+    return archive
+
+
 def rewrite_events(root, number, change):
     path = root / f"round-{number:02d}/router.log"
     events = [
@@ -286,6 +320,124 @@ def test_strict_ids_and_ledger_cannot_be_waived_as_semantic_accuracy(archive):
         )
 
 
+def test_output_differences_keep_all_cases_and_preserve_full_evidence(
+    diagnostic_archive,
+):
+    archive = diagnostic_archive
+    for number in range(1, 6):
+        path = archive / f"round-{number:02d}/outcome.json"
+        outcome = report.read_json(path)
+        sample = outcome["samples"][1]
+        sample["result"]["output_ids"][30] = 999
+        sample["snapshot"]["completed"][-1]["result"] = copy.deepcopy(sample["result"])
+        report.write_json(path, outcome)
+    result = report.build_report(archive)
+    assert result["status"] == "passed", result["failures"]
+    assert result["execution_complete"] and not result["user_accepted"]
+    assert result["invalid_samples"] == 0
+    assert all(row["request_n"] == 4 for row in result["table"] if row["applicable"])
+    outputs = report.read_json(archive / "output-analysis.json")
+    b = [r for r in outputs["requests"] if r["case"] == "B"]
+    assert len(b) == 5 and all(r["result"]["output_ids"][30] == 999 for r in b)
+    assert all(r["output_diagnostics"]["ids"]["first_difference"] == 30 for r in b)
+    assert all(r["output_diagnostics"]["actual"]["status"] == "passed" for r in b)
+    assert outputs["references"][1]["result"]["output_ids"][30] == 30
+    assert outputs["stability"][1]["id_groups"] == [[1, 2, 3, 4, 5]]
+    assert outputs["stability"][1]["all_ids_equal"]
+    assert (
+        "Actual continuation." in b[0]["output_diagnostics"]["actual"]["continuation"]
+    )
+    assert "跨轮输出稳定性" in (archive / "baseline.md").read_text()
+
+
+@pytest.mark.parametrize("defect", ["logical", "ledger", "length", "timing"])
+def test_failed_checks_are_recorded_without_invalidating_later_cases(
+    diagnostic_archive, defect
+):
+    archive = diagnostic_archive
+    path = archive / "round-02/outcome.json"
+    outcome = report.read_json(path)
+    sample = outcome["samples"][1]
+    if defect == "logical":
+        sample["result"]["text"] = (
+            '{"place":"harbor","pencils":22,"route":"north"}' + sample["result"]["text"]
+        )
+    elif defect == "ledger":
+        sample["snapshot"]["ledger"]["p_alive"]["free"] -= 1
+    elif defect == "length":
+        sample["result"]["output_ids"].pop()
+    else:
+        rewrite_events(
+            archive,
+            2,
+            lambda events: [
+                e
+                for e in events
+                if not (e["rid"] == "r2-B" and e["event"] == "gate_ready")
+            ],
+        )
+    sample["snapshot"]["completed"][-1]["result"] = copy.deepcopy(sample["result"])
+    report.write_json(path, outcome)
+    result = report.build_report(archive)
+    assert result["status"] == "failed"
+    assert result["invalid_samples"] == 1
+    assert [r["valid"] for r in result["requests"] if r["round"] == 2] == [
+        True,
+        False,
+        True,
+        True,
+    ]
+    raw = [
+        json.loads(row) for row in (archive / "samples.jsonl").read_text().splitlines()
+    ]
+    assert any(
+        row["rid"] == "r2-B" and row["metric"] == "T_main_e2e" and not row["valid"]
+        for row in raw
+    )
+    assert result["execution_complete"]
+
+
+def test_reference_logic_and_cross_round_output_changes_remain_visible(
+    diagnostic_archive,
+):
+    archive = diagnostic_archive
+    reference = report.read_json(archive / "reference/responses.json")
+    reference["results"][1]["text"] = '{"place":"harbor","pencils":22,"route":"north"}'
+    report.write_json(archive / "reference/responses.json", reference)
+    path = archive / "round-05/outcome.json"
+    outcome = report.read_json(path)
+    sample = outcome["samples"][1]
+    sample["result"]["output_ids"][70] = 999
+    sample["snapshot"]["completed"][-1]["result"] = copy.deepcopy(sample["result"])
+    report.write_json(path, outcome)
+    result = report.build_report(archive)
+    assert result["invalid_samples"] == 5
+    assert all(r["valid"] for r in result["requests"] if r["case"] != "B")
+    outputs = report.read_json(archive / "output-analysis.json")
+    assert outputs["stability"][1]["id_groups"] == [[1, 2, 3, 4], [5]]
+    assert not outputs["stability"][1]["all_ids_equal"]
+    last_b = next(
+        r for r in outputs["requests"] if r["round"] == 5 and r["case"] == "B"
+    )
+    assert last_b["versus_first_actual"]["first_difference"] == 70
+    assert last_b["output_diagnostics"]["reference"]["status"] == "failed"
+    assert last_b["output_diagnostics"]["actual"]["status"] == "passed"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '{"place":"harbor","pencils":25,"pencils":25,"route":"south"}',
+        '{"place":"harbor","pencils":25.0,"route":"south"}',
+        'Explanation first. {"place":"harbor","pencils":25,"route":"south"}',
+        '{"place":"harbor","pencils":25}',
+    ],
+)
+def test_core_answer_rejects_duplicate_wrong_type_nonleading_and_missing_fields(text):
+    fixture = dict(expected_answer=dict(place="harbor", pencils=25, route="south"))
+    assert core_answer(fixture, dict(text=text))["status"] == "failed"
+
+
 def test_unexplained_cross_round_instability_fails_until_evidence_is_recorded(archive):
     def spike(events):
         for e in events:
@@ -357,8 +509,8 @@ def test_early_failure_writes_failed_diagnostic_report(tmp_path):
     assert report.read_json(tmp_path / "perf-report.json")["status"] == "failed"
 
 
-def test_paired_round_failure_cleans_owned_processes_and_next_round_restarts(
-    archive, tmp_path, monkeypatch
+def test_paired_round_records_failures_continues_abce_and_restarts_all_five_rounds(
+    diagnostic_archive, tmp_path, monkeypatch
 ):
     """Use real paired coordination/owned processes, replacing NPU and HTTP edges."""
     import socket
@@ -371,6 +523,7 @@ def test_paired_round_failure_cleans_owned_processes_and_next_round_restarts(
 
     from ascend_mempool_pd.mempool_router_protocol import RouterConfig
 
+    archive = diagnostic_archive
     started = []
     start = Processes.start
 
@@ -422,8 +575,22 @@ def test_paired_round_failure_cleans_owned_processes_and_next_round_restarts(
             )
             for role, peer in (("prefill", peer_p), ("decode", peer_d))
         ]
-        for number in (1, 2):
+        for number in range(1, 6):
             data = report.read_json(archive / f"round-{number:02d}/outcome.json")
+            sample = data["samples"][1]
+            if number == 1:
+                sample["result"]["output_ids"].pop()
+            elif number == 2:
+                sample["result"]["output_ids"][30] = 999
+            elif number == 3:
+                sample["result"]["text"] = (
+                    '{"place":"harbor","pencils":22,"route":"north"}'
+                )
+            elif number == 4:
+                sample["snapshot"]["ledger"]["p_alive"]["free"] -= 1
+            sample["snapshot"]["completed"][-1]["result"] = copy.deepcopy(
+                sample["result"]
+            )
             calls = []
 
             def http(url, *, payload=None, timeout=10):
@@ -431,8 +598,6 @@ def test_paired_round_failure_cleans_owned_processes_and_next_round_restarts(
                     index = len(calls)
                     calls.append(payload)
                     response = copy.deepcopy(data["samples"][index]["result"])
-                    if number == 1 and index == 1:
-                        response["output_ids"] = response["output_ids"][:-1]
                     return response
                 return (
                     data["samples"][len(calls) - 1]["snapshot"]
@@ -454,8 +619,12 @@ def test_paired_round_failure_cleans_owned_processes_and_next_round_restarts(
             )
             assert p_outcome == d_outcome and p_outcome["paired_cleanup"]
             assert [sample["valid"] for sample in p_outcome["samples"]] == (
-                [True, False, False, False] if number == 1 else [True] * 4
+                [True, False, True, True] if number in (1, 3, 4) else [True] * 4
             )
-            assert len(calls) == (2 if number == 1 else 4)
+            assert len(calls) == 4
+            assert calls == [
+                dict(input_ids=c["input_ids"], sampling_params=c["sampling_params"])
+                for c in runners[0].cases
+            ]
             assert all(process.poll() is not None for process in started)
-        assert len({process.pid for process in started}) == 6
+        assert len({process.pid for process in started}) == 15

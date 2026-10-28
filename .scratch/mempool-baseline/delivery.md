@@ -5,7 +5,7 @@
 
 运行命令、失败判据、归档路径和观察限制统一见
 [Ascend NPU 基线运行说明](../../ascend-mempool-test/MEMPOOL_BASELINE.md)。
-本票真实基线尚待用户运行，State保持open；K1未实施。
+首次真实运行baseline01-001未形成完整基线；用户更新输出规则后待重跑，State保持open；K1未实施。
 
 ## 功能源码阅读顺序
 
@@ -27,11 +27,12 @@
 
 独立Ascend测试工具位于既有`ascend-mempool-test/scripts/`：
 `run_mempool_min.py`增加子模式；`mempool_perf_runner.py`管理双机重复/归档；
-`mempool_perf_report.py`离线校验统计。启动、HTTP请求和离线重算必须由服务外工具完成，
+`mempool_perf_report.py`离线校验统计；`mempool_perf_outputs.py`核对核心答案、记录完整输出差异和跨轮稳定性。
+启动、HTTP请求和离线重算必须由服务外工具完成，
 不能放在NPU模型hook里；这些工具不作为模型运行时代码导入。
 
 本地检查：472项unittest、12项perf pytest、15文件静态与4组CLI描述通过；两轴复核无阻断。
-硬件尚未执行。
+上述为初版实现验证。首次NPU结果与当前输出规则见[票01](issues/01-stage0-single-request.md)更新。
 
 ## 核对重点
 

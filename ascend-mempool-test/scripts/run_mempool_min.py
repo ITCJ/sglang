@@ -693,7 +693,21 @@ class Runner:
                                 else mempool_logical_cases.answer(case, result)
                             )
                             write_json(root / "answers.json", answers)
-                        verify_mempool_min.check_response(case, result)
+                        if self.args.mode == "perf":
+                            try:
+                                verify_mempool_min.check_response(case, result)
+                                answers.append(dict(case=case["name"], status="passed"))
+                            except (ValueError, KeyError, TypeError) as exc:
+                                answers.append(
+                                    dict(
+                                        case=case["name"],
+                                        status="failed",
+                                        error=str(exc),
+                                    )
+                                )
+                            write_json(root / "response-checks.json", answers)
+                        else:
+                            verify_mempool_min.check_response(case, result)
                         if (
                             target
                             and not self.full
@@ -997,6 +1011,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     memory_budget=memory_budget(config, args.role),
                     output_policy=mempool_logical_cases.POLICY
                     if args.mode == "full-acceptance"
+                    else "core-answer-v1; complete IDs diagnostic only; user acceptance pending"
+                    if args.mode == "perf"
                     else "strict full output IDs",
                     acceptance_controls=(
                         "one skipped allocator page; fill submitted after native_freed"
@@ -1007,7 +1023,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "paired preflight and Ascend topology",
                         "independent ABCE reference (outside timing)",
                         f"{args.perf_rounds} restarted ABCE rounds; first excluded",
-                        "strict V1/V3/V6 and 128-token length checks",
+                        "record core answers, full-ID differences, V1/V6 and 128-token checks; continue ABCE",
+                        "cross-round output stability including warmup and invalid samples",
                         "offline samples/report and paired cleanup",
                     ]
                     if args.mode == "perf"

@@ -195,7 +195,12 @@ class TestMinRunner(unittest.TestCase):
             "full-acceptance", "abcefg", (4096, 5120, 4096, 4096, 4096, 128)
         )
 
-    def check_reference(self, mode, names, lengths):
+    def test_perf_reference_records_bad_length_and_keeps_later_cases(self):
+        self.check_reference(
+            "perf", "abce", (4096, 5120, 4096, 4096), invalid_reference=True
+        )
+
+    def check_reference(self, mode, names, lengths, invalid_reference=False):
         logs = service_logs(
             (127,) * len(names), layers=78, indexer_layer_ids=verifier.PRODUCERS
         )
@@ -242,6 +247,9 @@ class TestMinRunner(unittest.TestCase):
                 )
                 for case in instance.cases
             ]
+            if invalid_reference:
+                results[1]["output_ids"].pop()
+                results[1]["meta_info"]["completion_tokens"] = 127
             popen = runner.subprocess.Popen
 
             def launch(command, **kwargs):
@@ -279,6 +287,13 @@ class TestMinRunner(unittest.TestCase):
             self.assertEqual(evidence["zero_decode_requests"], 0)
             self.assertEqual(instance.reference, results)
             self.assertEqual(instance.report["stages"], ["reference"])
+            if mode == "perf":
+                checks = json.loads((stage / "response-checks.json").read_text())
+                self.assertEqual(
+                    [check["status"] for check in checks],
+                    ["passed", "failed", "passed", "passed"],
+                )
+                self.assertIn("wrong length", checks[1]["error"])
             if mode == "full-acceptance":
                 answers = json.loads((stage / "answers.json").read_text())
                 self.assertEqual(len(answers), 6)
