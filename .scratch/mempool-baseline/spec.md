@@ -1,12 +1,14 @@
 # Ascend NPU 阶段 0 单请求对照基线
 
-**Status:** ready-for-agent
-**State:** open
+**Status:** accepted
+**State:** closed
 
 用户于 2026-10-28 授权先完成本基线，再看 K1。按用户提供的票 01 实施。
 实现分支 `cryang/dev/mempool-min-baselinetest`，基点 `8869c2c605`。
 本票只测量、报告，不调优、不改默认部署、不实现 K1。
-真实 NPU 测试由用户运行，未验收前保持 open。
+真实 NPU 测试由用户运行；用户于2026-10-28确认 baseline01-002 验收，本票关闭。
+用户补充：当前与 `cryang/dev/mempool` 分支目前 commit 的单请求性能基本一致，后续跟进优化。
+人工验收证据见 [acceptance.json](verification/baseline01-002/acceptance.json)。
 
 ## 固定合同
 
@@ -21,7 +23,7 @@
 - 用户在 baseline01-001 后明确接受核心答案正确而强制续写不同：完整 IDs 差异仅作记录，不阻塞、不跳过 C/E，不再询问。
 - 逻辑或其他检查失败仍标无效并保存计时，继续尝试 ABCE 与全部轮次；运行故障造成未执行则如实记录。
 - 保存参考/实际完整输出、首差、逻辑检查、跨轮稳定性（含预热/无效样本），全跑完后统一分析，由用户决定是否通过。
-- 每指标每适用用例至少 4 个有效非预热样本；自动检查失败仍非零退出，user_accepted始终为false，不能代替用户验收。
+- 每指标每适用用例至少 4 个有效非预热样本；自动检查失败仍非零退出。自动报告的user_accepted=false不推断人工验收，用户确认另存acceptance.json。
 - V2 内容回读、V4 复制适配器、长生成、并发、故障/超时注入及 profiler 不进计时轮次。
 
 ## 指标
@@ -46,6 +48,7 @@ P↔D 网卡、RDMA/设备直传证据按可观察字段记录，未验证项不
 A/B 每轮拆分 e2e=route+ready+gen+tail+残差，单独解释 residual 与消息往返。
 固定等待定位到源码，估算占比；max/min>1.5 时加轮或解释，未解释则报告不完整。
 混淆项包括非流式、Graph padding、串行、单 chunk、NUMA，以及逐步事件查询/日志成本。
+baseline01-002 的13项局部计时波动已量化记录，用户接受当前基线并将进一步定位与优化留待后续；原始自动failed状态保留。
 
 ## NUMA 前置结论
 

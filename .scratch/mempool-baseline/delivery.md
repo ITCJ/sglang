@@ -5,8 +5,10 @@
 
 运行命令、失败判据、归档路径和观察限制统一见
 [Ascend NPU 基线运行说明](../../ascend-mempool-test/MEMPOOL_BASELINE.md)。
-baseline01-002已完成5轮，20条核心答案正确、无无效样本，13项局部计时波动待解释/用户判断。
-实测主表和分析见[baseline01-002报告](verification/baseline01-002/analysis.md)。State保持open；K1未实施。
+baseline01-002已完成5轮，20条核心答案正确、无无效样本；用户于2026-10-28确认验收，本票accepted/closed。
+**用户确认：当前与 `cryang/dev/mempool` 分支目前 commit 的单请求性能基本一致，后续跟进优化。**
+实测主表和分析见[baseline01-002报告](verification/baseline01-002/analysis.md)，人工验收见
+[acceptance.json](verification/baseline01-002/acceptance.json)。13项局部计时波动保留记录，进一步定位与优化转后续。
 
 ## 功能源码阅读顺序
 
@@ -42,4 +44,4 @@ baseline01-002已完成5轮，20条核心答案正确、无无效样本，13项�
 本票只旁观现有所有权与释放流程，不改变slot分配、prefix保护或数据拷贝策略。
 
 正确性与计时证据分别归档；无效样本保留可提取的计时但不入统计。
-CPU验证、两轴审查与尚待执行的NPU验收记录在[票01](issues/01-stage0-single-request.md)。
+CPU验证、两轴审查、真实NPU结果与用户验收记录在[票01](issues/01-stage0-single-request.md)。

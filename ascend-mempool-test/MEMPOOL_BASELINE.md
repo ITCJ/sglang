@@ -1,7 +1,9 @@
 # 阶段 0 单请求基线：Ascend NPU
 
 本入口用于 K1 容量改造前后的性能回退对照。它不调优，也不替代 V1–V10 完整功能验收。
-本地实现完成后仍需用户在真实 NPU 上运行，基线票才可关闭。
+baseline01-002已由用户于2026-10-28确认验收，基线票01关闭。
+用户确认：当前与 `cryang/dev/mempool` 分支目前 commit 的单请求性能基本一致，后续跟进优化。
+实测主表、已知波动与人工验收记录见[基线报告](../.scratch/mempool-baseline/verification/baseline01-002/analysis.md)。
 
 ## 配置与运行
 
