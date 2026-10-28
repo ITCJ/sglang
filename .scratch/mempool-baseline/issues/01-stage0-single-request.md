@@ -1,6 +1,6 @@
 # 票 01：阶段 0 单请求对照基线（Ascend NPU）
 
-**Status:** ready-for-user-run
+**Status:** awaiting-user-acceptance
 **State:** open
 **Blocked by:** 无；用户确认阶段 0 完成，明确授权先做基线。
 **Spec:** [spec.md](../spec.md)
@@ -52,3 +52,16 @@ Standards/Spec最终均0项阻断，详见[本地记录](../verification/cpu-202
 逻辑或结构失败记录但不主动跳过后续请求。离线报告保存首差和跨轮稳定性，
 output-analysis.json包含完整参考/实际输出并传给D端。最终验收由用户决定。
 新规则尚待NPU重跑；不因本地检查通过关闭本票。
+
+### baseline01-002 完整实跑与分析
+
+用户回传execution_complete=true、20条核心答案均通过、invalid_samples=0、
+首轮4条预热；A/B/C/E各自5轮完整IDs相同，B/C与参考的首差仍分别为30/17。
+所有适用指标均有4个有效非预热请求，唯一自动失败是13项max/min>1.5尚未解释。
+主e2e中位数A/B/C/E为27.782/22.310/21.871/22.650秒，主e2e全幅分别1.945%/0.263%/0.203%/0.347%。
+
+124行主表和144条逐轮耗时已按用户回传归档，重算核对一致。
+[分析报告](../verification/baseline01-002/analysis.md)包含可相加的均值拆分、A/B逐轮拆分、
+13项绝对波动、固定轮询位置和限制。每轮A的约4秒handoff等待、C第5轮fill781ms的具体来源、
+平均每请求128条forward事件的停止边界仍未从完整日志定位；不将推断写成已证实原因。
+原始自动failed保留，用户验收未替代。未做调优、配置修改或K1实现。

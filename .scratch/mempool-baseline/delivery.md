@@ -5,7 +5,8 @@
 
 运行命令、失败判据、归档路径和观察限制统一见
 [Ascend NPU 基线运行说明](../../ascend-mempool-test/MEMPOOL_BASELINE.md)。
-首次真实运行baseline01-001未形成完整基线；用户更新输出规则后待重跑，State保持open；K1未实施。
+baseline01-002已完成5轮，20条核心答案正确、无无效样本，13项局部计时波动待解释/用户判断。
+实测主表和分析见[baseline01-002报告](verification/baseline01-002/analysis.md)。State保持open；K1未实施。
 
 ## 功能源码阅读顺序
 
