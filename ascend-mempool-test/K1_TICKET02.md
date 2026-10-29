@@ -26,14 +26,14 @@
 # P 容器
 bash ascend-mempool-test/scripts/run_mempool_min.sh \
   --role prefill --mode session-acceptance \
-  --config /home/cryang/mempool-min-ticket01-3132.json --run-id k1-ticket02-001
+  --config /home/cryang/mempool-min-ticket01-3132.json --run-id k1-ticket02-003
 ```
 
 ```bash
 # D 容器
 bash ascend-mempool-test/scripts/run_mempool_min.sh \
   --role decode --mode session-acceptance \
-  --config /home/cryang/mempool-min-ticket01-3132.json --run-id k1-ticket02-001
+  --config /home/cryang/mempool-min-ticket01-3132.json --run-id k1-ticket02-003
 ```
 
 加 `--describe` 可在启动前预览实际配置、两轮阶段和容量。
@@ -48,8 +48,9 @@ bash ascend-mempool-test/scripts/run_mempool_min.sh \
    核对 KV 内容、Graph、prefix 保存和命中、slot 复用、注册以及 ready/free 记账。
    随后暂停 P，验证超时 fail-stop、D 非零退出和双端进程清理。
 2. 使用相同端口重启真实服务，再跑同组请求。
-   请求全部 free_ack 后，按 D → P 顺序正常关闭，保证 P 的 BM Store 最后退出。
-   每个 rank 必须报告设备同步及 BM leave/destroy/uninitialize 完成。
+   请求全部 free_ack 后，MR/SR 先完成双方32个rank的停机确认，再按 D → P 顺序正常关闭，保证 P 的 BM Store 最后退出。
+   每个 rank 必须报告设备同步、BM leave/destroy/uninitialize 和后续通信清理完成。
+   出现 scheduler 强制清理或崩溃时，不能凭 BM 回执或父进程返回0判为通过。
 
 输入与独立预期答案沿用阶段0：A 4096 token；B 5120、命中4096；C 4096、命中3968；E 冷4096。
 逻辑题按 JSON 标准答案核对，长生成只检查负载和实际 decode forwards。
@@ -70,11 +71,16 @@ ready 位图与原计数器在同一事件上逐条相等，每请求最终到�
 相较上次 `numa-acceptance` 的两种映射 × 四次服务启动，本票只启动两次模型服务。
 不承诺具体分钟数，实际耗时待 NPU 运行记录。
 
-两机日志在 `/home/cryang/log/mempool-min/k1-ticket02-001/`。
+两机日志在 `/home/cryang/log/mempool-min/k1-ticket02-003/`。
 请回传 P 的 `summary.json`、`session-acceptance.json`，以及两机终端结果。
 失败时保留相应阶段日志。关键证据在 `target/` 与 `restart/`：
 `registrations.json`、`responses.json`、`answers.json`、`snapshots.json`、
 `evidence.json`、`capacity-replay.json`、`ports-released.json`、`process-cleanup.json`。
 `target/timeout.json` 记录故障；`restart/*log` 包含逐 rank `session_closed`。
+`restart/control-quiesced.json` 包含MR/SR停机确认，日志中的 `worker_exit` 区分
+`host_resources_released` 与 `distributed_released` 两个 BM 之后的清理阶段。
+
+NPU002 已证明 D 的 BM 关闭成功，但随后 scheduler 被强制回收，P 进入崩溃诊断。
+本次修复受控断连被传播为故障的问题；D 后续退出和 native double free 仍待 NPU003 确认。
 
 所有必要检查通过后脚本返回0。`user_accepted` 保持 false，用户确认本轮 NPU 结果后才关闭票据。

@@ -621,6 +621,8 @@ class MempoolPDService:
 
     def advance(self) -> None:
         """Run one complete scheduler tick, preserving faults for same-side consensus."""
+        if self.subrouter is not None and self.subrouter.quiesced:
+            return
         self._tick_started = self.clock()
         facts: list[RequestObservation] = []
         try:
@@ -749,6 +751,18 @@ class MempoolPDService:
         """Keep scheduler idle/sleep checks aware of persistent ownership and cleanup."""
         return any(not r.native_freed for r in self._requests.values()) or (
             self.control.has_pending_requests()
+        )
+
+    def record_exit_stage(self, stage: str) -> None:
+        logger.info(
+            "mempool worker_exit data=%s",
+            json.dumps(
+                dict(
+                    role=self.control.local.role,
+                    rank=self.control.local.tp_rank,
+                    stage=stage,
+                )
+            ),
         )
 
     def close(self) -> None:

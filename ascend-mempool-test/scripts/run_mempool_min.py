@@ -868,7 +868,31 @@ class Runner:
     def close_session(
         self, server: subprocess.Popen[bytes], jobs: Processes, root: Path
     ) -> None:
-        """Stop D clients before their P Store, after all requests received free_ack."""
+        """Quiesce Main/SR before stopping D clients and then their P Store."""
+        receipt = root / "control-quiesced.json"
+        if self.is_p:
+            base = f"http://{self.config.prefill_host}:{self.config.main_port}"
+            snapshot = request_json(base + "/quiesce", payload={})
+            deadline = time.monotonic() + 60
+            while not snapshot["quiesced"]:
+                if snapshot["fault"]:
+                    raise RuntimeError(f"control quiesce failed: {snapshot['fault']}")
+                self.peer.check()
+                jobs.alive("prefill before quiesce", server)
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Main/SR quiesce exceeded 60s")
+                time.sleep(0.1)
+                snapshot = request_json(base + "/status")
+            evidence = {
+                key: snapshot[key]
+                for key in ("stopping", "quiesced", "fault", "active", "quiesce_acks")
+            }
+            verify_mempool_session.check_quiesce(evidence)
+            write_json(receipt, evidence)
+            send_log(self.peer, receipt)
+        else:
+            receive_log(self.peer, receipt)
+        self.peer.barrier("control-quiesced")
         if not self.is_p:
             server.terminate()
             jobs.wait(

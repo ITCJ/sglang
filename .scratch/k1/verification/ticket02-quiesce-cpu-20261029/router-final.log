@@ -1,0 +1,20 @@
+mempool_router fail-stop: SR allocation differs across TP ranks
+mempool_router fail-stop: SR heartbeat timeout
+mempool_router fail-stop: ack is missing ranks or contains duplicates
+mempool_router fail-stop: quiesce_ack requires every idle TP rank
+mempool_router fail-stop: prefix ack lacks matching source/target completion
+mempool_router fail-stop: prefix ack lacks matching source/target completion
+mempool_router fail-stop: prefix ack lacks matching source/target completion
+mempool_router fail-stop: prefix ack lacks matching source/target completion
+mempool_router fail-stop: prefix ack lacks matching source/target completion
+mempool_router fail-stop: prefix ack lacks matching source/target completion
+mempool_router fail-stop: ack is missing ranks or contains duplicates
+mempool_router fail-stop: prefix completion differs from source/target contract
+mempool_router fail-stop: load_back lacks complete native token indices
+mempool_router fail-stop: prefix completion differs from source/target contract
+mempool_router fail-stop: prompt became ready before both dispatches
+mempool_router fail-stop: SR heartbeat timeout
+----------------------------------------------------------------------
+Ran 18 tests in 0.569s
+
+OK

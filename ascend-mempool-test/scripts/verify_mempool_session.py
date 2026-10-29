@@ -131,6 +131,50 @@ def accounting(root: Path) -> dict[str, Any]:
     )
 
 
+def check_quiesce(snapshot: dict[str, Any]) -> None:
+    if (
+        not snapshot["stopping"]
+        or not snapshot["quiesced"]
+        or snapshot["fault"] is not None
+        or snapshot["active"] is not None
+    ):
+        raise ValueError("Main/SR have not completed controlled shutdown")
+    for role in ("prefill", "decode"):
+        ranks = snapshot["quiesce_acks"][role]
+        if [r["rank"] for r in ranks] != list(range(16)) or any(
+            r["idle"] is not True for r in ranks
+        ):
+            raise ValueError("control quiesce lacks every idle TP rank")
+
+
+def check_normal_close(root: Path) -> None:
+    for role in ("prefill", "decode"):
+        path = root / f"{role}.log"
+        log = path.read_text(errors="replace")
+        if any(
+            marker in log
+            for marker in (
+                "Schedulers still alive",
+                "Scheduler hit an exception",
+                "SR fail-stop:",
+                "double free or corruption",
+            )
+        ):
+            raise ValueError(
+                f"{role}: normal shutdown used forced cleanup or crashed; see {path}"
+            )
+        closed = log_records(path, "session_closed")
+        if {r["rank"] for r in closed if r["status"] == "passed"} != set(range(16)):
+            raise ValueError("normal shutdown lacks all-rank BM close receipts")
+        exits = log_records(path, "worker_exit")
+        if {
+            r["rank"]
+            for r in exits
+            if r["role"] == role and r["stage"] == "distributed_released"
+        } != set(range(16)):
+            raise ValueError("normal shutdown lacks all-rank worker cleanup receipts")
+
+
 def summarize(root: Path) -> dict[str, Any]:
     rounds = []
     for name in SERVICE_STAGES:
@@ -170,10 +214,8 @@ def summarize(root: Path) -> dict[str, Any]:
     fetch = json.loads((root / "fetch/decode-report.json").read_text())
     if fetch["status"] != "passed":
         raise ValueError("P/D/mixed fetch smoke failed")
-    for role in ("prefill", "decode"):
-        closed = log_records(root / f"restart/{role}.log", "session_closed")
-        if {r["rank"] for r in closed if r["status"] == "passed"} != set(range(16)):
-            raise ValueError("normal shutdown lacks all-rank BM close receipts")
+    check_quiesce(json.loads((root / "restart/control-quiesced.json").read_text()))
+    check_normal_close(root / "restart")
     return dict(
         status="passed",
         coverage="K1-02 reduced functional acceptance",

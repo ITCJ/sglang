@@ -181,6 +181,21 @@ class TestMainRouter(unittest.TestCase):
         self.assertEqual(self.main.status()["ledger"], before)
         self.assertFalse(self.main.outbox)
 
+    def test_quiesce_requires_the_last_rank_before_allowing_disconnect(self):
+        self.main.quiesce()
+        self.main.check_timeouts()
+        command = self.main.outbox.popleft()
+        with self.assertRaisesRegex(ValueError, "every idle TP rank"):
+            self.main.receive(
+                dict(
+                    command,
+                    kind="quiesce_ack",
+                    ranks=[dict(rank=i, idle=True) for i in range(15)],
+                )
+            )
+        self.assertFalse(self.main.quiesced)
+        self.assertIsNotNone(self.main.fault)
+
     def test_capacity_reject_does_not_publish_or_change_ledger(self):
         self.main.ledger["d_hbm"].change(100)
         before = self.main.status()
@@ -242,6 +257,11 @@ class TestMainRouter(unittest.TestCase):
         first = self.ack(frees[0], native_freed=True, freed=True)
         self.main.receive(first)
         self.assertIsNotNone(self.main.status()["active"])
+        self.main.quiesce()
+        self.main.check_timeouts()
+        with self.assertRaises(RequestRejected):
+            self.main.submit(payload())
+        self.assertFalse(self.main.outbox)
         self.ack(frees[1], native_freed=True, freed=True)
         self.assertIsNone(self.main.status()["active"])
         self.assertTrue(
@@ -249,6 +269,16 @@ class TestMainRouter(unittest.TestCase):
         )
         self.assertEqual(self.main.history[-1]["result"], response)
         self.assertEqual(self.main.status()["directory"], {})
+        self.main.check_timeouts()
+        commands = list(self.main.outbox)
+        self.assertEqual([c["kind"] for c in commands], ["quiesce", "quiesce"])
+        self.ack(commands[0], idle=True)
+        self.assertFalse(self.main.quiesced)
+        self.ack(commands[1], idle=True)
+        self.assertTrue(self.main.quiesced)
+        self.main.clock = lambda: self.main.started + 3600
+        self.main.check_timeouts()
+        self.assertIsNone(self.main.fault)
 
 
 class TestPrefixMainRouter(unittest.TestCase):

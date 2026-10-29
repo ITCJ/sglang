@@ -300,6 +300,16 @@ class TestRouterService(unittest.TestCase):
                     store.manager.view(0, 0, region="prefix_index").device_base
                 ]
                 self.assertEqual(index[0, :, 0].tolist(), [[31, 32], [11, 12]])
+        for role in services:
+            system.commands[role].append(dict(run_id="cpu", role=role, kind="quiesce"))
+            advance(role)
+            for service in services[role]:
+                self.assertTrue(service.subrouter.quiesced)
+                service.tick.send = lambda *_: self.fail(
+                    "PD control traffic after quiesce"
+                )
+                service.tick.clock = lambda: 3600
+            advance(role)
         for side in services.values():
             for service in side:
                 view = service.runtime.manager.view(0, 0)

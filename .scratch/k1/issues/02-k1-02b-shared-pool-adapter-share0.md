@@ -16,6 +16,30 @@
 
 ## Comments
 
+### 2026-10-29：受控停机修复交付，等待 NPU003
+
+MR先停止接单，等当前请求双方free_ack后请求SR停机；两侧全部rank确认空闲，才停止控制tick并进入D→P关闭。
+真实TCP/ZMQ复现先失败后通过，未经确认的断连仍fail-stop。
+验收保留两轮，新增control-quiesced与全部rank后续通信清理回执；强杀或崩溃不能算正常关闭。
+完整490项CPU（48.227秒）、6模块strict mypy和两轴复审通过。
+[验证记录](../verification/ticket02-quiesce-cpu-20261029/README.md)。
+NPU002的D后续滞留、native double free尚未确认解决；新阶段回执帮助定位，待用户运行003，State保持open。
+
+### 2026-10-29：NPU002 关闭传播链已复现，仅分析
+
+补充日志显示 D 的 16 个 rank 已完成 BM 关闭，随后 scheduler 被强制回收，P 收到
+`Host unreachable` 并 fail-stop。本机真实 ZMQ/Main/SR 在约2秒内复现 D 断开→Main故障→P全部SR故障。
+正常关闭缺少 Main/SR 受控停机协调；P 的60秒崩溃诊断等待解释外层超时。
+D 的 BM 关闭后滞留与 P 的 native double free 仍需进一步定位。
+用户本轮要求先分析，未修改功能代码；完整依据见下方故障记录，State仍open。
+
+### 2026-10-29：NPU002 第二轮 P 正常关闭超时
+
+用户回传两轮服务已启动，最终报 `prefill graceful shutdown exceeded 60s`。
+已核对验收入口等待的是 P 主进程退出；尚不能确定卡在请求排空、BM 关闭或进程回收。
+[故障记录与诊断边界](../verification/k1-ticket02-002-20261029/diagnosis.md)已归档。
+等待两侧 restart 服务日志建立复现；本轮未通过，State 保持 open。
+
 ### 2026-10-29：实现交付，等待用户 NPU 验收
 
 已有NUMA分配、规划器和共享组件已复用；服务按PoolSession建池。

@@ -16,6 +16,25 @@ from ascend_mempool_pd.mempool_tick import RequestObservation
 
 
 class TestSubrouter(unittest.TestCase):
+    def test_quiesce_requires_idle_ranks_then_stops_control_traffic(self):
+        self.commands["prefill"].append(
+            dict(run_id="cpu", role="prefill", kind="quiesce")
+        )
+        self.advance("prefill")
+        receipt = next(
+            m for m in self.messages["prefill"] if m["kind"] == "quiesce_ack"
+        )
+        self.assertEqual(receipt["ranks"], [dict(rank=i, idle=True) for i in range(16)])
+        before = list(self.messages["prefill"])
+        for tick in self.ticks["prefill"]:
+            self.assertTrue(tick.quiesced)
+            tick.clock = lambda: 3600
+            tick.receive = lambda: (_ for _ in ()).throw(
+                RuntimeError("Main has exited")
+            )
+        self.advance("prefill")
+        self.assertEqual(self.messages["prefill"], before)
+
     def test_ready_requires_fill_and_the_last_replica_page(self):
         self.request.update(input_ids=[7] * 256, prompt_tokens=256, hit_len=128)
         d = self.command("decode", "alloc", request=self.request)
