@@ -45,6 +45,7 @@ def registration(role):
                     "prefix_index": 0,
                 },
                 graph=role == "decode",
+                prefix_read_assignment="round_robin",
             )
             for rank in range(16)
         ],

@@ -18,12 +18,22 @@ class MappedCopy:
 
     def __init__(self, manager):
         self.buffers = {}
+        host_addresses = {}
         for region, (_, layout) in manager.layout.regions(0).items():
             for layer in range(layout.layers):
                 view = manager.view(0, layer, region=region)
                 self.buffers[view.device_base] = torch.full(
                     layout.shape, -99, dtype=torch.bfloat16
                 )
+                host_addresses[view.gva_base] = self.buffers[
+                    view.device_base
+                ].data_ptr()
+        # Back the BM LOCAL_HOST API with actual CPU storage.
+        manager._bm.BmMemType.LOCAL_HOST = "local_host"
+        translate = manager._handle.gva_to_va
+        manager._handle.gva_to_va = lambda gva, kind: (
+            host_addresses[gva] if kind == "local_host" else translate(gva, kind)
+        )
 
     def __call__(
         self,
@@ -47,6 +57,24 @@ class MappedCopy:
         target[dst_indices[:count][valid[:count]]] = source[
             src_indices[:count][valid[:count]]
         ]
+
+
+def cpu_scatter_rows(
+    source, table, key, rope, key_dim, rope_dim, page_size, nz, timing
+):
+    """CPU device substitute; native readers independently check the layout."""
+    source_rows, destination = table
+    values = source.view(-1, key_dim + rope_dim)[source_rows]
+    for buffer, dim, start in ((key, key_dim, 0), (rope, rope_dim, key_dim)):
+        if buffer is None:
+            continue
+        if nz:
+            view = buffer.view(-1, dim // 16, page_size, 16).permute(0, 2, 1, 3)
+            view[destination // page_size, destination % page_size] = values[
+                :, start : start + dim
+            ].reshape(-1, dim // 16, 16)
+        else:
+            buffer.view(-1, dim)[destination] = values[:, start : start + dim]
 
 
 class TestPrefixStore(unittest.TestCase):
@@ -213,7 +241,9 @@ class TestPrefixStore(unittest.TestCase):
         store.release_source("B")
         self.assertEqual(store.free_pages, (1,))
 
-    def make_store(self, *, pages=3, verify=False, page_size=2, prompt_capacity=8):
+    def make_store(
+        self, *, pages=3, verify=False, page_size=2, prompt_capacity=8, **kwargs
+    ):
         layout = MempoolConfig(
             prefill_capacity=prompt_capacity,
             decode_capacity=page_size,
@@ -244,6 +274,8 @@ class TestPrefixStore(unittest.TestCase):
             kernel=kernel,
             event_factory=event_factory,
             verify=verify,
+            scatter_kernel=kwargs.pop("scatter_kernel", cpu_scatter_rows),
+            **kwargs,
         )
         return store, manager, kernel, events
 

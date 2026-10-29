@@ -1008,6 +1008,11 @@ def initialize_for_model_runner(model_runner: Any) -> None:
     )
     with startup_stage("runtime.allocate", bm_rank=manager.rank):
         device = str(model_runner.req_to_token_pool.req_to_token.device)
+        prefix_group = None
+        if router and router.match_prefix and manager.rank == 0:
+            from sglang.srt.distributed import get_tp_group
+
+            prefix_group = get_tp_group()
         prefix_store = (
             PrefixStore(
                 manager,
@@ -1015,6 +1020,14 @@ def initialize_for_model_runner(model_runner: Any) -> None:
                 device=device,
                 verify=bool(router and router.verify_prefix),
                 replica=model_runner.ps.tp_rank,
+                profile=bool(router and router.profile_prefix),
+                readers=prefix_group.world_size if prefix_group is not None else 1,
+                read_assignment=router.prefix_read_assignment
+                if router
+                else "round_robin",
+                all_gather=prefix_group.all_gather_into_tensor
+                if prefix_group is not None
+                else None,
             )
             if prefix_pages and manager.rank == 0
             else None

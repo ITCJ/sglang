@@ -114,6 +114,7 @@ class MainRouter:
             )
         if self.config.match_prefix:
             expected["match_prefix"] = True
+            expected["prefix_read_assignment"] = self.config.prefix_read_assignment
         for rank in ranks:
             if any(rank.get(k) != v for k, v in expected.items()):
                 raise ValueError("SR registered incompatible ticket01 capabilities")
@@ -537,6 +538,9 @@ class MainRouter:
                     self.launches.append(active["request"])
         elif kind in ("load_back_ack", "fill_ack"):
             self._read_ack(command, ranks)
+            if kind == "load_back_ack" and self.config.profile_prefix:
+                # Temporary acceptance timing; no protocol/lifecycle decision uses it.
+                operation["elapsed_ms"] = (self.clock() - operation["sent"]) * 1000
         elif kind == "ready_tokens":
             if (
                 role != "prefill"

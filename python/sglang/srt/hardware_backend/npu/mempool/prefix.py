@@ -7,6 +7,7 @@ import hashlib
 import importlib
 import json
 import logging
+import time
 from contextlib import nullcontext
 from typing import Any, Callable
 
@@ -16,6 +17,8 @@ from torch import Tensor
 
 from .layout import check_index, positive_int
 from .manager import MempoolKVManager
+from .restore_timing import RestoreTiming
+from .split_read import assign_pages
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +55,8 @@ class _Read(msgspec.Struct):
     event: Any = None
     retained: list[Tensor] = msgspec.field(default_factory=list)
     receipt: dict[str, Any] | None = None
+    split_read: dict[str, Any] = msgspec.field(default_factory=dict)
+    timing: Any = None
 
 
 class PrefixStore:
@@ -67,6 +72,11 @@ class PrefixStore:
         event_factory: Callable[[], Any] | None = None,
         verify: bool = False,
         replica: int = 0,
+        readers: int = 1,
+        read_assignment: str = "round_robin",
+        all_gather: Callable[[Tensor, Tensor], None] | None = None,
+        scatter_kernel: Any = None,
+        profile: bool = False,
     ) -> None:
         positive_int("page_size", page_size)
         layout = manager.layout.prefix_main
@@ -75,7 +85,15 @@ class PrefixStore:
         self.manager, self.page_size, self.device = manager, page_size, device
         self.verify = verify
         self.replica = replica
+        self.readers, self.read_assignment, self.all_gather = (
+            readers,
+            read_assignment,
+            all_gather,
+        )
         self._kernel = kernel
+        self._scatter_kernel = scatter_kernel
+        self.profile = profile
+        self._restore_logged = False
         self._event_factory = event_factory or (lambda: torch.npu.Event())
         self._free = set(range(layout.slots))
         self._operations: dict[int, _Admit] = {}
@@ -224,6 +242,12 @@ class PrefixStore:
         if operation.receipt is None:
             if not operation.event.query():
                 return None
+            completed_ns = time.monotonic_ns()
+            timings = (
+                operation.timing.finish()
+                if self.profile and operation.indices is not None
+                else {}
+            )
             main, index = (
                 self.manager.layout.prefix_main,
                 self.manager.layout.prefix_index,
@@ -241,6 +265,11 @@ class PrefixStore:
             )
             if operation.indices is not None:
                 operation.receipt["prefix_indices"] = operation.indices.cpu().tolist()
+                operation.receipt["split_read"] = dict(
+                    operation.split_read, completed_ns=completed_ns
+                )
+                if self.profile:
+                    operation.receipt["split_read"]["timings_ms"] = timings
             operation.retained.clear()
         return copy.deepcopy(operation.receipt)
 
@@ -290,11 +319,37 @@ class PrefixStore:
         }
         for region, layer in references[0]:
             expected = torch.cat([ref[region, layer] for ref in references.values()])
+            private = self.manager.local_cpu_view(layer, region="prefix_" + region)
+            private_values = torch.cat([private[p] for p in operation.source_pages])
+            operation.split_read["oracle_read_bytes"] += (
+                private_values.numel() * private_values.element_size()
+            )
+            if not torch.equal(expected, private_values):
+                raise RuntimeError("load_back private prefix differs from saved source")
+            cpu_indices = indices.cpu()
             if region == "main":
-                native_k, native_rope = pool.get_mla_kv_rows(
-                    pool.start_layer + layer, indices
-                )
-                k, rope = native_k.cpu(), native_rope.cpu()
+                rows = []
+                for buffer, dim in (
+                    (pool.get_key_buffer(pool.start_layer + layer), pool.kv_lora_rank),
+                    (
+                        pool.get_value_buffer(pool.start_layer + layer),
+                        pool.qk_rope_head_dim,
+                    ),
+                ):
+                    host = buffer.cpu()
+                    if pool.use_fia_nz:
+                        host = host.view(-1, dim // 16, self.page_size, 16).permute(
+                            0, 2, 1, 3
+                        )
+                        rows.append(
+                            host[
+                                cpu_indices // self.page_size,
+                                cpu_indices % self.page_size,
+                            ].reshape(-1, 1, dim)
+                        )
+                    else:
+                        rows.append(host.view(-1, 1, dim)[cpu_indices])
+                k, rope = rows
                 if not torch.equal(
                     k, expected[..., : pool.kv_lora_rank]
                 ) or not torch.equal(rope, expected[..., pool.kv_lora_rank :]):
@@ -303,9 +358,9 @@ class PrefixStore:
             else:
                 values = (
                     pool.get_index_k_buffer(pool.indexer_layer_ids[layer])
-                    .reshape(-1, 1, pool.index_head_dim)
-                    .index_select(0, indices)
                     .cpu()
+                    .reshape(-1, 1, pool.index_head_dim)
+                    .index_select(0, cpu_indices)
                 )
                 if not torch.equal(values, expected):
                     raise RuntimeError("load_back native Index K content mismatch")
@@ -313,6 +368,7 @@ class PrefixStore:
                 actual_pages[logical][region, layer] = values[
                     logical * self.page_size : (logical + 1) * self.page_size
                 ]
+        operation.split_read.update(native_verified=True, private_replica_verified=True)
         digests = {}
         for logical, page in actual_pages.items():
             digest = hashlib.sha256()
@@ -330,6 +386,7 @@ class PrefixStore:
         )
 
     def _submit_load_back(self, operation: _Read) -> None:
+        operation.timing = RestoreTiming(self.profile)
         indices, pool = operation.indices, operation.pool
         main, index = self.manager.layout.prefix_main, self.manager.layout.prefix_index
         assert main is not None and index is not None and indices is not None
@@ -357,77 +414,173 @@ class PrefixStore:
             )
         ):
             raise ValueError("native prefix requires complete unique allocator pages")
+        assignments = assign_pages(
+            list(range(len(operation.source_pages))), self.readers, self.read_assignment
+        )
+        rank = self.replica if self.readers > 1 else 0
+        local_pages = assignments[rank]
+        width = max(map(len, assignments))
+        padded_count = width * self.page_size
+        total_rows = self.readers * padded_count
+        local_count = len(local_pages) * self.page_size
         offsets = torch.arange(self.page_size, dtype=torch.int64, device=self.device)
         source = torch.tensor(
-            operation.source_pages, dtype=torch.int64, device=self.device
+            [operation.source_pages[p] for p in local_pages],
+            dtype=torch.int64,
+            device=self.device,
         )
         source = (source[:, None] * self.page_size + offsets).flatten()
-        target = torch.arange(count, dtype=torch.int64, device=self.device)
+        target = torch.arange(local_count, dtype=torch.int64, device=self.device)
+        target += rank * padded_count
         valid = torch.ones_like(source, dtype=torch.bool)
-        operation.retained.extend((source, target, valid, indices))
-        for region, layout in (("main", main), ("index", index)):
-            staging = torch.empty(
-                (count, 1, layout.dim), dtype=torch.bfloat16, device=self.device
+        slot_pages: list[int | None] = [None] * (self.readers * width)
+        slot_rows: list[int] = []
+        native_rows: list[int] = []
+        for reader, assigned in enumerate(assignments):
+            for offset, page in enumerate(assigned):
+                slot = reader * width + offset
+                slot_pages[slot] = page
+                slot_rows.extend(
+                    range(slot * self.page_size, (slot + 1) * self.page_size)
+                )
+                native_rows.extend(pages[page].tolist())
+        # One table per restore, reused by both data types and every layer.
+        table = torch.tensor(
+            [slot_rows, native_rows], dtype=torch.int64, device=self.device
+        )
+        buffers = {
+            region: torch.empty(
+                (total_rows, 1, layout.dim), dtype=torch.bfloat16, device=self.device
             )
-            operation.retained.append(staging)
+            for region, layout in (("main", main), ("index", index))
+        }
+        buffer_bytes = {
+            region: value.numel() * value.element_size()
+            for region, value in buffers.items()
+        }
+        operation.retained.extend(
+            (source, target, valid, indices, table, *buffers.values())
+        )
+        operation.split_read = dict(
+            assignment=self.read_assignment,
+            readers=self.readers,
+            logical_pages=local_pages,
+            padded_pages=width,
+            slot_pages=slot_pages,
+            slot_table_builds=1,
+            slot_table_rows=table.shape[1],
+            buffer_bytes=buffer_bytes,
+            data_buffers=len(buffers),
+            path=["H2D", "all_gather", "scatter"],
+            launches={"H2D": 0, "all_gather": 0, "scatter": 0},
+            read_bytes=0,
+            oracle_read_bytes=0,
+            private_replica_verified=False,
+            gathered_verified=False,
+            native_verified=False,
+        )
+        if not self._restore_logged:
+            logger.info(
+                "mempool split_read_buffers data=%s",
+                json.dumps(
+                    dict(
+                        rank=self.replica,
+                        rid=operation.rid,
+                        slots=len(slot_pages),
+                        page_size=self.page_size,
+                        buffer_bytes=buffer_bytes,
+                        data_buffers=2,
+                    )
+                ),
+            )
+            self._restore_logged = True
+        if self._scatter_kernel is None:
+            from .restore_kernel import scatter_rows
+
+            self._scatter_kernel = scatter_rows
+        for region, layout in (("main", main), ("index", index)):
+            gathered = buffers[region]
+            local = gathered[rank * padded_count : (rank + 1) * padded_count]
             for layer in range(layout.layers):
                 view = self.manager.view(0, layer, region="prefix_" + region)
-                self._copy(
-                    self._dtype,
-                    staging,
-                    source,
-                    target,
-                    valid,
-                    layout.slots * layout.tokens,
-                    count,
-                    layout.row_bytes,
-                    count,
-                    48,
-                    view.device_base,
-                    None,
-                )
+                with operation.timing.stage("H2D"):
+                    if local_count:
+                        self._copy(
+                            self._dtype,
+                            gathered,
+                            source,
+                            target,
+                            valid,
+                            layout.slots * layout.tokens,
+                            total_rows,
+                            layout.row_bytes,
+                            local_count,
+                            48,
+                            view.device_base,
+                            None,
+                        )
+                        operation.split_read["read_bytes"] += (
+                            local_count * layout.row_bytes
+                        )
+                        operation.split_read["launches"]["H2D"] += 1
+                with operation.timing.stage("all_gather"):
+                    if self.readers > 1:
+                        assert self.all_gather is not None
+                        self.all_gather(gathered, local)
+                        operation.split_read["launches"]["all_gather"] += 1
+                if self.verify:
+                    # CPU-only oracle: no extra HBM staging or reordered KV buffer.
+                    actual = gathered.cpu().reshape(-1, self.page_size, 1, layout.dim)
+                    private = self.manager.local_cpu_view(
+                        layer, region="prefix_" + region
+                    )
+                    for slot, page in enumerate(slot_pages):
+                        if page is not None and not torch.equal(
+                            actual[slot], private[operation.source_pages[page]]
+                        ):
+                            raise RuntimeError(
+                                "split_read differs from private prefix replica"
+                            )
+                    operation.split_read["oracle_read_bytes"] += (
+                        count * layout.row_bytes
+                    )
                 if region == "main":
                     model_layer = pool.start_layer + layer
-                    for buffer, dim in (
-                        (pool.get_key_buffer(model_layer), pool.kv_lora_rank),
-                        (pool.get_value_buffer(model_layer), pool.qk_rope_head_dim),
-                    ):
-                        if (
-                            buffer.dtype != staging.dtype
-                            or int(pages.max()) >= buffer.numel() // dim
-                        ):
-                            raise ValueError(
-                                "native prefix indices exceed the destination buffer"
-                            )
-                    pool.set_mla_kv_rows(
-                        model_layer,
-                        indices,
-                        staging[..., : pool.kv_lora_rank].contiguous(),
-                        staging[..., pool.kv_lora_rank :].contiguous(),
+                    key, rope = (
+                        pool.get_key_buffer(model_layer),
+                        pool.get_value_buffer(model_layer),
                     )
+                    key_dim, rope_dim = pool.kv_lora_rank, pool.qk_rope_head_dim
+                    nz = pool.use_fia_nz
                 else:
-                    self._scatter(
+                    key, rope = (
                         pool.get_index_k_buffer(pool.indexer_layer_ids[layer]),
-                        indices,
-                        staging,
-                        pages,
+                        None,
                     )
+                    key_dim, rope_dim, nz = pool.index_head_dim, 0, False
+                for buffer, dim in ((key, key_dim), (rope, rope_dim)):
+                    if buffer is not None and (
+                        buffer.dtype != gathered.dtype
+                        or int(pages.max()) >= buffer.numel() // dim
+                    ):
+                        raise ValueError(
+                            "native prefix indices exceed the destination buffer"
+                        )
+                self._scatter_kernel(
+                    gathered,
+                    table,
+                    key,
+                    rope,
+                    key_dim,
+                    rope_dim,
+                    self.page_size,
+                    nz,
+                    operation.timing,
+                )
+                operation.split_read["launches"]["scatter"] += 1
+        operation.split_read["gathered_verified"] = self.verify
         operation.event = self._event_factory()
         operation.event.record()
-
-    @staticmethod
-    def _scatter(
-        destination: Tensor, indices: Tensor, values: Tensor, pages: Tensor
-    ) -> None:
-        target = destination.view(-1, 1, values.shape[-1])
-        if destination.dtype != values.dtype or int(pages.max()) >= target.shape[0]:
-            raise ValueError("native prefix indices exceed the destination buffer")
-        if destination.device.type == "cpu":
-            target.index_copy_(0, indices, values)
-        else:
-            importlib.import_module("torch_npu").npu_scatter_nd_update_(
-                target, indices.view(-1, 1), values.contiguous()
-            )
 
     def _submit_fill(self, operation: _Read) -> None:
         offsets = torch.arange(self.page_size, dtype=torch.int64, device=self.device)

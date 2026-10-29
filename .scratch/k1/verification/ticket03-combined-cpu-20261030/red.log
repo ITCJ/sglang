@@ -1,0 +1,240 @@
+test_each_page_read_once_and_every_rank_restores_both_regions (test_prefix_split_read.TestSplitRead.test_each_page_read_once_and_every_rank_restores_both_regions) ... 
+  test_each_page_read_once_and_every_rank_restores_both_regions (test_prefix_split_read.TestSplitRead.test_each_page_read_once_and_every_rank_restores_both_regions) (assignment='round_robin', pages=1) ... FAIL
+  test_each_page_read_once_and_every_rank_restores_both_regions (test_prefix_split_read.TestSplitRead.test_each_page_read_once_and_every_rank_restores_both_regions) (assignment='round_robin', pages=31) ... FAIL
+  test_each_page_read_once_and_every_rank_restores_both_regions (test_prefix_split_read.TestSplitRead.test_each_page_read_once_and_every_rank_restores_both_regions) (assignment='round_robin', pages=32) ... FAIL
+  test_each_page_read_once_and_every_rank_restores_both_regions (test_prefix_split_read.TestSplitRead.test_each_page_read_once_and_every_rank_restores_both_regions) (assignment='contiguous', pages=1) ... FAIL
+  test_each_page_read_once_and_every_rank_restores_both_regions (test_prefix_split_read.TestSplitRead.test_each_page_read_once_and_every_rank_restores_both_regions) (assignment='contiguous', pages=31) ... FAIL
+  test_each_page_read_once_and_every_rank_restores_both_regions (test_prefix_split_read.TestSplitRead.test_each_page_read_once_and_every_rank_restores_both_regions) (assignment='contiguous', pages=32) ... FAIL
+
+======================================================================
+FAIL: test_each_page_read_once_and_every_rank_restores_both_regions (test_prefix_split_read.TestSplitRead.test_each_page_read_once_and_every_rank_restores_both_regions) (assignment='round_robin', pages=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 101, in test_each_page_read_once_and_every_rank_restores_both_regions
+    self.restore_group(count, assignment)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 177, in restore_group
+    results = list(threads.map(lambda s: s[0].load_back(**s[1]), states))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 619, in result_iterator
+    yield _result_or_cancel(fs.pop())
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 317, in _result_or_cancel
+    return fut.result(timeout)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 456, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 177, in <lambda>
+    results = list(threads.map(lambda s: s[0].load_back(**s[1]), states))
+                                         ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 189, in load_back
+    return self._read(
+           ^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 222, in _read
+    self._submit_load_back(operation)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 438, in _submit_load_back
+    self.all_gather(gathered, local)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 19, in gather
+    assert output.untyped_storage().data_ptr() == value.untyped_storage().data_ptr()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+======================================================================
+FAIL: test_each_page_read_once_and_every_rank_restores_both_regions (test_prefix_split_read.TestSplitRead.test_each_page_read_once_and_every_rank_restores_both_regions) (assignment='round_robin', pages=31)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 101, in test_each_page_read_once_and_every_rank_restores_both_regions
+    self.restore_group(count, assignment)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 177, in restore_group
+    results = list(threads.map(lambda s: s[0].load_back(**s[1]), states))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 619, in result_iterator
+    yield _result_or_cancel(fs.pop())
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 317, in _result_or_cancel
+    return fut.result(timeout)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 456, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 177, in <lambda>
+    results = list(threads.map(lambda s: s[0].load_back(**s[1]), states))
+                                         ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 189, in load_back
+    return self._read(
+           ^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 222, in _read
+    self._submit_load_back(operation)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 438, in _submit_load_back
+    self.all_gather(gathered, local)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 19, in gather
+    assert output.untyped_storage().data_ptr() == value.untyped_storage().data_ptr()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+======================================================================
+FAIL: test_each_page_read_once_and_every_rank_restores_both_regions (test_prefix_split_read.TestSplitRead.test_each_page_read_once_and_every_rank_restores_both_regions) (assignment='round_robin', pages=32)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 101, in test_each_page_read_once_and_every_rank_restores_both_regions
+    self.restore_group(count, assignment)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 177, in restore_group
+    results = list(threads.map(lambda s: s[0].load_back(**s[1]), states))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 619, in result_iterator
+    yield _result_or_cancel(fs.pop())
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 317, in _result_or_cancel
+    return fut.result(timeout)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 456, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 177, in <lambda>
+    results = list(threads.map(lambda s: s[0].load_back(**s[1]), states))
+                                         ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 189, in load_back
+    return self._read(
+           ^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 222, in _read
+    self._submit_load_back(operation)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 438, in _submit_load_back
+    self.all_gather(gathered, local)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 19, in gather
+    assert output.untyped_storage().data_ptr() == value.untyped_storage().data_ptr()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+======================================================================
+FAIL: test_each_page_read_once_and_every_rank_restores_both_regions (test_prefix_split_read.TestSplitRead.test_each_page_read_once_and_every_rank_restores_both_regions) (assignment='contiguous', pages=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 101, in test_each_page_read_once_and_every_rank_restores_both_regions
+    self.restore_group(count, assignment)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 177, in restore_group
+    results = list(threads.map(lambda s: s[0].load_back(**s[1]), states))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 619, in result_iterator
+    yield _result_or_cancel(fs.pop())
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 317, in _result_or_cancel
+    return fut.result(timeout)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 456, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 177, in <lambda>
+    results = list(threads.map(lambda s: s[0].load_back(**s[1]), states))
+                                         ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 189, in load_back
+    return self._read(
+           ^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 222, in _read
+    self._submit_load_back(operation)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 438, in _submit_load_back
+    self.all_gather(gathered, local)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 19, in gather
+    assert output.untyped_storage().data_ptr() == value.untyped_storage().data_ptr()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+======================================================================
+FAIL: test_each_page_read_once_and_every_rank_restores_both_regions (test_prefix_split_read.TestSplitRead.test_each_page_read_once_and_every_rank_restores_both_regions) (assignment='contiguous', pages=31)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 101, in test_each_page_read_once_and_every_rank_restores_both_regions
+    self.restore_group(count, assignment)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 177, in restore_group
+    results = list(threads.map(lambda s: s[0].load_back(**s[1]), states))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 619, in result_iterator
+    yield _result_or_cancel(fs.pop())
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 317, in _result_or_cancel
+    return fut.result(timeout)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 456, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 177, in <lambda>
+    results = list(threads.map(lambda s: s[0].load_back(**s[1]), states))
+                                         ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 189, in load_back
+    return self._read(
+           ^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 222, in _read
+    self._submit_load_back(operation)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 438, in _submit_load_back
+    self.all_gather(gathered, local)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 19, in gather
+    assert output.untyped_storage().data_ptr() == value.untyped_storage().data_ptr()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+======================================================================
+FAIL: test_each_page_read_once_and_every_rank_restores_both_regions (test_prefix_split_read.TestSplitRead.test_each_page_read_once_and_every_rank_restores_both_regions) (assignment='contiguous', pages=32)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 101, in test_each_page_read_once_and_every_rank_restores_both_regions
+    self.restore_group(count, assignment)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 177, in restore_group
+    results = list(threads.map(lambda s: s[0].load_back(**s[1]), states))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 619, in result_iterator
+    yield _result_or_cancel(fs.pop())
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 317, in _result_or_cancel
+    return fut.result(timeout)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 456, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 177, in <lambda>
+    results = list(threads.map(lambda s: s[0].load_back(**s[1]), states))
+                                         ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 189, in load_back
+    return self._read(
+           ^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 222, in _read
+    self._submit_load_back(operation)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 438, in _submit_load_back
+    self.all_gather(gathered, local)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 19, in gather
+    assert output.untyped_storage().data_ptr() == value.untyped_storage().data_ptr()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+----------------------------------------------------------------------
+Ran 1 test in 0.667s
+
+FAILED (failures=6)

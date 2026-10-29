@@ -699,6 +699,17 @@ class MempoolSubrouter:
         if results["registration"] is not None:
             self.send(dict(envelope, kind="register", ranks=results["registration"]))
         if acknowledged and command is not None:
+            if command["kind"] == "load_back":
+                logger.info(
+                    "mempool split_read_ack data=%s",
+                    json.dumps(
+                        dict(
+                            rid=command["rid"],
+                            op_id=command["op_id"],
+                            ack_ns=time.monotonic_ns(),
+                        )
+                    ),
+                )
             self.send(
                 {
                     **command,

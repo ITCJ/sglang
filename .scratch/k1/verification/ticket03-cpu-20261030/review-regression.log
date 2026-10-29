@@ -1,0 +1,6 @@
+test_missing_strategy_outputs_cannot_pass_by_empty_comparison (test_mempool_split_read_evidence.TestSplitReadEvidence.test_missing_strategy_outputs_cannot_pass_by_empty_comparison) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK

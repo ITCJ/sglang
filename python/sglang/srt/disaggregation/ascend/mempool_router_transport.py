@@ -198,6 +198,7 @@ def attach_subrouter(
         )
     if config.match_prefix:
         registration["match_prefix"] = True
+        registration["prefix_read_assignment"] = config.prefix_read_assignment
 
     def registered() -> dict[str, Any]:
         if control.peer is None:

@@ -506,6 +506,17 @@ class MempoolKVManager:
         check_index("layer", layer, layout.layers)
         return MempoolKVView(self, rank, layer, layout, offset)
 
+    def local_cpu_view(self, layer: int, *, region: str) -> Any:
+        """Borrow the local DRAM layer for acceptance; the manager owns its lifetime."""
+        import ctypes
+
+        import torch
+
+        view = self.view(self.rank, layer, region=region)
+        address = self._handle.gva_to_va(view.gva_base, self._bm.BmMemType.LOCAL_HOST)
+        storage = (ctypes.c_ubyte * view.layout.layer_bytes).from_address(address)
+        return torch.frombuffer(storage, dtype=torch.bfloat16).view(view.shape)
+
     def bases(self, rank: int) -> tuple[int, int]:
         """Return this process's verified GVA and NPU base for a pool rank."""
         if self._closed:

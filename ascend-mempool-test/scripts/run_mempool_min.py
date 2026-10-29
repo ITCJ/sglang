@@ -29,6 +29,7 @@ import verify_mempool_min
 import verify_mempool_prefix
 import verify_mempool_reuse
 import verify_mempool_session
+import verify_mempool_split_read
 import verify_service
 from run_ticket10 import (
     available_port,
@@ -102,6 +103,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "full-acceptance",
             "numa-acceptance",
             "session-acceptance",
+            "split-read-acceptance",
         ),
         required=True,
     )
@@ -218,8 +220,12 @@ class Runner:
         self, args: argparse.Namespace, config: RouterConfig, peer: Peer, root: Path
     ) -> None:
         self.args, self.config, self.peer, self.root = args, config, peer, root
-        self.session_acceptance = args.mode == "session-acceptance"
-        self.full = args.mode in ("full-acceptance", "session-acceptance")
+        self.split_read_acceptance = args.mode == "split-read-acceptance"
+        self.session_acceptance = args.mode in (
+            "session-acceptance",
+            "split-read-acceptance",
+        )
+        self.full = args.mode == "full-acceptance" or self.session_acceptance
         self.tokenizer: Any = None
         self.is_p = args.role == "prefill"
         self.host = config.prefill_host if self.is_p else config.decode_host
@@ -227,7 +233,9 @@ class Runner:
             status="running",
             role=args.role,
             mode=args.mode,
-            coverage="K1-02 reduced functional acceptance"
+            coverage="K1-03 split_read functional acceptance (two strategies)"
+            if self.split_read_acceptance
+            else "K1-02 reduced functional acceptance"
             if self.session_acceptance
             else "ticket04 complete sparse stage0/L0"
             if self.full
@@ -968,14 +976,38 @@ class Runner:
     def run_session(self) -> None:
         self.prepare_full_cases()
         self.components()
-        for phase in verify_mempool_session.SERVICE_STAGES:
+        if self.split_read_acceptance:
+            from mempool_numa_runner import topology
+
+            topology(self.root, self.config.interface)
+        for phase, assignment in zip(
+            verify_mempool_session.SERVICE_STAGES, verify_mempool_split_read.ASSIGNMENTS
+        ):
+            if self.split_read_acceptance:
+                self.config = msgspec.structs.replace(
+                    self.config, prefix_read_assignment=assignment
+                )
+                self.args.config = self.root / phase / "effective-config.json"
+                write_json(self.args.config, msgspec.to_builtins(self.config))
             self.stage(target=True, restart=phase == "restart")
         if self.is_p:
-            acceptance = verify_mempool_session.summarize(self.root)
+            acceptance = (
+                verify_mempool_split_read.summarize(self.root)
+                if self.split_read_acceptance
+                else verify_mempool_session.summarize(self.root)
+            )
             self.peer.send("session-result", acceptance=acceptance)
         else:
             acceptance = self.peer.expect("session-result")["acceptance"]
-        write_json(self.root / "session-acceptance.json", acceptance)
+        write_json(
+            self.root
+            / (
+                "split-read-acceptance.json"
+                if self.split_read_acceptance
+                else "session-acceptance.json"
+            ),
+            acceptance,
+        )
         self.report.update(status="passed", acceptance=acceptance, user_accepted=False)
 
     def run_full(self) -> None:
@@ -1054,6 +1086,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "full-acceptance",
         "numa-acceptance",
         "session-acceptance",
+        "split-read-acceptance",
     ):
         config = msgspec.structs.replace(
             config,
@@ -1065,7 +1098,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "full-acceptance",
                 "numa-acceptance",
                 "session-acceptance",
+                "split-read-acceptance",
             ),
+            profile_prefix=args.mode == "split-read-acceptance",
         )
     elif args.mode == "acceptance" and config.prefix_pages:
         raise ValueError(
@@ -1083,7 +1118,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                     memory_budget=memory_budget(config, args.role),
                     output_policy=mempool_logical_cases.POLICY
                     if args.mode
-                    in ("full-acceptance", "numa-acceptance", "session-acceptance")
+                    in (
+                        "full-acceptance",
+                        "numa-acceptance",
+                        "session-acceptance",
+                        "split-read-acceptance",
+                    )
                     else "strict full output IDs",
                     acceptance_controls=(
                         "one skipped allocator page; fill submitted after native_freed"
@@ -1091,7 +1131,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                         else "none"
                     ),
                     service_rounds=len(verify_mempool_session.SERVICE_STAGES)
-                    if args.mode == "session-acceptance"
+                    if args.mode in ("session-acceptance", "split-read-acceptance")
+                    else None,
+                    reader_assignments=list(verify_mempool_split_read.ASSIGNMENTS)
+                    if args.mode == "split-read-acceptance"
                     else None,
                     stages=[
                         "paired preflight; one P/D/mixed fetch smoke (48, one replay)",
@@ -1099,7 +1142,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "round 2: same-port restart, ABCE + load/EOS, default process cleanup",
                         "independent answers; capacity rejection CPU replay; paired port cleanup",
                     ]
-                    if args.mode == "session-acceptance"
+                    if args.mode in ("session-acceptance", "split-read-acceptance")
                     else [
                         "local startup rejection codes: offline node / duplicate rank / missing rank",
                         "default and swapped explicit maps: A/B/C/E and V1-V10",

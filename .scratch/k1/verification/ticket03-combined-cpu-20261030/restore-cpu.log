@@ -1,0 +1,16 @@
+test_each_page_read_once_and_every_rank_restores_both_regions (test_prefix_split_read.TestSplitRead.test_each_page_read_once_and_every_rank_restores_both_regions) ... ok
+test_gathered_contents_must_match_the_private_replica (test_prefix_split_read.TestSplitRead.test_gathered_contents_must_match_the_private_replica) ... ok
+test_acceptance_compares_original_alive_prefix_and_retained_values (test_prefix.TestPrefixStore.test_acceptance_compares_original_alive_prefix_and_retained_values) ... ok
+test_admit_copies_both_regions_and_holds_source_until_device_completion (test_prefix.TestPrefixStore.test_admit_copies_both_regions_and_holds_source_until_device_completion) ... ok
+test_conflicting_operation_and_unavailable_pages_do_not_reuse_storage (test_prefix.TestPrefixStore.test_conflicting_operation_and_unavailable_pages_do_not_reuse_storage) ... ok
+test_copy_failure_retains_target_and_prevents_source_release (test_prefix.TestPrefixStore.test_copy_failure_retains_target_and_prevents_source_release) ... ok
+test_fill_reads_saved_pages_into_a_new_alive_slot_and_waits_for_completion (test_prefix.TestPrefixStore.test_fill_reads_saved_pages_into_a_new_alive_slot_and_waits_for_completion) ... ok
+test_load_back_restores_split_native_buffers_at_discontiguous_token_indices (test_prefix.TestPrefixStore.test_load_back_restores_split_native_buffers_at_discontiguous_token_indices) ... ok
+test_reuse_evidence_joins_saved_prefix_and_computed_suffix_after_native_release (test_prefix.TestPrefixStore.test_reuse_evidence_joins_saved_prefix_and_computed_suffix_after_native_release) ... ok
+test_identical_prompt_restores_31_allocator_pages_and_keeps_last_page_for_extend (test_mempool_prefix_restore.TestPrefillRestore.test_identical_prompt_restores_31_allocator_pages_and_keeps_last_page_for_extend) ... ok
+test_native_can_free_after_suffix_while_fill_still_blocks_ready (test_mempool_prefix_service.TestPrefixService.test_native_can_free_after_suffix_while_fill_still_blocks_ready) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.797s
+
+OK

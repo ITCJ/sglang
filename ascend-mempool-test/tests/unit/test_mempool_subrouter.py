@@ -117,16 +117,23 @@ class TestSubrouter(unittest.TestCase):
         import test_prefix as prefix_fixture
         import torch
         from test_mempool_native_prefix import native_methods
+        from test_prefix_split_read import TensorCollective
 
         from ascend_mempool_pd.mempool_prefill_restore import PrefillRestore
 
         self.request.update(input_ids=[7] * 256, prompt_tokens=256, hit_len=128)
         events = []
-        for tick in self.ticks["prefill"]:
+        collective = TensorCollective(16)
+        for rank, tick in enumerate(self.ticks["prefill"]):
             helper = prefix_fixture.TestPrefixStore()
             self.addCleanup(helper.doCleanups)
             store, _, _, device_events = helper.make_store(
-                pages=40, page_size=128, prompt_capacity=8192
+                pages=40,
+                page_size=128,
+                prompt_capacity=8192,
+                replica=rank,
+                readers=16,
+                all_gather=collective.rank(rank),
             )
             save = dict(
                 rid="A",

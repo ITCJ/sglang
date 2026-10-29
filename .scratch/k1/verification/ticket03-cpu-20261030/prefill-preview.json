@@ -1,0 +1,72 @@
+{
+  "role": "prefill",
+  "mode": "split-read-acceptance",
+  "config": {
+    "prefill_host": "<P_HOST>",
+    "decode_host": "<D_HOST>",
+    "model_path": "/data_lib/data/models/GLM-5.2-w4a8",
+    "interface": "bond4",
+    "numa_nodes": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "main_port": 6699,
+    "control_port": 16700,
+    "runner_port": 18891,
+    "prefill_port": 8000,
+    "decode_port": 8001,
+    "bootstrap_port": 8995,
+    "prompt_capacity": 8192,
+    "decode_capacity": 128,
+    "page_size": 128,
+    "context_length": 8448,
+    "max_total_tokens": 16384,
+    "operation_timeout": 600.0,
+    "startup_timeout": 7200.0,
+    "prefix_pages": 40,
+    "verify_prefix": true,
+    "match_prefix": true,
+    "prefix_read_assignment": "round_robin"
+  },
+  "logs": "/home/cryang/log/mempool-min/k1-ticket03-001/prefill",
+  "memory_budget": {
+    "bm_bytes": 223338299392,
+    "verification_bytes": 34359738368,
+    "required_bytes": 257698037760
+  },
+  "output_policy": "mempool-min-logical-2026-10-27-v1",
+  "acceptance_controls": "one skipped allocator page; fill submitted after native_freed",
+  "service_rounds": 2,
+  "reader_assignments": [
+    "round_robin",
+    "contiguous"
+  ],
+  "stages": [
+    "paired preflight; one P/D/mixed fetch smoke (48, one replay)",
+    "round 1: ABCE + load/EOS, registration and accounting, then fail-stop",
+    "round 2: same-port restart, ABCE + load/EOS, default process cleanup",
+    "independent answers; capacity rejection CPU replay; paired port cleanup"
+  ],
+  "service_command": [
+    "bash",
+    "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/scripts/run_service.sh",
+    "prefill",
+    "formal"
+  ],
+  "target_environment": {
+    "PREFILL_CAPACITY": "8192",
+    "DECODE_CAPACITY": "128",
+    "CONTEXT_LENGTH": "8448",
+    "MAX_TOTAL_TOKENS": "16384",
+    "PAGE_SIZE": "128",
+    "SKIP_SERVER_WARMUP": "0",
+    "SGLANG_NPU_MEMPOOL_ROUTER_CONFIG": "/home/cryang/log/mempool-min/k1-ticket03-001/prefill/effective-config.json",
+    "SGLANG_NPU_MEMPOOL_ROUTER_RUN_ID": "k1-ticket03-001"
+  }
+}
