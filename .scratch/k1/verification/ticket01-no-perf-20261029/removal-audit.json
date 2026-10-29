@@ -1,0 +1,44 @@
+{
+  "fully_restored": [
+    "ascend-mempool-test/scripts/run_ticket10.py",
+    "ascend-mempool-test/tests/unit/test_acceptance_runner.py",
+    "ascend-mempool-test/tests/unit/test_runtime.py",
+    "python/sglang/srt/disaggregation/ascend/conn.py",
+    "python/sglang/srt/disaggregation/ascend/mempool_router.py",
+    "python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py",
+    "python/sglang/srt/disaggregation/ascend/mempool_service.py",
+    "python/sglang/srt/disaggregation/ascend/mempool_subrouter.py",
+    "python/sglang/srt/managers/scheduler_components/output_streamer.py"
+  ],
+  "removed": [
+    ".scratch/mempool-baseline/delivery.md",
+    ".scratch/mempool-baseline/issues/01-stage0-single-request.md",
+    ".scratch/mempool-baseline/spec.md",
+    ".scratch/mempool-baseline/verification/baseline01-002/recompute.py",
+    "ascend-mempool-test/MEMPOOL_BASELINE.md",
+    "ascend-mempool-test/scripts/mempool_perf_outputs.py",
+    "ascend-mempool-test/scripts/mempool_perf_report.py",
+    "ascend-mempool-test/scripts/mempool_perf_runner.py",
+    "ascend-mempool-test/tests/unit/test_mempool_perf.py",
+    "python/sglang/srt/disaggregation/ascend/mempool_perf.py"
+  ],
+  "retained_records": [
+    ".scratch/mempool-baseline/verification/baseline01-001/diagnosis.md",
+    ".scratch/mempool-baseline/verification/baseline01-002/acceptance.json",
+    ".scratch/mempool-baseline/verification/baseline01-002/analysis.md",
+    ".scratch/mempool-baseline/verification/baseline01-002/derived.json",
+    ".scratch/mempool-baseline/verification/baseline01-002/metrics.csv",
+    ".scratch/mempool-baseline/verification/baseline01-002/round-samples.csv",
+    ".scratch/mempool-baseline/verification/core-answer-v1.md",
+    ".scratch/mempool-baseline/verification/cpu-20261028/checks.json",
+    ".scratch/mempool-baseline/verification/cpu-20261028/describe-full-acceptance-decode.json",
+    ".scratch/mempool-baseline/verification/cpu-20261028/describe-full-acceptance-prefill.json",
+    ".scratch/mempool-baseline/verification/cpu-20261028/describe-perf-decode.json",
+    ".scratch/mempool-baseline/verification/cpu-20261028/describe-perf-prefill.json",
+    ".scratch/mempool-baseline/verification/cpu-20261028/review.md",
+    ".scratch/mempool-baseline/verification/cpu-20261028/static-checks.txt",
+    ".scratch/mempool-baseline/verification/cpu-20261028/unittest.txt"
+  ],
+  "perf_reference_scan": "no matches",
+  "baselinetest_head": "134b22d90d84ae9d957a2bb576ffd20175ccde64"
+}

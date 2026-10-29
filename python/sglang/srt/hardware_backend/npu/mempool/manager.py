@@ -12,6 +12,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 import msgspec
 
@@ -112,17 +113,23 @@ class MempoolKVManager:
         *,
         tp_rank: int | None = None,
         tp_size: int = 16,
+        numa: MempoolNumaConfig | None = None,
+        host: str = "",
     ) -> MempoolKVManager:
         """Allocate DRAM using contiguous NUMA blocks for this host's TP ranks.
 
         The current rank-pair service has all 16 ranks on each host. Component
         callers with a different local rank count must supply tp_size explicitly.
         """
-        MempoolNumaConfig.from_environment().require_rank_pair_startup()
+        numa = numa or MempoolNumaConfig.from_environment()
+        numa.require_rank_pair_startup()
+        numa.validate_local_map(host, tp_size)
         layout.layout_for_rank(rank)
-        numa_nodes = _configured_numa_nodes()
+        numa_nodes = () if numa.rank_map is not None else _configured_numa_nodes()
         numa_node = -1
-        if numa_nodes:
+        if numa.rank_map is not None:
+            numa_node = next(a.numa_node for a in numa.rank_map if a.rank == tp_rank)
+        elif numa_nodes:
             if type(tp_rank) is not int or tp_rank < 0:
                 raise ValueError(
                     f"{_NUMA_NODE_ENV} requires a nonnegative integer tp_rank"
@@ -191,6 +198,7 @@ class MempoolKVManager:
         timeout: float = 120.0,
         pool_id: int = 0,
         bm_module: Any = None,
+        numa: MempoolNumaConfig | None = None,
     ) -> MempoolKVManager:
         """Start this worker's two-rank BM session and join its mapped KV pool.
 
@@ -200,7 +208,10 @@ class MempoolKVManager:
         alive for any TransferEngine users. One TP worker process owns only
         one BM rank-pair context in this demo.
         """
-        MempoolNumaConfig.from_environment().require_rank_pair_startup()
+        numa = numa or MempoolNumaConfig.from_environment()
+        numa.require_rank_pair_startup()
+        host = urlsplit(nic_url).hostname or ""
+        numa.validate_local_map(host)
         if type(tp_rank) is not int or not 0 <= tp_rank < 16:
             raise ValueError("tp_rank must be an integer in [0, 16)")
         if role not in ("prefill", "decode"):
@@ -279,7 +290,15 @@ class MempoolKVManager:
             try:
                 if bm_module.bm_rank_id() != rank:
                     raise RuntimeError("BM initialized with an unexpected rank ID")
-                manager = cls.create(layout, rank, pool_id, bm_module, tp_rank=tp_rank)
+                manager = cls.create(
+                    layout,
+                    rank,
+                    pool_id,
+                    bm_module,
+                    tp_rank=tp_rank,
+                    numa=numa,
+                    host=host,
+                )
                 manager.join(timeout)
             except Exception:
                 try:
@@ -438,6 +457,35 @@ class MempoolKVManager:
                     raise RuntimeError("BM layer mapping is not device-contiguous")
             bases[rank] = gva, device_va
         return bases
+
+    def placement_registration(self, tp_rank: int, host: str) -> dict[str, Any]:
+        """Describe this owner's replicas and query only its local BM contribution."""
+        from .placement import sample_pool_placement
+
+        gva, device = self.bases(self.rank)
+        host_base = self._handle.gva_to_va(gva, self._bm.BmMemType.LOCAL_HOST)
+        regions = {
+            name: (offset, layout.total_bytes)
+            for name, (offset, layout) in self.layout.regions(self.rank).items()
+        }
+        evidence = sample_pool_placement(
+            host_base,
+            self._handle.local_mem_size(self._bm.BmMemType.HOST),
+            self.numa_node,
+            regions,
+        )
+        evidence["gpu_registered_range"] = dict(
+            address=hex(device),
+            bytes=self.layout.contribution_bytes(self.rank),
+            registration_seconds=None,
+            timing_note="SDK exposes no separate GPU registration timer",
+        )
+        return dict(
+            host=host,
+            owner_tp_rank=tp_rank,
+            numa_placement_verified=evidence["placement_verified"],
+            numa_evidence=evidence,
+        )
 
     def view(
         self, rank: int, layer: int, *, region: str = "alive_main"

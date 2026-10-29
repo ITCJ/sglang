@@ -1,0 +1,33 @@
+{
+  "previous_k1": "3156916a11",
+  "functional_base": "8869c2c605",
+  "baselinetest_head": "134b22d90d84ae9d957a2bb576ffd20175ccde64",
+  "full_cpu": {
+    "tests": 476,
+    "subtests": 735,
+    "seconds": 47.21,
+    "status": "passed"
+  },
+  "targeted": {
+    "tests": 24,
+    "subtests": 103,
+    "status": "passed"
+  },
+  "static": {
+    "files": 14,
+    "typed_modules": 7,
+    "status": "passed",
+    "ast_target": "3.9"
+  },
+  "cli": {
+    "prefill": "passed",
+    "decode": "passed",
+    "mode": "numa-acceptance"
+  },
+  "review": {
+    "standards_unresolved": 0,
+    "spec_unresolved": 0
+  },
+  "npu_executed": false,
+  "user_accepted": false
+}

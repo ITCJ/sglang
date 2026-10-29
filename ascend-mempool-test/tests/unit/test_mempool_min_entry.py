@@ -572,7 +572,9 @@ class TestMinRunner(unittest.TestCase):
             page_size=128, get_kvcache=lambda: pool, available_size=lambda: 16384
         )
         transfer = SimpleNamespace(page_size=128)
-        runtime_config = SimpleNamespace(page_size=128)
+        runtime_config = SimpleNamespace(
+            page_size=128, numa=runner.MempoolConfig().numa
+        )
         layout = SimpleNamespace(
             layers=78,
             dim=576,

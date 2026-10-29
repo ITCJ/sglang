@@ -1,0 +1,35 @@
+{
+  "baseline": "7a8a0b955b43d75700caf86ec4c685ae1a4ff242",
+  "full_cpu": {
+    "tests": 505,
+    "subtests": 735,
+    "seconds": 57.76,
+    "status": "passed"
+  },
+  "final_targeted": {
+    "tests": 25,
+    "seconds": 8.91,
+    "status": "passed"
+  },
+  "self_running_cpu": {
+    "tests": 79,
+    "status": "passed"
+  },
+  "static": {
+    "python_files": 15,
+    "python_syntax": "3.9",
+    "typed_modules": 8,
+    "mypy": "1.18.2 strict passed",
+    "lint": "F,UP037 passed; F722 excluded only for existing A[type,help] CLI annotation DSL",
+    "format": "passed",
+    "isort": "passed",
+    "bash_syntax": "passed"
+  },
+  "review": {
+    "standards_unresolved": 0,
+    "spec_unresolved": 0,
+    "spec_fixed": 1
+  },
+  "npu_executed": false,
+  "user_accepted": false
+}

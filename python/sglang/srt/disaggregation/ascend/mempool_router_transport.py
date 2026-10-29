@@ -13,6 +13,7 @@ import os
 import time
 from collections.abc import Callable, Sequence
 from typing import Any
+from urllib.parse import urlsplit
 
 from .mempool_native_reservation import NativeReservations
 from .mempool_prefill_restore import PrefillRestore, install_prefill_cache
@@ -179,6 +180,12 @@ def attach_subrouter(
         replicas=config.replicas(),
         graph=not args.disable_cuda_graph,
     )
+    if runtime.config.numa.rank_map is not None:
+        registration.update(
+            runtime.manager.placement_registration(
+                control.local.tp_rank, urlsplit(runtime.config.nic).hostname or ""
+            )
+        )
     if config.prefix_pages:
         registration.update(
             prefix_pages=config.prefix_pages if role == "prefill" else 0,

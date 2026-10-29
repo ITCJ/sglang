@@ -96,7 +96,7 @@ class Disagg(msgspec.Struct):
         Optional[str],
         "Path to a JSON array of host/rank/node assignments for Ascend mempool. "
         "Conflicts with SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE. "
-        "Planning only until group startup is available.",
+        "Private rank-pair startup supports explicit placement; host must match the mempool NIC host.",
     ] = None
     disaggregation_enable_kv_checksum: A[
         bool,

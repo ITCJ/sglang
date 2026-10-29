@@ -41,7 +41,11 @@ export SGLANG_DISAGGREGATION_BOOTSTRAP_TIMEOUT=600
 export SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD=1
 export SGLANG_NPU_ENABLE_MEMPOOL=0
 if [[ "$mode" == formal ]]; then export SGLANG_NPU_ENABLE_MEMPOOL=1; fi
-export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=${SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE:-0,2,4,6}
+if [[ -n "${MEMPOOL_RANK_NUMA_MAP:-}" ]]; then
+    unset SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE
+else
+    export SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE=${SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE:-0,2,4,6}
+fi
 export SGLANG_NPU_MEMPOOL_DIAGNOSTICS=0
 export SGLANG_NPU_USE_MLAPO=0
 export SGLANG_USE_FIA_NZ=0
@@ -64,6 +68,9 @@ common=(
     --moe-dense-tp-size 1 --moe-a2a-backend deepep --disable-shared-experts-fusion
     --load-balance-method round_robin --dtype bfloat16 --kv-cache-dtype bfloat16
 )
+if [[ "$mode" == formal && -n "${MEMPOOL_RANK_NUMA_MAP:-}" ]]; then
+    common+=(--mempool-rank-numa-map "$MEMPOOL_RANK_NUMA_MAP")
+fi
 if [[ "$role" == prefill ]]; then
     local_ip=$P_IP
     export DEEPEP_NORMAL_LONG_SEQ_ROUND=72

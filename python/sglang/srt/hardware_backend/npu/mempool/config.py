@@ -107,6 +107,7 @@ class MempoolConfig(msgspec.Struct, frozen=True):
                 "mempool requires --mempool-prefill-host and --mempool-nic tcp://IP:PORT"
             )
         config.nic_for_rank(15)
+        config.numa.validate_local_map(urlsplit(config.nic).hostname or "")
         if (
             not 1 <= config.base_port <= 65520
             or not 1 <= config.bootstrap_port <= 65535

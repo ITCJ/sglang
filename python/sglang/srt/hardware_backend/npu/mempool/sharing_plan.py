@@ -11,10 +11,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import msgspec
+
 from .layout import PoolLayout, positive_int
 
 SHARE_ENV = "SGLANG_NPU_MEMPOOL_SHARE"
 NUMA_ENV = "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE"
+
+
+def local_online_nodes() -> str:
+    """Read the local kernel topology for explicit placement validation."""
+    return Path("/sys/devices/system/node/online").read_text().strip()
 
 
 def parse_numa_nodes(value: str, online: str) -> tuple[int, ...]:
@@ -172,11 +179,9 @@ class SharingPlan:
 
     def group_layout(self, group: SharingGroup) -> PoolLayout:
         """Reserve one session probe per member without changing token capacity."""
-        return PoolLayout(
-            self.layout.prompt,
-            self.layout.decode,
-            self.layout.alignment_bytes,
-            max(self.layout.probe_bytes, 64 * len(group.members)),
+        return msgspec.structs.replace(
+            self.layout,
+            probe_bytes=max(self.layout.probe_bytes, 64 * len(group.members)),
         )
 
     def group_identity(self, group: SharingGroup) -> str:
@@ -196,8 +201,10 @@ class SharingPlan:
             json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
 
-    def report(self) -> dict[str, Any]:
-        """Expose planned contributions and mapping identities, never measured RAM."""
+    def report(
+        self, registrations: Sequence[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
+        """Mark placement applied only after every registered owner matches the plan."""
         side = 0 if self.role == "prefill" else 1
         rows: list[dict[str, Any]] = []
         for group in self.groups:
@@ -231,8 +238,17 @@ class SharingPlan:
                     }
                 )
         rows.sort(key=lambda row: row["rank"])
+        if registrations is not None:
+            keys = ("rank", "host", "numa_node", "owner_tp_rank")
+            actual = sorted(registrations, key=lambda row: row["rank"])
+            if [tuple(r.get(k) for k in keys) for r in actual] != [
+                tuple(r[k] for k in keys) for r in rows
+            ]:
+                raise ValueError(
+                    "NUMA_REGISTRATION_MISMATCH: registrations differ from mapping"
+                )
         return {
-            "allocation_status": "planned",
+            "allocation_status": "applied" if registrations is not None else "planned",
             "role": self.role,
             "mempool_share": self.mempool_share,
             "group_count": len(self.groups),
@@ -254,10 +270,46 @@ class MempoolNumaConfig:
 
     def require_rank_pair_startup(self) -> None:
         """Keep unimplemented group placement out of the legacy BM allocator."""
-        if self.mempool_share or self.rank_map is not None:
+        if self.mempool_share:
             raise ValueError(
-                "mempool sharing/rank_numa_map requires group startup (ticket02-2); "
+                "mempool sharing requires group startup (ticket02-2); "
                 "this build supports planning only for these options"
+            )
+
+    def validate_rank_map(self, hosts: Sequence[HostTopology], tp_size: int) -> None:
+        """Reject explicit mapping mistakes before a worker initializes BM."""
+        if self.rank_map is None:
+            return
+        rank_hosts = {rank: host for host in hosts for rank in host.ranks}
+        seen: set[int] = set()
+        for assignment in self.rank_map:
+            assignment.validate()
+            if assignment.rank in seen:
+                raise ValueError(f"NUMA_MAP_DUPLICATE_RANK: rank {assignment.rank}")
+            if assignment.rank not in rank_hosts:
+                raise ValueError(f"NUMA_MAP_INVALID_RANK: rank {assignment.rank}")
+            host = rank_hosts[assignment.rank]
+            if host.host != assignment.host:
+                raise ValueError(
+                    f"NUMA_MAP_HOST_MISMATCH: rank {assignment.rank}: "
+                    f"mapped host {assignment.host!r} differs from topology {host.host!r}"
+                )
+            try:
+                parse_numa_nodes(str(assignment.numa_node), host.online_nodes or "")
+            except ValueError as error:
+                raise ValueError(f"NUMA_MAP_NODE_OFFLINE: {error}") from error
+            seen.add(assignment.rank)
+        if len(seen) != tp_size:
+            raise ValueError(
+                f"NUMA_MAP_MISSING_RANK: missing TP ranks: {sorted(rank_hosts.keys() - seen)}"
+            )
+
+    def validate_local_map(self, host: str, tp_size: int = 16) -> None:
+        """The private service places all local TP ranks on one NIC-identified host."""
+        if self.rank_map is not None:
+            self.validate_rank_map(
+                (HostTopology(host, tuple(range(tp_size)), local_online_nodes()),),
+                tp_size,
             )
 
     @classmethod
@@ -362,24 +414,7 @@ class MempoolNumaConfig:
         assignments: list[RankNuma] = []
         warnings = []
         if self.rank_map is not None:
-            seen: set[int] = set()
-            for assignment in self.rank_map:
-                assignment.validate()
-                if assignment.rank in seen or assignment.rank not in rank_hosts:
-                    raise ValueError(
-                        f"duplicate or invalid mapped TP rank {assignment.rank}"
-                    )
-                host = rank_hosts[assignment.rank]
-                if host.host != assignment.host:
-                    raise ValueError(
-                        f"rank {assignment.rank}: mapped host {assignment.host!r} differs from topology {host.host!r}"
-                    )
-                parse_numa_nodes(str(assignment.numa_node), host.online_nodes or "")
-                seen.add(assignment.rank)
-            if len(seen) != tp_size:
-                raise ValueError(
-                    f"rank_numa_map missing TP ranks: {sorted(rank_hosts.keys() - seen)}"
-                )
+            self.validate_rank_map(hosts, tp_size)
             assignments.extend(self.rank_map)
         for host in hosts:
             if self.rank_map is not None:

@@ -99,6 +99,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "prefix-acceptance",
             "reuse-acceptance",
             "full-acceptance",
+            "numa-acceptance",
         ),
         required=True,
     )
@@ -129,6 +130,7 @@ def service_environment(
         "HTTP_PROXY",
         "HTTPS_PROXY",
         "SGLANG_NPU_MEMPOOL_TEST_CAPACITY",
+        "MEMPOOL_RANK_NUMA_MAP",
     ):
         env.pop(name, None)
     env.update(
@@ -156,6 +158,9 @@ def service_environment(
     )
     if target:
         env[CONFIG_ENV], env[RUN_ENV] = str(args.config), args.run_id
+        if getattr(args, "rank_numa_map", None) is not None:
+            env["MEMPOOL_RANK_NUMA_MAP"] = str(args.rank_numa_map)
+            env.pop("SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE", None)
     return env
 
 
@@ -276,6 +281,8 @@ class Runner:
                 for name in ("torch", "torch-npu", "sgl-kernel-npu", "memfabric-hybrid")
             },
         )
+        if getattr(self.args, "numa_maps", None) is not None:
+            identity["numa_maps"] = self.args.numa_maps
         write_json(self.root / "identity.json", identity)
         self.report["identity"] = identity
         self.peer.send("identity", value=identity)
@@ -632,6 +639,15 @@ class Runner:
                     watch,
                 )
             self.peer.barrier(name + "-ready")
+            if (
+                target
+                and not fault_only
+                and self.is_p
+                and getattr(self.args, "numa_maps", None)
+            ):
+                from mempool_numa_runner import archive_registration
+
+                archive_registration(self, root, request_json(base + "/status"))
             if self.args.mode == "serve":
                 print(
                     f"SERVING {self.args.role}; unified entry: {base}/generate",
@@ -922,6 +938,11 @@ class Runner:
 
     def run(self) -> None:
         self.preflight()
+        if self.args.mode == "numa-acceptance":
+            from mempool_numa_runner import run
+
+            run(self)
+            return
         if self.full:
             self.run_full()
             return
@@ -957,12 +978,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     config = RouterConfig.read(str(args.config))
     root = args.log_root / args.run_id / args.role
     requested = msgspec.to_builtins(config)
-    if args.mode in ("prefix-acceptance", "reuse-acceptance", "full-acceptance"):
+    if args.mode in (
+        "prefix-acceptance",
+        "reuse-acceptance",
+        "full-acceptance",
+        "numa-acceptance",
+    ):
         config = msgspec.structs.replace(
             config,
             prefix_pages=40,
             verify_prefix=True,
-            match_prefix=args.mode in ("reuse-acceptance", "full-acceptance"),
+            match_prefix=args.mode
+            in ("reuse-acceptance", "full-acceptance", "numa-acceptance"),
         )
     elif args.mode == "acceptance" and config.prefix_pages:
         raise ValueError(
@@ -979,7 +1006,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     logs=str(root),
                     memory_budget=memory_budget(config, args.role),
                     output_policy=mempool_logical_cases.POLICY
-                    if args.mode == "full-acceptance"
+                    if args.mode in ("full-acceptance", "numa-acceptance")
                     else "strict full output IDs",
                     acceptance_controls=(
                         "one skipped allocator page; fill submitted after native_freed"
@@ -987,6 +1014,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                         else "none"
                     ),
                     stages=[
+                        "local startup rejection codes: offline node / duplicate rank / missing rank",
+                        "default and swapped explicit maps: A/B/C/E and V1-V10",
+                        "applied registration reports, per-region page samples and per-NUMA resident bytes",
+                        "topology/version snapshots and paired cleanup; no performance instrumentation",
+                    ]
+                    if args.mode == "numa-acceptance"
+                    else [
                         "paired preflight",
                         "P-only/D-only/mixed NPU fetch",
                         "independent logical ABCE + load/EOS reference",

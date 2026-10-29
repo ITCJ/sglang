@@ -990,6 +990,7 @@ def initialize_for_model_runner(model_runner: Any) -> None:
         store_host=config.prefill_host,
         base_port=config.base_port,
         nic_url=config.nic_for_rank(model_runner.ps.tp_rank),
+        numa=config.numa,
         pool_id=config.pool_id,
         timeout=config.timeout,
     )

@@ -1,5 +1,6 @@
 """Check model-derived MLA capacity without importing an SGLang server."""
 
+import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -107,8 +108,8 @@ class TestMempoolConfig(unittest.TestCase):
                 num_layers=2, kv_lora_rank=512, qk_rope_head_dim=64
             )
 
-    def test_new_placement_options_cannot_silently_use_rank_pair_storage(self):
-        """Planning is available in 02-1; group allocation belongs to 02-2."""
+    def test_private_explicit_mapping_is_accepted_and_sharing_stays_disabled(self):
+        """Explicit placement retains private rank-pair storage."""
         args = SimpleNamespace(
             page_size=128,
             disaggregation_mode="decode",
@@ -132,11 +133,31 @@ class TestMempoolConfig(unittest.TestCase):
                 configure()
         with TemporaryDirectory() as directory:
             path = Path(directory) / "rank-map.json"
-            path.write_text('[{"host": "host-p", "rank": 0, "node": 0}]')
+            records = [dict(host="10.0.0.1", rank=r, node=r // 2) for r in range(16)]
+            path.write_text(json.dumps(records))
             args.mempool_rank_numa_map = str(path)
-            with patch.dict("os.environ", {}, clear=True):
-                with self.assertRaisesRegex(ValueError, "group startup.*02-2"):
-                    configure()
+            with (
+                patch.dict("os.environ", {}, clear=True),
+                patch(
+                    "ascend_mempool.sharing_plan.local_online_nodes", return_value="0-7"
+                ),
+            ):
+                configured = configure()
+                self.assertEqual(configured.numa.rank_map[15].numa_node, 7)
+                for invalid, code in (
+                    (records + [records[0]], "NUMA_MAP_DUPLICATE_RANK"),
+                    (records[:-1], "NUMA_MAP_MISSING_RANK"),
+                    (
+                        records[:-1] + [dict(host="10.0.0.1", rank=15, node=8)],
+                        "NUMA_MAP_NODE_OFFLINE",
+                    ),
+                ):
+                    path.write_text(json.dumps(invalid))
+                    with (
+                        self.subTest(code=code),
+                        self.assertRaisesRegex(ValueError, code),
+                    ):
+                        configure()
 
 
 if __name__ == "__main__":

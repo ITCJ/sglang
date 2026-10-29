@@ -1,0 +1,15 @@
+....................................... [  8%]
+................................................................................................................................ [ 35%]
+.................................................. [ 45%]
+.................................... [ 53%]
+..................................................... [ 64%]
+.................................................................................. [ 81%]
+........................................ [ 89%]
+................................................              [100%]
+=============================== warnings summary ===============================
+ascend-mempool-test/src/ascend_mempool/control.py:10
+  /Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/src/ascend_mempool/control.py:10: PytestCollectionWarning: cannot collect test class 'TestChannel' because it has a __init__ constructor (from: tests/unit/test_control.py)
+    class TestChannel:
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+476 passed, 1 warning, 735 subtests passed in 47.21s

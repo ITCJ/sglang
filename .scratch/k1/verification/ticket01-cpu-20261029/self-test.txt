@@ -1,0 +1,138 @@
+test_contiguous_assignment_and_sharing_are_independent (test_numa_plan.TestMempoolNumaPlan.test_contiguous_assignment_and_sharing_are_independent)
+The 0,2 list assigns adjacent ranks regardless of the sharing switch. ... ok
+test_contiguous_assignment_balances_remainders_and_preserves_node_order (test_numa_plan.TestMempoolNumaPlan.test_contiguous_assignment_balances_remainders_and_preserves_node_order) ... ok
+test_contiguous_assignment_is_local_to_each_host (test_numa_plan.TestMempoolNumaPlan.test_contiguous_assignment_is_local_to_each_host) ... ok
+test_contiguous_tp16_plan_matches_default_two_ranks_per_node (test_numa_plan.TestMempoolNumaPlan.test_contiguous_tp16_plan_matches_default_two_ranks_per_node) ... ok
+test_explicit_map_supports_variable_groups_without_crossing_hosts (test_numa_plan.TestMempoolNumaPlan.test_explicit_map_supports_variable_groups_without_crossing_hosts)
+One, two, four and uneven member counts use the same grouping rule. ... ok
+test_group_report_separates_owners_participants_and_physical_contribution (test_numa_plan.TestMempoolNumaPlan.test_group_report_separates_owners_participants_and_physical_contribution)
+Planning preserves capacity and gives each member a private probe lane. ... ok
+test_incomplete_or_ambiguous_assignments_fail_before_a_plan_is_returned (test_numa_plan.TestMempoolNumaPlan.test_incomplete_or_ambiguous_assignments_fail_before_a_plan_is_returned)
+Every rank must occur once, on its declared host and an online node. ... ok
+test_legacy_fallback_is_preserved_only_for_independent_pools (test_numa_plan.TestMempoolNumaPlan.test_legacy_fallback_is_preserved_only_for_independent_pools)
+An unknown node cannot become a shared group key. ... ok
+test_map_file_rejects_invalid_schema_and_conflicting_inputs (test_numa_plan.TestMempoolNumaPlan.test_map_file_rejects_invalid_schema_and_conflicting_inputs)
+Explicit placement has no fallback, including when sharing is off. ... ok
+test_peer_matching_uses_logical_members_and_kv_identity (test_numa_plan.TestMempoolNumaPlan.test_peer_matching_uses_logical_members_and_kv_identity)
+P/D may use different host/node IDs, but must share one logical plan. ... ok
+test_peer_nic_collisions_are_checked_per_physical_host (test_numa_plan.TestMempoolNumaPlan.test_peer_nic_collisions_are_checked_per_physical_host)
+Different NIC bases can still produce the same MF listener endpoint. ... ok
+test_ports_remain_disjoint_for_nonadjacent_groups_and_independent_mode (test_numa_plan.TestMempoolNumaPlan.test_ports_remain_disjoint_for_nonadjacent_groups_and_independent_mode)
+MF adds participant to NIC base; separate member ranges avoid collisions. ... ok
+test_share_switch_is_explicit_and_strict (test_numa_plan.TestMempoolNumaPlan.test_share_switch_is_explicit_and_strict)
+Old launches stay independent; malformed switches never enable sharing. ... ok
+test_tp16_default_pairs_reduce_planned_replicas_without_resizing_kv (test_numa_plan.TestMempoolNumaPlan.test_tp16_default_pairs_reduce_planned_replicas_without_resizing_kv)
+The deployment default has eight owners; the planner has no eight-group limit. ... ok
+test_applied_means_all_registered_owners_match_map_not_residency (test_numa_placement.TestNumaPlacement.test_applied_means_all_registered_owners_match_map_not_residency) ... ok
+test_private_pool_uses_swapped_mapping_without_changing_capacity (test_numa_placement.TestNumaPlacement.test_private_pool_uses_swapped_mapping_without_changing_capacity) ... ok
+test_driver_opaque_pages_wrong_node_and_partial_residency_never_pass (test_numa_placement.TestResidencyEvidence.test_driver_opaque_pages_wrong_node_and_partial_residency_never_pass) ... ok
+test_samples_all_regions_and_counts_only_the_owned_mapping (test_numa_placement.TestResidencyEvidence.test_samples_all_regions_and_counts_only_the_owned_mapping) ... ok
+test_comparison_retains_baseline_stats_and_all_three_inherited_anomalies (test_numa_runner.TestNumaRunner.test_comparison_retains_baseline_stats_and_all_three_inherited_anomalies) ... ok
+test_complete_report_keeps_applied_separate_from_missing_physical_evidence (test_numa_runner.TestNumaRunner.test_complete_report_keeps_applied_separate_from_missing_physical_evidence) ... ok
+test_k1_mode_is_selectable_and_explicit_map_replaces_legacy_environment (test_numa_runner.TestNumaRunner.test_k1_mode_is_selectable_and_explicit_map_replaces_legacy_environment) ... ok
+test_actual_mla_dimensions_and_asymmetric_capacities (test_config.TestMempoolConfig.test_actual_mla_dimensions_and_asymmetric_capacities)
+Allocate all model layers with separate prompt/decode token limits. ... ok
+test_defaults_and_unsupported_model_storage (test_config.TestMempoolConfig.test_defaults_and_unsupported_model_storage)
+Keep 16K defaults and reject non-BF16 or kernel-incompatible storage. ... ok
+test_private_explicit_mapping_is_accepted_and_sharing_stays_disabled (test_config.TestMempoolConfig.test_private_explicit_mapping_is_accepted_and_sharing_stays_disabled)
+Explicit placement retains private rank-pair storage. ... ok
+test_service_config_rejects_unsupported_launch_before_bm (test_config.TestMempoolConfig.test_service_config_rejects_unsupported_launch_before_bm)
+P native mode is supported; incompatible serving modes are rejected. ... ok
+test_decode_connect_timeout_obeys_remaining_wait_budget (test_pair_startup.TestPairStartup.test_decode_connect_timeout_obeys_remaining_wait_budget)
+An unresponsive address cannot make each probe restart the deadline. ... [MEMPOOL_INIT] FAIL stage=bm.wait_store pid=78284 tid=34482808 tp_rank=0 store=tcp://10.120.72.31:18573 elapsed=0.000s error=TimeoutError('P BM store tcp://10.120.72.31:18573 was not reachable within 0.25s')
+ok
+test_decode_does_not_retry_sdk_errors_after_store_is_reachable (test_pair_startup.TestPairStartup.test_decode_does_not_retry_sdk_errors_after_store_is_reachable)
+Do not turn configuration or device initialization errors into waits. ... [MEMPOOL_INIT] FAIL stage=bm.initialize pid=78284 tid=34482808 role=decode tp_rank=0 bm_rank=1 device_id=0 store=tcp://10.120.72.31:18573 nic=tcp://10.120.72.31:24670 world_size=2 auto_ranking=False start_store=False sdk_timeout=1 elapsed=0.000s error=RuntimeError('BM initialize failed for tcp://10.120.72.31:18573: -7')
+ok
+test_decode_store_wait_expires_without_initializing_bm (test_pair_startup.TestPairStartup.test_decode_store_wait_expires_without_initializing_bm)
+An absent P store times out without allocating or retaining BM state. ... [MEMPOOL_INIT] FAIL stage=bm.wait_store pid=78284 tid=34482808 tp_rank=0 store=tcp://10.120.72.31:18573 elapsed=0.000s error=TimeoutError('P BM store tcp://10.120.72.31:18573 was not reachable within 1.25s')
+ok
+test_decode_waits_for_slow_prefill_before_entering_bm (test_pair_startup.TestPairStartup.test_decode_waits_for_slow_prefill_before_entering_bm)
+A P store appearing after MF's 60 retries must still allow D startup. ... ok
+test_direct_create_rejects_invalid_rank_count_before_allocation (test_pair_startup.TestPairStartup.test_direct_create_rejects_invalid_rank_count_before_allocation) ... ok
+test_direct_create_requires_tp_rank_for_numa_binding (test_pair_startup.TestPairStartup.test_direct_create_requires_tp_rank_for_numa_binding)
+Never substitute P/D BM rank for an absent or invalid TP rank. ... ok
+test_direct_create_uses_explicit_host_rank_count (test_pair_startup.TestPairStartup.test_direct_create_uses_explicit_host_rank_count)
+Component runs must use their own rank count, not the service's TP16. ... ok
+test_each_pair_uses_its_own_port_and_local_bm_ranks (test_pair_startup.TestPairStartup.test_each_pair_uses_its_own_port_and_local_bm_ranks)
+P_i and D_i share a store, while adjacent pairs use distinct stores. ... ok
+test_failed_drain_keeps_owned_bm_context_alive (test_pair_startup.TestPairStartup.test_failed_drain_keeps_owned_bm_context_alive)
+Never uninitialize BM while captured work might still use its mapping. ... [MEMPOOL_INIT] FAIL stage=bm.close_drain pid=78284 tid=34482808 bm_rank=0 elapsed=0.000s error=RuntimeError('pending NPU reads')
+ok
+test_failed_startup_releases_only_resources_it_initialized (test_pair_startup.TestPairStartup.test_failed_startup_releases_only_resources_it_initialized)
+Do not retain BM state after init, create, or join errors. ... [MEMPOOL_INIT] FAIL stage=bm.initialize pid=78284 tid=34482808 role=prefill tp_rank=0 bm_rank=0 device_id=0 store=tcp://10.120.72.31:18573 nic=tcp://10.120.72.31:24670 world_size=2 auto_ranking=False start_store=True sdk_timeout=1 elapsed=0.000s error=RuntimeError('BM initialize failed for tcp://10.120.72.31:18573: -7')
+[MEMPOOL_INIT] FAIL stage=bm.create2 pid=78284 tid=34482808 bm_rank=0 pool_id=0 local_dram_bytes=1073741824 max_dram_bytes=1073741824 local_hbm_bytes=0 max_hbm_bytes=0 data_op=SDMA tp_rank=0 local_numa_nodes=() numa_node=-1 bm_flags=0 elapsed=0.000s error=RuntimeError('BM create2 returned no handle')
+[MEMPOOL_INIT] FAIL stage=bm.wait_mappings pid=78284 tid=34482808 bm_rank=0 timeout=0.01 elapsed=0.015s error=TimeoutError('BM peer mappings did not become device-visible: missing_rank=0 gva=0x1000000000 offset=0')
+ok
+test_gate_pool_ids_are_accepted_by_service_startup (test_pair_startup.TestPairStartup.test_gate_pool_ids_are_accepted_by_service_startup)
+Allow independently verified BM IDs below the TransferEngine range. ... ok
+test_invalid_identity_and_network_settings_fail_before_bm_initialization (test_pair_startup.TestPairStartup.test_invalid_identity_and_network_settings_fail_before_bm_initialization)
+Reject roles, ranks, ports, and addresses that cannot identify a pair. ... ok
+test_invalid_numa_list_warns_and_allocates_with_default_flags (test_pair_startup.TestPairStartup.test_invalid_numa_list_warns_and_allocates_with_default_flags)
+A bad list falls back as a whole before attempting a native allocation. ... ok
+test_nonexistent_node_warning_identifies_requested_and_available_nodes (test_pair_startup.TestPairStartup.test_nonexistent_node_warning_identifies_requested_and_available_nodes)
+Report the offending node even when this TP rank would select a valid one. ... ok
+test_numa_binding_uses_contiguous_blocks_on_each_side (test_pair_startup.TestPairStartup.test_numa_binding_uses_contiguous_blocks_on_each_side)
+Use the ordered list and TP rank, independent of the NPU ID and BM rank. ... ok
+test_prefill_starts_its_store_without_waiting_for_it (test_pair_startup.TestPairStartup.test_prefill_starts_its_store_without_waiting_for_it)
+P must enter BM directly so D has a store to connect to. ... ok
+test_rank_pair_entry_rejects_sharing_before_sdk_initialization (test_pair_startup.TestPairStartup.test_rank_pair_entry_rejects_sharing_before_sdk_initialization)
+A component caller cannot silently allocate full replicas for share=1. ... ok
+test_rejects_a_second_manager_pair_and_wrong_initialized_rank (test_pair_startup.TestPairStartup.test_rejects_a_second_manager_pair_and_wrong_initialized_rank)
+Keep one active pair per worker and verify BM's assigned rank. ... ok
+test_unavailable_or_invalid_topology_warns_and_uses_default (test_pair_startup.TestPairStartup.test_unavailable_or_invalid_topology_warns_and_uses_default)
+Do not guess valid node IDs if local sysfs cannot be read or parsed. ... ok
+test_unset_and_removed_count_use_default_without_reading_topology (test_pair_startup.TestPairStartup.test_unset_and_removed_count_use_default_without_reading_topology)
+The removed COUNT variable must not silently reactivate explicit binding. ... ok
+test_all_numa_checker_rejects_wrong_mapping_or_capacity (test_bm_startup_gate.TestNumaReports.test_all_numa_checker_rejects_wrong_mapping_or_capacity)
+Reject old profiles, round-robin requests, and per-rank size mistakes. ... ok
+test_all_numa_checker_reports_96_gib_per_node_on_both_sides (test_bm_startup_gate.TestNumaReports.test_all_numa_checker_reports_96_gib_per_node_on_both_sides)
+The real CLI reports all eight nodes and the full 768 GiB per host. ... ok
+test_balanced_allocation_and_page_size_retry_pass (test_bm_startup_gate.TestNumaReports.test_balanced_allocation_and_page_size_retry_pass)
+A page-size fallback on the same even node is permitted on either side. ... ok
+test_missing_worker_or_peer_probe_is_rejected (test_bm_startup_gate.TestNumaReports.test_missing_worker_or_peer_probe_is_rejected)
+All 16 reports and the remote readback are required for success. ... ok
+test_native_abort_after_success_report_is_rejected (test_bm_startup_gate.TestNumaReports.test_native_abort_after_success_report_is_rejected)
+Catch the observed SIGABRT during native destruction after RESULT. ... ok
+test_wrong_hal_node_size_or_failed_allocation_cannot_pass (test_bm_startup_gate.TestNumaReports.test_wrong_hal_node_size_or_failed_allocation_cannot_pass)
+A successful Python report cannot hide wrong or missing HAL allocation. ... ok
+test_failed_probe_never_marks_the_pool_ready (test_bm_startup_gate.TestStartupHold.test_failed_probe_never_marks_the_pool_ready)
+Remote data must pass verification before it counts towards the barrier. ... ok
+test_missing_pool_times_out (test_bm_startup_gate.TestStartupHold.test_missing_pool_times_out)
+One successful worker cannot make a multi-device run pass on its own. ... ok
+test_reused_worker_marker_is_rejected (test_bm_startup_gate.TestStartupHold.test_reused_worker_marker_is_rejected)
+A repeated invocation cannot use its own stale success marker. ... ok
+test_waits_for_the_other_local_pool (test_bm_startup_gate.TestStartupHold.test_waits_for_the_other_local_pool)
+The first allocation stays alive until the other worker reports ready. ... ok
+test_all_numa_profile_launches_48_gib_per_rank_on_each_side (test_bm_startup_gate.TestStartupLauncher.test_all_numa_profile_launches_48_gib_per_rank_on_each_side)
+The requested 96 GiB per node is split across two adjacent ranks. ... ok
+test_even_numa_profile_launches_sixteen_one_gib_pools_on_each_side (test_bm_startup_gate.TestStartupLauncher.test_even_numa_profile_launches_sixteen_one_gib_pools_on_each_side)
+The fixed profile overrides an old device subset and uses service sizes. ... ok
+test_sixteen_pairs_have_distinct_ports_and_one_shared_local_barrier (test_bm_startup_gate.TestStartupLauncher.test_sixteen_pairs_have_distinct_ports_and_one_shared_local_barrier)
+Each worker gets its own store/control/NIC and holds the same device set. ... ok
+test_actual_sdk_arguments_and_large_owner_addresses (test_bm_shared_startup.TestSharedStartup.test_actual_sdk_arguments_and_large_owner_addresses) ... ok
+test_all_nodes_share_one_96g_owner_per_side_and_disjoint_ports (test_bm_shared_startup.TestSharedStartup.test_all_nodes_share_one_96g_owner_per_side_and_disjoint_ports) ... ok
+test_bad_configuration_fails_before_hardware (test_bm_shared_startup.TestSharedStartup.test_bad_configuration_fails_before_hardware) ... ok
+test_missing_duplicate_independent_or_unfinished_runs_fail (test_bm_shared_startup.TestSharedStartup.test_missing_duplicate_independent_or_unfinished_runs_fail) ... ok
+test_missing_worker_or_missing_parent_release_times_out (test_bm_shared_startup.TestSharedStartup.test_missing_worker_or_missing_parent_release_times_out) ... ok
+test_ready_workers_keep_pools_until_parent_release (test_bm_shared_startup.TestSharedStartup.test_ready_workers_keep_pools_until_parent_release) ... ok
+test_reports_preserve_unobservable_numa_as_unverified (test_bm_shared_startup.TestSharedStartup.test_reports_preserve_unobservable_numa_as_unverified) ... ok
+test_single_node_keeps_contiguous_device_pair (test_bm_shared_startup.TestSharedStartup.test_single_node_keeps_contiguous_device_pair) ... ok
+test_startup_worker_never_stages_96g_or_runs_compute_benchmarks (test_bm_shared_startup.TestSharedStartup.test_startup_worker_never_stages_96g_or_runs_compute_benchmarks) ... ok
+test_driver_exception_requires_matching_numa_record (test_sharing_pool.TestNumaEvidence.test_driver_exception_requires_matching_numa_record) ... ok
+test_missing_or_anonymous_mapping_is_not_a_driver_exception (test_sharing_pool.TestNumaEvidence.test_missing_or_anonymous_mapping_is_not_a_driver_exception) ... ok
+test_observed_requested_node_passes (test_sharing_pool.TestNumaEvidence.test_observed_requested_node_passes) ... ok
+test_observed_wrong_or_mixed_nodes_still_fail (test_sharing_pool.TestNumaEvidence.test_observed_wrong_or_mixed_nodes_still_fail) ... ok
+test_run1_driver_mapping_can_be_measured_but_remains_unverified (test_sharing_pool.TestNumaEvidence.test_run1_driver_mapping_can_be_measured_but_remains_unverified) ... ok
+test_both_members_resolve_p_and_d_to_their_physical_owner (test_sharing_pool.TestSharingPool.test_both_members_resolve_p_and_d_to_their_physical_owner) ... ok
+test_old_or_out_of_order_join_cannot_satisfy_follower_rejoin (test_sharing_pool.TestSharingPool.test_old_or_out_of_order_join_cannot_satisfy_follower_rejoin) ... ok
+test_tp4_eight_members_map_two_owners_and_six_followers_rejoin (test_sharing_pool.TestSharingPool.test_tp4_eight_members_map_two_owners_and_six_followers_rejoin) ... ok
+test_cleanup_failure_is_reported_and_never_authorizes_store_shutdown (test_sharing_shutdown.TestSharingShutdown.test_cleanup_failure_is_reported_and_never_authorizes_store_shutdown) ... ok
+test_failed_work_still_closes_pools_and_clients_before_store (test_sharing_shutdown.TestSharingShutdown.test_failed_work_still_closes_pools_and_clients_before_store) ... ok
+test_tp1_and_tp2_independent_store_owners_wait_for_clients (test_sharing_shutdown.TestSharingShutdown.test_tp1_and_tp2_independent_store_owners_wait_for_clients) ... ok
+test_tp4_shared_store_survives_slow_decode_leave (test_sharing_shutdown.TestSharingShutdown.test_tp4_shared_store_survives_slow_decode_leave) ... ok
+
+----------------------------------------------------------------------
+Ran 79 tests in 4.102s
+
+OK

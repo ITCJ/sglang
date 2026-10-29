@@ -1,0 +1,380 @@
+{
+  "coverage": "CPU planning only",
+  "examples": {
+    "members-1-share-0": {
+      "allocation_status": "planned",
+      "group_count": 1,
+      "mempool_share": false,
+      "planned_contribution_bytes": 1073741824,
+      "ranks": [
+        {
+          "contribution_bytes": 1073741824,
+          "group": [
+            0
+          ],
+          "host": "example-host",
+          "nic_base_port": 25670,
+          "nic_port": 25670,
+          "numa_node": 0,
+          "owner_participant": 0,
+          "owner_tp_rank": 0,
+          "participant": 0,
+          "placement_verified": false,
+          "pool_id": 104,
+          "pool_identity": "fbed4154972cf61fa56edd1321721acee279504ba0846d0a4be46b3480c3a133",
+          "probe_offset": 294912,
+          "rank": 0,
+          "rank_stride_bytes": 1073741824,
+          "store_port": 19000,
+          "world_size": 2
+        }
+      ],
+      "role": "prefill",
+      "warnings": []
+    },
+    "members-1-share-1": {
+      "allocation_status": "planned",
+      "group_count": 1,
+      "mempool_share": true,
+      "planned_contribution_bytes": 1073741824,
+      "ranks": [
+        {
+          "contribution_bytes": 1073741824,
+          "group": [
+            0
+          ],
+          "host": "example-host",
+          "nic_base_port": 25670,
+          "nic_port": 25670,
+          "numa_node": 0,
+          "owner_participant": 0,
+          "owner_tp_rank": 0,
+          "participant": 0,
+          "placement_verified": false,
+          "pool_id": 104,
+          "pool_identity": "977567583c267b5868ab9cea0cd50fc4010938cde480c5247171c35027df9d7a",
+          "probe_offset": 294912,
+          "rank": 0,
+          "rank_stride_bytes": 1073741824,
+          "store_port": 19000,
+          "world_size": 2
+        }
+      ],
+      "role": "prefill",
+      "warnings": []
+    },
+    "members-2-share-0": {
+      "allocation_status": "planned",
+      "group_count": 2,
+      "mempool_share": false,
+      "planned_contribution_bytes": 2147483648,
+      "ranks": [
+        {
+          "contribution_bytes": 1073741824,
+          "group": [
+            0
+          ],
+          "host": "example-host",
+          "nic_base_port": 25670,
+          "nic_port": 25670,
+          "numa_node": 0,
+          "owner_participant": 0,
+          "owner_tp_rank": 0,
+          "participant": 0,
+          "placement_verified": false,
+          "pool_id": 104,
+          "pool_identity": "f8aa4448110462da2ef87fc8d229219a6784f987cef6b7a668d8c5ea7ad08a81",
+          "probe_offset": 294912,
+          "rank": 0,
+          "rank_stride_bytes": 1073741824,
+          "store_port": 19000,
+          "world_size": 2
+        },
+        {
+          "contribution_bytes": 1073741824,
+          "group": [
+            1
+          ],
+          "host": "example-host",
+          "nic_base_port": 25672,
+          "nic_port": 25672,
+          "numa_node": 0,
+          "owner_participant": 0,
+          "owner_tp_rank": 1,
+          "participant": 0,
+          "placement_verified": false,
+          "pool_id": 104,
+          "pool_identity": "524a35e42665c9d56eb128b25bbcd3e1dad022f914062394164c8417c8d10db9",
+          "probe_offset": 294912,
+          "rank": 1,
+          "rank_stride_bytes": 1073741824,
+          "store_port": 19001,
+          "world_size": 2
+        }
+      ],
+      "role": "prefill",
+      "warnings": []
+    },
+    "members-2-share-1": {
+      "allocation_status": "planned",
+      "group_count": 1,
+      "mempool_share": true,
+      "planned_contribution_bytes": 1073741824,
+      "ranks": [
+        {
+          "contribution_bytes": 1073741824,
+          "group": [
+            0,
+            1
+          ],
+          "host": "example-host",
+          "nic_base_port": 25670,
+          "nic_port": 25670,
+          "numa_node": 0,
+          "owner_participant": 0,
+          "owner_tp_rank": 0,
+          "participant": 0,
+          "placement_verified": false,
+          "pool_id": 104,
+          "pool_identity": "418f64c69b77e904f9a90027cdf77a7364b5249ea20413d6d20beba8f8438f77",
+          "probe_offset": 294912,
+          "rank": 0,
+          "rank_stride_bytes": 1073741824,
+          "store_port": 19000,
+          "world_size": 4
+        },
+        {
+          "contribution_bytes": 0,
+          "group": [
+            0,
+            1
+          ],
+          "host": "example-host",
+          "nic_base_port": 25674,
+          "nic_port": 25675,
+          "numa_node": 0,
+          "owner_participant": 0,
+          "owner_tp_rank": 0,
+          "participant": 1,
+          "placement_verified": false,
+          "pool_id": 104,
+          "pool_identity": "418f64c69b77e904f9a90027cdf77a7364b5249ea20413d6d20beba8f8438f77",
+          "probe_offset": 294976,
+          "rank": 1,
+          "rank_stride_bytes": 1073741824,
+          "store_port": 19000,
+          "world_size": 4
+        }
+      ],
+      "role": "prefill",
+      "warnings": []
+    },
+    "members-4-share-0": {
+      "allocation_status": "planned",
+      "group_count": 4,
+      "mempool_share": false,
+      "planned_contribution_bytes": 4294967296,
+      "ranks": [
+        {
+          "contribution_bytes": 1073741824,
+          "group": [
+            0
+          ],
+          "host": "example-host",
+          "nic_base_port": 25670,
+          "nic_port": 25670,
+          "numa_node": 0,
+          "owner_participant": 0,
+          "owner_tp_rank": 0,
+          "participant": 0,
+          "placement_verified": false,
+          "pool_id": 104,
+          "pool_identity": "6186b3c7be109e1df496f318410f671b0def3f2f3bf66fd90090f1ed602bed9d",
+          "probe_offset": 294912,
+          "rank": 0,
+          "rank_stride_bytes": 1073741824,
+          "store_port": 19000,
+          "world_size": 2
+        },
+        {
+          "contribution_bytes": 1073741824,
+          "group": [
+            1
+          ],
+          "host": "example-host",
+          "nic_base_port": 25672,
+          "nic_port": 25672,
+          "numa_node": 0,
+          "owner_participant": 0,
+          "owner_tp_rank": 1,
+          "participant": 0,
+          "placement_verified": false,
+          "pool_id": 104,
+          "pool_identity": "e7c28b893ad044bd6ecce7656939daa9bd5526efa1e6e7a1c91aac51361da6e3",
+          "probe_offset": 294912,
+          "rank": 1,
+          "rank_stride_bytes": 1073741824,
+          "store_port": 19001,
+          "world_size": 2
+        },
+        {
+          "contribution_bytes": 1073741824,
+          "group": [
+            2
+          ],
+          "host": "example-host",
+          "nic_base_port": 25674,
+          "nic_port": 25674,
+          "numa_node": 0,
+          "owner_participant": 0,
+          "owner_tp_rank": 2,
+          "participant": 0,
+          "placement_verified": false,
+          "pool_id": 104,
+          "pool_identity": "2831202513381e5661961f0d0310c584c0744a3076e96cfe3cac77cf3818032c",
+          "probe_offset": 294912,
+          "rank": 2,
+          "rank_stride_bytes": 1073741824,
+          "store_port": 19002,
+          "world_size": 2
+        },
+        {
+          "contribution_bytes": 1073741824,
+          "group": [
+            3
+          ],
+          "host": "example-host",
+          "nic_base_port": 25676,
+          "nic_port": 25676,
+          "numa_node": 0,
+          "owner_participant": 0,
+          "owner_tp_rank": 3,
+          "participant": 0,
+          "placement_verified": false,
+          "pool_id": 104,
+          "pool_identity": "5f713ae769516b2e41d35c7095b1a574f2e4c421affa7d923de92ad9f18990f6",
+          "probe_offset": 294912,
+          "rank": 3,
+          "rank_stride_bytes": 1073741824,
+          "store_port": 19003,
+          "world_size": 2
+        }
+      ],
+      "role": "prefill",
+      "warnings": []
+    },
+    "members-4-share-1": {
+      "allocation_status": "planned",
+      "group_count": 1,
+      "mempool_share": true,
+      "planned_contribution_bytes": 1073741824,
+      "ranks": [
+        {
+          "contribution_bytes": 1073741824,
+          "group": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "host": "example-host",
+          "nic_base_port": 25670,
+          "nic_port": 25670,
+          "numa_node": 0,
+          "owner_participant": 0,
+          "owner_tp_rank": 0,
+          "participant": 0,
+          "placement_verified": false,
+          "pool_id": 104,
+          "pool_identity": "b9a56243603e690cc458b46b92882d0a0919822265fa92c53f37af8430cb42f9",
+          "probe_offset": 294912,
+          "rank": 0,
+          "rank_stride_bytes": 1073741824,
+          "store_port": 19000,
+          "world_size": 8
+        },
+        {
+          "contribution_bytes": 0,
+          "group": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "host": "example-host",
+          "nic_base_port": 25678,
+          "nic_port": 25679,
+          "numa_node": 0,
+          "owner_participant": 0,
+          "owner_tp_rank": 0,
+          "participant": 1,
+          "placement_verified": false,
+          "pool_id": 104,
+          "pool_identity": "b9a56243603e690cc458b46b92882d0a0919822265fa92c53f37af8430cb42f9",
+          "probe_offset": 294976,
+          "rank": 1,
+          "rank_stride_bytes": 1073741824,
+          "store_port": 19000,
+          "world_size": 8
+        },
+        {
+          "contribution_bytes": 0,
+          "group": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "host": "example-host",
+          "nic_base_port": 25686,
+          "nic_port": 25688,
+          "numa_node": 0,
+          "owner_participant": 0,
+          "owner_tp_rank": 0,
+          "participant": 2,
+          "placement_verified": false,
+          "pool_id": 104,
+          "pool_identity": "b9a56243603e690cc458b46b92882d0a0919822265fa92c53f37af8430cb42f9",
+          "probe_offset": 295040,
+          "rank": 2,
+          "rank_stride_bytes": 1073741824,
+          "store_port": 19000,
+          "world_size": 8
+        },
+        {
+          "contribution_bytes": 0,
+          "group": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "host": "example-host",
+          "nic_base_port": 25694,
+          "nic_port": 25697,
+          "numa_node": 0,
+          "owner_participant": 0,
+          "owner_tp_rank": 0,
+          "participant": 3,
+          "placement_verified": false,
+          "pool_id": 104,
+          "pool_identity": "b9a56243603e690cc458b46b92882d0a0919822265fa92c53f37af8430cb42f9",
+          "probe_offset": 295104,
+          "rank": 3,
+          "rank_stride_bytes": 1073741824,
+          "store_port": 19000,
+          "world_size": 8
+        }
+      ],
+      "role": "prefill",
+      "warnings": []
+    }
+  },
+  "npu_tested": false,
+  "status": "passed",
+  "tests": {
+    "errors": 0,
+    "failures": 0,
+    "run": 79
+  }
+}

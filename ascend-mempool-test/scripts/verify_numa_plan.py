@@ -66,6 +66,8 @@ def main() -> int:
             suite = unittest.TestSuite()
             for pattern in (
                 "test_numa_plan.py",
+                "test_numa_placement.py",
+                "test_numa_runner.py",
                 "test_config.py",
                 "test_pair_startup.py",
                 "test_bm_startup_gate.py",

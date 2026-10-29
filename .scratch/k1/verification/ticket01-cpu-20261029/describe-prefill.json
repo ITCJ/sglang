@@ -1,0 +1,68 @@
+{
+  "role": "prefill",
+  "mode": "numa-acceptance",
+  "config": {
+    "prefill_host": "192.0.2.31",
+    "decode_host": "192.0.2.32",
+    "model_path": "/models/GLM-5.2",
+    "interface": "bond4",
+    "numa_nodes": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "main_port": 6699,
+    "control_port": 16700,
+    "runner_port": 18891,
+    "prefill_port": 8000,
+    "decode_port": 8001,
+    "bootstrap_port": 8995,
+    "prompt_capacity": 8192,
+    "decode_capacity": 128,
+    "page_size": 128,
+    "context_length": 8448,
+    "max_total_tokens": 16384,
+    "operation_timeout": 600.0,
+    "startup_timeout": 7200.0,
+    "prefix_pages": 40,
+    "verify_prefix": true,
+    "match_prefix": true,
+    "perf": false
+  },
+  "logs": "/home/cryang/log/mempool-min/k1-ticket01-001/prefill",
+  "memory_budget": {
+    "bm_bytes": 223338299392,
+    "verification_bytes": 34359738368,
+    "required_bytes": 257698037760
+  },
+  "output_policy": "mempool-min-logical-2026-10-27-v1",
+  "acceptance_controls": "one skipped allocator page; fill submitted after native_freed",
+  "stages": [
+    "local startup rejection codes: offline node / duplicate rank / missing rank",
+    "default and swapped explicit maps: A/B/C/E and V1-V10",
+    "each map: 5 restart-isolated perf rounds, first excluded",
+    "applied registration reports, per-region page samples and per-NUMA resident bytes",
+    "baseline comparison and all three inherited anomalies; paired cleanup"
+  ],
+  "service_command": [
+    "bash",
+    "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/scripts/run_service.sh",
+    "prefill",
+    "formal"
+  ],
+  "target_environment": {
+    "PREFILL_CAPACITY": "8192",
+    "DECODE_CAPACITY": "128",
+    "CONTEXT_LENGTH": "8448",
+    "MAX_TOTAL_TOKENS": "16384",
+    "PAGE_SIZE": "128",
+    "SKIP_SERVER_WARMUP": "0",
+    "SGLANG_NPU_MEMPOOL_ROUTER_CONFIG": "/home/cryang/log/mempool-min/k1-ticket01-001/prefill/effective-config.json",
+    "SGLANG_NPU_MEMPOOL_ROUTER_RUN_ID": "k1-ticket01-001"
+  }
+}

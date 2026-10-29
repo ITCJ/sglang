@@ -1,0 +1,12 @@
+{
+  "results_commit": "9bb7e186b21963ae355a9d8034733fbea2127aed",
+  "functional_base": "8869c2c605",
+  "production_source_tree": "c90142adfcbed86b00e07487377e82e80981b1c8",
+  "removed_from_current_history": [
+    "7a8a0b955b",
+    "3156916a11"
+  ],
+  "baselinetest_head": "134b22d90d84ae9d957a2bb576ffd20175ccde64",
+  "user_worktree_preserved": true,
+  "remote_push": "not performed"
+}
