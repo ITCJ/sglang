@@ -31,8 +31,8 @@ for ((host=first; host<=last; host++)); do
   ip=$prefix.$host
   target=$ip
   [[ -z $user ]] || target=$user@$ip
-  # Batch mode avoids password prompts; preserve host-key verification.
-  timeout -k 2 15 ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes \
+  # Accept new hosts automatically, but reject changed host keys.
+  timeout -k 2 15 ssh -T -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
     -o ConnectTimeout=5 -o ConnectionAttempts=1 \
     -o ServerAliveInterval=5 -o ServerAliveCountMax=1 \
     "$target" 'bash -s' <"$check" >"$logdir/$ip.out" 2>"$logdir/$ip.err"

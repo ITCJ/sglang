@@ -16,8 +16,9 @@ bash workspace/roce_test/check_subnet.sh <前三段IP> <起始末段> <结束末
 复制到跳板机时保留这两个脚本的相对目录结构。
 
 逐台执行，只读取设备信息，不运行传输、不碰 NPU。每台总超时 15 秒。
-使用现有 SSH 密钥或 agent，不交互询问密码；主机密钥必须已核验并记入 known_hosts。
-`FAIL=AUTH` 表示认证失败，`FAIL=HOST_KEY` 表示主机密钥未信任或发生变化。
+使用现有 SSH 密钥或 agent，不交互询问密码；首次连接自动将主机密钥记入 known_hosts，
+已知密钥变化时拒绝连接。需要支持 `StrictHostKeyChecking=accept-new` 的 OpenSSH。
+`FAIL=AUTH` 表示认证失败，`FAIL=HOST_KEY` 表示主机密钥验证失败。
 每台一行并汇总 `gid_found/no_ipv4_gid/no_active_hca/failed`；
 `GID_FOUND` 只代表枚举到 IPv4 GID，输出同时保留 RoCE 版本，并不代表传输已通过。
 多设备机器同一行列出各个匹配项，设备后面的 `/数字` 是端口号。
