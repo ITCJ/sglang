@@ -2,7 +2,8 @@
 
 本票基于 `993ae38ed6`，复用 NUMA 分配、共享分组和实验映射机制。
 生产服务通过规划会话建池，仍为每 rank 私有副本。
-状态为 **代码交付，等待用户 NPU 验收；State=open**。
+状态为 **用户于2026-10-30确认NPU004验收通过；State=closed**。
+[用户确认与证据范围](verification/k1-ticket02-004-20261030/acceptance.md)。
 
 [按NPU、Ascend、公共主线分组的最终代码清单](code-changes-ticket02.md)。
 
@@ -67,4 +68,4 @@ V3使用独立标准答案，不重启参考服务；V8用真实注册做CPU容�
 历史实现检查见[初次验证](verification/ticket02-cpu-20261029/README.md)与
 [已撤回停机扩展的验证](verification/ticket02-quiesce-cpu-20261029/README.md)。
 最新[恢复默认退出验证](verification/ticket02-default-exit-20261030/README.md)：
-483项CPU、6模块strict mypy及两轴复审通过；本次NPU未执行。
+483项CPU、6模块strict mypy及两轴复审通过；随后用户确认31/32的NPU004验收通过。

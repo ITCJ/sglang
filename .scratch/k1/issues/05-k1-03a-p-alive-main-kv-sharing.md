@@ -2,7 +2,7 @@
 
 **What to build:** P 侧打开 share=1：组 {2k, 2k+1} 共用一份 alive 主 KV，owner 是 rank 2k，两个成员按页分写（默认连续两半，可配）；D 的两个 rank 经各自与 P_i 的连接读同一份，读到的页有一半是对方 P rank 写的；就绪由两个分片的覆盖位图合并得出，释放要等两个读者都停；op1 由组内两分片按页分担填进共享副本，op3 的源改为共享副本；P 侧从 16 份变 8 份，D 侧仍 16 份私有副本。细节见 k1-tickets.md 第 9 节。
 
-**Blocked by:** [01（K1-02a）](01-k1-02a-explicit-numa-mapping.md)、[02（K1-02b）](02-k1-02b-shared-pool-adapter-share0.md)
+**Blocked by:** [01（K1-02a）](01-k1-02a-explicit-numa-mapping.md)、[02（K1-02b）](02-k1-02b-shared-pool-adapter-share0.md)（均已用户验收关闭，依赖已满足）
 
 **Status:** ready-for-agent
 
@@ -17,6 +17,10 @@
 - [ ] 基线表并列，重点看 T_wt_rank、T_ready、T_tail、T_free
 
 ## Comments
+
+### 2026-10-30：前置依赖已满足
+
+用户确认02的NPU004验收，01/02均已closed。本票可开始实现，当前尚未实施或进行本票NPU验收，State保持open。
 
 ### 2026-10-29：同步 syncfile 定稿
 

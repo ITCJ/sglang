@@ -2,7 +2,7 @@
 
 **What to build:** D 侧打开 share=1：组 {2k, 2k+1} 共用一份 alive 主 KV，每层算完两个成员各写新 token 这一层的一半特征维（可配为按层切）；下一步任一成员 swap_in 读到对方写的那一半是正确的。顺序靠写回排在本 rank 本层第一次全员集合通信之前来保证（同流天然成立，单独流则 compute stream 等写回 event），不加跨进程消息；T_step 超出轮间波动再换“本步最后一次全员集合通信前等齐”的放宽版本。D 侧从 16 份变 8 份；不依赖 P 侧共享。细节见 k1-tickets.md 第 10 节。
 
-**Blocked by:** [01（K1-02a）](01-k1-02a-explicit-numa-mapping.md)、[02（K1-02b）](02-k1-02b-shared-pool-adapter-share0.md)
+**Blocked by:** [01（K1-02a）](01-k1-02a-explicit-numa-mapping.md)、[02（K1-02b）](02-k1-02b-shared-pool-adapter-share0.md)（均已用户验收关闭，依赖已满足）
 
 **Status:** ready-for-agent
 
@@ -17,6 +17,10 @@
 - [ ] 基线表并列，重点看 T_step p50 / p99、T_finish、T_free
 
 ## Comments
+
+### 2026-10-30：前置依赖已满足
+
+用户确认02的NPU004验收，01/02均已closed。本票可开始实现，当前尚未实施或进行本票NPU验收，State保持open。
 
 ### 2026-10-29：同步 syncfile 定稿
 

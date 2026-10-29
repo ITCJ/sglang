@@ -1,0 +1,8 @@
+Waiting for peer at 10.120.72.31:18891
+START fetch pid=67130 log=/home/cryang/log/mempool-min/k1-ticket02-004/prefill/fetch/fetch.log
+START router pid=67240 log=/home/cryang/log/mempool-min/k1-ticket02-004/prefill/target/router.log
+START launcher pid=67241 log=/home/cryang/log/mempool-min/k1-ticket02-004/prefill/target/launcher.log
+START router pid=81605 log=/home/cryang/log/mempool-min/k1-ticket02-004/prefill/restart/router.log
+START launcher pid=81606 log=/home/cryang/log/mempool-min/k1-ticket02-004/prefill/restart/launcher.log
+
+用户随后确认：没问题，可以验收

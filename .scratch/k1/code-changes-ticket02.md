@@ -48,4 +48,4 @@
 | [test_mempool_session_acceptance.py](../../ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py) | 两轮CLI、证据缺失、真实注册容量重放和端口释放 |
 
 记忆与交付文档不计入功能源码；退出偏好记录于仓库 [AGENTS.md](../../AGENTS.md)。
-[本轮验证](verification/ticket02-default-exit-20261030/README.md)：483项CPU、6模块strict mypy、两轴审查通过；NPU待用户确认。
+[本轮验证](verification/ticket02-default-exit-20261030/README.md)：483项CPU、6模块strict mypy、两轴审查通过；用户已确认NPU004验收通过，02已关闭。
