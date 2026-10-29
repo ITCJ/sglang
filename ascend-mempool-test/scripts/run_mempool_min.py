@@ -28,6 +28,7 @@ import verify_mempool_full
 import verify_mempool_min
 import verify_mempool_prefix
 import verify_mempool_reuse
+import verify_mempool_session
 import verify_service
 from run_ticket10 import (
     available_port,
@@ -100,6 +101,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "reuse-acceptance",
             "full-acceptance",
             "numa-acceptance",
+            "session-acceptance",
         ),
         required=True,
     )
@@ -158,6 +160,8 @@ def service_environment(
     )
     if target:
         env[CONFIG_ENV], env[RUN_ENV] = str(args.config), args.run_id
+        if args.mode == "session-acceptance":
+            env["MEMPOOL_SERVICE_PROCESS"] = "1"
         if getattr(args, "rank_numa_map", None) is not None:
             env["MEMPOOL_RANK_NUMA_MAP"] = str(args.rank_numa_map)
             env.pop("SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE", None)
@@ -216,7 +220,8 @@ class Runner:
         self, args: argparse.Namespace, config: RouterConfig, peer: Peer, root: Path
     ) -> None:
         self.args, self.config, self.peer, self.root = args, config, peer, root
-        self.full = args.mode == "full-acceptance"
+        self.session_acceptance = args.mode == "session-acceptance"
+        self.full = args.mode in ("full-acceptance", "session-acceptance")
         self.tokenizer: Any = None
         self.is_p = args.role == "prefill"
         self.host = config.prefill_host if self.is_p else config.decode_host
@@ -224,7 +229,9 @@ class Runner:
             status="running",
             role=args.role,
             mode=args.mode,
-            coverage="ticket04 complete sparse stage0/L0"
+            coverage="K1-02 reduced functional acceptance"
+            if self.session_acceptance
+            else "ticket04 complete sparse stage0/L0"
             if self.full
             else "ticket03 prefix restore and suffix"
             if config.match_prefix
@@ -383,12 +390,11 @@ class Runner:
             "--topk",
             "2048",
             "--block-dims",
-            "24",
             "48",
             "--replay-cycles",
-            "2",
+            "1",
             "--warmup",
-            "3",
+            "1",
             "--timeout",
             str(self.config.operation_timeout),
             "--report",
@@ -569,8 +575,21 @@ class Runner:
         self.report["timeout_fail_stop"] = evidence
         self.report["paired_process_cleanup"] = "passed; both owned groups stopped"
 
-    def stage(self, *, target: bool, fault_only: bool = False) -> None:
-        name = "timeout" if fault_only else "target" if target else "reference"
+    def stage(
+        self, *, target: bool, fault_only: bool = False, restart: bool = False
+    ) -> None:
+        name = (
+            "restart"
+            if restart
+            else "timeout"
+            if fault_only
+            else "target"
+            if target
+            else "reference"
+        )
+        inject_fault = target and (
+            not self.full or fault_only or (self.session_acceptance and not restart)
+        )
         root = self.root / name
         env = service_environment(self.config, self.args, root, target=target)
         self.peer.barrier(name + "-start")
@@ -648,6 +667,16 @@ class Runner:
                 from mempool_numa_runner import archive_registration
 
                 archive_registration(self, root, request_json(base + "/status"))
+            if self.session_acceptance and self.is_p:
+                registrations = request_json(base + "/status")["registrations"]
+                write_json(root / "registrations.json", registrations)
+                verify_mempool_session.check_registration(registrations)
+                write_json(
+                    root / "capacity-replay.json",
+                    verify_mempool_session.capacity_check(
+                        self.config, self.args.run_id, registrations
+                    ),
+                )
             if self.args.mode == "serve":
                 print(
                     f"SERVING {self.args.role}; unified entry: {base}/generate",
@@ -699,8 +728,12 @@ class Runner:
                                 mempool_logical_cases.compare_answers(
                                     case, self.reference[index], result
                                 )
-                                if target
-                                else mempool_logical_cases.answer(case, result)
+                                if target and not self.session_acceptance
+                                else dict(
+                                    mempool_logical_cases.answer(case, result),
+                                    case=case["name"],
+                                    policy=mempool_logical_cases.POLICY,
+                                )
                             )
                             write_json(root / "answers.json", answers)
                         verify_mempool_min.check_response(case, result)
@@ -795,7 +828,7 @@ class Runner:
                         if message != dict(action="snapshot"):
                             raise ValueError("unknown runner action")
                         send_log(self.peer, root / "decode.log")
-            if target and (not self.full or fault_only):
+            if inject_fault:
                 # Freeze the successful normal logs before the intentional fault.
                 if not fault_only:
                     for role in ("prefill", "decode") if self.is_p else ("decode",):
@@ -803,12 +836,54 @@ class Runner:
                             (root / f"{role}.log").read_bytes()
                         )
                 self.timeout_case(jobs, server, root, base)
+            if self.session_acceptance and restart:
+                self.close_session(server, jobs, root)
         self.peer.barrier(name + "-stopped")
-        if target and (not self.full or fault_only):
+        if inject_fault:
             self.final_timeout_evidence(root)
+        if self.session_acceptance:
+            ports = {
+                self.config.prefill_port if self.is_p else self.config.decode_port,
+                *range(25670, 25702),
+            }
+            if self.is_p:
+                ports.update(
+                    {
+                        self.config.main_port,
+                        self.config.control_port,
+                        *range(19000, 19016),
+                    }
+                )
+            for port in ports:
+                verify_mempool_session.released_port(self.host, port)
+            self.peer.barrier(name + "-ports-released")
+            write_json(
+                root / "ports-released.json",
+                dict(status="passed", paired=True, ports=sorted(ports)),
+            )
         write_json(root / "process-cleanup.json", dict(status="passed", paired=True))
         self.report["stages"].append(name)
         write_json(self.root / "summary.json", self.report)
+
+    def close_session(
+        self, server: subprocess.Popen[bytes], jobs: Processes, root: Path
+    ) -> None:
+        """Stop D clients before their P Store, after all requests received free_ack."""
+        if not self.is_p:
+            server.terminate()
+            jobs.wait(
+                "decode graceful shutdown", server, timeout=60, check=self.peer.check
+            )
+        self.peer.barrier("decode-session-closed")
+        if self.is_p:
+            server.terminate()
+            jobs.wait(
+                "prefill graceful shutdown", server, timeout=60, check=self.peer.check
+            )
+            receive_log(self.peer, root / "decode.log")
+        else:
+            send_log(self.peer, root / "decode.log")
+        self.peer.barrier("prefill-session-closed")
 
     def capacity_stage(self) -> None:
         """Reject a real TP registration with one deliberately limited rank."""
@@ -894,7 +969,7 @@ class Runner:
         write_json(root / "process-cleanup.json", dict(status="passed", paired=True))
         self.report["stages"].append("capacity")
 
-    def run_full(self) -> None:
+    def prepare_full_cases(self) -> None:
         if self.is_p:
             from transformers import AutoTokenizer
 
@@ -913,6 +988,22 @@ class Runner:
             receive_log(self.peer, self.root / "cases.json")
             self.cases = json.loads((self.root / "cases.json").read_text())
         self.peer.barrier("fixtures-ready")
+
+    def run_session(self) -> None:
+        self.prepare_full_cases()
+        self.components()
+        for phase in verify_mempool_session.SERVICE_STAGES:
+            self.stage(target=True, restart=phase == "restart")
+        if self.is_p:
+            acceptance = verify_mempool_session.summarize(self.root)
+            self.peer.send("session-result", acceptance=acceptance)
+        else:
+            acceptance = self.peer.expect("session-result")["acceptance"]
+        write_json(self.root / "session-acceptance.json", acceptance)
+        self.report.update(status="passed", acceptance=acceptance, user_accepted=False)
+
+    def run_full(self) -> None:
+        self.prepare_full_cases()
         self.components()
         self.stage(target=False)
         self.stage(target=True)
@@ -942,6 +1033,9 @@ class Runner:
             from mempool_numa_runner import run
 
             run(self)
+            return
+        if self.session_acceptance:
+            self.run_session()
             return
         if self.full:
             self.run_full()
@@ -983,13 +1077,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         "reuse-acceptance",
         "full-acceptance",
         "numa-acceptance",
+        "session-acceptance",
     ):
         config = msgspec.structs.replace(
             config,
             prefix_pages=40,
             verify_prefix=True,
             match_prefix=args.mode
-            in ("reuse-acceptance", "full-acceptance", "numa-acceptance"),
+            in (
+                "reuse-acceptance",
+                "full-acceptance",
+                "numa-acceptance",
+                "session-acceptance",
+            ),
         )
     elif args.mode == "acceptance" and config.prefix_pages:
         raise ValueError(
@@ -1006,14 +1106,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                     logs=str(root),
                     memory_budget=memory_budget(config, args.role),
                     output_policy=mempool_logical_cases.POLICY
-                    if args.mode in ("full-acceptance", "numa-acceptance")
+                    if args.mode
+                    in ("full-acceptance", "numa-acceptance", "session-acceptance")
                     else "strict full output IDs",
                     acceptance_controls=(
                         "one skipped allocator page; fill submitted after native_freed"
                         if config.match_prefix and config.verify_prefix
                         else "none"
                     ),
+                    service_rounds=len(verify_mempool_session.SERVICE_STAGES)
+                    if args.mode == "session-acceptance"
+                    else None,
                     stages=[
+                        "paired preflight; one P/D/mixed fetch smoke (48, one replay)",
+                        "round 1: ABCE + load/EOS, registration and accounting, then fail-stop",
+                        "round 2: same-port restart, ABCE + load/EOS, normal shutdown",
+                        "independent answers; capacity rejection CPU replay; paired port cleanup",
+                    ]
+                    if args.mode == "session-acceptance"
+                    else [
                         "local startup rejection codes: offline node / duplicate rank / missing rank",
                         "default and swapped explicit maps: A/B/C/E and V1-V10",
                         "applied registration reports, per-region page samples and per-NUMA resident bytes",

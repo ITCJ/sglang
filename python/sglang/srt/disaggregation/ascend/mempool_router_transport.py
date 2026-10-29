@@ -178,6 +178,7 @@ def attach_subrouter(
         numa_node=runtime.manager.numa_node,
         numa_placement_verified=False,
         replicas=config.replicas(),
+        replica_locations=runtime.manager.replica_registration(),
         graph=not args.disable_cuda_graph,
     )
     if runtime.config.numa.rank_map is not None:

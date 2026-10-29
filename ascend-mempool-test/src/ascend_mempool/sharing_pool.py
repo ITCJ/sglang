@@ -125,12 +125,12 @@ class SharingPool(MempoolKVManager):
         self.tp_size = plan.tp_size
         self.participant = side * self.tp_size + member if mode == "shared" else side
         self.world_size = len(plan.participants(mode))
-        self.contribution = plan.contributions(mode)[side * self.tp_size + member]
+        contribution = plan.contributions(mode)[side * self.tp_size + member]
         self.events: list[dict[str, Any]] = []
         layout = plan.layout()
         handle = bm.create2(
             id=pool_id,
-            local_dram_size=self.contribution,
+            local_dram_size=contribution,
             max_dram_size=layout.rank_stride_bytes,
             local_hbm_size=0,
             max_hbm_size=0,
@@ -142,6 +142,8 @@ class SharingPool(MempoolKVManager):
         super().__init__(layout, side, handle, bm)
         self._handle: Any = handle
         self.numa_node = numa_node
+        self.contribution = contribution
+        self.owners = tuple(plan.owner(mode, side=s, member=member) for s in (0, 1))
 
     def join(self, timeout: float = 120.0) -> None:
         if self._closed or self._joined:
@@ -159,51 +161,12 @@ class SharingPool(MempoolKVManager):
         self.check(
             self._handle.set_group_event_handler(record), "set_group_event_handler"
         )
-        self.check(self._handle.join(), "join")
-        self._joined = True
-        actual = self._handle.local_mem_size(self._bm.BmMemType.HOST)
-        if actual != self.contribution:
-            raise RuntimeError(f"physical contribution {actual} != {self.contribution}")
-        self._wait_for_mappings(timeout)
+        super().join(timeout)
 
     @staticmethod
     def check(result: Any, operation: str) -> None:
         if result not in (None, 0):
             raise RuntimeError(f"BM {operation} failed: {result}")
-
-    def _mapped_bases(self) -> dict[int, tuple[int, int]] | None:
-        bases = {}
-        first_gva = self._handle.peer_rank_ptr(0, self._bm.BmMemType.HOST)
-        for side in (0, 1):
-            owner = self.plan.owner(self.mode, side=side, member=self.member)
-            gva = self._handle.peer_rank_ptr(owner, self._bm.BmMemType.HOST)
-            va = (
-                self._handle.gva_to_va(gva, self._bm.BmMemType.LOCAL_DEVICE)
-                if gva
-                else 0
-            )
-            if not first_gva or not va:
-                self._mapping_pending = f"owner={owner} gva={gva:#x} va={va:#x}"
-                return None
-            if gva - first_gva != owner * self.layout.rank_stride_bytes:
-                raise RuntimeError("owner GVA differs from participant stride")
-            layout = self.layout.layout_for_rank(side)
-            offsets = {self.layout.contribution_bytes(side) - 1}
-            for layer in range(layout.layers):
-                offsets.update(
-                    (layer * layout.layer_bytes, (layer + 1) * layout.layer_bytes - 1)
-                )
-            for offset in offsets:
-                mapped = self._handle.gva_to_va(
-                    gva + offset, self._bm.BmMemType.LOCAL_DEVICE
-                )
-                if not mapped:
-                    self._mapping_pending = f"owner={owner} offset={offset}"
-                    return None
-                if mapped != va + offset:
-                    raise RuntimeError("owner device mapping is not contiguous")
-            bases[side] = (gva, va)
-        return bases
 
     def rejoin_follower(self, timeout: float) -> None:
         """Caller first drains ALL participants; exercise SDK group rebuilding."""

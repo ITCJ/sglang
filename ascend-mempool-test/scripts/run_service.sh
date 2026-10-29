@@ -146,4 +146,8 @@ mkdir -p "$LOG_DIR"
     cp "$MODEL_PATH/config.json" "$LOG_DIR/$role-model-config.json"
     cp "$MODEL_PATH/quant_model_description.json" "$LOG_DIR/$role-quant-model-description.json"
 } > "$LOG_DIR/$role-environment.txt" 2>&1
+if [[ "${MEMPOOL_SERVICE_PROCESS:-0}" == 1 ]]; then
+    # The acceptance runner signals the server parent for graceful ShutdownReq.
+    exec "${common[@]}" > "$LOG_DIR/$role.log" 2>&1
+fi
 "${common[@]}" 2>&1 | tee "$LOG_DIR/$role.log"

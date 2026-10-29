@@ -1,0 +1,22 @@
+START launcher pid=50963 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpk91jl4op/reference/launcher.log
+START reference-router pid=50964 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpk91jl4op/reference/reference-router.log
+START worker pid=50968 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpnm5hla3_/prefill/worker.log
+START worker pid=50969 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpnm5hla3_/decode/worker.log
+mempool_router fail-stop: SR heartbeat timeout
+START launcher pid=51010 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpw8wixdi6/reference/launcher.log
+START reference-router pid=51011 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpw8wixdi6/reference/reference-router.log
+START launcher pid=51047 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpwoattdmm/reference/launcher.log
+START reference-router pid=51048 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpwoattdmm/reference/reference-router.log
+mempool acceptance_capacity data={"run_id": "cpu", "rank": 15, "actual_hbm_pages": 128, "advertised_hbm_pages": 64, "required_hbm_pages": 65}
+START launcher pid=51067 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpr76t11he/decode/timeout/launcher.log
+START router pid=51068 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpr76t11he/prefill/timeout/router.log
+START launcher pid=51069 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpr76t11he/prefill/timeout/launcher.log
+mempool_router fail-stop: SR heartbeat timeout
+START router pid=51122 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmp38_yp6z2/prefill/capacity/router.log
+START launcher pid=51124 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmp38_yp6z2/prefill/capacity/launcher.log
+mempool_router fail-stop: SR native capacities do not cover the configured limits
+START launcher pid=51125 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmp38_yp6z2/decode/capacity/launcher.log
+----------------------------------------------------------------------
+Ran 35 tests in 7.627s
+
+OK

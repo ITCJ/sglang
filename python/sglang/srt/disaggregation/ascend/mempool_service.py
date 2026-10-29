@@ -11,7 +11,6 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 import msgspec
-
 from sglang.srt.hardware_backend.npu.mempool.runtime import (
     KVRowBinding,
     KVWriteExpectation,
@@ -108,7 +107,6 @@ class MempoolPDService:
         import threading
 
         import torch
-
         from sglang.srt.environ import envs
         from sglang.srt.utils.network import NetworkAddress
 
@@ -559,9 +557,19 @@ class MempoolPDService:
                     cancel=record.cancel
                     or (state is not None and state.phase == "CANCELLING"),
                     native_freed=record.native_freed,
+                    write_range=self._written_range(record, row),
                 )
             )
         return facts
+
+    def _written_range(self, record: _Request, row: int | None) -> tuple[int, int]:
+        if row is not None:
+            written: tuple[int, int] = self.runtime.written_range(row)
+            return written
+        if record.receipt is not None:
+            start = record.receipt.binding.write_start
+            return start, start + record.receipt.completed
+        return 0, 0
 
     def _prefill_ready(self, record: _Request, row: int | None, done: bool) -> bool:
         """Join independent alive ranges, including after native row detachment."""
@@ -570,12 +578,7 @@ class MempoolPDService:
             if row is not None
             else (record.receipt.binding if record.receipt is not None else None)
         )
-        start, end = (0, 0)
-        if row is not None:
-            start, end = self.runtime.written_range(row)
-        elif record.receipt is not None:
-            start = record.receipt.binding.write_start
-            end = start + record.receipt.completed
+        start, end = self._written_range(record, row)
         shard = self.subrouter.shard if self.subrouter is not None else None
         hit = (
             shard.request["hit_len"]
@@ -746,6 +749,23 @@ class MempoolPDService:
         """Keep scheduler idle/sleep checks aware of persistent ownership and cleanup."""
         return any(not r.native_freed for r in self._requests.values()) or (
             self.control.has_pending_requests()
+        )
+
+    def close(self) -> None:
+        """Release BM on graceful idle exit; faulted workers retain it until exit."""
+        if self.fault is not None or self.has_pending_work():
+            raise RuntimeError("mempool shutdown requires completed request drains")
+        self.runtime.manager.close(drain=self._synchronize)
+        logger.info(
+            "mempool session_closed data=%s",
+            json.dumps(
+                dict(
+                    role=self.control.local.role,
+                    rank=self.control.local.tp_rank,
+                    status="passed",
+                    release="drain/leave/destroy/BM uninitialize",
+                )
+            ),
         )
 
     def bootstrap_failed(self, req: Any) -> None:

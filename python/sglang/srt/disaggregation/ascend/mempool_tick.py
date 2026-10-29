@@ -33,6 +33,7 @@ class RequestObservation(msgspec.Struct, frozen=True):
     host_drained: bool = False
     cancel: bool = False
     native_freed: bool = False
+    write_range: tuple[int, int] = (0, 0)
 
 
 class _RequestState(msgspec.Struct, frozen=True):

@@ -12,7 +12,6 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
-from urllib.parse import urlsplit
 
 import msgspec
 
@@ -21,6 +20,7 @@ from .layout import KVLayout, PoolLayout, check_index
 from .sharing_plan import (
     NUMA_ENV,
     MempoolNumaConfig,
+    PoolSession,
     contiguous_numa_node,
     parse_numa_nodes,
 )
@@ -82,10 +82,10 @@ class BMHandle(Protocol):
 
 
 class MempoolKVManager:
-    """Own one BM pool and optionally its process-wide BM rank-pair context."""
+    """Own one mapped pool and its process-wide multi-member BM session."""
 
-    _rank_pair_lock = threading.Lock()
-    _rank_pair_active = False
+    _session_lock = threading.Lock()
+    _session_active = False
 
     def __init__(
         self, layout: PoolLayout, rank: int, handle: BMHandle, bm_module: Any
@@ -102,6 +102,9 @@ class MempoolKVManager:
         self._owns_bm_context = False
         self._mapping_pending = "not checked"
         self.numa_node = -1
+        self.session: PoolSession | None = None
+        self.owners = (0, 1)
+        self.contribution = layout.contribution_bytes(rank)
 
     @classmethod
     def create(
@@ -115,31 +118,41 @@ class MempoolKVManager:
         tp_size: int = 16,
         numa: MempoolNumaConfig | None = None,
         host: str = "",
+        session: PoolSession | None = None,
     ) -> MempoolKVManager:
         """Allocate DRAM using contiguous NUMA blocks for this host's TP ranks.
 
         The current rank-pair service has all 16 ranks on each host. Component
         callers with a different local rank count must supply tp_size explicitly.
         """
-        numa = numa or MempoolNumaConfig.from_environment()
-        numa.require_rank_pair_startup()
-        numa.validate_local_map(host, tp_size)
-        layout.layout_for_rank(rank)
-        numa_nodes = () if numa.rank_map is not None else _configured_numa_nodes()
-        numa_node = -1
-        if numa.rank_map is not None:
-            numa_node = next(a.numa_node for a in numa.rank_map if a.rank == tp_rank)
-        elif numa_nodes:
-            if type(tp_rank) is not int or tp_rank < 0:
-                raise ValueError(
-                    f"{_NUMA_NODE_ENV} requires a nonnegative integer tp_rank"
+        numa_nodes: tuple[int, ...]
+        if session is not None:
+            numa_node = session.numa_node
+            numa_nodes = ()
+        else:
+            numa = numa or MempoolNumaConfig.from_environment()
+            numa.require_rank_pair_startup()
+            numa.validate_local_map(host, tp_size)
+            layout.layout_for_rank(rank)
+            numa_nodes = () if numa.rank_map is not None else _configured_numa_nodes()
+            numa_node = -1
+            if numa.rank_map is not None:
+                numa_node = next(
+                    a.numa_node for a in numa.rank_map if a.rank == tp_rank
                 )
-            numa_node = contiguous_numa_node(numa_nodes, tp_rank, tp_size)
+            elif numa_nodes:
+                if type(tp_rank) is not int or tp_rank < 0:
+                    raise ValueError(
+                        f"{_NUMA_NODE_ENV} requires a nonnegative integer tp_rank"
+                    )
+                numa_node = contiguous_numa_node(numa_nodes, tp_rank, tp_size)
         # MF's performance bit enables the NUMA ID in the low seven bits.
         bm_flags = 0 if numa_node == -1 else (1 << 7) | numa_node
         if bm_module is None:
             bm_module = importlib.import_module("memfabric_hybrid").bm
-        local_bytes = layout.contribution_bytes(rank)
+        local_bytes = (
+            session.contribution if session else layout.contribution_bytes(rank)
+        )
         logger.info(
             "Creating mempool BM pool: bm_rank=%d pool_id=%d "
             "local_dram_bytes=%d rank_stride_bytes=%d "
@@ -182,62 +195,35 @@ class MempoolKVManager:
         logger.info("Mempool BM pool created: bm_rank=%d pool_id=%d", rank, pool_id)
         manager = cls(layout, rank, handle, bm_module)
         manager.numa_node = numa_node
+        manager.session = session
+        if session is not None:
+            manager.owners = session.owners
+            manager.contribution = session.contribution
         return manager
 
     @classmethod
-    def initialize_rank_pair(
+    def initialize_session(
         cls,
         *,
-        layout: PoolLayout,
-        tp_rank: int,
-        role: str,
+        session: PoolSession,
         store_host: str,
-        base_port: int,
+        nic_host: str,
         device_id: int,
-        nic_url: str,
         timeout: float = 120.0,
-        pool_id: int = 0,
         bm_module: Any = None,
-        numa: MempoolNumaConfig | None = None,
     ) -> MempoolKVManager:
-        """Start this worker's two-rank BM session and join its mapped KV pool.
-
-        P_i starts the store at base_port+i as BM rank 0; D_i connects to the
-        same store as rank 1 after waiting up to timeout for its TCP listener.
-        The caller initializes process-wide MF before this call and keeps it
-        alive for any TransferEngine users. One TP worker process owns only
-        one BM rank-pair context in this demo.
-        """
-        numa = numa or MempoolNumaConfig.from_environment()
-        numa.require_rank_pair_startup()
-        host = urlsplit(nic_url).hostname or ""
-        numa.validate_local_map(host)
-        if type(tp_rank) is not int or not 0 <= tp_rank < 16:
-            raise ValueError("tp_rank must be an integer in [0, 16)")
-        if role not in ("prefill", "decode"):
-            raise ValueError("role must be 'prefill' or 'decode'")
-        if type(base_port) is not int or not 1 <= base_port <= 65535 - 15:
-            raise ValueError("base_port must leave 16 consecutive TCP ports available")
-        if type(device_id) is not int or device_id < 0:
-            raise ValueError("device_id must be a nonnegative integer")
-        # MF 1.1 TransferEngine entities start at 256; keep BM IDs below them.
-        if type(pool_id) is not int or not 0 <= pool_id < 256:
-            raise ValueError("pool_id must be an integer in [0, 256)")
-        if not isinstance(store_host, str) or not store_host.strip():
-            raise ValueError("store_host must be a nonempty P host address")
-        if not isinstance(nic_url, str) or not nic_url.strip():
-            raise ValueError("nic_url must be a nonempty MF NIC URL")
-        if not math.isfinite(timeout) or timeout <= 0:
-            raise ValueError("mapping timeout must be finite and positive")
-        if layout.prompt.slots != 16:
-            raise ValueError("rank-pair startup requires 16 physical KV slots")
-
-        rank = 0 if role == "prefill" else 1
+        """Initialize, allocate and map a planned session; retain MF for TransferEngine."""
+        rank = session.participant
+        role = "prefill" if session.side == 0 else "decode"
+        tp_rank = session.tp_rank
+        nic_address = f"[{nic_host}]" if ":" in nic_host else nic_host
+        store_address = f"[{store_host}]" if ":" in store_host else store_host
+        nic_url = f"tcp://{nic_address}:{session.nic_base_port}"
         if bm_module is None:
             bm_module = importlib.import_module("memfabric_hybrid").bm
-        with cls._rank_pair_lock:
-            if cls._rank_pair_active:
-                raise RuntimeError("This worker already owns a BM rank pair")
+        with cls._session_lock:
+            if cls._session_active:
+                raise RuntimeError("This worker already owns a BM session")
             config = bm_module.BmConfig()
             config.auto_ranking = False
             config.rank_id = rank
@@ -246,15 +232,15 @@ class MempoolKVManager:
                 math.ceil(timeout)
             )
             config.set_nic(nic_url)
-            store_port = base_port + tp_rank
-            store_url = f"tcp://{store_host}:{store_port}"
-            if rank == 1:
+            store_port = session.store_port
+            store_url = f"tcp://{store_address}:{store_port}"
+            if rank != 0:
                 # MF 1.1's initial TCP connect retries ignore config.init_timeout.
                 # P may still be loading weights when D reaches this point.
                 with startup_stage("bm.wait_store", tp_rank=tp_rank, store=store_url):
                     cls._wait_for_store(store_host, store_port, timeout)
             logger.info(
-                "Initializing mempool BM pair: role=%s tp_rank=%d pid=%d "
+                "Initializing mempool BM session: role=%s tp_rank=%d pid=%d "
                 "device_id=%d store=%s nic=%s",
                 role,
                 tp_rank,
@@ -271,12 +257,14 @@ class MempoolKVManager:
                 device_id=device_id,
                 store=store_url,
                 nic=nic_url,
-                world_size=2,
+                world_size=session.world_size,
                 auto_ranking=False,
                 start_store=rank == 0,
                 sdk_timeout=math.ceil(timeout),
             ):
-                ret = bm_module.initialize(store_url, 2, device_id, config)
+                ret = bm_module.initialize(
+                    store_url, session.world_size, device_id, config
+                )
                 logger.info(
                     "Mempool BM initialize returned: role=%s tp_rank=%d ret=%d",
                     role,
@@ -291,13 +279,12 @@ class MempoolKVManager:
                 if bm_module.bm_rank_id() != rank:
                     raise RuntimeError("BM initialized with an unexpected rank ID")
                 manager = cls.create(
-                    layout,
-                    rank,
-                    pool_id,
+                    session.layout,
+                    session.side,
+                    session.pool_id,
                     bm_module,
                     tp_rank=tp_rank,
-                    numa=numa,
-                    host=host,
+                    session=session,
                 )
                 manager.join(timeout)
             except Exception:
@@ -309,7 +296,7 @@ class MempoolKVManager:
                         bm_module.uninitialize()
                 raise
             manager._owns_bm_context = True
-            cls._rank_pair_active = True
+            cls._session_active = True
             return manager
 
     @staticmethod
@@ -370,7 +357,7 @@ class MempoolKVManager:
         self._joined = True
         with startup_stage("bm.inspect_pool", bm_rank=self.rank):
             actual_bytes = self._handle.local_mem_size(self._bm.BmMemType.HOST)
-            if actual_bytes != self.layout.contribution_bytes(self.rank):
+            if actual_bytes != self.contribution:
                 raise RuntimeError(f"BM local contribution mismatch: {actual_bytes}")
             logger.info(
                 "Mempool BM join returned: bm_rank=%d local_dram_bytes=%d p_gva=%#x d_gva=%#x; "
@@ -423,17 +410,20 @@ class MempoolKVManager:
 
     def _mapped_bases(self) -> dict[int, tuple[int, int]] | None:
         """Check stride and device-contiguous layer ranges, or retry incomplete maps."""
+        first = self._handle.peer_rank_ptr(0, self._bm.BmMemType.HOST)
         gvas = [
-            self._handle.peer_rank_ptr(rank, self._bm.BmMemType.HOST) for rank in (0, 1)
+            self._handle.peer_rank_ptr(owner, self._bm.BmMemType.HOST)
+            for owner in self.owners
         ]
-        if not all(gvas):
-            self._mapping_pending = f"p_gva={gvas[0]:#x} d_gva={gvas[1]:#x}"
+        if not first or not all(gvas):
+            self._mapping_pending = f"owner_gvas={gvas}"
             return None
-        if gvas[1] - gvas[0] != self.layout.rank_stride_bytes:
+        if any(
+            gva - first != owner * self.layout.rank_stride_bytes
+            for owner, gva in zip(self.owners, gvas)
+        ):
             raise RuntimeError("BM GVA rank stride differs from the common maximum")
         bases = {}
-        # Sample each layer's first/last byte and the allocation end to check
-        # that their device addresses equal device_va + offset.
         for rank, gva in enumerate(gvas):
             device_va = self._handle.gva_to_va(gva, self._bm.BmMemType.LOCAL_DEVICE)
             if not device_va:
@@ -457,6 +447,27 @@ class MempoolKVManager:
                     raise RuntimeError("BM layer mapping is not device-contiguous")
             bases[rank] = gva, device_va
         return bases
+
+    def replica_registration(self) -> dict[str, Any]:
+        """Describe each local replica with the session's physical owner and members."""
+        session = self.session
+        assert session is not None
+        return {
+            name: dict(
+                replica=session.members[0],
+                owner=session.members[0],
+                members=list(session.members),
+                numa_node=self.numa_node,
+                session=session.identity,
+                participant=session.participant,
+                owner_participant=session.owners[self.rank],
+                world_size=session.world_size,
+                store_port=session.store_port,
+                nic_port=session.nic_base_port + session.participant,
+                bytes=geometry.total_bytes,
+            )
+            for name, (_, geometry) in self.layout.regions(self.rank).items()
+        }
 
     def placement_registration(self, tp_rank: int, host: str) -> dict[str, Any]:
         """Describe this owner's replicas and query only its local BM contribution."""
@@ -561,10 +572,10 @@ class MempoolKVManager:
             self._handle.destroy()
         self._closed = True
         if self._owns_bm_context:
-            with type(self)._rank_pair_lock:
+            with type(self)._session_lock:
                 with startup_stage("bm.uninitialize", bm_rank=self.rank):
                     self._bm.uninitialize()
-                type(self)._rank_pair_active = False
+                type(self)._session_active = False
 
 
 class MempoolKVView(msgspec.Struct, frozen=True):

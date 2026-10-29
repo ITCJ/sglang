@@ -1,0 +1,6 @@
+START prefill pid=58398 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmp6bv2bgaf/prefill/prefill.log
+START decode pid=58399 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmp6bv2bgaf/decode/decode.log
+----------------------------------------------------------------------
+Ran 5 tests in 0.686s
+
+OK

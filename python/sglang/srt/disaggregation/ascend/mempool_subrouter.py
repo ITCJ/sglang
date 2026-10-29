@@ -7,6 +7,7 @@ operation. Each idle/busy scheduler tick uses the same two all-gathers.
 from __future__ import annotations
 
 import copy
+import json
 import logging
 import time
 from collections import deque
@@ -16,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from sglang.srt.hardware_backend.npu.mempool.prefix import PrefixStore
 
+from .mempool_accounting import PromptCoverage, ReplicaReaders
 from .mempool_control import MempoolPDControl
 from .mempool_native_reservation import NativeReservations
 from .mempool_prefill_restore import PrefillRestore
@@ -56,6 +58,9 @@ class RouterShard:
         self.prefix = prefix
         self.restore = restore
         self.fill_complete = False
+        self.coverage: PromptCoverage | None = None
+        self.readers = ReplicaReaders(())
+        self.last_coverage: dict[str, Any] | None = None
         if type(page_size) is not int or page_size <= 0:
             raise ValueError("SR requires a positive token page_size")
         if any(
@@ -192,6 +197,20 @@ class RouterShard:
             if self.restore is not None:
                 self.restore.begin_request(request, slot=slot)
             self.fill_complete = request.get("hit_len", 0) == 0
+            self.readers = ReplicaReaders(
+                [(i,) for i in range(self.control.local.tp_size)]
+            )
+            self.coverage = (
+                PromptCoverage(
+                    request["prompt_tokens"],
+                    request.get("hit_len", 0),
+                    self.page_size,
+                    self.control.local.tp_size,
+                )
+                if role == "prefill"
+                else None
+            )
+            self.last_coverage = None
             result["message"] = native_wire(message)
             result["slot"] = slot
             capacity = (
@@ -245,7 +264,22 @@ class RouterShard:
                     self.prefix.release_source(command["rid"])
                 if self.restore is not None:
                     self.restore.finish_request()
-                result.update(freed=True, native_freed=True)
+                result.update(
+                    freed=True,
+                    native_freed=True,
+                    readers_remaining=self.readers.counts[rank],
+                )
+                logger.info(
+                    "mempool free_accounting data=%s",
+                    json.dumps(
+                        dict(
+                            rid=command["rid"],
+                            role=role,
+                            rank=rank,
+                            readers_remaining=self.readers.counts[rank],
+                        )
+                    ),
+                )
                 self.request = self.dispatch = self.identity = self.req = None
                 self.sent_events.clear()
             else:
@@ -398,6 +432,7 @@ class RouterShard:
         *,
         restored: bool = True,
         filled: bool = True,
+        ready_tokens: int = 0,
     ) -> list[dict[str, Any]]:
         """Advance only facts agreed by all ranks; receipts outlive native rows."""
         if self.identity is None or self.dispatch is None:
@@ -421,7 +456,12 @@ class RouterShard:
         if role == "prefill":
             if state.phase == "BOUND" and present and restored:
                 self.control.start_prefill(self.identity)
-            elif state.phase == "PREFILLING" and all_fact("prompt_ready") and filled:
+            elif (
+                state.phase == "PREFILLING"
+                and ready_tokens == state.prompt_limit
+                and all_fact("writes_done")
+                and filled
+            ):
                 self.control.finish_prefill_writes(self.identity)
                 ready = self.control.publish_kv_ready(self.identity, state.prompt_limit)
                 events.append(event("ready_tokens", message=native_wire(ready)))
@@ -515,7 +555,7 @@ class MempoolSubrouter:
                 state=state,
                 registration=registration,
                 restored=self.shard.restore is None or self.shard.restore.ready,
-                filled=self.shard.restore is None or self.shard.fill_complete,
+                filled=self.shard.fill_complete,
                 fault=fault or self.fault or control.snapshot().protocol_fault,
             )
         )
@@ -560,8 +600,38 @@ class MempoolSubrouter:
                 next((f for f in o["facts"] if f.room == room), None)
                 for o in observations
             ]
+            coverage = self.shard.coverage
+            ready_tokens = 0
+            if coverage is not None:
+                for rank, (fact, observation) in enumerate(
+                    zip(common_facts, observations)
+                ):
+                    if fact is not None:
+                        coverage.observe(
+                            rank,
+                            fact.write_range[0],
+                            fact.write_range[1],
+                            observation["filled"],
+                        )
+                progress = coverage.snapshot()
+                ready_tokens = progress["ready_tokens"]
+                if leader and progress != self.shard.last_coverage:
+                    assert self.shard.request is not None
+                    logger.info(
+                        "mempool ready_accounting data=%s",
+                        json.dumps(dict(rid=self.shard.request["rid"], **progress)),
+                    )
+                self.shard.last_coverage = progress
+            for rank, fact in enumerate(common_facts):
+                if fact is not None and fact.drained and fact.writes_done:
+                    self.shard.readers.stopped(rank)
             if self.pending:
                 command = self.pending[0]
+                if command["kind"] == "free" and control.local.role == "prefill":
+                    # Main sends P free only after every D reader has drained and
+                    # finished. Keep the existing native/source gates below.
+                    for rank in range(control.local.tp_size):
+                        self.shard.readers.stopped(rank)
                 if command["op_id"] in self.completed:
                     old, result = self.completed[command["op_id"]]
                     if old != command:
@@ -569,8 +639,9 @@ class MempoolSubrouter:
                     results["ack"] = result
                 elif command["op_id"] <= self.last_op:
                     raise ValueError("stale Router operation")
-                elif command["kind"] != "free" or all(
-                    f is not None and f.native_freed for f in common_facts
+                elif command["kind"] != "free" or (
+                    self.shard.readers.drained
+                    and all(f is not None and f.native_freed for f in common_facts)
                 ):
                     if command["kind"] == "admit" and self._admit_pages is None:
                         count = len(command["source_pages"])
@@ -589,6 +660,7 @@ class MempoolSubrouter:
                 common_facts,
                 restored=all(o["restored"] for o in observations),
                 filled=all(o["filled"] for o in observations),
+                ready_tokens=ready_tokens,
             )
         except Exception as exc:
             results["error"] = str(exc)

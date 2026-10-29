@@ -16,6 +16,101 @@ from ascend_mempool_pd.mempool_tick import RequestObservation
 
 
 class TestSubrouter(unittest.TestCase):
+    def test_ready_requires_fill_and_the_last_replica_page(self):
+        self.request.update(input_ids=[7] * 256, prompt_tokens=256, hit_len=128)
+        d = self.command("decode", "alloc", request=self.request)
+        p = self.command("prefill", "alloc", request=self.request, bindings=d["ranks"])
+        d = self.command(
+            "decode", "dispatch", request=self.request, bindings=p["ranks"]
+        )
+        self.command("prefill", "dispatch", request=self.request, bindings=d["ranks"])
+        facts = [
+            [
+                RequestObservation(
+                    1,
+                    256,
+                    4,
+                    100,
+                    attempt="attempt",
+                    writes_done=True,
+                    write_range=(128, 256),
+                )
+            ]
+            for _ in range(16)
+        ]
+        facts[15] = [
+            RequestObservation(
+                1, 256, 4, 100, attempt="attempt", write_range=(128, 128)
+            )
+        ]
+        self.advance("prefill", facts)
+        self.advance("prefill", facts)
+        self.assertFalse(
+            any(m["kind"] == "ready_tokens" for m in self.messages["prefill"])
+        )
+        for tick in self.ticks["prefill"]:
+            tick.shard.fill_complete = True
+        facts[15] = [
+            RequestObservation(
+                1, 256, 4, 100, attempt="attempt", write_range=(128, 128)
+            )
+        ]
+        self.advance("prefill", facts)
+        self.assertFalse(
+            any(m["kind"] == "ready_tokens" for m in self.messages["prefill"])
+        )
+        facts[15] = facts[0]
+        self.advance("prefill", facts)
+        ready = next(m for m in self.messages["prefill"] if m["kind"] == "ready_tokens")
+        self.assertTrue(
+            all(r["message"]["prompt_tokens"] == 256 for r in ready["ranks"])
+        )
+        accounting = self.ticks["prefill"][0].shard.coverage.snapshot()
+        self.assertEqual(accounting["ready_tokens"], 256)
+        self.assertEqual(accounting["counter_tokens"], 256)
+
+    def test_decode_free_waits_for_readers_and_reports_zero(self):
+        from msgspec.structs import replace
+
+        self.test_late_native_transfer_holds_first_token_and_explicit_free()
+        facts = [
+            [
+                RequestObservation(
+                    1,
+                    128,
+                    4,
+                    100,
+                    attempt="attempt",
+                    release=True,
+                    writes_done=True,
+                    drained=r != 15,
+                    host_drained=r != 15,
+                    native_freed=True,
+                )
+            ]
+            for r in range(16)
+        ]
+        self.advance("decode", facts)
+        self.assertEqual(self.ticks["decode"][0].shard.readers.counts, [0] * 15 + [1])
+        facts[15] = [replace(facts[15][0], drained=True, host_drained=True)]
+        self.advance("decode", facts)
+        self.advance("decode", facts)
+        self.op += 1
+        self.commands["decode"].append(
+            dict(
+                run_id="cpu",
+                role="decode",
+                kind="free",
+                rid="r1",
+                room=1,
+                attempt="attempt",
+                op_id=self.op,
+            )
+        )
+        self.advance("decode", facts)
+        ack = next(m for m in self.messages["decode"] if m["kind"] == "free_ack")
+        self.assertEqual([r["readers_remaining"] for r in ack["ranks"]], [0] * 16)
+
     def test_restore_and_fill_wait_for_last_rank_while_native_release_can_progress(
         self,
     ):
@@ -119,6 +214,7 @@ class TestSubrouter(unittest.TestCase):
                     100,
                     attempt="attempt",
                     prompt_ready=True,
+                    write_range=(128, 256),
                     writes_done=True,
                     native_release=True,
                 )
@@ -175,6 +271,7 @@ class TestSubrouter(unittest.TestCase):
                     100,
                     attempt="attempt",
                     prompt_ready=True,
+                    write_range=(0, 128),
                     writes_done=True,
                 )
             ]
@@ -191,6 +288,7 @@ class TestSubrouter(unittest.TestCase):
                     100,
                     attempt="attempt",
                     prompt_ready=True,
+                    write_range=(0, 128),
                     writes_done=True,
                     native_freed=True,
                 )
@@ -420,6 +518,7 @@ class TestSubrouter(unittest.TestCase):
                     100,
                     attempt="attempt",
                     prompt_ready=True,
+                    write_range=(0, 128),
                     writes_done=True,
                 )
             ]

@@ -12,9 +12,8 @@ from typing import Any, Iterator, Optional, Protocol
 
 import msgspec
 import torch
-from torch import Tensor
-
 from sglang.srt.hardware_backend.npu.kv_rows import derive_kv_rows
+from torch import Tensor
 
 from .config import MempoolConfig
 from .copy import KVFetch
@@ -898,6 +897,7 @@ def initialize_for_model_runner(model_runner: Any) -> None:
     from sglang.srt.disaggregation.ascend.mempool_router_protocol import (
         CONFIG_ENV,
         PRODUCERS,
+        RUN_ENV,
         RouterConfig,
     )
 
@@ -982,16 +982,28 @@ def initialize_for_model_runner(model_runner: Any) -> None:
             raise RuntimeError(f"MemFabric initialization failed: {ret}")
     # BM and TransferEngine share process-wide MF. No per-request/global MF
     # uninitialize, atexit pool destroy, or fault-path close is permitted here.
-    manager = MempoolKVManager.initialize_rank_pair(
-        layout=layout,
+    from urllib.parse import urlsplit
+
+    from .sharing_plan import HostTopology, local_online_nodes
+
+    address = urlsplit(config.nic)
+    host = address.hostname or ""
+    plan = config.numa.plan(
+        hosts=(HostTopology(host, tuple(range(16)), local_online_nodes()),),
+        tp_size=16,
         role=args.disaggregation_mode,
-        tp_rank=model_runner.ps.tp_rank,
-        device_id=model_runner.gpu_id,
-        store_host=config.prefill_host,
+        instance_id=os.environ.get(RUN_ENV, "mempool"),
+        kv_identity=args.model_path,
+        layout=layout,
         base_port=config.base_port,
-        nic_url=config.nic_for_rank(model_runner.ps.tp_rank),
-        numa=config.numa,
+        nic_port=address.port or 0,
         pool_id=config.pool_id,
+    )
+    manager = MempoolKVManager.initialize_session(
+        session=plan.session(model_runner.ps.tp_rank),
+        store_host=config.prefill_host,
+        nic_host=host,
+        device_id=model_runner.gpu_id,
         timeout=config.timeout,
     )
     with startup_stage("runtime.allocate", bm_rank=manager.rank):

@@ -120,6 +120,41 @@ class SharingGroup:
 
 
 @dataclass(frozen=True)
+class PoolSession:
+    """Bind BM participant identity to the two logical P/D storage owners."""
+
+    layout: PoolLayout
+    side: int
+    tp_rank: int
+    members: tuple[int, ...]
+    numa_node: int
+    store_port: int
+    nic_base_port: int
+    pool_id: int
+    identity: str
+
+    @property
+    def participant(self) -> int:
+        return self.side * len(self.members) + self.members.index(self.tp_rank)
+
+    @property
+    def owners(self) -> tuple[int, int]:
+        return 0, len(self.members)
+
+    @property
+    def world_size(self) -> int:
+        return 2 * len(self.members)
+
+    @property
+    def contribution(self) -> int:
+        return (
+            self.layout.contribution_bytes(self.side)
+            if self.tp_rank == self.members[0]
+            else 0
+        )
+
+
+@dataclass(frozen=True)
 class SharingPlan:
     """Describe storage intent; no allocation or physical placement is implied."""
 
@@ -134,6 +169,24 @@ class SharingPlan:
     base_port: int = 19000
     nic_port: int = 25670
     pool_id: int = 104
+
+    def session(self, tp_rank: int) -> PoolSession:
+        """Use the same group, ports and allocation contract for a live pool."""
+        group = next(g for g in self.groups if tp_rank in g.members)
+        member = group.members.index(tp_rank)
+        side = 0 if self.role == "prefill" else 1
+        participant = side * len(group.members) + member
+        return PoolSession(
+            self.group_layout(group),
+            side,
+            tp_rank,
+            group.members,
+            group.numa_node,
+            self.base_port + group.owner_tp_rank,
+            self._nic_port(group, member) - participant,
+            self.pool_id,
+            self.group_identity(group),
+        )
 
     def validate_peer(self, peer: SharingPlan) -> None:
         """Reject incompatible P/D plans before allocating either side's pool."""

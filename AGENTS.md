@@ -50,6 +50,10 @@ of the complete feature.
 
 ### Autonomous tests
 
+Prefer one commit per ticket, including its implementation, tests, and delivery notes.
+Keep repeated NPU acceptance runs to at most two rounds. Reduce model restarts and
+duplicate checks; record any reduced coverage explicitly in the report.
+
 Deliver future tests through a self-running entry point that automates setup,
 service readiness, requests, result checks, report collection, and cleanup of its
 own processes. For multi-host tests, one command per host/container is acceptable;

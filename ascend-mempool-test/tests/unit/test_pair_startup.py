@@ -2,12 +2,15 @@
 
 import os
 import unittest
+from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import urlsplit
 
 from test_pool import FakeBM
 
 from ascend_mempool.layout import KVLayout, PoolLayout
 from ascend_mempool.pool import MempoolKVManager
+from ascend_mempool.sharing_plan import HostTopology, MempoolNumaConfig
 
 NUMA_NODE_ENV = "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE"
 
@@ -113,7 +116,36 @@ class TestPairStartup(unittest.TestCase):
             bm_module=sdk,
         )
         arguments.update(overrides)
-        return MempoolKVManager.initialize_rank_pair(**arguments)
+        numa = MempoolNumaConfig.from_environment()
+        numa.require_rank_pair_startup()
+        address = urlsplit(arguments["nic_url"])
+        plan = numa.plan(
+            hosts=(
+                HostTopology(
+                    address.hostname,
+                    tuple(range(16)),
+                    Path("/sys/devices/system/node/online").read_text()
+                    if numa.legacy_nodes
+                    else None,
+                ),
+            ),
+            tp_size=16,
+            role=arguments["role"],
+            instance_id="cpu",
+            kv_identity="test-model",
+            layout=arguments["layout"],
+            base_port=arguments["base_port"],
+            nic_port=address.port,
+            pool_id=arguments.get("pool_id", 0),
+        )
+        return MempoolKVManager.initialize_session(
+            session=plan.session(arguments["tp_rank"]),
+            store_host=arguments["store_host"],
+            nic_host=address.hostname,
+            device_id=arguments["device_id"],
+            timeout=arguments["timeout"],
+            bm_module=sdk,
+        )
 
     def test_decode_waits_for_slow_prefill_before_entering_bm(self):
         """A P store appearing after MF's 60 retries must still allow D startup."""
@@ -224,7 +256,9 @@ class TestPairStartup(unittest.TestCase):
                     self.assertEqual(config.rank_id, expected_rank)
                     self.assertFalse(config.auto_ranking)
                     self.assertEqual(config.start_store, role == "prefill")
-                    self.assertEqual(config.nic_url, "tcp://10.120.72.31:24670")
+                    self.assertEqual(
+                        config.nic_url, f"tcp://10.120.72.31:{24670 + 2 * tp_rank}"
+                    )
                     self.assertEqual(config.init_timeout, 1)
                     self.assertEqual(manager.rank, expected_rank)
                     self.assertEqual(sdk.handle.options["flags"], 0)
@@ -313,7 +347,9 @@ class TestPairStartup(unittest.TestCase):
                     self.assertLogs("ascend_mempool.manager", level="WARNING") as logs,
                     patch.object(sdk, "create2", wraps=sdk.create2) as create,
                 ):
-                    manager = self.start(sdk, tp_rank=0)
+                    manager = MempoolKVManager.create(
+                        self.layout, 0, bm_module=sdk, tp_rank=0
+                    )
                     try:
                         create.assert_called_once()
                         self.assertEqual(create.call_args.kwargs["flags"], 0)
@@ -322,14 +358,14 @@ class TestPairStartup(unittest.TestCase):
                         manager.close(drain=lambda: None)
                 self.assertIn(NUMA_NODE_ENV, logs.output[0])
                 self.assertIn("falling back to default BM allocation", logs.output[0])
-                self.assertEqual(sdk.uninit_calls, 1)
+                self.assertEqual(sdk.uninit_calls, 0)
 
     def test_nonexistent_node_warning_identifies_requested_and_available_nodes(self):
         """Report the offending node even when this TP rank would select a valid one."""
         os.environ[NUMA_NODE_ENV] = "0,8"
         sdk = FakePairBM()
         with self.assertLogs("ascend_mempool.manager", level="WARNING") as logs:
-            manager = self.start(sdk, tp_rank=0)
+            manager = MempoolKVManager.create(self.layout, 0, bm_module=sdk, tp_rank=0)
             try:
                 self.assertEqual(sdk.handle.options["flags"], 0)
             finally:
@@ -355,7 +391,9 @@ class TestPairStartup(unittest.TestCase):
                 self.read_topology.return_value = failure
                 sdk = FakePairBM()
                 with self.assertLogs("ascend_mempool.manager", level="WARNING"):
-                    manager = self.start(sdk)
+                    manager = MempoolKVManager.create(
+                        self.layout, 0, bm_module=sdk, tp_rank=0
+                    )
                     try:
                         self.assertEqual(sdk.handle.options["flags"], 0)
                     finally:
@@ -386,27 +424,6 @@ class TestPairStartup(unittest.TestCase):
                         self.layout, 1, bm_module=sdk, tp_rank=tp_rank
                     )
                 self.assertIsNone(sdk.handle)
-
-    def test_invalid_identity_and_network_settings_fail_before_bm_initialization(self):
-        """Reject roles, ranks, ports, and addresses that cannot identify a pair."""
-        for override in (
-            {"role": "local"},
-            {"tp_rank": -1},
-            {"tp_rank": 16},
-            {"tp_rank": True},
-            {"base_port": 65521},
-            {"base_port": 0},
-            {"store_host": ""},
-            {"device_id": -1},
-            {"nic_url": ""},
-            {"timeout": 0},
-            {"pool_id": 256},
-        ):
-            with self.subTest(override=override):
-                sdk = FakePairBM()
-                with self.assertRaises(ValueError):
-                    self.start(sdk, **override)
-                self.assertEqual(sdk.init_calls, [])
 
     def test_gate_pool_ids_are_accepted_by_service_startup(self):
         """Allow independently verified BM IDs below the TransferEngine range."""

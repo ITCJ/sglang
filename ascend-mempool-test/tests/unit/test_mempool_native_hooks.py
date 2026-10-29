@@ -3,6 +3,7 @@
 import dataclasses
 import unittest
 from array import array
+from collections import deque
 from types import SimpleNamespace
 
 import test_mempool_subrouter as sr_fixture
@@ -15,6 +16,22 @@ from ascend_mempool_pd.mempool_router_protocol import RouterConfig
 
 
 class TestNativeHooks(unittest.TestCase):
+    def test_pd_loops_return_for_graceful_shutdown(self):
+        for role, owner in (
+            ("prefill", "SchedulerDisaggregationPrefillMixin"),
+            ("decode", "SchedulerDisaggregationDecodeMixin"),
+        ):
+            methods = [
+                f"event_loop_{mode}_disagg_{role}" for mode in ("normal", "overlap")
+            ]
+            namespace = dict(torch=torch, deque=deque)
+            cls = load_methods(f"disaggregation/{role}.py", owner, methods, namespace)
+            worker = cls()
+            worker.gracefully_exit = True
+            for name in methods:
+                with self.subTest(role=role, loop=name):
+                    getattr(worker, name)()
+
     def test_fake_warmup_uses_native_pages_and_returns_them_before_real_reserve(self):
         worker = self.make_warmup_worker()
         rows, pages, req = worker.rows, worker.pages, worker.req

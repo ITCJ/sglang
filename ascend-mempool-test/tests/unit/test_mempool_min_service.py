@@ -300,3 +300,9 @@ class TestRouterService(unittest.TestCase):
                     store.manager.view(0, 0, region="prefix_index").device_base
                 ]
                 self.assertEqual(index[0, :, 0].tolist(), [[31, 32], [11, 12]])
+        for side in services.values():
+            for service in side:
+                view = service.runtime.manager.view(0, 0)
+                service.close()
+                with self.assertRaisesRegex(RuntimeError, "closed"):
+                    _ = view.device_base

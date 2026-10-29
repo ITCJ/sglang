@@ -643,7 +643,7 @@ class SchedulerDisaggregationPrefillMixin:
     @torch.no_grad()
     def event_loop_normal_disagg_prefill(self: Scheduler) -> None:
         """A normal scheduler loop for prefill worker in disaggregation mode."""
-        while True:
+        while not self.gracefully_exit:
             # Receive requests
             self.ingest_requests()
             if self._engine_paused:
@@ -683,7 +683,7 @@ class SchedulerDisaggregationPrefillMixin:
     def event_loop_overlap_disagg_prefill(self: Scheduler) -> None:
         self.result_queue = deque()
 
-        while True:
+        while not self.gracefully_exit:
             # Receive requests
             self.ingest_requests()
             if self._engine_paused:
