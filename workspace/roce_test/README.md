@@ -1,5 +1,37 @@
 # 宿主机 RoCE 传输检查
 
+## 批量 SSH 查看 GID
+
+在能 SSH 到目标机器的跳板机上执行：
+
+```bash
+bash workspace/roce_test/check_subnet.sh <前三段IP> <起始末段> <结束末段> [SSH用户名]
+```
+
+范围包含首尾，例如前缀 `192.0.2`、起始 `10`、结束 `19` 会检查 10 台。
+省略用户名时使用 SSH 配置/当前用户名。目标 IP 是 SSH 管理地址，
+检查结果中的 RoCE IP 才是后续 RDMA 测试地址，两者可以不同。
+本地需要 Bash、SSH、coreutils 和 awk；远端只需 Bash 及可读的 RDMA sysfs。
+通过标准输入发送 `workspace/setup/check_gid.sh`，远端无需仓库或安装软件。
+复制到跳板机时保留这两个脚本的相对目录结构。
+
+逐台执行，只读取设备信息，不运行传输、不碰 NPU。每台总超时 15 秒。
+使用现有 SSH 密钥或 agent，不交互询问密码；主机密钥必须已核验并记入 known_hosts。
+`FAIL=AUTH` 表示认证失败，`FAIL=HOST_KEY` 表示主机密钥未信任或发生变化。
+每台一行并汇总 `gid_found/no_ipv4_gid/no_active_hca/failed`；
+`GID_FOUND` 只代表枚举到 IPv4 GID，输出同时保留 RoCE 版本，并不代表传输已通过。
+多设备机器同一行列出各个匹配项，设备后面的 `/数字` 是端口号。
+有失败或没有 IPv4 GID 的机器时退出码为 1。
+
+回报汇总行及异常机器行即可。必要时只查看某台的短错误：
+
+```bash
+head -n 2 <LOG_DIR>/<SSH_IP>.err
+```
+
+详细输出保存在跳板机的临时日志目录，不在远端写文件，无远端清理动作。
+分析结束后可删除本次日志目录。
+
 只使用现有 `ib_write_bw`（perftest）、Bash、coreutils 和 awk。
 运行时依赖宿主机 RDMA 驱动、libibverbs 和对应网卡 provider；不自动安装依赖。
 不使用容器、Python、CANN、Mooncake 或 NPU，不执行数据内容校验。
