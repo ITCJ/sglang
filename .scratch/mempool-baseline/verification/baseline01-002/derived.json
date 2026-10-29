@@ -1,0 +1,387 @@
+{
+  "summary": {
+    "A": {
+      "T_main_e2e": 27807.03414125,
+      "T_route": 730.330834,
+      "T_ready": 2233.95179275,
+      "T_gen": 24692.70808,
+      "T_tail": 136.20397975,
+      "residual": 13.839454749998367,
+      "T_main_queue_wait": 44.705548,
+      "e2e_spread_percent": 1.944806243334557,
+      "gen_percent": 88.80022211131791,
+      "queue_percent": 0.1607706444812182,
+      "residual_range": [
+        13.408502999998746,
+        14.070318999998563
+      ]
+    },
+    "B": {
+      "T_main_e2e": 22314.79116375,
+      "T_route": 102.5582465,
+      "T_ready": 1199.68113,
+      "T_gen": 20851.69165325,
+      "T_tail": 100.04507325,
+      "residual": 60.81506075000016,
+      "T_main_queue_wait": 88.746048,
+      "e2e_spread_percent": 0.2631312045246106,
+      "gen_percent": 93.44336453895754,
+      "queue_percent": 0.3977005536317385,
+      "residual_range": [
+        58.34104899999875,
+        67.44507100000192
+      ]
+    },
+    "C": {
+      "T_main_e2e": 21874.0664085,
+      "T_route": 100.14376625,
+      "T_ready": 1016.50883675,
+      "T_gen": 20665.3651335,
+      "T_tail": 39.83711325,
+      "residual": 52.21155874999931,
+      "T_main_queue_wait": 81.8985365,
+      "e2e_spread_percent": 0.2034030433133996,
+      "gen_percent": 94.47427262756086,
+      "queue_percent": 0.3744092889293562,
+      "residual_range": [
+        51.90815400000065,
+        52.744761999998445
+      ]
+    },
+    "E": {
+      "T_main_e2e": 22636.694326999997,
+      "T_route": 102.75297775,
+      "T_ready": 1791.7178334999999,
+      "T_gen": 20698.32345475,
+      "T_tail": 43.3038855,
+      "residual": 0.5961754999989353,
+      "T_main_queue_wait": 35.938002,
+      "e2e_spread_percent": 0.3469756128423702,
+      "gen_percent": 91.43704092015767,
+      "queue_percent": 0.1587599385354372,
+      "residual_range": [
+        0.5073449999981676,
+        0.7853269999977783
+      ]
+    }
+  },
+  "unstable": [
+    {
+      "metric": "T_op1_fill",
+      "case": "C",
+      "ratio": 14.519737586998492,
+      "spread_ms": 727.428886,
+      "spread_e2e_percent": 3.325951366272743
+    },
+    {
+      "metric": "T_tail",
+      "case": "E",
+      "ratio": 1.9540276270465742,
+      "spread_ms": 30.569787999999996,
+      "spread_e2e_percent": 0.13496705107371323
+    },
+    {
+      "metric": "T_free_P",
+      "case": "A",
+      "ratio": 1.5070451334527166,
+      "spread_ms": 10.432265000000001,
+      "spread_e2e_percent": 0.037550868020484865
+    },
+    {
+      "metric": "T_free_P",
+      "case": "B",
+      "ratio": 1.5111439869006849,
+      "spread_ms": 10.458786999999997,
+      "spread_e2e_percent": 0.04687877365614312
+    },
+    {
+      "metric": "T_free_P",
+      "case": "C",
+      "ratio": 1.5162167006361296,
+      "spread_ms": 10.575746000000002,
+      "spread_e2e_percent": 0.04835444059895842
+    },
+    {
+      "metric": "T_free_P",
+      "case": "E",
+      "ratio": 1.5171782095092585,
+      "spread_ms": 10.604568,
+      "spread_e2e_percent": 0.04681966622963382
+    },
+    {
+      "metric": "T_free_D",
+      "case": "A",
+      "ratio": 1.5132221568748232,
+      "spread_ms": 10.464686,
+      "spread_e2e_percent": 0.03766756719291694
+    },
+    {
+      "metric": "T_free_D",
+      "case": "B",
+      "ratio": 1.516985850027658,
+      "spread_ms": 10.527387000000001,
+      "spread_e2e_percent": 0.047186255190360384
+    },
+    {
+      "metric": "T_free_D",
+      "case": "C",
+      "ratio": 1.5130361354501658,
+      "spread_ms": 10.480984,
+      "spread_e2e_percent": 0.04792116965050348
+    },
+    {
+      "metric": "T_free_D",
+      "case": "E",
+      "ratio": 2.4986983180431865,
+      "spread_ms": 30.736579000000003,
+      "spread_e2e_percent": 0.13570344117938346
+    },
+    {
+      "metric": "T_lb_rank_min",
+      "case": "B",
+      "ratio": 1.743417140775237,
+      "spread_ms": 25.408120000000004,
+      "spread_e2e_percent": 0.11388524371976631
+    },
+    {
+      "metric": "T_lb_rank_min",
+      "case": "C",
+      "ratio": 1.9088867511765097,
+      "spread_ms": 26.597561,
+      "spread_e2e_percent": 0.121609405469049
+    },
+    {
+      "metric": "T_index_ready",
+      "case": "A",
+      "ratio": 1.8457162610949942,
+      "spread_ms": 1908.935739,
+      "spread_e2e_percent": 6.871201411656598
+    }
+  ],
+  "rounds": [
+    {
+      "round": 2,
+      "case": "A",
+      "T_main_e2e": 27697.744917,
+      "T_route": 789.285212,
+      "T_ready": 2039.486688,
+      "T_gen": 24718.457111,
+      "T_tail": 136.445587,
+      "T_free_P": 31.006893,
+      "T_free_D": 30.53946,
+      "T_index_ready": 4166.117996,
+      "T_main_queue_wait": 44.561777,
+      "residual": 14.070318999998563
+    },
+    {
+      "round": 2,
+      "case": "B",
+      "T_main_e2e": 22289.946818,
+      "T_route": 106.523534,
+      "T_ready": 1173.732296,
+      "T_gen": 20843.160726,
+      "T_tail": 107.625854,
+      "T_free_P": 30.911093,
+      "T_free_D": 30.480538,
+      "T_lb_rank_min": 59.585594,
+      "T_main_queue_wait": 90.225815,
+      "residual": 58.90440800000215
+    },
+    {
+      "round": 2,
+      "case": "C",
+      "T_main_e2e": 21860.945357,
+      "T_route": 112.630149,
+      "T_ready": 985.92864,
+      "T_gen": 20668.123946,
+      "T_tail": 42.354468,
+      "T_free_P": 20.488588,
+      "T_free_D": 30.910313,
+      "T_op1_fill": 63.827173,
+      "T_lb_rank_min": 53.160966,
+      "T_main_queue_wait": 86.792625,
+      "residual": 51.90815400000065
+    },
+    {
+      "round": 2,
+      "case": "E",
+      "T_main_e2e": 22660.932998,
+      "T_route": 104.391834,
+      "T_ready": 1788.06795,
+      "T_gen": 20705.309906,
+      "T_tail": 62.612663,
+      "T_free_P": 30.66064,
+      "T_free_D": 51.245429,
+      "T_main_queue_wait": 34.95819,
+      "residual": 0.5506450000029872
+    },
+    {
+      "round": 3,
+      "case": "A",
+      "T_main_e2e": 27865.631111,
+      "T_route": 718.351614,
+      "T_ready": 2290.915676,
+      "T_gen": 24705.910116,
+      "T_tail": 137.045202,
+      "T_free_P": 20.574628,
+      "T_free_D": 20.84923,
+      "T_index_ready": 2513.959341,
+      "T_main_queue_wait": 45.070442,
+      "residual": 13.408502999998746
+    },
+    {
+      "round": 3,
+      "case": "B",
+      "T_main_e2e": 22313.125889,
+      "T_route": 95.327041,
+      "T_ready": 1221.961657,
+      "T_gen": 20839.765615,
+      "T_tail": 97.501861,
+      "T_free_P": 30.857502,
+      "T_free_D": 30.450418,
+      "T_lb_rank_min": 37.066868,
+      "T_main_queue_wait": 85.799685,
+      "residual": 58.569714999997814
+    },
+    {
+      "round": 3,
+      "case": "C",
+      "T_main_e2e": 21854.586819,
+      "T_route": 104.914099,
+      "T_ready": 1006.592948,
+      "T_gen": 20647.784651,
+      "T_tail": 42.550359,
+      "T_free_P": 31.062774,
+      "T_free_D": 20.443017,
+      "T_op1_fill": 63.742153,
+      "T_lb_rank_min": 55.86145,
+      "T_main_queue_wait": 79.404575,
+      "residual": 52.744761999998445
+    },
+    {
+      "round": 3,
+      "case": "E",
+      "T_main_e2e": 22584.278526,
+      "T_route": 95.724054,
+      "T_ready": 1789.265522,
+      "T_gen": 20654.120813,
+      "T_tail": 44.38281,
+      "T_free_P": 31.109237,
+      "T_free_D": 20.50885,
+      "T_main_queue_wait": 36.627123,
+      "residual": 0.7853269999977783
+    },
+    {
+      "round": 4,
+      "case": "A",
+      "T_main_e2e": 28102.53027,
+      "T_route": 746.7149,
+      "T_ready": 2544.597126,
+      "T_gen": 24671.587196,
+      "T_tail": 125.642039,
+      "T_free_P": 30.914365,
+      "T_free_D": 20.390168,
+      "T_index_ready": 2741.83826,
+      "T_main_queue_wait": 44.435219,
+      "residual": 13.989008999997168
+    },
+    {
+      "round": 4,
+      "case": "B",
+      "T_main_e2e": 22348.652134,
+      "T_route": 102.633637,
+      "T_ready": 1211.69518,
+      "T_gen": 20878.546589,
+      "T_tail": 97.435679,
+      "T_free_P": 30.920315,
+      "T_free_D": 20.363008,
+      "T_lb_rank_min": 35.249216,
+      "T_main_queue_wait": 92.724748,
+      "residual": 58.34104899999875
+    },
+    {
+      "round": 4,
+      "case": "C",
+      "T_main_e2e": 21881.659744,
+      "T_route": 92.481023,
+      "T_ready": 1016.275356,
+      "T_gen": 20688.640708,
+      "T_tail": 32.151307,
+      "T_free_P": 20.824703,
+      "T_free_D": 20.429329,
+      "T_op1_fill": 53.804956,
+      "T_lb_rank_min": 54.824705,
+      "T_main_queue_wait": 76.428705,
+      "residual": 52.11135000000286
+    },
+    {
+      "round": 4,
+      "case": "E",
+      "T_main_e2e": 22662.867862,
+      "T_route": 94.659873,
+      "T_ready": 1808.573377,
+      "T_gen": 20727.084392,
+      "T_tail": 32.042875,
+      "T_free_P": 20.504669,
+      "T_free_D": 20.791041,
+      "T_main_queue_wait": 35.445827,
+      "residual": 0.5073449999981676
+    },
+    {
+      "round": 5,
+      "case": "A",
+      "T_main_e2e": 27562.230267,
+      "T_route": 666.97161,
+      "T_ready": 2060.807681,
+      "T_gen": 24674.877897,
+      "T_tail": 145.683091,
+      "T_free_P": 30.566571,
+      "T_free_D": 30.854854,
+      "T_index_ready": 2257.182257,
+      "T_main_queue_wait": 44.754754,
+      "residual": 13.889987999998993
+    },
+    {
+      "round": 5,
+      "case": "B",
+      "T_main_e2e": 22307.439814,
+      "T_route": 105.748774,
+      "T_ready": 1191.335387,
+      "T_gen": 20845.293683,
+      "T_tail": 97.616899,
+      "T_free_P": 20.461528,
+      "T_free_D": 30.890395,
+      "T_lb_rank_min": 34.177474,
+      "T_main_queue_wait": 86.233944,
+      "residual": 67.44507100000192
+    },
+    {
+      "round": 5,
+      "case": "C",
+      "T_main_e2e": 21899.073714,
+      "T_route": 90.549794,
+      "T_ready": 1057.238403,
+      "T_gen": 20656.911229,
+      "T_tail": 42.292319,
+      "T_free_P": 20.487028,
+      "T_free_D": 30.894105,
+      "T_op1_fill": 781.233842,
+      "T_lb_rank_min": 29.263889,
+      "T_main_queue_wait": 84.968241,
+      "residual": 52.0819689999953
+    },
+    {
+      "round": 5,
+      "case": "E",
+      "T_main_e2e": 22638.697922,
+      "T_route": 116.23615,
+      "T_ready": 1780.964485,
+      "T_gen": 20706.778708,
+      "T_tail": 34.177194,
+      "T_free_P": 21.000393,
+      "T_free_D": 20.549749,
+      "T_main_queue_wait": 36.720868,
+      "residual": 0.5413849999968079
+    }
+  ]
+}

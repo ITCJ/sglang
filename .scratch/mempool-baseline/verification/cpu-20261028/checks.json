@@ -1,0 +1,57 @@
+{
+  "baseline": "8869c2c605",
+  "unittest": {
+    "tests": 472,
+    "seconds": 45.446,
+    "status": "passed"
+  },
+  "perf_pytest": {
+    "tests": 12,
+    "seconds": 5.68,
+    "status": "passed"
+  },
+  "static": {
+    "python_files": 15,
+    "ast_target": "3.9",
+    "lint": "F,UP037",
+    "format": "passed",
+    "isort": "passed",
+    "isort_configs": [
+      ".isort.cfg",
+      "ascend-mempool-test/pyproject.toml"
+    ]
+  },
+  "cli": [
+    {
+      "mode": "perf",
+      "role": "prefill",
+      "status": "passed"
+    },
+    {
+      "mode": "perf",
+      "role": "decode",
+      "status": "passed"
+    },
+    {
+      "mode": "full-acceptance",
+      "role": "prefill",
+      "status": "passed"
+    },
+    {
+      "mode": "full-acceptance",
+      "role": "decode",
+      "status": "passed"
+    }
+  ],
+  "review": {
+    "standards_unresolved": 0,
+    "spec_unresolved": 0
+  },
+  "npu_executed": false,
+  "user_accepted": false,
+  "logs": [
+    "unittest.txt",
+    "static-checks.txt",
+    "review.md"
+  ]
+}

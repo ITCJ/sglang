@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "run_id": "baseline01-002",
+  "status": "accepted",
+  "ticket_state": "closed",
+  "user_accepted": true,
+  "accepted_on": "2026-10-28",
+  "accepted_by": "user",
+  "evidence": "Explicit user confirmation in this conversation",
+  "user_statement": "可以，我确认验收，可以补充一句，当前和cryang/dev/mempool branch目前commit的单请求性能基本一致。后续跟进优化。",
+  "single_request_performance_comparison": {
+    "branch": "cryang/dev/mempool",
+    "conclusion": "当前与该分支目前 commit 的单请求性能基本一致。后续跟进优化。",
+    "source": "user confirmation; no additional comparison benchmark run by this agent",
+    "comparison_run_commit": null,
+    "remote_head_observed_at_acceptance": "d2c999b4faee13e6e8f177c33c5fd847d8de1495",
+    "remote_head_source": "git ls-remote origin refs/heads/cryang/dev/mempool",
+    "remote_head_note": "Read-only branch pointer snapshot; the user did not separately provide the comparison run SHA."
+  },
+  "original_automated_status": "failed",
+  "original_automated_failure": "13 metric/case pairs have max/min > 1.5 without recorded explanations",
+  "execution_complete": true,
+  "requests": 20,
+  "warmup_requests": 4,
+  "valid_measured_requests": 16,
+  "invalid_samples": 0,
+  "output_policy": "core-answer-v1",
+  "follow_up": [
+    "每轮首请求 A 的约 4 秒 handoff 等待",
+    "C 第 5 轮 fill 长尾及其与 forward 的重叠",
+    "free 轮询与局部计时波动",
+    "实际 forward 步数与停止边界"
+  ],
+  "artifacts": [
+    "analysis.md",
+    "metrics.csv",
+    "round-samples.csv",
+    "derived.json",
+    "recompute.py"
+  ]
+}

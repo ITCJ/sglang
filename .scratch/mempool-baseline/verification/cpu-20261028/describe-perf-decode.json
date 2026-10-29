@@ -1,0 +1,68 @@
+{
+  "role": "decode",
+  "mode": "perf",
+  "config": {
+    "prefill_host": "<P_HOST>",
+    "decode_host": "<D_HOST>",
+    "model_path": "/data_lib/data/models/GLM-5.2-w4a8",
+    "interface": "bond4",
+    "numa_nodes": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "main_port": 6699,
+    "control_port": 16700,
+    "runner_port": 18891,
+    "prefill_port": 8000,
+    "decode_port": 8001,
+    "bootstrap_port": 8995,
+    "prompt_capacity": 8192,
+    "decode_capacity": 128,
+    "page_size": 128,
+    "context_length": 8448,
+    "max_total_tokens": 16384,
+    "operation_timeout": 600.0,
+    "startup_timeout": 7200.0,
+    "prefix_pages": 40,
+    "verify_prefix": false,
+    "match_prefix": true,
+    "perf": true
+  },
+  "logs": "/home/cryang/log/mempool-min/baseline01-20261028-001/decode",
+  "memory_budget": {
+    "bm_bytes": 17179869184,
+    "verification_bytes": 0,
+    "required_bytes": 17179869184
+  },
+  "output_policy": "strict full output IDs",
+  "acceptance_controls": "none",
+  "stages": [
+    "paired preflight and Ascend topology",
+    "independent ABCE reference (outside timing)",
+    "5 restarted ABCE rounds; first excluded",
+    "strict V1/V3/V6 and 128-token length checks",
+    "offline samples/report and paired cleanup"
+  ],
+  "service_command": [
+    "bash",
+    "/private/tmp/sglang-mempool-perf-20261028/ascend-mempool-test/scripts/run_service.sh",
+    "decode",
+    "formal"
+  ],
+  "target_environment": {
+    "PREFILL_CAPACITY": "8192",
+    "DECODE_CAPACITY": "128",
+    "CONTEXT_LENGTH": "8448",
+    "MAX_TOTAL_TOKENS": "16384",
+    "PAGE_SIZE": "128",
+    "SKIP_SERVER_WARMUP": "0",
+    "SGLANG_NPU_MEMPOOL_ROUTER_CONFIG": "/home/cryang/log/mempool-min/baseline01-20261028-001/decode/effective-config.json",
+    "SGLANG_NPU_MEMPOOL_ROUTER_RUN_ID": "baseline01-20261028-001"
+  }
+}
