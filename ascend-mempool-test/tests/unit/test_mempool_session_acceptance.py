@@ -4,148 +4,18 @@ import contextlib
 import io
 import json
 import socket
-import sys
 import tempfile
-import time
 import unittest
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import patch
 
 import run_mempool_min
-import test_mempool_subrouter as sr_fixture
 import verify_mempool_session
 from test_mempool_router import registration
-from ticket10_processes import Peer, Processes
 
-from ascend_mempool_pd.mempool_router import MainRouter
 from ascend_mempool_pd.mempool_router_protocol import RouterConfig
 
 
 class TestSessionAcceptance(unittest.TestCase):
-    def test_bm_receipts_do_not_hide_forced_scheduler_cleanup(self):
-        with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
-            for role in ("prefill", "decode"):
-                (root / f"{role}.log").write_text(
-                    "\n".join(
-                        "mempool session_closed data="
-                        + json.dumps(dict(rank=rank, status="passed"))
-                        for rank in range(16)
-                    )
-                )
-            with self.assertRaisesRegex(ValueError, "worker cleanup"):
-                verify_mempool_session.check_normal_close(root)
-            for role in ("prefill", "decode"):
-                with (root / f"{role}.log").open("a") as log:
-                    for rank in range(16):
-                        log.write(
-                            "\nmempool worker_exit data="
-                            + json.dumps(
-                                dict(role=role, rank=rank, stage="distributed_released")
-                            )
-                        )
-            verify_mempool_session.check_normal_close(root)
-            with (root / "decode.log").open("a") as log:
-                log.write(
-                    "\nSchedulers still alive 15s after ShutdownReq, killing them before they released: [1]\n"
-                )
-            with self.assertRaisesRegex(ValueError, "forced|crash"):
-                verify_mempool_session.check_normal_close(root)
-
-    def test_normal_shutdown_keeps_store_alive_until_decode_client_exits(self):
-        left, right = socket.socketpair()
-        with (
-            tempfile.TemporaryDirectory() as folder,
-            Peer(left, 5) as p,
-            Peer(right, 5) as d,
-        ):
-            parent = Path(folder)
-            marker = parent / "decode-closed"
-            control_marker = parent / "control-quiesced"
-            config = RouterConfig("p", "d", "/model")
-            main = MainRouter(config, "cpu")
-            system = sr_fixture.TestSubrouter()
-            system.setUp()
-            self.addCleanup(system.doCleanups)
-            for role in ("prefill", "decode"):
-                main.register(registration(role))
-
-            def control_http(url, *, payload=None, timeout=10):
-                if url.endswith("/quiesce"):
-                    main.quiesce()
-                else:
-                    main.check_timeouts()
-                    while main.outbox:
-                        command = main.outbox.popleft()
-                        role = command["role"]
-                        system.commands[role].append(command)
-                        system.advance(role)
-                        for message in system.messages[role]:
-                            if message["kind"] == "quiesce_ack":
-                                main.receive(message)
-                    if main.quiesced:
-                        control_marker.touch()
-                return main.status()
-
-            with contextlib.ExitStack() as stack:
-                stack.enter_context(
-                    patch.object(
-                        run_mempool_min, "request_json", side_effect=control_http
-                    )
-                )
-                jobs, children, instances, roots = [], [], [], []
-                for role, peer in (("prefill", p), ("decode", d)):
-                    root = parent / role
-                    ready = root / "ready"
-                    owned = stack.enter_context(Processes(root))
-                    code = (
-                        "import signal,time,sys\nfrom pathlib import Path\n"
-                        f"marker=Path({str(marker)!r})\n"
-                        "def stop(*args):\n"
-                        f" if not Path({str(control_marker)!r}).exists(): sys.exit(3)\n"
-                        + (
-                            " marker.write_text('closed')\n sys.exit(0)\n"
-                            if role == "decode"
-                            else " sys.exit(0 if marker.exists() else 2)\n"
-                        )
-                        + "signal.signal(signal.SIGTERM,stop)\n"
-                        + f"Path({str(ready)!r}).touch()\n"
-                        + "while True: time.sleep(0.01)\n"
-                    )
-                    child = owned.start(role, [sys.executable, "-c", code])
-                    deadline = time.monotonic() + 5
-                    while not ready.exists():
-                        if time.monotonic() > deadline:
-                            self.fail("local server did not become ready")
-                        time.sleep(0.01)
-                    instances.append(
-                        run_mempool_min.Runner(
-                            SimpleNamespace(
-                                mode="session-acceptance", role=role, run_id="cpu"
-                            ),
-                            config,
-                            peer,
-                            root,
-                        )
-                    )
-                    jobs.append(owned)
-                    children.append(child)
-                    roots.append(root)
-                with ThreadPoolExecutor(2) as workers:
-                    futures = [
-                        workers.submit(instance.close_session, child, owned, root)
-                        for instance, child, owned, root in zip(
-                            instances, children, jobs, roots
-                        )
-                    ]
-                    for future in futures:
-                        future.result(timeout=10)
-                self.assertEqual([c.returncode for c in children], [0, 0])
-                self.assertTrue((roots[0] / "decode.log").exists())
-                self.assertTrue(main.quiesced)
-
     def test_post_shutdown_port_probe_allows_time_wait_but_rejects_a_listener(self):
         with socket.socket() as server:
             server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

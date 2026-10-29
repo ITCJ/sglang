@@ -273,15 +273,6 @@ class MainServer:
 
         return web.json_response(self.router.status())
 
-    async def quiesce(self, request: Any) -> Any:
-        from aiohttp import web
-
-        try:
-            self.router.quiesce()
-        except RequestRejected as exc:
-            return web.json_response(dict(error=str(exc)), status=exc.status)
-        return web.json_response(self.router.status(), status=202)
-
     async def health(self, request: Any) -> Any:
         from aiohttp import web
 
@@ -381,8 +372,6 @@ class MainServer:
                 now = time.monotonic()
                 if now - last_heartbeat >= 1:
                     for role, route in self.routes.items():
-                        if role in self.router.quiesce_acks:
-                            continue
                         message = dict(
                             run_id=self.router.run_id, role=role, kind="heartbeat"
                         )
@@ -418,7 +407,6 @@ class MainServer:
             [
                 web.post("/generate", self.generate),
                 web.get("/status", self.status),
-                web.post("/quiesce", self.quiesce),
                 web.get("/health", self.health),
                 web.get("/ready", self.health),
             ]

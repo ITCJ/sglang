@@ -1876,8 +1876,6 @@ class Scheduler(
     def release_host_resources(self) -> None:
         # Release pinned host buffers in userspace on graceful shutdown; see
         # HostKVCache.destroy. Called from run_scheduler_process's finally.
-        if self.mempool_service is not None:
-            self.mempool_service.close()
         if self.hisparse_coordinator is not None:
             self.hisparse_coordinator.destroy()
         self.tree_cache.release_host_resources()
@@ -6191,14 +6189,8 @@ def run_scheduler_process(
             # and the synchronize() in destroy() could itself hang.
             if scheduler.gracefully_exit:
                 scheduler.release_host_resources()
-                if scheduler.mempool_service is not None:
-                    scheduler.mempool_service.record_exit_stage(
-                        "host_resources_released"
-                    )
                 # Last: anything above may still need a working communicator.
                 abort_distributed_environment()
-                if scheduler.mempool_service is not None:
-                    scheduler.mempool_service.record_exit_stage("distributed_released")
 
 
 def _make_abort_req(

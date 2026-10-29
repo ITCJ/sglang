@@ -25,6 +25,10 @@ verification. Hardware acceptance gates ticket closure and dependent work.
 
 ### Ascend implementation and review
 
+沿用 SGLang 默认的退出方法，由原有父进程/进程清理路径结束 worker。
+不要为本功能改造通用 shutdown 或要求逐 rank 主动释放回执。
+不要修改非必要的主线代码；确需修改时，在实施前单独说明文件、必要性和行为影响。
+
 Keep Ascend feature changes in `ascend/` or `npu/` directories where possible.
 For every functional change outside those directories, document why it is needed
 and why an Ascend/NPU hook cannot provide the behavior. On delivery, list the

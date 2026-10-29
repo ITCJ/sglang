@@ -621,8 +621,6 @@ class MempoolPDService:
 
     def advance(self) -> None:
         """Run one complete scheduler tick, preserving faults for same-side consensus."""
-        if self.subrouter is not None and self.subrouter.quiesced:
-            return
         self._tick_started = self.clock()
         facts: list[RequestObservation] = []
         try:
@@ -751,35 +749,6 @@ class MempoolPDService:
         """Keep scheduler idle/sleep checks aware of persistent ownership and cleanup."""
         return any(not r.native_freed for r in self._requests.values()) or (
             self.control.has_pending_requests()
-        )
-
-    def record_exit_stage(self, stage: str) -> None:
-        logger.info(
-            "mempool worker_exit data=%s",
-            json.dumps(
-                dict(
-                    role=self.control.local.role,
-                    rank=self.control.local.tp_rank,
-                    stage=stage,
-                )
-            ),
-        )
-
-    def close(self) -> None:
-        """Release BM on graceful idle exit; faulted workers retain it until exit."""
-        if self.fault is not None or self.has_pending_work():
-            raise RuntimeError("mempool shutdown requires completed request drains")
-        self.runtime.manager.close(drain=self._synchronize)
-        logger.info(
-            "mempool session_closed data=%s",
-            json.dumps(
-                dict(
-                    role=self.control.local.role,
-                    rank=self.control.local.tp_rank,
-                    status="passed",
-                    release="drain/leave/destroy/BM uninitialize",
-                )
-            ),
         )
 
     def bootstrap_failed(self, req: Any) -> None:

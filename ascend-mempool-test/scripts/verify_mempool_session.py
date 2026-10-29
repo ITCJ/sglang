@@ -131,50 +131,6 @@ def accounting(root: Path) -> dict[str, Any]:
     )
 
 
-def check_quiesce(snapshot: dict[str, Any]) -> None:
-    if (
-        not snapshot["stopping"]
-        or not snapshot["quiesced"]
-        or snapshot["fault"] is not None
-        or snapshot["active"] is not None
-    ):
-        raise ValueError("Main/SR have not completed controlled shutdown")
-    for role in ("prefill", "decode"):
-        ranks = snapshot["quiesce_acks"][role]
-        if [r["rank"] for r in ranks] != list(range(16)) or any(
-            r["idle"] is not True for r in ranks
-        ):
-            raise ValueError("control quiesce lacks every idle TP rank")
-
-
-def check_normal_close(root: Path) -> None:
-    for role in ("prefill", "decode"):
-        path = root / f"{role}.log"
-        log = path.read_text(errors="replace")
-        if any(
-            marker in log
-            for marker in (
-                "Schedulers still alive",
-                "Scheduler hit an exception",
-                "SR fail-stop:",
-                "double free or corruption",
-            )
-        ):
-            raise ValueError(
-                f"{role}: normal shutdown used forced cleanup or crashed; see {path}"
-            )
-        closed = log_records(path, "session_closed")
-        if {r["rank"] for r in closed if r["status"] == "passed"} != set(range(16)):
-            raise ValueError("normal shutdown lacks all-rank BM close receipts")
-        exits = log_records(path, "worker_exit")
-        if {
-            r["rank"]
-            for r in exits
-            if r["role"] == role and r["stage"] == "distributed_released"
-        } != set(range(16)):
-            raise ValueError("normal shutdown lacks all-rank worker cleanup receipts")
-
-
 def summarize(root: Path) -> dict[str, Any]:
     rounds = []
     for name in SERVICE_STAGES:
@@ -214,19 +170,18 @@ def summarize(root: Path) -> dict[str, Any]:
     fetch = json.loads((root / "fetch/decode-report.json").read_text())
     if fetch["status"] != "passed":
         raise ValueError("P/D/mixed fetch smoke failed")
-    check_quiesce(json.loads((root / "restart/control-quiesced.json").read_text()))
-    check_normal_close(root / "restart")
     return dict(
         status="passed",
         coverage="K1-02 reduced functional acceptance",
         service_rounds=len(SERVICE_STAGES),
+        shutdown="SGLang default parent/process cleanup; no per-rank graceful BM release requirement",
         rounds=rounds,
         user_accepted=False,
         limitations=[
             "V3 uses independent fixture answers; no fresh formal-service comparison or cold A/C stability run.",
             "V8 capacity rejection replays actual registration on CPU; no isolated worker failure run.",
             "Physical NUMA placement and performance are not accepted by this run.",
-            "Fault teardown uses paired process exit and successful restart; no post-exit physical DRAM page count is available.",
+            "Service teardown uses default process cleanup and restart checks; explicit BM leave/uninitialize and post-exit physical DRAM page counts are not accepted by this run.",
         ],
         retained="ABCE, load/EOS, KV content, Graph, source fetch, slot reuse, ready/free accounting, fail-stop, restart and paired cleanup",
     )

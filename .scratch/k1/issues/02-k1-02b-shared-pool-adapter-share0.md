@@ -10,11 +10,34 @@
 
 - [ ] 两轮 session-acceptance 的 A/B/C/E、内容、Graph、复用、长生成和提前EOS通过；V3独立答案与V8注册CPU重放按用户授权精简
 - [ ] ready_tokens 与 free_ack 的时间线与阶段 0 一致；同一轮里位图算法与原计数器算法的 ready_tokens 序列逐事件相同
-- [ ] 正常结束有全部rank的BM关闭回执；fail-stop双端进程清理、端口释放及同端口重启通过；物理DRAM页数证据边界由用户确认
+- [ ] 沿用SGLang默认父进程清理；双端进程清理、端口释放及同端口重启通过；按用户决定不要求worker主动退出或逐rank BM关闭回执
 - [ ] 注册快照含四个副本数和每份副本的 owner、成员列表
 - [ ] 用户确认精简范围和NPU结果后关闭；启动耗时与性能对照按既定约定另留测试分支
 
 ## Comments
+
+### 2026-10-30：用户决定沿用默认退出，撤回非必要主线改动
+
+用户明确要求shutdown依靠原有父进程清理worker，不修改非必要主线代码，已写入AGENTS.md。
+恢复本票前的scheduler与P/D四个循环；移除service主动BM关闭、quiesce协议、退出阶段日志及相关测试。
+独立池适配器、NUMA、ready/free记账与两轮精简验收保留，验收按实际进程清理、端口释放及重启判定。
+不改写NPU002/003历史失败报告，撤回的主动关闭要求不再作为本票门槛。
+尚无用户对恢复后版本的NPU验收确认，State保持open。
+
+### 2026-10-29：NPU003 最终退出阶段分析
+
+用户回传MR/SR已quiesced，两侧全rank的BM、host与distributed阶段标记齐全；
+D仍有16个、P仍有8个scheduler在父进程15秒期限后被强制清理。
+核对发现distributed标记只证明abort helper返回，其缺少API/吞异常分支也会返回，不能证明HCCL销毁。
+剩余范围为函数返回时对象析构与multiprocessing/线程/native收尾，需要退出窗口调用栈区分。
+本轮按用户要求仅分析，未修改实现；003仍未通过，State保持open。
+
+### 2026-10-29：NPU003 正常关闭日志核验失败
+
+用户回传 `prefill: normal shutdown used forced cleanup or crashed`。
+失败发生于汇总核验，需读取具体错误标记和新退出阶段回执；尚不能确定BM后清理停在哪一步。
+D日志已由本次入口收集到31，下一步只读现有日志，不重跑验收。
+[故障记录](../verification/k1-ticket02-003-20261029/diagnosis.md)。NPU003未通过，State保持open。
 
 ### 2026-10-29：受控停机修复交付，等待 NPU003
 

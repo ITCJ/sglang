@@ -4,94 +4,67 @@
 生产服务通过规划会话建池，仍为每 rank 私有副本。
 状态为 **代码交付，等待用户 NPU 验收；State=open**。
 
-## NPU002 关闭修正
+[按NPU、Ascend、公共主线分组的最终代码清单](code-changes-ticket02.md)。
 
-用户运行 NPU002 时，D 断连使仍在工作的 Main 向 P 传播 `Host unreachable`。
-本次改为先通过 Main 的 `POST /quiesce` 停止接单，已有请求仍完成原释放流程。
-双方 free_ack 收齐后，Main 请求两侧 SR 确认全部 rank 空闲。
-32 个 rank 的确认齐全后，SR 停止控制 tick，Main 停止向已确认的 SR 发心跳。
-验收入口记录 `control-quiesced.json`，跨机确认后才先关闭 D、再关闭 P。
-意外断连仍然 fail-stop；真实 TCP/ZMQ 回归覆盖受控与意外两种断连。
+## 当前退出约定
 
-正常退出报告同时要求逐 rank 的 BM 关闭与 `distributed_released` 回执，
-并拒绝 scheduler 强制清理或崩溃，避免只凭父进程返回0误判。
-新增 `host_resources_released` / `distributed_released` 标记用于定位 BM 之后的退出阶段。
-NPU002 的 D 后续滞留及 native double free 尚无调用栈，未宣称已修复；等待 NPU003 验证。
+用户明确要求沿用 SGLang 默认退出方法，由已有父进程/进程清理路径结束 worker，
+并要求避免非必要的主线代码修改。已写入仓库 AGENTS.md，后续按此执行。
 
-## 正常路径
+`scheduler.py`、`disaggregation/prefill.py`、`decode.py` 已恢复到本票之前的版本。
+移除本票新增的主动 BM 关闭 hook、MR/SR quiesce、退出阶段日志及其测试。
+验收入口恢复既有 `Processes` 清理自己启动的进程组；两侧自动协调，检查进程清理、
+端口释放和同端口重启。父进程按默认方式终止 worker 不再视为本票失败。
 
-规划器将 NUMA、owner、成员、participant、端口和物理贡献组成 `PoolSession`。
+不再要求逐 rank 的 `session_closed` / `distributed_released` 回执，
+不把进程回收解释为已显式执行 BM leave/uninitialize。
+独立池组件仍保留原有 `manager.close(drain)`，供组件调用者使用；真实服务不额外接入此关闭路径。
+历史 NPU002/003 的失败记录保留，不改写为通过，也不据此关闭票据。
+
+## 正常请求路径
+
+规划器将 NUMA、owner、成员、participant、端口和贡献量组成 `PoolSession`。
 服务在 Graph capture 前初始化 BM、建池并确认 device 映射。
-实验 `SharingPool` 复用同一份 owner 映射和 join 检查。
-旧 `initialize_rank_pair()` 包装已删除，启动测试也迁到实际服务接口。
+实验 `SharingPool` 复用同一份 owner 映射和 join 检查，旧 rank-pair 包装已删除。
 
-写回完成事实由 runtime 提供；该事实已经核验各层主 KV 和 Index K。
-SR 分别记录命中段 fill、新算段写回，按副本覆盖位图算公共连续范围。
-旧计数器同时计算，验收逐事件比对结果，保留原连续写入约束。
-本票仍在整个 prompt 完成后发 ready，三条件首 token 门控保持原语义。
+runtime 提供已核验各层主 KV 与 Index K 的写回事实；SR按副本记录命中段fill及新算段写回，
+由覆盖位图计算 ready_tokens，与原连续计数器逐事件对照。
+仍在整个 prompt 完成后发 ready，保留原三条件首 token 门控。
 
-每份副本初始一个读者；D 在 drain 和写回结束后归零。
-P 收到 Main 的 free 时，D-finished 已证明远端读者停止。
-free_ack 还需 native/source 清理完成，报告记录每 rank 的零读者证据。
-
-正常退出沿用 scheduler 的 graceful 资源释放入口，先同步设备，再 leave、destroy、
-BM uninitialize；保持共享的全局 MF 给 TransferEngine，直到进程退出。
-精简验收先完成 Main/SR 停机确认，再退出 D 客户端，最后退出持有 BM Store 的 P。
-故障路径仍保留分配到进程退出；不把故障进程终止解释为成功 drain。
+每份副本初始一个读者，D drain与写回结束后归零；P收到Main的free前，D-finished已证明远端读者停止。
+free_ack仍要求native/source清理完成，保留逐rank零读者证据。
 
 ## 功能源码阅读顺序
 
 1. [sharing_plan.py](../../python/sglang/srt/hardware_backend/npu/mempool/sharing_plan.py)：从既有分组生成会话参数。
-2. [manager.py](../../python/sglang/srt/hardware_backend/npu/mempool/manager.py)：多成员会话初始化、owner 映射、注册与关闭。
-3. [runtime.py](../../python/sglang/srt/hardware_backend/npu/mempool/runtime.py)：真实模型在 capture 前接入规划会话。
+2. [manager.py](../../python/sglang/srt/hardware_backend/npu/mempool/manager.py)：会话初始化、owner映射、注册与组件关闭接口。
+3. [runtime.py](../../python/sglang/srt/hardware_backend/npu/mempool/runtime.py)：模型在capture前接入规划会话。
 4. [mempool_accounting.py](../../python/sglang/srt/disaggregation/ascend/mempool_accounting.py)：副本覆盖位图与读者计数。
 5. [mempool_tick.py](../../python/sglang/srt/disaggregation/ascend/mempool_tick.py)：传递真实完成的写入范围。
-6. [mempool_service.py](../../python/sglang/srt/disaggregation/ascend/mempool_service.py)：活跃/已分离请求的完成事实，以及正常退出清理。
-7. [mempool_subrouter.py](../../python/sglang/srt/disaggregation/ascend/mempool_subrouter.py)：在调度 tick 中汇总位图与读者，发布 ready/free 证据。
-8. [mempool_router_transport.py](../../python/sglang/srt/disaggregation/ascend/mempool_router_transport.py)：注册副本 owner、成员和会话。
-9. [prefill.py](../../python/sglang/srt/disaggregation/prefill.py)、[decode.py](../../python/sglang/srt/disaggregation/decode.py)：让四种 PD 调度循环响应既有 graceful exit。
-10. [scheduler.py](../../python/sglang/srt/managers/scheduler.py)：在正常资源释放时调用 Ascend 服务关闭。
-11. [sharing_pool.py](../../ascend-mempool-test/src/ascend_mempool/sharing_pool.py)：让原共享组件复用公共适配器，移除重复的 join 和 owner 映射。
+6. [mempool_service.py](../../python/sglang/srt/disaggregation/ascend/mempool_service.py)：活跃和已分离请求的完成事实。
+7. [mempool_subrouter.py](../../python/sglang/srt/disaggregation/ascend/mempool_subrouter.py)：汇总覆盖与读者，发布ready/free证据。
+8. [mempool_router_transport.py](../../python/sglang/srt/disaggregation/ascend/mempool_router_transport.py)：注册副本owner、成员和会话。
+9. [sharing_pool.py](../../ascend-mempool-test/src/ascend_mempool/sharing_pool.py)：实验组件复用公共适配器，移除重复join和owner映射。
 
-本轮关闭修正的阅读顺序：
+验收入口看 [run_mempool_min.py](../../ascend-mempool-test/scripts/run_mempool_min.py)
+的两轮编排与 [verify_mempool_session.py](../../ascend-mempool-test/scripts/verify_mempool_session.py) 的结果汇总。
 
-1. [mempool_router.py](../../python/sglang/srt/disaggregation/ascend/mempool_router.py)：停止接单、等待 free_ack、收齐全 rank 空闲回执。
-2. [mempool_router_transport.py](../../python/sglang/srt/disaggregation/ascend/mempool_router_transport.py)：quiesce HTTP 入口与停止已确认 SR 的心跳。
-3. [mempool_subrouter.py](../../python/sglang/srt/disaggregation/ascend/mempool_subrouter.py)：TP 共识确认空闲，回执后停止协议处理。
-4. [mempool_service.py](../../python/sglang/srt/disaggregation/ascend/mempool_service.py)：同时停止旧 P/D 控制 tick，记录结构化退出阶段。
-5. [scheduler.py](../../python/sglang/srt/managers/scheduler.py)：在主机资源释放、通信清理完成后发出阶段回执。
+## Ascend/NPU 目录外功能改动
 
-验收入口依次看 [run_mempool_min.py](../../ascend-mempool-test/scripts/run_mempool_min.py)
-的两轮编排、[verify_mempool_session.py](../../ascend-mempool-test/scripts/verify_mempool_session.py)
-的证据汇总，以及 [run_service.sh](../../ascend-mempool-test/scripts/run_service.sh) 的服务进程退出路径。
-
-## Ascend/NPU 目录外功能改动的必要性
-
-- `scheduler.py`：接入退出 hook 与主机/通信清理完成回执。公共进程 finally 才知道
-  何时进入正常退出，以及其他资源释放和 `abort_distributed_environment()` 何时返回；
-  Ascend 服务自身无法观察调用方后续清理，也不能用 atexit 保证设备和跨进程访问已停止。
-- `disaggregation/prefill.py`、`decode.py`：原四个 PD 循环为 `while True`，不响应
-  `ShutdownReq` 设置的 `gracefully_exit`，导致新关闭 hook 不可达。
-  改成与普通 scheduler 相同的退出条件；Ascend hook 不能退出调用方的循环。
-- `ascend-mempool-test/`：独立 NPU 验收与原共享组件按仓库要求存放在这里。
-  运行脚本、证据核对和 SDK 替身不放进生产包；旧共享组件删除重复实现。
+本票在公共scheduler及PD循环上的改动全部撤回。
+保留的目录外功能为 `ascend-mempool-test/` 独立NPU组件与验收脚本，按仓库约定存放于此；
+运行编排、证据检查和SDK替身不放进生产包。
 
 ## 验收与精简
 
 [逐机命令及判据](../../ascend-mempool-test/K1_TICKET02.md)。
-`session-acceptance` 固定两轮；首轮正常请求后注入故障，第二轮验证重启与正常 BM 关闭。
-复制 smoke 改为服务使用的 block_dim 48、一次 eager 与一次 replay。
-旧完整验收入口保留用于后续确需全覆盖的任务，K1-02 默认使用精简入口。
+`session-acceptance`固定两轮：首轮请求后注入故障，第二轮验证同端口重启；每轮使用既有进程清理。
+复制smoke只运行block_dim 48、一次eager与一次replay。
+V3使用独立标准答案，不重启参考服务；V8用真实注册做CPU容量拒绝重放。
+报告明确标为 K1-02 reduced functional acceptance。
+物理DRAM页计数与性能不在本票验收范围内。
 
-用户授权精简后，V3 改为独立标准答案检查；不重启参考服务。
-V8 容量检查用实际注册做 CPU 重放；不另启容量故障服务。
-报告明确标为 K1-02 reduced functional acceptance，保留这些覆盖变化。
-性能仍在测试分支；真实物理页落点和故障退出后 DRAM 页计数未由本票证明。
-
-## Mac 验证与审查
-
-完整 CPU 套件及审查修复后的结果见 [验证记录](verification/ticket02-cpu-20261029/README.md)。
-TDD red/green 覆盖规划会话、SR 页覆盖、正常关闭和证据缺失。
-审查发现的旧包装、IPv6、TIME_WAIT、Store 退出顺序和 PD 循环退出问题均已修复。
-Standards 与 Spec 分别复审，无剩余阻塞；本次停机修正尚未执行 NPU。
-本轮完整 CPU 490 项、6 模块严格类型检查通过，见[停机修复验证](verification/ticket02-quiesce-cpu-20261029/README.md)。
+历史实现检查见[初次验证](verification/ticket02-cpu-20261029/README.md)与
+[已撤回停机扩展的验证](verification/ticket02-quiesce-cpu-20261029/README.md)。
+最新[恢复默认退出验证](verification/ticket02-default-exit-20261030/README.md)：
+483项CPU、6模块strict mypy及两轴复审通过；本次NPU未执行。

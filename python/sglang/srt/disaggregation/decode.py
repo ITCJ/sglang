@@ -2671,7 +2671,7 @@ class SchedulerDisaggregationDecodeMixin:
     def event_loop_normal_disagg_decode(self: Scheduler):
         """A normal scheduler loop for decode worker in disaggregation mode."""
 
-        while not self.gracefully_exit:
+        while True:
             # Pending rooms from the prior cycle can overlap request intake and
             # the tail of the in-flight decode graph.
             if not self._engine_paused:
@@ -2715,7 +2715,7 @@ class SchedulerDisaggregationDecodeMixin:
             tmp_batch, tmp_result = self.result_queue.popleft()
             self.process_batch_result(tmp_batch, tmp_result)
 
-        while not self.gracefully_exit:
+        while True:
             # Pending rooms from the prior cycle can overlap request intake and
             # the tail of the in-flight decode graph.
             if not self._engine_paused:

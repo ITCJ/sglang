@@ -516,7 +516,6 @@ class MempoolSubrouter:
         self.last_op = 0
         self._admit_pages: tuple[int, ...] | None = None
         self.fault: str | None = None
-        self.quiesced = False
 
     def track(self, req: Any) -> None:
         self.shard.track(req)
@@ -524,8 +523,6 @@ class MempoolSubrouter:
     def advance(
         self, facts: Sequence[RequestObservation], fault: str | None = None
     ) -> None:
-        if self.quiesced:
-            return
         control = self.shard.control
         leader = control.local.tp_rank == 0
         incoming: list[dict[str, Any]] = []
@@ -559,15 +556,11 @@ class MempoolSubrouter:
                 registration=registration,
                 restored=self.shard.restore is None or self.shard.restore.ready,
                 filled=self.shard.fill_complete,
-                idle=self.shard.request is None
-                and not self.pending
-                and not control.has_pending_requests()
-                and all(f.native_freed for f in facts),
                 fault=fault or self.fault or control.snapshot().protocol_fault,
             )
         )
         results: dict[str, Any] = dict(
-            error=None, ack=None, events=[], registration=None, quiesce=None
+            error=None, ack=None, events=[], registration=None
         )
         command = None
         dispatch = self.shard.dispatch
@@ -601,11 +594,6 @@ class MempoolSubrouter:
                     continue
                 if message["kind"] == "error":
                     raise RuntimeError(message["reason"])
-                if message["kind"] == "quiesce":
-                    if not all(o["idle"] for o in observations):
-                        raise RuntimeError("SR quiesce requires all requests released")
-                    results["quiesce"] = dict(rank=control.local.tp_rank, idle=True)
-                    continue
                 self.pending.append(message)
             room = self.shard.request["room"] if self.shard.request else None
             common_facts = [
@@ -691,18 +679,6 @@ class MempoolSubrouter:
                     )
                 )
             raise RuntimeError(f"SR fail-stop: {self.fault}")
-        if all(r["quiesce"] is not None for r in committed):
-            self.quiesced = True
-            if leader:
-                self.send(
-                    dict(
-                        run_id=self.run_id,
-                        role=control.local.role,
-                        kind="quiesce_ack",
-                        ranks=[r["quiesce"] for r in committed],
-                    )
-                )
-            return
         acknowledged = command is not None and all(
             r["ack"] is not None for r in committed
         )

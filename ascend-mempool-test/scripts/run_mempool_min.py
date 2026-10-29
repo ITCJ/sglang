@@ -160,8 +160,6 @@ def service_environment(
     )
     if target:
         env[CONFIG_ENV], env[RUN_ENV] = str(args.config), args.run_id
-        if args.mode == "session-acceptance":
-            env["MEMPOOL_SERVICE_PROCESS"] = "1"
         if getattr(args, "rank_numa_map", None) is not None:
             env["MEMPOOL_RANK_NUMA_MAP"] = str(args.rank_numa_map)
             env.pop("SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE", None)
@@ -836,8 +834,6 @@ class Runner:
                             (root / f"{role}.log").read_bytes()
                         )
                 self.timeout_case(jobs, server, root, base)
-            if self.session_acceptance and restart:
-                self.close_session(server, jobs, root)
         self.peer.barrier(name + "-stopped")
         if inject_fault:
             self.final_timeout_evidence(root)
@@ -864,50 +860,6 @@ class Runner:
         write_json(root / "process-cleanup.json", dict(status="passed", paired=True))
         self.report["stages"].append(name)
         write_json(self.root / "summary.json", self.report)
-
-    def close_session(
-        self, server: subprocess.Popen[bytes], jobs: Processes, root: Path
-    ) -> None:
-        """Quiesce Main/SR before stopping D clients and then their P Store."""
-        receipt = root / "control-quiesced.json"
-        if self.is_p:
-            base = f"http://{self.config.prefill_host}:{self.config.main_port}"
-            snapshot = request_json(base + "/quiesce", payload={})
-            deadline = time.monotonic() + 60
-            while not snapshot["quiesced"]:
-                if snapshot["fault"]:
-                    raise RuntimeError(f"control quiesce failed: {snapshot['fault']}")
-                self.peer.check()
-                jobs.alive("prefill before quiesce", server)
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("Main/SR quiesce exceeded 60s")
-                time.sleep(0.1)
-                snapshot = request_json(base + "/status")
-            evidence = {
-                key: snapshot[key]
-                for key in ("stopping", "quiesced", "fault", "active", "quiesce_acks")
-            }
-            verify_mempool_session.check_quiesce(evidence)
-            write_json(receipt, evidence)
-            send_log(self.peer, receipt)
-        else:
-            receive_log(self.peer, receipt)
-        self.peer.barrier("control-quiesced")
-        if not self.is_p:
-            server.terminate()
-            jobs.wait(
-                "decode graceful shutdown", server, timeout=60, check=self.peer.check
-            )
-        self.peer.barrier("decode-session-closed")
-        if self.is_p:
-            server.terminate()
-            jobs.wait(
-                "prefill graceful shutdown", server, timeout=60, check=self.peer.check
-            )
-            receive_log(self.peer, root / "decode.log")
-        else:
-            send_log(self.peer, root / "decode.log")
-        self.peer.barrier("prefill-session-closed")
 
     def capacity_stage(self) -> None:
         """Reject a real TP registration with one deliberately limited rank."""
@@ -1144,7 +1096,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     stages=[
                         "paired preflight; one P/D/mixed fetch smoke (48, one replay)",
                         "round 1: ABCE + load/EOS, registration and accounting, then fail-stop",
-                        "round 2: same-port restart, ABCE + load/EOS, normal shutdown",
+                        "round 2: same-port restart, ABCE + load/EOS, default process cleanup",
                         "independent answers; capacity rejection CPU replay; paired port cleanup",
                     ]
                     if args.mode == "session-acceptance"

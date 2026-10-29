@@ -1,0 +1,29 @@
+{
+  "base": "993ae38ed6",
+  "restored_verbatim": [
+    "python/sglang/srt/managers/scheduler.py",
+    "python/sglang/srt/disaggregation/prefill.py",
+    "python/sglang/srt/disaggregation/decode.py",
+    "python/sglang/srt/disaggregation/ascend/mempool_router.py",
+    "ascend-mempool-test/scripts/run_service.sh"
+  ],
+  "final_changed_sources": [
+    "ascend-mempool-test/K1_TICKET02.md",
+    "ascend-mempool-test/scripts/run_mempool_min.py",
+    "ascend-mempool-test/scripts/verify_mempool_session.py",
+    "ascend-mempool-test/src/ascend_mempool/sharing_pool.py",
+    "ascend-mempool-test/tests/unit/test_mempool_min_entry.py",
+    "ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py",
+    "ascend-mempool-test/tests/unit/test_mempool_subrouter.py",
+    "ascend-mempool-test/tests/unit/test_pair_startup.py",
+    "ascend-mempool-test/tests/unit/test_pool_session.py",
+    "python/sglang/srt/disaggregation/ascend/mempool_accounting.py",
+    "python/sglang/srt/disaggregation/ascend/mempool_router_transport.py",
+    "python/sglang/srt/disaggregation/ascend/mempool_service.py",
+    "python/sglang/srt/disaggregation/ascend/mempool_subrouter.py",
+    "python/sglang/srt/disaggregation/ascend/mempool_tick.py",
+    "python/sglang/srt/hardware_backend/npu/mempool/manager.py",
+    "python/sglang/srt/hardware_backend/npu/mempool/runtime.py",
+    "python/sglang/srt/hardware_backend/npu/mempool/sharing_plan.py"
+  ]
+}

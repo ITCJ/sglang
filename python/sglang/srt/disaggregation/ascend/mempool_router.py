@@ -73,23 +73,10 @@ class MainRouter:
         self.next_request = 0
         self.started = self.clock()
         self.last_seen: dict[str, float] = {}
-        self.stopping = False
-        self.quiesce_sent_at: float | None = None
-        self.quiesce_acks: dict[str, list[dict[str, Any]]] = {}
 
     @property
     def ready(self) -> bool:
-        return len(self.registrations) == 2 and self.fault is None and not self.stopping
-
-    @property
-    def quiesced(self) -> bool:
-        return len(self.quiesce_acks) == 2 and self.fault is None
-
-    def quiesce(self) -> None:
-        """Stop admission; let the active request reach both free_ack receipts."""
-        if self.fault or len(self.registrations) != 2:
-            raise RequestRejected(self.fault or "registration is incomplete", 503)
-        self.stopping = True
+        return len(self.registrations) == 2 and self.fault is None
 
     def register(self, registration: dict[str, Any]) -> None:
         role = registration["role"]
@@ -183,13 +170,7 @@ class MainRouter:
     def submit(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not self.ready:
             raise RequestRejected(
-                self.fault
-                or (
-                    "Router is stopping"
-                    if self.stopping
-                    else "all-rank registration is incomplete"
-                ),
-                503,
+                self.fault or "all-rank registration is incomplete", 503
             )
         if self.active is not None:
             raise RequestRejected(
@@ -439,9 +420,6 @@ class MainRouter:
             dict(
                 ready=self.ready,
                 fault=self.fault,
-                stopping=self.stopping,
-                quiesced=self.quiesced,
-                quiesce_acks=self.quiesce_acks,
                 active=active,
                 ledger={k: v.snapshot() for k, v in self.ledger.items()},
                 directory=self.directory,
@@ -474,16 +452,6 @@ class MainRouter:
             return
         if kind == "error":
             raise RuntimeError(f"SR {role}: {message.get('reason')}")
-        if kind == "quiesce_ack":
-            ranks = message["ranks"]
-            if (
-                self.quiesce_sent_at is None
-                or [r["rank"] for r in ranks] != list(range(16))
-                or any(r.get("idle") is not True for r in ranks)
-            ):
-                raise ValueError("quiesce_ack requires every idle TP rank")
-            self.quiesce_acks[role] = copy.deepcopy(ranks)
-            return
         operation = self.operations.get(message["op_id"])
         if operation is None:
             raise ValueError("unknown Router operation")
@@ -848,31 +816,12 @@ class MainRouter:
 
     def check_timeouts(self) -> None:
         now = self.clock()
-        if (
-            self.stopping
-            and self.fault is None
-            and self.active is None
-            and self.quiesce_sent_at is None
-        ):
-            self.quiesce_sent_at = now
-            for role in ROLES:
-                self.outbox.append(dict(run_id=self.run_id, role=role, kind="quiesce"))
-        if (
-            len(self.registrations) != 2
-            and now - self.started > self.config.startup_timeout
-        ):
+        if not self.ready and now - self.started > self.config.startup_timeout:
             self.fail("SR registration timeout")
-        if len(self.registrations) == 2 and any(
-            role not in self.quiesce_acks and now - t > self.config.operation_timeout
-            for role, t in self.last_seen.items()
+        if self.ready and any(
+            now - t > self.config.operation_timeout for t in self.last_seen.values()
         ):
             self.fail("SR heartbeat timeout")
-        if (
-            self.quiesce_sent_at is not None
-            and not self.quiesced
-            and now - self.quiesce_sent_at > self.config.operation_timeout
-        ):
-            self.fail("SR quiesce timeout")
         if any(
             op["ack"] is None and now - op["sent"] > self.config.operation_timeout
             for op in self.operations.values()
