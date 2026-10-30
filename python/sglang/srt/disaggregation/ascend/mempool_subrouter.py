@@ -297,6 +297,7 @@ class RouterShard:
                     ),
                 )
                 self.request = self.dispatch = self.identity = self.req = None
+                self.coverage = self.last_coverage = None
                 self.sent_events.clear()
             else:
                 raise ValueError(f"unsupported Router command {kind}")
@@ -692,7 +693,7 @@ class MempoolSubrouter:
                 ready_tokens=ready_tokens,
             )
         except Exception as exc:
-            results["error"] = str(exc)
+            results["error"] = str(exc) or type(exc).__name__
         committed = self.gather(results)
         errors = [r["error"] for r in committed if r["error"]]
         if errors:

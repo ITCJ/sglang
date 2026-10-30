@@ -17,7 +17,85 @@ from ascend_mempool_pd.mempool_tick import RequestObservation
 
 
 class TestSubrouter(unittest.TestCase):
-    def test_shared_slot_waits_for_last_writer_cleanup_before_free_ack(self):
+    def test_empty_commit_exception_stops_every_rank_before_registration_ack(self):
+        def fail_mapping():
+            raise AssertionError()
+
+        self.ticks["prefill"][0].verify_mapping = fail_mapping
+        with self.assertRaisesRegex(RuntimeError, "SR fail-stop: AssertionError"):
+            self.advance("prefill")
+        self.assertFalse(any(m["kind"] == "register" for m in self.messages["prefill"]))
+        self.assertTrue(
+            all(c.snapshot().protocol_fault for c in self.controls["prefill"])
+        )
+
+    def test_shared_free_then_next_allocation_keeps_tp_ownership_consistent(self):
+        self.shared_free_then_next_allocation(main_written=False)
+
+    def test_shared_write_counts_retire_before_the_next_allocation(self):
+        self.shared_free_then_next_allocation(main_written=True)
+
+    def shared_free_then_next_allocation(self, *, main_written):
+        from ascend_mempool_pd.mempool_subrouter import native_wire
+        from ascend_mempool_pd.mempool_tick import MempoolTPTick
+
+        self.test_shared_slot_waits_for_last_writer_cleanup_before_free_ack(
+            main_written=main_written
+        )
+        request = dict(
+            self.request,
+            rid="r2",
+            room=2,
+            attempt="next",
+            input_ids=[7] * 5120,
+            prompt_tokens=5120,
+            hit_len=4096,
+        )
+        bindings = [
+            dict(
+                rank=rank,
+                message=native_wire(
+                    control.acquire_decode(2, "next", 1, 5120, 4, "tcp://d:1")
+                ),
+            )
+            for rank, control in enumerate(self.controls["decode"])
+        ]
+        self.op += 1
+        self.commands["prefill"].append(
+            dict(
+                run_id="cpu",
+                role="prefill",
+                kind="alloc",
+                rid="r2",
+                room=2,
+                attempt="next",
+                op_id=self.op,
+                request=request,
+                bindings=bindings,
+            )
+        )
+        self.advance("prefill")
+        # The service runs the native TP tick before its next SR tick.
+        collective = CPUCollective()
+        ticks = [
+            MempoolTPTick(
+                control,
+                gather=lambda value, r=rank: collective.gather(r, value),
+                send=lambda endpoint, message: None,
+                reply_to="tcp://p:1",
+                clock=lambda: 1.0,
+            )
+            for rank, control in enumerate(self.controls["prefill"])
+        ]
+        with ThreadPoolExecutor(max_workers=16) as workers:
+            list(workers.map(lambda tick: tick.advance(()), ticks))
+        ack = self.messages["prefill"][-1]
+        self.assertEqual((ack["kind"], ack["rid"]), ("alloc_ack", "r2"))
+        self.assertEqual([r["slot"] for r in ack["ranks"]], [0] * 16)
+
+    def test_shared_slot_waits_for_last_writer_cleanup_before_free_ack(
+        self, *, main_written=False
+    ):
         from msgspec.structs import replace
 
         self.setUp(main_groups=tuple((r, r + 1) for r in range(0, 16, 2)))
@@ -33,6 +111,7 @@ class TestSubrouter(unittest.TestCase):
                     writes_done=True,
                     native_freed=r != 15,
                     write_range=(0, 128),
+                    main_written=128 if main_written and r % 2 == 0 else 0,
                 )
             ]
             for r in range(16)

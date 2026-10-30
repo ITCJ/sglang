@@ -112,6 +112,13 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 
 ## D 名称、验收与实施票怎样对应
 
+2026-10-31 K1-05首次NPU验收失败后的修复：A完成，B在P分配阶段触发TP状态分歧。
+CPU已复现同一异常：free未清除coverage，旧writer_rows触发rank0空消息AssertionError，异常被误判为成功。
+现释放时清除coverage与last_coverage，并保留空消息异常的类型名；40项相关CPU通过，双轴复审0项。
+
+NPU run k1-ticket05-001失败，002重测尚未运行；05保持open，08不解锁。
+[失败证据、修复与验证](../k1/verification/k1-ticket05-001-20261031/diagnosis.md)。
+
 2026-10-30 K1-05第7步：双轴评审与交付完成，仍等待用户NPU验收。
 Spec发现启动阶段误用share=0检查器，已按当前配置选择共享校验；新增红绿回归通过。
 Standards建议区分writer rank与物理副本，已改名并直接按组分配位图。

@@ -18,6 +18,15 @@
 
 ## Comments
 
+### 2026-10-31：NPU001失败已复现并修复，等待002重验
+
+用户31/32在cf2069abf5通过复制smoke，A完成；B分配时P发生TP ownership/phase diverged。
+根因是free遗留coverage，空请求下writer_rows变化触发rank0空消息AssertionError，而异常收集误判成功。
+现free清除coverage/last_coverage，并保留空异常的类型名；40项相关CPU通过，双轴复审0项。
+本轮仅Ascend SR功能文件改动，默认退出与释放门禁保留。
+[失败证据、复现、源码与验证](../verification/k1-ticket05-001-20261031/diagnosis.md)。
+NPU重测run-id为k1-ticket05-002，尚未执行；State保持open，08不解锁。
+
 ### 2026-10-30：实现交付，等待用户 NPU 验收
 
 P主KV按组共享，P Index K、prefix与D主KV仍私有；按页分写、分工fill、共享源admit已接通。
