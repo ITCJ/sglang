@@ -538,9 +538,6 @@ class MainRouter:
                     self.launches.append(active["request"])
         elif kind in ("load_back_ack", "fill_ack"):
             self._read_ack(command, ranks)
-            if kind == "load_back_ack" and self.config.profile_prefix:
-                # Temporary acceptance timing; no protocol/lifecycle decision uses it.
-                operation["elapsed_ms"] = (self.clock() - operation["sent"]) * 1000
         elif kind == "ready_tokens":
             if (
                 role != "prefill"

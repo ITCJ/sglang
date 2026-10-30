@@ -44,8 +44,6 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     verify_prefix: bool = False
     match_prefix: bool = False
     prefix_read_assignment: str = "round_robin"
-    # Temporary K1-03 diagnostic; remove after user acceptance.
-    profile_prefix: bool = False
 
     def __post_init__(self) -> None:
         if self.prefix_read_assignment not in ("round_robin", "contiguous"):

@@ -5,7 +5,24 @@
 两块汇总缓冲层间复用，一张槽位表供主KV与Index K共用。
 主KV仍拆回512维和64维缓冲，全部rank完成恢复后才返回`load_back_ack`。
 
-## 运行
+## 已验收版本与清理后的使用方式
+
+用户已确认0337b9b9ad、k1-ticket03-006功能验收通过，票据03已关闭。
+当前代码已移除本票临时计时、工程计数/日志和逐层gather内容比较。
+保留两块缓冲、共享槽位表、三步恢复、完成门控，以及原有计算源与native HBM验证。
+
+下文记录的是0337b9b9ad的历史验收入口及覆盖；当前CLI不再提供split-read-acceptance，
+RouterConfig也不再接受profile_prefix。复现完整006探针需使用该已验收版本。
+历史报告和verify_mempool_split_read.py保留，用于核对旧版本证据。
+当前普通服务仍可选择prefix_read_assignment=round_robin或contiguous；
+session-acceptance保留两轮精简功能检查，按配置使用同一策略，不声称覆盖已删除的探针。
+普通配置不增加verify_prefix/profile_prefix；既有session-acceptance会启用原生内容验证。
+
+[用户确认](../.scratch/k1/verification/k1-ticket03-006-20261030/acceptance.md)与
+[清理后验证](../.scratch/k1/verification/ticket03-cleanup-20261030/README.md)分开记录。
+006没有重新运行，清理后的版本尚无新的NPU报告。
+
+## 历史运行命令（仅0337b9b9ad）
 
 沿用ticket02已验收的31/32环境、权重、网络接口和配置。
 P/D各TP16，page128，P slot8192、D slot128，P eager、D Graph。
@@ -19,8 +36,11 @@ P/D各TP16，page128，P slot8192、D slot128，P eager、D Graph。
 005已运行6f50c4d54b，host映射标志已撤销；TP3的19003 config store启动返回-2009。
 按本地SDK源码该值为地址占用；用户事后查询19003返回matches: 0，没有当前占用者。
 005未进入prefix校验。现按用户要求，整个prefix验证链不额外读取BM DRAM，
-以计算时独立保存的CPU快照核对汇总与原生HBM；006用于复测。
+以计算时独立保存的CPU快照核对汇总与原生HBM；006已在0337b9b9ad双端自动通过。
 详见[005故障与验证改造记录](../.scratch/k1/verification/k1-ticket03-005-20261030/README.md)。
+
+[006报告与计时解释](../.scratch/k1/verification/k1-ticket03-006-20261030/README.md)已归档，
+用户已确认关闭；下列命令记录已执行的006，不要求再次运行。
 
 31（P）：
 
@@ -117,4 +137,4 @@ V2的HBM→CPU取回和比较会影响T_lb_rank、墙钟及rank间等待，
 不能据此宣称生产吞吐收益或纯通信时间；生产三段event不包围这些CPU核对。
 新表不设性能门槛；回传后按分段分析变差，必要时再安排关闭V2的对照。
 
-用户确认验收后清理临时工程测试接线，具体清单见[交付说明](../.scratch/k1/delivery-ticket03.md)。
+用户确认后已按约定清理临时工程测试接线，具体清单见[交付说明](../.scratch/k1/delivery-ticket03.md)。

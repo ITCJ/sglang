@@ -1,91 +1,87 @@
-# K1-ticket03：prefix split_read交付
+# K1-ticket03：prefix split_read交付与清理
 
-整票基点`e23b57df7d`；合并缓冲修订基点`87e802de03`，本次005改造基点`6f50c4d54b`。
-实现、本地检查与双轴复审已完成。005在19003 config store启动时报地址占用；
-事后连接查询为0，本轮未进入prefix校验。用户现已确认整个prefix验证链不额外读BM。
-V2改用计算时独立保存的CPU源快照，006待复测，ticket保持open。
+整票基点`e23b57df7d`；用户验收版本`0337b9b9adb48baf160495594ec9b28908e890ba`。
+用户在2026-10-30确认31/32的`k1-ticket03-006`双策略功能验收通过，03已closed，
+并授权清理临时测试代码。见[人工确认](verification/k1-ticket03-006-20261030/acceptance.md)
+及[完整结果与范围](verification/k1-ticket03-006-20261030/README.md)。
 
-## 正常路径与所有权
+临时探针已删除，清理后CPU与复审进度见
+[清理记录](verification/ticket03-cleanup-20261030/README.md)。
+006硬件结果对应清理前版本；清理后未重新运行NPU。
+直接DRAM内容、物理NUMA及生产性能等已约定的验收限制保留。
 
-Main下发原有`load_back`，SR在统一调度tick内执行。
-分配函数按命中页的逻辑顺序分工；每rank从自己的物理副本读取分到的页。
-每次恢复只分配主KV和Index K两块汇总缓冲，层间复用。
-每层先H2D直接写本rank区段，再in-place all_gather，最后单核索引散开。
-散开核一次完成原生flat/FIA NZ地址映射及512/64拆分；Index K整行写入。
-槽位表每次恢复建立一次，所有层及两类数据共用，补齐槽位不生成表项。
-B/C各用32个槽位：主KV4,718,592B，Index K1,048,576B，共5.5MiB。
-C命中31页，rank15第二个槽位为补齐；不存在独立暂存区或KV重排缓冲。
-prefix副本、fill和admit的所有权及操作不变。
+## 清理后的正常路径与所有权
 
-本地event记录在全部恢复提交之后。生产poll查询event并返回缓存回执，不重复集合通信。
-SR复用已有全rank结果汇总，收齐所有设备完成回执后才向Main ack。
-后缀计算仍等整段恢复完成。进程退出沿用SGLang默认父进程清理。
+Main下发原有load_back，SR在统一调度tick内执行。
+分配函数按逻辑页分工；每rank从自己的物理prefix副本读取分到的页。
+每次恢复分配主KV和Index K两块汇总缓冲，层间复用。
+每层H2D直接写本rank区段，再in-place all_gather，最后单核索引散开。
+散开核直接完成flat/FIA NZ地址映射、主KV的512/64拆分和Index K整行写入。
 
-验收参考在计算源产生时由capture_source独立保存到CPU；admit完成后按prefix页绑定保留。
-每层gather后将汇总HBM取回CPU，按槽位与源快照逐token比较；之后执行scatter。
-全部恢复event完成后，按allocator索引核对原生HBM与同一源快照，覆盖两类数据。
-不再读取BM作为oracle，也没有额外诊断索引或第三块HBM数据缓冲。
-alive/admit/retained/fill/suffix记录的是计算源、页绑定与生命周期，DRAM内容未直接验证。
-所有prefix报告显式带content_source与bm_readback=false；oracle_read_bytes必须为0。
-生产load_back、fill/admit访问和完成门控保留；临时四段计时仍用于验收后清理。
+槽位表每次恢复建立一次，所有层及两类数据共用；补齐槽位不生成有效表项。
+B/C各用32个槽位：主KV4,718,592 B，Index K1,048,576 B，共5.5 MiB。
+C命中31页，rank15第二槽位为补齐；没有额外数据暂存区或重排缓冲。
+操作持有索引、表和缓冲，直到恢复event完成后才释放引用。
 
-## 功能源码阅读顺序
+全部恢复提交后记录完成event；poll只查询event并返回缓存回执。
+SR复用原有全rank汇总，收齐设备完成回执后向Main ack；后缀等整段恢复完成。
+prefix副本、fill/admit、默认父进程清理沿用已验收行为。
+
+原有verify_prefix选项保留：计算时独立保存CPU源快照，admit后按prefix页保留引用。
+恢复完成后核对原生HBM与快照，覆盖主KV及Index K。
+alive/admit/retained/fill/suffix记录计算源、页绑定与生命周期，明确bm_readback=false。
+原生内容检查不读取BM作oracle；默认普通服务不开启该验证。
+每层gather后的额外HBM→CPU比较已移除。
+
+## 最终净功能源码阅读顺序
+
+以下按整票基点至清理后工作树的净改动列出。
 
 Ascend/NPU专用代码：
 
-1. [split_read.py](../../python/sglang/srt/hardware_backend/npu/mempool/split_read.py)：轮转/连续分块分配函数。
-2. [prefix.py](../../python/sglang/srt/hardware_backend/npu/mempool/prefix.py)：两块汇总缓冲、共享槽位表、三步恢复与计算源快照核对。
-3. [restore_kernel.py](../../python/sglang/srt/hardware_backend/npu/mempool/restore_kernel.py)：Triton-Ascend单次发射，直接散开到flat/FIA NZ及Index K。
-4. [mempool_router_protocol.py](../../python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py)：分配策略和临时计时配置。
-5. [runtime.py](../../python/sglang/srt/hardware_backend/npu/mempool/runtime.py)：P侧接入TP设备组与配置；计算结束核对源捕获覆盖。
+1. [split_read.py](../../python/sglang/srt/hardware_backend/npu/mempool/split_read.py)：轮转/连续分块分配。
+2. [prefix.py](../../python/sglang/srt/hardware_backend/npu/mempool/prefix.py)：两块缓冲、共享槽位表、三步恢复；计算源与native HBM核对。
+3. [restore_kernel.py](../../python/sglang/srt/hardware_backend/npu/mempool/restore_kernel.py)：单次散开到flat/FIA NZ及Index K；无计时参数或预编译探针。
+4. [mempool_router_protocol.py](../../python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py)：分配策略配置及合法值约束。
+5. [runtime.py](../../python/sglang/srt/hardware_backend/npu/mempool/runtime.py)：P侧接入TP设备组、策略与源捕获覆盖检查。
 6. [mempool_router_transport.py](../../python/sglang/srt/disaggregation/ascend/mempool_router_transport.py)：注册实际分配策略。
-7. [mempool_router.py](../../python/sglang/srt/disaggregation/ascend/mempool_router.py)：核对策略；临时保存Main下发至ack的op2耗时。
-8. [mempool_subrouter.py](../../python/sglang/srt/disaggregation/ascend/mempool_subrouter.py)：全员设备完成后ack和因果证据。
-9. [mempool_service.py](../../python/sglang/srt/disaggregation/ascend/mempool_service.py)：fill完成后核对prefix/suffix组合的源覆盖。
-10. [restore_timing.py](../../python/sglang/srt/hardware_backend/npu/mempool/restore_timing.py)：临时NPU事件计时，明确待验收后删除。
+7. [mempool_router.py](../../python/sglang/srt/disaggregation/ascend/mempool_router.py)：核对注册策略一致。
+8. [mempool_service.py](../../python/sglang/srt/disaggregation/ascend/mempool_service.py)：fill完成后核对prefix/suffix组合的源覆盖。
 
-manager.py已撤销本票全部净改动：恢复原创建标志，删除直接CPU视图，故不列入最终功能阅读清单。
-
-通用主线功能源码：无改动。配置、模型接线和调度证据均可通过既有Ascend/NPU入口提供。
+通用主线功能源码：无净改动。以上行为均由Ascend/NPU入口提供。
+manager.py、mempool_subrouter.py相对整票基点已无净改动；restore_timing.py已删除。
 
 ## 脚本、测试与文档
 
-- `ascend-mempool-test/scripts/run_mempool_min.py`：新增`split-read-acceptance`，复用两轮编排，分别运行两策略。
-- `ascend-mempool-test/scripts/verify_mempool_split_read.py`：读取量、oracle、ack时序与策略输出比较。
-- `verify_mempool_prefix.py`、`verify_mempool_reuse.py`、`verify_mempool_full.py`、`verify_mempool_session.py`：区分源快照与HBM证据，报告DRAM内容覆盖限制。
-- `test_prefix_split_read.py`：真实映射存储加CPU集合通信替身，核对恢复内容和实际复制流量。
-- `test_mempool_restore_kernel.py`：执行真实核函数的地址算式，用CPU边界验证flat/NZ、512/64拆分及跳过补齐。
-- `test_mempool_split_read_evidence.py`：三步/缓冲/槽位表证据反例、计时表和双角色CLI预览。
-- `test_mempool_subrouter.py`：既有延迟最后rank用例接入分工读取，验证不提前ack。
-- `test_prefix.py`、`test_pool.py`、`test_mempool_router.py`：扩展既有存储/注册fixture，阻止host映射与CPU解引用，核对真实V2读量和缓冲复用。
-- `test_mempool_prefix_service.py`、`test_mempool_prefix_evidence.py`：源验证调用与报告来源标记；复用原有请求/生命周期边界。
-- [逐机运行说明](../../ascend-mempool-test/K1_TICKET03.md)、本记录、票据Comments与目标对齐D节。
+- run_ticket10.py与test_acceptance_runner.py：保留NPU002暴露的HTTP BadStatusLine有界就绪重试修复。
+- verify_mempool_prefix/reuse/full/session.py：保留计算源与原生HBM的证据来源、精简覆盖及DRAM未直接验证说明。
+- verify_mempool_split_read.py及test_mempool_split_read_evidence.py：保留已验收版本的离线报告核验、计时表和反例。
+- test_prefix_split_read.py：实际复制边界计数、两策略、1/31/32页、非连续页、两块缓冲、一张表、补齐及内容核对。
+- test_mempool_restore_kernel.py：真实散开核地址表达式的CPU验证，覆盖flat/NZ、512/64、Index K及补齐跳过。
+- test_mempool_subrouter.py：保留真实恢复路径的最后rank延迟回执检查。
+- test_prefix.py、test_mempool_prefix_service/evidence.py、test_pool.py、test_mempool_router.py：源快照、原生恢复、页生命周期、注册及证据范围检查。
+- [运行说明](../../ascend-mempool-test/K1_TICKET03.md)、票据Comments、验证归档及目标对齐D节/HTML。
 
-上述脚本和测试属于仓库约定的独立NPU验收目录，负责外部编排和CPU设备替身。
-它们不属于SGLang公共主线功能；无需在生产Ascend hook中承载测试进程管理。
+这些脚本和测试属于仓库独立验收目录，不属于通用主线功能源码。
+run_mempool_min.py撤下专用split-read-acceptance后恢复整票基点内容；其他服务和验收模式保留。
+历史双策略入口可在0337b9b9ad复现，当前离线脚本仍核对旧证据，不放宽通过判据。
 
-## 验证与下一步
+## 已清理的临时代码
 
-最新改造见[005诊断与检查](verification/k1-ticket03-005-20261030/README.md)：
-完整494项CPU单轮通过，8模块strict mypy及13文件静态检查通过，Standards/Spec均0项。
-NPU005启动失败，006待用户执行；CPU结果不表示硬件验收通过。
-此前[004诊断与检查](verification/k1-ticket03-004-20261030/README.md)记录的额外私有副本读取现已移除。
-此前[003修复检查](verification/k1-ticket03-003-20261030/README.md)的495项CPU通过，
-但host映射路径已被NPU004证伪并撤销。
-[合并缓冲本机验证](verification/ticket03-combined-cpu-20261030/README.md)记录此前检查。
-该历史版本完整CPU491项通过，10模块strict mypy通过，Standards/Spec无剩余发现。
-NPU003在首次scatter之前的CPU校验崩溃，尚无散开核执行通过证据。
-CPU地址语义验证不替代Triton-Ascend编译、HCCL输入输出别名和恢复stream实测。
-旧四跳版本的[验证记录](verification/ticket03-cpu-20261030/README.md)仅作历史保留。
+- restore_timing.py及PrefixStore/runtime/RouterConfig/Main的profile_prefix接线。
+- scatter包装的计时参数、warmup编译/加载探针；正常JIT发射仍由Triton完成。
+- _Read中的split_read/timing证据状态、每层发射和读取字节计数、两块缓冲首次日志。
+- slot_pages诊断副本、逐层gather额外比较及对应verified字段。
+- 完成/ack时间戳日志和Main的op2诊断墙钟。
+- 依赖上述探针的当前专用启动模式，以及只检查旧入口和计时编译顺序的2项测试。
 
-## 临时测试代码的删除边界
+实际复制、槽位表、两块缓冲、恢复stream、event及全rank完成门控保留。
+现有CPU回归通过设备替身观察真实内容/流量，不依赖已删除的生产证据字段。
+baselinetest未改；历史失败和NPU006原始报告保留。
 
-用户明确本轮测试可放在当前commit，baselinetest分支暂不修改。
-用户确认NPU验收后，删除`restore_timing.py`及PrefixStore、runtime、RouterConfig、Main中的计时接线。
-同时清理本轮新增的工程验收探针（缓冲/发射计数、首次恢复日志、gather源快照核对）；
-私有副本读回函数与oracle索引已按用户要求删除，原有计算源快照用于当前内容验收。
-保留功能核、槽位表、两块缓冲和完成门控。
-验收脚本、原始报告、此清单继续保留；以后需要时从本commit恢复临时探针。
-当前尚未验收，因此这些代码仍用于本次验证，不能提前删除。
+## 验证记录
 
-四段计时的口径、历史基线与局限见[运行说明](../../ascend-mempool-test/K1_TICKET03.md)。
+- [005源快照改造](verification/k1-ticket03-005-20261030/README.md)：494项CPU、静态检查和双轴复审。
+- [006 NPU结果](verification/k1-ticket03-006-20261030/README.md)：两策略内容/流量/输出、默认清理与重启通过，含诊断计时及限制。
+- [用户确认](verification/k1-ticket03-006-20261030/acceptance.md)：确认功能验收，关闭票据，授权清理。
+- [清理后检查](verification/ticket03-cleanup-20261030/README.md)：独立记录本机检查与两轴复审；不等同新增NPU实测。

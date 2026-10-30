@@ -7,7 +7,6 @@ import hashlib
 import importlib
 import json
 import logging
-import time
 from contextlib import nullcontext
 from typing import Any, Callable
 
@@ -17,7 +16,6 @@ from torch import Tensor
 
 from .layout import check_index, positive_int
 from .manager import MempoolKVManager
-from .restore_timing import RestoreTiming
 from .split_read import assign_pages
 
 logger = logging.getLogger(__name__)
@@ -55,8 +53,6 @@ class _Read(msgspec.Struct):
     event: Any = None
     retained: list[Tensor] = msgspec.field(default_factory=list)
     receipt: dict[str, Any] | None = None
-    split_read: dict[str, Any] = msgspec.field(default_factory=dict)
-    timing: Any = None
 
 
 class PrefixStore:
@@ -76,7 +72,6 @@ class PrefixStore:
         read_assignment: str = "round_robin",
         all_gather: Callable[[Tensor, Tensor], None] | None = None,
         scatter_kernel: Any = None,
-        profile: bool = False,
     ) -> None:
         positive_int("page_size", page_size)
         layout = manager.layout.prefix_main
@@ -92,8 +87,6 @@ class PrefixStore:
         )
         self._kernel = kernel
         self._scatter_kernel = scatter_kernel
-        self.profile = profile
-        self._restore_logged = False
         self._event_factory = event_factory or (lambda: torch.npu.Event())
         self._free = set(range(layout.slots))
         self._operations: dict[int, _Admit] = {}
@@ -242,12 +235,6 @@ class PrefixStore:
         if operation.receipt is None:
             if not operation.event.query():
                 return None
-            completed_ns = time.monotonic_ns()
-            timings = (
-                operation.timing.finish()
-                if self.profile and operation.indices is not None
-                else {}
-            )
             main, index = (
                 self.manager.layout.prefix_main,
                 self.manager.layout.prefix_index,
@@ -265,11 +252,6 @@ class PrefixStore:
             )
             if operation.indices is not None:
                 operation.receipt["prefix_indices"] = operation.indices.cpu().tolist()
-                operation.receipt["split_read"] = dict(
-                    operation.split_read, completed_ns=completed_ns
-                )
-                if self.profile:
-                    operation.receipt["split_read"]["timings_ms"] = timings
             operation.retained.clear()
         return copy.deepcopy(operation.receipt)
 
@@ -355,7 +337,6 @@ class PrefixStore:
                 actual_pages[logical][region, layer] = values[
                     logical * self.page_size : (logical + 1) * self.page_size
                 ]
-        operation.split_read["native_verified"] = True
         self._report(
             "load_back",
             source,
@@ -367,7 +348,6 @@ class PrefixStore:
         )
 
     def _submit_load_back(self, operation: _Read) -> None:
-        operation.timing = RestoreTiming(self.profile)
         indices, pool = operation.indices, operation.pool
         main, index = self.manager.layout.prefix_main, self.manager.layout.prefix_index
         assert main is not None and index is not None and indices is not None
@@ -414,13 +394,11 @@ class PrefixStore:
         target = torch.arange(local_count, dtype=torch.int64, device=self.device)
         target += rank * padded_count
         valid = torch.ones_like(source, dtype=torch.bool)
-        slot_pages: list[int | None] = [None] * (self.readers * width)
         slot_rows: list[int] = []
         native_rows: list[int] = []
         for reader, assigned in enumerate(assignments):
             for offset, page in enumerate(assigned):
                 slot = reader * width + offset
-                slot_pages[slot] = page
                 slot_rows.extend(
                     range(slot * self.page_size, (slot + 1) * self.page_size)
                 )
@@ -435,46 +413,9 @@ class PrefixStore:
             )
             for region, layout in (("main", main), ("index", index))
         }
-        buffer_bytes = {
-            region: value.numel() * value.element_size()
-            for region, value in buffers.items()
-        }
         operation.retained.extend(
             (source, target, valid, indices, table, *buffers.values())
         )
-        operation.split_read = dict(
-            assignment=self.read_assignment,
-            readers=self.readers,
-            logical_pages=local_pages,
-            padded_pages=width,
-            slot_pages=slot_pages,
-            slot_table_builds=1,
-            slot_table_rows=table.shape[1],
-            buffer_bytes=buffer_bytes,
-            data_buffers=len(buffers),
-            path=["H2D", "all_gather", "scatter"],
-            launches={"H2D": 0, "all_gather": 0, "scatter": 0},
-            read_bytes=0,
-            oracle_read_bytes=0,
-            oracle="computed_source",
-            gathered_verified=False,
-            native_verified=False,
-        )
-        if not self._restore_logged:
-            logger.info(
-                "mempool split_read_buffers data=%s",
-                json.dumps(
-                    dict(
-                        rank=self.replica,
-                        rid=operation.rid,
-                        slots=len(slot_pages),
-                        page_size=self.page_size,
-                        buffer_bytes=buffer_bytes,
-                        data_buffers=2,
-                    )
-                ),
-            )
-            self._restore_logged = True
         if self._scatter_kernel is None:
             from .restore_kernel import scatter_rows
 
@@ -484,46 +425,24 @@ class PrefixStore:
             local = gathered[rank * padded_count : (rank + 1) * padded_count]
             for layer in range(layout.layers):
                 view = self.manager.view(0, layer, region="prefix_" + region)
-                with operation.timing.stage("H2D"):
-                    if local_count:
-                        self._copy(
-                            self._dtype,
-                            gathered,
-                            source,
-                            target,
-                            valid,
-                            layout.slots * layout.tokens,
-                            total_rows,
-                            layout.row_bytes,
-                            local_count,
-                            48,
-                            view.device_base,
-                            None,
-                        )
-                        operation.split_read["read_bytes"] += (
-                            local_count * layout.row_bytes
-                        )
-                        operation.split_read["launches"]["H2D"] += 1
-                with operation.timing.stage("all_gather"):
-                    if self.readers > 1:
-                        assert self.all_gather is not None
-                        self.all_gather(gathered, local)
-                        operation.split_read["launches"]["all_gather"] += 1
-                if self.verify:
-                    # Compare HBM with independent source snapshots, without BM reads.
-                    actual = gathered.to(device="cpu", copy=True).reshape(
-                        -1, self.page_size, 1, layout.dim
+                if local_count:
+                    self._copy(
+                        self._dtype,
+                        gathered,
+                        source,
+                        target,
+                        valid,
+                        layout.slots * layout.tokens,
+                        total_rows,
+                        layout.row_bytes,
+                        local_count,
+                        48,
+                        view.device_base,
+                        None,
                     )
-                    for slot, logical_page in enumerate(slot_pages):
-                        if logical_page is not None and not torch.equal(
-                            actual[slot],
-                            self._saved[operation.source_pages[logical_page]][
-                                region, layer
-                            ],
-                        ):
-                            raise RuntimeError(
-                                "split_read differs from computed source snapshot"
-                            )
+                if self.readers > 1:
+                    assert self.all_gather is not None
+                    self.all_gather(gathered, local)
                 if region == "main":
                     model_layer = pool.start_layer + layer
                     key, rope = (
@@ -555,10 +474,7 @@ class PrefixStore:
                     rope_dim,
                     self.page_size,
                     nz,
-                    operation.timing,
                 )
-                operation.split_read["launches"]["scatter"] += 1
-        operation.split_read["gathered_verified"] = self.verify
         operation.event = self._event_factory()
         operation.event.record()
 

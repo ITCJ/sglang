@@ -6,18 +6,53 @@
 
 **Status:** ready-for-agent
 
-**State:** open
+**State:** closed
 
-- [ ] B、C 命中用例通过 V1 / V3 / V6 / V7
-- [ ] V2：all_gather 汇总缓冲和恢复后 HBM 与计算时保存的独立 CPU 源快照逐 token 一致，主 KV 与 Index K 均核对；整个 prefix 验证链不额外读 BM DRAM，直接 DRAM 内容未验证须显式记录
-- [ ] 每 rank 读取字节计数：每页恰好被一个 rank 读一次，总和等于命中页字节
-- [ ] 恢复路径每层每类只有 H2D、all_gather、散开三步；HBM 临时缓冲只有两块汇总缓冲，大小等于槽位数乘页字节，首次恢复打一行日志
-- [ ] 槽位表每次恢复只建一次，主 KV 与 Index K 共用；4K 配置下 rank 15 的补齐槽位被跳过
-- [ ] op2 的 ack 时刻晚于最后一个 rank 散开完成
-- [ ] 把分配函数换成另一种（例如连续块）结果不变，只有槽位表变、三步不变
-- [ ] 基线表并列，重点看 T_lb_rank 与 op2，op2 拆成 H2D、all_gather、散开、控制四段；不设门槛，变差要解释
+- [x] B、C 命中用例通过 V1 / V3 / V6 / V7
+- [x] V2：all_gather 汇总缓冲和恢复后 HBM 与计算时保存的独立 CPU 源快照逐 token 一致，主 KV 与 Index K 均核对；整个 prefix 验证链不额外读 BM DRAM，直接 DRAM 内容未验证须显式记录
+- [x] 每 rank 读取字节计数：每页恰好被一个 rank 读一次，总和等于命中页字节
+- [x] 恢复路径每层每类只有 H2D、all_gather、散开三步；HBM 临时缓冲只有两块汇总缓冲，大小等于槽位数乘页字节，首次恢复打一行日志
+- [x] 槽位表每次恢复只建一次，主 KV 与 Index K 共用；4K 配置下 rank 15 的补齐槽位被跳过
+- [x] op2 的 ack 时刻晚于最后一个 rank 散开完成
+- [x] 把分配函数换成另一种（例如连续块）结果不变，只有槽位表变、三步不变
+- [x] 基线表并列，重点看 T_lb_rank 与 op2，op2 拆成 H2D、all_gather、散开、控制四段；不设门槛，变差要解释
 
 ## Comments
+
+### 2026-10-30：验收后临时测试代码清理完成
+
+删除restore_timing/profile_prefix、scatter计时预编译、工程证据状态/计数/日志与gather额外比较。
+两块缓冲、共享槽位表、三步恢复、完成event及全rank门控保留；原有native源快照核对保留。
+撤下当前split-read-acceptance专用入口，离线核验器和0337b9b9ad历史复现说明保留。
+完整492项CPU单轮通过（48.091秒）；12文件静态检查、9模块strict mypy通过。
+Standards/Spec均0项；只删除旧入口与临时计时编译时序的2项测试，功能边界测试保留。
+[清理记录](../verification/ticket03-cleanup-20261030/README.md)区分006硬件验收和本次CPU检查。
+未重跑NPU，未修改baselinetest；本票继续closed。
+
+### 2026-10-30：用户确认006验收通过，关闭票据并开始清理
+
+用户明确回复“可以，验收，并且开始清理测试的代码”。
+接受0337b9b9ad、k1-ticket03-006的31/32双策略功能验收及已记录的精简覆盖限制。
+本票State=closed；原始summary中的user_accepted=false保留，人工确认独立记录。
+按既有约定移除临时计时、工程证据计数/日志和gather额外核对，保留恢复功能及完成门控。
+清理后CPU检查与两轴复审尚待完成；006只对应清理前的已验收版本。
+详见[用户验收记录](../verification/k1-ticket03-006-20261030/acceptance.md)。
+
+### 2026-10-30：NPU006双端自动验收通过，等待用户确认
+
+用户回传31/32的完整summary与P侧计时表，代码为0337b9b9ad，工作区摘要为空。
+两端status/identity/acceptance均passed；target轮转、restart连续分块均通过。
+两策略gather/native HBM与计算源快照相等，bm_readback=false；B/C生产读量分别
+390070272/377880576 B，全部rank设备完成后ack，6项输出IDs完全一致。
+每轮6请求、14等价事件、读者归零；fail-stop保留16rank额度，默认清理与重启通过。
+worker_exit=137属于预期超时注入清理，不是本轮启动失败。
+
+op2为1.37–7.69秒，约90%–96%落在含验证与等待的control余量；具体贡献未分拆。
+V2开启、每策略每用例1次且分处两轮，不能推断生产性能或策略优劣。
+直接DRAM内容、物理NUMA、性能及其余精简覆盖限制保留。
+[双端报告、计时与范围](../verification/k1-ticket03-006-20261030/README.md)已归档。
+仅更新证据与进度，无功能改动或重跑；user_accepted=false、State=open，
+等待用户确认后按既有约定关闭并清理临时工程测试接线。
 
 ### 2026-10-30：NPU005启动端口占用与验证方式调整
 

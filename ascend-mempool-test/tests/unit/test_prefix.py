@@ -60,9 +60,7 @@ class MappedCopy:
         ]
 
 
-def cpu_scatter_rows(
-    source, table, key, rope, key_dim, rope_dim, page_size, nz, timing
-):
+def cpu_scatter_rows(source, table, key, rope, key_dim, rope_dim, page_size, nz):
     """CPU device substitute; native readers independently check the layout."""
     source_rows, destination = table
     values = source.view(-1, key_dim + rope_dim)[source_rows]
@@ -218,17 +216,8 @@ class TestPrefixStore(unittest.TestCase):
             store.release_source("B")
         events[-1].done = True
         receipt = store.load_back(**read)
-        for flag in (
-            "gathered_verified",
-            "native_verified",
-        ):
-            self.assertTrue(receipt["split_read"][flag])
-        self.assertEqual(receipt["split_read"]["oracle"], "computed_source")
-        self.assertNotIn("private_replica_verified", receipt["split_read"])
         self.assertEqual(len(scatter_buffers), 2)
         self.assertEqual(read_buffers, scatter_buffers)
-        self.assertEqual(receipt["split_read"]["read_bytes"], 80)
-        self.assertEqual(receipt["split_read"]["oracle_read_bytes"], 0)
         self.assertEqual(sum(copied_bytes), 80)
         self.assertEqual(receipt["prefix_indices"], [6, 7, 2, 3])
         self.assertEqual(receipt["tokens"], 4)

@@ -54,7 +54,7 @@ def _scatter_rows(
         )
 
 
-def scatter_rows(source, table, key, rope, key_dim, rope_dim, page_size, nz, timing):
+def scatter_rows(source, table, key, rope, key_dim, rope_dim, page_size, nz):
     """table[0] holds valid slot rows, table[1] their allocator-owned HBM rows."""
     args = (source, table, key, rope if rope is not None else key)
     constants = dict(
@@ -65,10 +65,4 @@ def scatter_rows(source, table, key, rope, key_dim, rope_dim, page_size, nz, tim
         NZ=nz,
         BLOCK=triton.next_power_of_2(key_dim + rope_dim),
     )
-    # Temporary profiling setup: compile/load before the first timed event.
-    # warmup compiles only, so restoration still launches exactly one scatter.
-    if timing.enabled:
-        compiled = _scatter_rows.warmup(*args, **constants, grid=(table.shape[1],))
-        compiled._init_handles()
-    with timing.stage("scatter"):
-        _scatter_rows[(table.shape[1],)](*args, **constants)
+    _scatter_rows[(table.shape[1],)](*args, **constants)

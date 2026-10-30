@@ -1020,7 +1020,6 @@ def initialize_for_model_runner(model_runner: Any) -> None:
                 device=device,
                 verify=bool(router and router.verify_prefix),
                 replica=model_runner.ps.tp_rank,
-                profile=bool(router and router.profile_prefix),
                 readers=prefix_group.world_size if prefix_group is not None else 1,
                 read_assignment=router.prefix_read_assignment
                 if router

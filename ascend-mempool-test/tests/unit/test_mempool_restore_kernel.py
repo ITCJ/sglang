@@ -2,7 +2,6 @@
 
 import ast
 import unittest
-from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -30,55 +29,6 @@ def store(pointer, values, mask):
 
 
 class TestRestoreKernel(unittest.TestCase):
-    def test_profiling_compiles_before_start_and_launches_scatter_once(self):
-        source = (
-            Path(__file__).resolve().parents[3]
-            / "python/sglang/srt/hardware_backend/npu/mempool/restore_kernel.py"
-        )
-        definition = next(
-            n
-            for n in ast.parse(source.read_text()).body
-            if isinstance(n, ast.FunctionDef) and n.name == "scatter_rows"
-        )
-        events = []
-
-        class Compiler:
-            def warmup(self, *args, **kwargs):
-                events.append("compile")
-                return SimpleNamespace(_init_handles=lambda: events.append("load"))
-
-            def __getitem__(self, grid):
-                return lambda *args, **kwargs: events.append("launch")
-
-        @contextmanager
-        def stage(name):
-            events.append("start")
-            yield
-            events.append("end")
-
-        scope = dict(
-            _scatter_rows=Compiler(),
-            triton=SimpleNamespace(next_power_of_2=lambda n: 1024),
-        )
-        exec(
-            compile(
-                ast.Module(body=[definition], type_ignores=[]), str(source), "exec"
-            ),
-            scope,
-        )
-        scope["scatter_rows"](
-            None,
-            torch.empty((2, 128)),
-            None,
-            None,
-            512,
-            64,
-            128,
-            False,
-            SimpleNamespace(enabled=True, stage=stage),
-        )
-        self.assertEqual(events, ["compile", "load", "start", "launch", "end"])
-
     def test_single_scatter_handles_flat_nz_split_and_index_without_padding_rows(self):
         source = (
             Path(__file__).resolve().parents[3]

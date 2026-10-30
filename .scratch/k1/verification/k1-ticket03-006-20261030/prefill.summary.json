@@ -1,0 +1,461 @@
+{
+  "status": "passed",
+  "role": "prefill",
+  "mode": "split-read-acceptance",
+  "coverage": "K1-03 split_read functional acceptance (two strategies)",
+  "user_accepted": false,
+  "stages": [
+    "fetch",
+    "target",
+    "restart"
+  ],
+  "identity": {
+    "run_id": "k1-ticket03-006",
+    "mode": "split-read-acceptance",
+    "config": {
+      "prefill_host": "10.120.72.31",
+      "decode_host": "10.120.72.32",
+      "model_path": "/data_lib/data/models/GLM-5.2-w4a8",
+      "interface": "bond4",
+      "numa_nodes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "main_port": 6699,
+      "control_port": 16700,
+      "runner_port": 18891,
+      "prefill_port": 8000,
+      "decode_port": 8001,
+      "bootstrap_port": 8995,
+      "prompt_capacity": 8192,
+      "decode_capacity": 128,
+      "page_size": 128,
+      "context_length": 8448,
+      "max_total_tokens": 16384,
+      "operation_timeout": 600.0,
+      "startup_timeout": 7200.0,
+      "prefix_pages": 40,
+      "verify_prefix": true,
+      "match_prefix": true,
+      "prefix_read_assignment": "round_robin",
+      "profile_prefix": true
+    },
+    "git_sha": "0337b9b9adb48baf160495594ec9b28908e890ba",
+    "tracked_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked_sha256": {},
+    "model": {
+      "indexer_ids": [
+        0,
+        1,
+        2,
+        6,
+        10,
+        14,
+        18,
+        22,
+        26,
+        30,
+        34,
+        38,
+        42,
+        46,
+        50,
+        54,
+        58,
+        62,
+        66,
+        70,
+        74
+      ],
+      "manifest": {
+        "chat_template.jinja": "172dc74a35e1752df75ecfb2b2cf9326d2852bb1379868ebeec9571654489679",
+        "config.json": "817f5fb39ca5d4c4b5648de89ca00deaea7537d8c2f130172a459252a05c1073",
+        "generation_config.json": "ac76b43d8683d3b930126870fc8be73d8679308fe752fa1f381096d8354f6a55",
+        "quant_model_description.json": "fe2531095c6ff6e674c8f5e4a21c7ec354dd6d003e60aaf4450087a0e4344b70",
+        "tokenizer.json": "19e773648cb4e65de8660ea6365e10acca112d42a854923df93db4a6f333a82d",
+        "tokenizer_config.json": "98b1271574f41abf89427ae2dda030d94dc9478f0edc5a8bd240db213c6fd5fc"
+      }
+    },
+    "versions": {
+      "torch": "2.10.0+cpu",
+      "torch-npu": "2.10.0",
+      "sgl-kernel-npu": "2026.9.0",
+      "memfabric-hybrid": "1.1.4"
+    }
+  },
+  "identity_check": {
+    "status": "passed",
+    "local_role": "prefill",
+    "differences": []
+  },
+  "memory_budget": {
+    "bm_bytes": 223338299392,
+    "verification_bytes": 34359738368,
+    "required_bytes": 257698037760
+  },
+  "timeout_fail_stop": {
+    "status": "passed",
+    "rid": "k1-ticket03-006-7",
+    "room": 4459964392071087,
+    "reason": "SR heartbeat timeout",
+    "retained_native_ranks": 16,
+    "retained_all_quotas": true,
+    "automatic_free": false,
+    "process_cleanup_verified": true,
+    "worker_exit": 137
+  },
+  "paired_process_cleanup": "passed; both owned groups stopped",
+  "acceptance": {
+    "status": "passed",
+    "coverage": "K1-03 split_read functional acceptance (two strategies)",
+    "service_rounds": 2,
+    "shutdown": "SGLang default parent/process cleanup; no per-rank graceful BM release requirement",
+    "rounds": [
+      {
+        "stage": "target",
+        "status": "passed",
+        "accounting": {
+          "status": "passed",
+          "requests": 6,
+          "equivalent_events": 14,
+          "reader_counts_zero": true
+        }
+      },
+      {
+        "stage": "restart",
+        "status": "passed",
+        "accounting": {
+          "status": "passed",
+          "requests": 6,
+          "equivalent_events": 14,
+          "reader_counts_zero": true
+        }
+      }
+    ],
+    "user_accepted": false,
+    "limitations": [
+      "Prefix verification uses computed-source snapshots and restored native HBM; alive/prefix/fill DRAM contents are not read back.",
+      "V3 uses independent fixture answers; no fresh formal-service comparison or cold A/C stability run.",
+      "V8 capacity rejection replays actual registration on CPU; no isolated worker failure run.",
+      "Physical NUMA placement and performance are not accepted by this run.",
+      "Service teardown uses default process cleanup and restart checks; explicit BM leave/uninitialize and post-exit physical DRAM page counts are not accepted by this run."
+    ],
+    "retained": "ABCE, load/EOS, KV content, Graph, source fetch, slot reuse, ready/free accounting, fail-stop, restart and paired cleanup",
+    "split_read": [
+      {
+        "status": "passed",
+        "assignment": "round_robin",
+        "requests": [
+          {
+            "rid": "k1-ticket03-006-2",
+            "hit_len": 4096,
+            "read_bytes": 390070272
+          },
+          {
+            "rid": "k1-ticket03-006-3",
+            "hit_len": 3968,
+            "read_bytes": 377880576
+          }
+        ],
+        "oracle": "gathered slots and native HBM rows exactly equal independent computed-source snapshots",
+        "bm_readback": false,
+        "completion": "ack follows every rank's device-complete receipt",
+        "traffic": "split_read data copies only; no extra BM reads for acceptance",
+        "timings": [
+          {
+            "rid": "k1-ticket03-006-2",
+            "hit_len": 4096,
+            "rank": 12,
+            "op2": 7691.186568932608,
+            "control": 7413.975026003085,
+            "H2D": 0.9705600021407008,
+            "all_gather": 241.4918430224061,
+            "scatter": 34.74913990497589,
+            "T_lb_rank": [
+              6657.748261,
+              6657.731111,
+              6658.013143,
+              6657.64087,
+              6657.679701,
+              6658.098405,
+              6658.025243,
+              6657.63206,
+              6658.205455,
+              6657.879332,
+              6658.119494,
+              6658.005873,
+              6658.047994,
+              6658.169105,
+              6658.096485,
+              6658.003304
+            ]
+          },
+          {
+            "rid": "k1-ticket03-006-3",
+            "hit_len": 3968,
+            "rank": 10,
+            "op2": 4582.660034066066,
+            "control": 4281.807896164712,
+            "H2D": 0.9709400017745793,
+            "all_gather": 263.2243178784847,
+            "scatter": 36.656880021095276,
+            "T_lb_rank": [
+              3637.801349,
+              3637.754948,
+              3637.91147,
+              3637.93069,
+              3637.684758,
+              3638.055121,
+              3638.426404,
+              3638.218413,
+              3638.449084,
+              3638.523666,
+              3638.527436,
+              3638.079951,
+              3638.223533,
+              3637.97373,
+              3637.767928,
+              3637.761268
+            ]
+          }
+        ]
+      },
+      {
+        "status": "passed",
+        "assignment": "contiguous",
+        "requests": [
+          {
+            "rid": "k1-ticket03-006-2",
+            "hit_len": 4096,
+            "read_bytes": 390070272
+          },
+          {
+            "rid": "k1-ticket03-006-3",
+            "hit_len": 3968,
+            "read_bytes": 377880576
+          }
+        ],
+        "oracle": "gathered slots and native HBM rows exactly equal independent computed-source snapshots",
+        "bm_readback": false,
+        "completion": "ack follows every rank's device-complete receipt",
+        "traffic": "split_read data copies only; no extra BM reads for acceptance",
+        "timings": [
+          {
+            "rid": "k1-ticket03-006-2",
+            "hit_len": 4096,
+            "rank": 3,
+            "op2": 1420.048373984173,
+            "control": 1313.6375140612945,
+            "H2D": 1.0408000005409122,
+            "all_gather": 71.3639399856329,
+            "scatter": 34.006119936704636,
+            "T_lb_rank": [
+              454.619518,
+              454.625557,
+              455.091331,
+              455.139573,
+              455.022761,
+              455.036331,
+              454.88393,
+              455.199793,
+              455.033591,
+              455.206683,
+              454.485956,
+              454.418165,
+              454.659107,
+              454.303005,
+              454.153703,
+              454.646897
+            ]
+          },
+          {
+            "rid": "k1-ticket03-006-3",
+            "hit_len": 3968,
+            "rank": 2,
+            "op2": 1372.7570639457554,
+            "control": 1229.8788639623672,
+            "H2D": 0.9520400054752827,
+            "all_gather": 109.26142007112503,
+            "scatter": 32.66473990678787,
+            "T_lb_rank": [
+              477.364158,
+              477.291338,
+              477.353039,
+              476.878324,
+              477.296827,
+              477.51936,
+              476.978234,
+              476.859524,
+              476.963485,
+              477.418349,
+              476.977025,
+              477.190347,
+              476.942964,
+              476.724122,
+              476.821604,
+              476.46334
+            ]
+          }
+        ]
+      }
+    ],
+    "strategy_comparison": [
+      {
+        "status": "passed",
+        "policy": "mempool-min-logical-2026-10-27-v1",
+        "case": "logic-a",
+        "reference": {
+          "status": "passed",
+          "answer": {
+            "place": "harbor",
+            "pencils": 22,
+            "route": "north"
+          }
+        },
+        "target": {
+          "status": "passed",
+          "answer": {
+            "place": "harbor",
+            "pencils": 22,
+            "route": "north"
+          }
+        },
+        "ids": {
+          "equal": true,
+          "reference_length": 17,
+          "target_length": 17,
+          "first_difference": null
+        }
+      },
+      {
+        "status": "passed",
+        "policy": "mempool-min-logical-2026-10-27-v1",
+        "case": "logic-b",
+        "reference": {
+          "status": "passed",
+          "answer": {
+            "place": "harbor",
+            "pencils": 25,
+            "route": "south"
+          }
+        },
+        "target": {
+          "status": "passed",
+          "answer": {
+            "place": "harbor",
+            "pencils": 25,
+            "route": "south"
+          }
+        },
+        "ids": {
+          "equal": true,
+          "reference_length": 17,
+          "target_length": 17,
+          "first_difference": null
+        }
+      },
+      {
+        "status": "passed",
+        "policy": "mempool-min-logical-2026-10-27-v1",
+        "case": "logic-c",
+        "reference": {
+          "status": "passed",
+          "answer": {
+            "place": "harbor",
+            "pencils": 22,
+            "route": "north"
+          }
+        },
+        "target": {
+          "status": "passed",
+          "answer": {
+            "place": "harbor",
+            "pencils": 22,
+            "route": "north"
+          }
+        },
+        "ids": {
+          "equal": true,
+          "reference_length": 17,
+          "target_length": 17,
+          "first_difference": null
+        }
+      },
+      {
+        "status": "passed",
+        "policy": "mempool-min-logical-2026-10-27-v1",
+        "case": "logic-e",
+        "reference": {
+          "status": "passed",
+          "answer": {
+            "place": "meadow",
+            "pencils": 27,
+            "route": "south"
+          }
+        },
+        "target": {
+          "status": "passed",
+          "answer": {
+            "place": "meadow",
+            "pencils": 27,
+            "route": "south"
+          }
+        },
+        "ids": {
+          "equal": true,
+          "reference_length": 17,
+          "target_length": 17,
+          "first_difference": null
+        }
+      },
+      {
+        "status": "passed",
+        "policy": "mempool-min-logical-2026-10-27-v1",
+        "case": "long-generation",
+        "reference": {
+          "status": "passed",
+          "coverage": "128 output tokens; load only, no answer acceptance"
+        },
+        "target": {
+          "status": "passed",
+          "coverage": "128 output tokens; load only, no answer acceptance"
+        },
+        "ids": {
+          "equal": true,
+          "reference_length": 128,
+          "target_length": 128,
+          "first_difference": null
+        }
+      },
+      {
+        "status": "passed",
+        "policy": "mempool-min-logical-2026-10-27-v1",
+        "case": "early-eos",
+        "reference": {
+          "status": "passed",
+          "answer": {
+            "sum": 5
+          }
+        },
+        "target": {
+          "status": "passed",
+          "answer": {
+            "sum": 5
+          }
+        },
+        "ids": {
+          "equal": true,
+          "reference_length": 7,
+          "target_length": 7,
+          "first_difference": null
+        }
+      }
+    ]
+  }
+}

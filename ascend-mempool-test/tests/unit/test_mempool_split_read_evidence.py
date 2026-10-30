@@ -1,49 +1,15 @@
-"""K1-03 acceptance rejects missing traffic, content or completion evidence."""
+"""Recheck archived K1-03 reports from the instrumented acceptance revision."""
 
-import contextlib
 import copy
-import io
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
-import run_mempool_min
 import verify_mempool_split_read as verifier
 
 
 class TestSplitReadEvidence(unittest.TestCase):
-    def test_cli_describes_two_reader_strategies_without_loading_models(self):
-        with tempfile.TemporaryDirectory() as folder:
-            config = Path(folder) / "config.json"
-            config.write_text(
-                json.dumps(dict(prefill_host="p", decode_host="d", model_path="/model"))
-            )
-            for role in ("prefill", "decode"):
-                output = io.StringIO()
-                with contextlib.redirect_stdout(output):
-                    code = run_mempool_min.main(
-                        [
-                            "--role",
-                            role,
-                            "--mode",
-                            "split-read-acceptance",
-                            "--config",
-                            str(config),
-                            "--run-id",
-                            "k1-ticket03-001",
-                            "--describe",
-                        ]
-                    )
-                description = json.loads(output.getvalue())
-                self.assertEqual(code, 0)
-                self.assertEqual(description["service_rounds"], 2)
-                self.assertEqual(
-                    description["reader_assignments"], ["round_robin", "contiguous"]
-                )
-                self.assertTrue(description["config"]["verify_prefix"])
-                self.assertTrue(description["config"]["match_prefix"])
-
     def test_complete_report_and_corrupted_evidence(self):
         snapshots, lines = [], []
         for rank in range(16):

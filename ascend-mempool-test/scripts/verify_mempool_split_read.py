@@ -1,4 +1,7 @@
-"""K1-03 traffic, computed-source oracle and all-rank completion evidence."""
+"""Verify archived K1-03 evidence from instrumented revision 0337b9b9ad.
+
+The live runner no longer emits these temporary probes after user acceptance.
+"""
 
 from __future__ import annotations
 
