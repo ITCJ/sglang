@@ -614,7 +614,7 @@ class MempoolPDService:
                 and binding is not None
                 and self.runtime.prefix_store is not None
             ):
-                self.runtime.prefix_store.verify_alive(
+                self.runtime.prefix_store.verify_source(
                     slot=binding.slot, tokens=len(record.req.origin_input_ids)
                 )
         return prompt_ready

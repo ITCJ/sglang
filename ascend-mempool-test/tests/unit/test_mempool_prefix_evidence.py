@@ -102,6 +102,12 @@ class TestPrefixEvidence(unittest.TestCase):
                                 op_id=op_id,
                                 source_pages=source_pages,
                                 pages=pages,
+                                content_source=(
+                                    "native_hbm"
+                                    if stage == "load_back"
+                                    else "computed_source"
+                                ),
+                                bm_readback=False,
                                 **evidence,
                             )
                         )
@@ -197,6 +203,8 @@ class TestPrefixEvidence(unittest.TestCase):
                 "missing_rank",
                 "wrong_source",
                 "content",
+                "bm_readback",
+                "content_source",
                 "early_free",
                 "early_ack",
                 "directory",
@@ -207,12 +215,21 @@ class TestPrefixEvidence(unittest.TestCase):
                     data, records = copy.deepcopy(snapshots), list(lines)
                     if change == "missing_rank":
                         records.pop(2)
-                    elif change in ("wrong_source", "content"):
+                    elif change in (
+                        "wrong_source",
+                        "content",
+                        "bm_readback",
+                        "content_source",
+                    ):
                         content = json.loads(records[2].split("data=")[1])
                         if change == "wrong_source":
                             content["slot"] = 4
-                        else:
+                        elif change == "content":
                             content["pages"]["0"] = "f" * 64
+                        elif change == "bm_readback":
+                            content["bm_readback"] = True
+                        else:
+                            content["content_source"] = "bm_dram"
                         records[2] = "mempool prefix_content data=" + json.dumps(
                             content
                         )

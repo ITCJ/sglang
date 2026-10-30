@@ -9,7 +9,7 @@
 **State:** open
 
 - [ ] B、C 命中用例通过 V1 / V3 / V6 / V7
-- [ ] V2 改为 all_gather 后的汇总缓冲和散开后的 HBM 页都与本 rank 私有副本逐 token 一致，主 KV 和 Index K 都比
+- [ ] V2：all_gather 汇总缓冲和恢复后 HBM 与计算时保存的独立 CPU 源快照逐 token 一致，主 KV 与 Index K 均核对；整个 prefix 验证链不额外读 BM DRAM，直接 DRAM 内容未验证须显式记录
 - [ ] 每 rank 读取字节计数：每页恰好被一个 rank 读一次，总和等于命中页字节
 - [ ] 恢复路径每层每类只有 H2D、all_gather、散开三步；HBM 临时缓冲只有两块汇总缓冲，大小等于槽位数乘页字节，首次恢复打一行日志
 - [ ] 槽位表每次恢复只建一次，主 KV 与 Index K 共用；4K 配置下 rank 15 的补齐槽位被跳过
@@ -18,6 +18,19 @@
 - [ ] 基线表并列，重点看 T_lb_rank 与 op2，op2 拆成 H2D、all_gather、散开、控制四段；不设门槛，变差要解释
 
 ## Comments
+
+### 2026-10-30：NPU005启动端口占用与验证方式调整
+
+用户确认005运行6f50c4d54b。TP3的BM config store在19003启动返回-2009，
+本地两份SDK均将该返回码映射为address in use；随后SGLang清理导致137。
+bm_flags=128–135证实bit9已撤销，本轮未进入prefix校验；用户Python只读检查返回matches: 0，当前无占用，无法追溯当时占用者。
+用户明确选择“整个prefix验证链不额外读BM”，生产恢复、fill/admit访问保留。
+现以计算源CPU快照核对gather及原生HBM；去掉额外读回及其索引，仍保留两块恢复缓冲。
+alive/admit/retained/fill/suffix的摘要明确标记computed_source与bm_readback=false，
+不再声称这些DRAM存储内容已逐页验证；checker拒绝旧oracle类型和额外读量。
+16项定向检查通过，含零额外BM读取及主KV/Index K的gather、native损坏拒绝。
+完整494项CPU单轮通过，13文件静态检查与8模块strict mypy通过，Standards/Spec均0项。
+006待用户NPU验收，State=open。
 
 ### 2026-10-30：NPU004撤销失败的host映射路径
 

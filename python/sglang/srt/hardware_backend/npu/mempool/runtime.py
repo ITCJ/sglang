@@ -818,7 +818,7 @@ class MempoolRuntime:
             for row, total in zip(item.rows, item.totals):
                 progress = self._bindings[row]
                 if self.prefix_store is not None:
-                    self.prefix_store.verify_alive(
+                    self.prefix_store.verify_source(
                         slot=progress.attachment.slot,
                         tokens=total,
                         start=progress.attachment.write_start,

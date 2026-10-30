@@ -151,7 +151,7 @@ def summarize(root: Path) -> dict[str, Any]:
         target_path,
         [target],
         base and restored,
-        "all 16 ranks, 78 main layers and 21 Index K layers checked in logical token order",
+        "native HBM checked against computed-source snapshots on all 16 ranks, 78 main layers and 21 Index K layers; alive/prefix/fill DRAM contents are not read back",
     )
     record(
         "V3",

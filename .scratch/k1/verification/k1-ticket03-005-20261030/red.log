@@ -1,0 +1,36 @@
+test_reuse_evidence_joins_saved_prefix_and_computed_suffix_after_native_release (test_prefix.TestPrefixStore.test_reuse_evidence_joins_saved_prefix_and_computed_suffix_after_native_release) ... FAIL
+test_load_back_restores_split_native_buffers_at_discontiguous_token_indices (test_prefix.TestPrefixStore.test_load_back_restores_split_native_buffers_at_discontiguous_token_indices) ... ERROR
+
+======================================================================
+ERROR: test_load_back_restores_split_native_buffers_at_discontiguous_token_indices (test_prefix.TestPrefixStore.test_load_back_restores_split_native_buffers_at_discontiguous_token_indices)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix.py", line 225, in test_load_back_restores_split_native_buffers_at_discontiguous_token_indices
+    self.assertEqual(receipt["split_read"]["oracle"], "computed_source")
+                     ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+KeyError: 'oracle'
+
+======================================================================
+FAIL: test_reuse_evidence_joins_saved_prefix_and_computed_suffix_after_native_release (test_prefix.TestPrefixStore.test_reuse_evidence_joins_saved_prefix_and_computed_suffix_after_native_release)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix.py", line 107, in test_reuse_evidence_joins_saved_prefix_and_computed_suffix_after_native_release
+    store.verify_alive(3, 4)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 853, in verify_alive
+    digests = self._check_pages("alive", pages)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 818, in _check_pages
+    actual = self._read_page(pool + "_" + region, layer, page)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 795, in _read_page
+    self._copy(
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 682, in _copy
+    self._kernel(*args)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix.py", line 87, in copies_without_diagnostic_reads
+    self.assertIsNotNone(args[11], "verification must not read BM DRAM")
+AssertionError: unexpectedly None : verification must not read BM DRAM
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.029s
+
+FAILED (failures=1, errors=1)

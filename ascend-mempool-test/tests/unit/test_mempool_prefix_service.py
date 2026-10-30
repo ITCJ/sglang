@@ -39,7 +39,7 @@ class TestPrefixService(unittest.TestCase):
                     torch.arange(2),
                     torch.ones(2, dtype=torch.bool),
                 )
-        store.verify_alive(3, 2)
+        store.verify_source(3, 2)
         save = dict(
             rid="A",
             op_id=100,

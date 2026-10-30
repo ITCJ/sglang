@@ -132,7 +132,13 @@ def check_reuse(
         index_layers=21,
         noncontiguous_native_mapping=True,
         native_free_before_fill=True,
-        contents="original saved prefix == restored native == fill; computed suffix == alive",
+        contents="computed-source snapshots == restored native HBM; prefix/suffix reference coverage complete",
+        bm_readback=False,
+        unverified=[
+            "alive DRAM contents",
+            "prefix DRAM contents",
+            "fill DRAM contents",
+        ],
         acceptance_controls="one skipped allocator page; fill submitted after native_freed",
     )
 

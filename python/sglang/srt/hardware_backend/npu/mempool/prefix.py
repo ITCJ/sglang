@@ -57,8 +57,6 @@ class _Read(msgspec.Struct):
     receipt: dict[str, Any] | None = None
     split_read: dict[str, Any] = msgspec.field(default_factory=dict)
     timing: Any = None
-    restore_buffers: dict[str, Tensor] = msgspec.field(default_factory=dict)
-    oracle_indices: tuple[Tensor, Tensor, Tensor] | None = None
 
 
 class PrefixStore:
@@ -157,7 +155,7 @@ class PrefixStore:
             )
             assert main is not None and index is not None
             if self.verify:
-                self._verify_admit(operation)
+                self._retain_reference(operation)
             operation.receipt = dict(
                 readable=True,
                 slot=slot,
@@ -273,8 +271,6 @@ class PrefixStore:
                 if self.profile:
                     operation.receipt["split_read"]["timings_ms"] = timings
             operation.retained.clear()
-            operation.restore_buffers.clear()
-            operation.oracle_indices = None
         return copy.deepcopy(operation.receipt)
 
     def _verify_read(self, operation: _Read) -> None:
@@ -289,12 +285,6 @@ class PrefixStore:
             for logical, page in enumerate(operation.source_pages)
         }
         if operation.kind == "fill":
-            first = operation.slot * (
-                self.manager.layout.prompt.tokens // self.page_size
-            )
-            actual = self._check_pages(
-                "alive", {first + p: ref for p, ref in references.items()}
-            )
             # References come from A's original computed values, never B's destination.
             for logical, reference in references.items():
                 for (region, layer), expected in reference.items():
@@ -313,7 +303,7 @@ class PrefixStore:
                 source,
                 operation.op_id,
                 list(operation.source_pages),
-                {str(int(p) - first): digest for p, digest in actual.items()},
+                self._page_digests(references),
             )
             return
         pool, indices = operation.pool, operation.indices
@@ -323,9 +313,6 @@ class PrefixStore:
         }
         for region, layer in references[0]:
             expected = torch.cat([ref[region, layer] for ref in references.values()])
-            private_values = self._read_private_prefix(operation, region, layer)
-            if not torch.equal(expected, private_values):
-                raise RuntimeError("load_back private prefix differs from saved source")
             cpu_indices = indices.cpu()
             if region == "main":
                 rows = []
@@ -368,19 +355,13 @@ class PrefixStore:
                 actual_pages[logical][region, layer] = values[
                     logical * self.page_size : (logical + 1) * self.page_size
                 ]
-        operation.split_read.update(native_verified=True, private_replica_verified=True)
-        digests = {}
-        for logical, page in actual_pages.items():
-            digest = hashlib.sha256()
-            for _, values in sorted(page.items()):
-                digest.update(values.contiguous().view(torch.uint8).numpy().tobytes())
-            digests[str(logical)] = digest.hexdigest()
+        operation.split_read["native_verified"] = True
         self._report(
             "load_back",
             source,
             operation.op_id,
             list(operation.source_pages),
-            digests,
+            self._page_digests(actual_pages),
             prefix_indices=indices.cpu().tolist(),
             parts=[pool.kv_lora_rank, pool.qk_rope_head_dim],
         )
@@ -448,7 +429,7 @@ class PrefixStore:
         table = torch.tensor(
             [slot_rows, native_rows], dtype=torch.int64, device=self.device
         )
-        buffers = operation.restore_buffers = {
+        buffers = {
             region: torch.empty(
                 (total_rows, 1, layout.dim), dtype=torch.bfloat16, device=self.device
             )
@@ -458,18 +439,9 @@ class PrefixStore:
             region: value.numel() * value.element_size()
             for region, value in buffers.items()
         }
-        operation.retained.extend((source, target, valid, indices, table))
-        if self.verify:
-            # Acceptance metadata only; the oracle reuses the two KV buffers.
-            oracle_pages = torch.tensor(
-                operation.source_pages, dtype=torch.int64, device=self.device
-            )
-            oracle_source = (oracle_pages[:, None] * self.page_size + offsets).flatten()
-            operation.oracle_indices = (
-                oracle_source,
-                torch.arange(count, dtype=torch.int64, device=self.device),
-                torch.ones_like(oracle_source, dtype=torch.bool),
-            )
+        operation.retained.extend(
+            (source, target, valid, indices, table, *buffers.values())
+        )
         operation.split_read = dict(
             assignment=self.read_assignment,
             readers=self.readers,
@@ -484,7 +456,7 @@ class PrefixStore:
             launches={"H2D": 0, "all_gather": 0, "scatter": 0},
             read_bytes=0,
             oracle_read_bytes=0,
-            private_replica_verified=False,
+            oracle="computed_source",
             gathered_verified=False,
             native_verified=False,
         )
@@ -538,10 +510,20 @@ class PrefixStore:
                         self.all_gather(gathered, local)
                         operation.split_read["launches"]["all_gather"] += 1
                 if self.verify:
-                    # Snapshot before scatter; its input is reused by the oracle.
+                    # Compare HBM with independent source snapshots, without BM reads.
                     actual = gathered.to(device="cpu", copy=True).reshape(
                         -1, self.page_size, 1, layout.dim
                     )
+                    for slot, logical_page in enumerate(slot_pages):
+                        if logical_page is not None and not torch.equal(
+                            actual[slot],
+                            self._saved[operation.source_pages[logical_page]][
+                                region, layer
+                            ],
+                        ):
+                            raise RuntimeError(
+                                "split_read differs from computed source snapshot"
+                            )
                 if region == "main":
                     model_layer = pool.start_layer + layer
                     key, rope = (
@@ -576,48 +558,9 @@ class PrefixStore:
                     operation.timing,
                 )
                 operation.split_read["launches"]["scatter"] += 1
-                if self.verify:
-                    private = self._read_private_prefix(
-                        operation, region, layer
-                    ).reshape(-1, self.page_size, 1, layout.dim)
-                    for slot, logical_page in enumerate(slot_pages):
-                        if logical_page is not None and not torch.equal(
-                            actual[slot], private[logical_page]
-                        ):
-                            raise RuntimeError(
-                                "split_read differs from private prefix replica"
-                            )
         operation.split_read["gathered_verified"] = self.verify
         operation.event = self._event_factory()
         operation.event.record()
-
-    def _read_private_prefix(self, operation: _Read, region: str, layer: int) -> Tensor:
-        """Read the actual replica via NPU into an idle restore buffer for V2."""
-        assert operation.oracle_indices is not None
-        source, target, valid = operation.oracle_indices
-        buffer = operation.restore_buffers[region]
-        view = self.manager.view(0, layer, region="prefix_" + region)
-        count = source.numel()
-        # At submission this follows scatter on the same stream. At receipt the
-        # restore event has completed. CPU copying drains this diagnostic read.
-        with self._read_context():
-            self._copy(
-                self._dtype,
-                buffer,
-                source,
-                target,
-                valid,
-                view.layout.slots * view.layout.tokens,
-                buffer.shape[0],
-                view.layout.row_bytes,
-                count,
-                48,
-                view.device_base,
-                None,
-            )
-            result = buffer[:count].to(device="cpu", copy=True)
-        operation.split_read["oracle_read_bytes"] += count * view.layout.row_bytes
-        return result
 
     def _submit_fill(self, operation: _Read) -> None:
         offsets = torch.arange(self.page_size, dtype=torch.int64, device=self.device)
@@ -734,7 +677,7 @@ class PrefixStore:
             source = self._source
             if source is None or source.rid != rid:
                 raise RuntimeError("prefix verification has no matching request")
-            pages = self._check_pages("prefix", self._saved)
+            pages = self._page_digests(self._saved)
             self._report("retained", source, 0, [], pages)
             self._source = None
         self._operations = {
@@ -784,46 +727,20 @@ class PrefixStore:
         source.values[key][positions] = values.detach().cpu()[mask]
         source.coverage[key][positions] = True
 
-    def _read_page(self, region: str, layer: int, page: int) -> Tensor:
-        view = self.manager.view(0, layer, region=region)
-        indices = torch.arange(self.page_size, device=self.device, dtype=torch.int64)
-        result = torch.empty(
-            (self.page_size, view.layout.heads, view.layout.dim),
-            dtype=torch.bfloat16,
-            device=self.device,
-        )
-        self._copy(
-            self._dtype,
-            result,
-            indices + page * self.page_size,
-            indices,
-            torch.ones_like(indices, dtype=torch.bool),
-            view.layout.slots * view.layout.tokens,
-            self.page_size,
-            view.layout.row_bytes,
-            self.page_size,
-            48,
-            view.device_base,
-            None,
-        )
-        return result.cpu()
-
-    def _check_pages(
-        self, pool: str, pages: dict[int, dict[tuple[str, int], Tensor]]
+    @staticmethod
+    def _page_digests(
+        pages: dict[int, dict[tuple[str, int], Tensor]],
     ) -> dict[str, str]:
         digests = {}
         for page, reference in sorted(pages.items()):
             digest = hashlib.sha256()
-            for (region, layer), expected in sorted(reference.items()):
-                actual = self._read_page(pool + "_" + region, layer, page)
-                if not torch.equal(actual, expected):
-                    self._fault = f"prefix content mismatch pool={pool} page={page} region={region} layer={layer}"
-                    raise RuntimeError(self._fault)
-                digest.update(actual.contiguous().view(torch.uint8).numpy().tobytes())
+            for _, values in sorted(reference.items()):
+                digest.update(values.contiguous().view(torch.uint8).numpy().tobytes())
             digests[str(page)] = digest.hexdigest()
         return digests
 
-    def verify_alive(self, slot: int, tokens: int, *, start: int = 0) -> None:
+    def verify_source(self, slot: int, tokens: int, *, start: int = 0) -> None:
+        """Verify captured source coverage; never read back alive or prefix DRAM."""
         if not self.verify:
             return
         source = self._source
@@ -844,19 +761,11 @@ class PrefixStore:
         ):
             raise RuntimeError("prefix reference is missing source layers/tokens")
         pages = {
-            slot * (self.manager.layout.prompt.tokens // self.page_size) + page: {
+            page: {
                 key: values[page * self.page_size : (page + 1) * self.page_size]
                 for key, values in source.values.items()
             }
             for page in range(start // self.page_size, end // self.page_size)
-        }
-        digests = self._check_pages("alive", pages)
-        # Report logical source pages; physical slot remains explicit.
-        logical = {
-            str(
-                int(page) - slot * (self.manager.layout.prompt.tokens // self.page_size)
-            ): digest
-            for page, digest in digests.items()
         }
         source.verified = start == 0
         self._report(
@@ -864,10 +773,10 @@ class PrefixStore:
             source,
             0,
             list(range(start // self.page_size, end // self.page_size)),
-            logical,
+            self._page_digests(pages),
         )
 
-    def _verify_admit(self, operation: _Admit) -> None:
+    def _retain_reference(self, operation: _Admit) -> None:
         source = self._source
         if (
             source is None
@@ -883,7 +792,7 @@ class PrefixStore:
             }
             for page, target in zip(operation.source_pages, operation.target_pages)
         }
-        pages = self._check_pages("prefix", references)
+        pages = self._page_digests(references)
         self._saved.update(references)
         self._report(
             "admit", source, operation.op_id, list(operation.source_pages), pages
@@ -915,6 +824,10 @@ class PrefixStore:
                     index_layers=index.layers,
                     page_size=self.page_size,
                     pages=pages,
+                    content_source=(
+                        "native_hbm" if stage == "load_back" else "computed_source"
+                    ),
+                    bm_readback=False,
                     **evidence,
                 ),
                 sort_keys=True,

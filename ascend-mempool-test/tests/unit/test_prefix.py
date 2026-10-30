@@ -1,5 +1,6 @@
 """Exercise prefix storage through mapped copies and controllable device events."""
 
+import json
 import unittest
 from types import SimpleNamespace
 
@@ -82,6 +83,12 @@ class TestPrefixStore(unittest.TestCase):
         self,
     ):
         store, manager, kernel, events = self.make_store(verify=True)
+
+        def copies_without_diagnostic_reads(*args):
+            self.assertIsNotNone(args[11], "verification must not read BM DRAM")
+            kernel(*args)
+
+        store._kernel = copies_without_diagnostic_reads
         store.begin_request("A", 3, 4)
         for region, layers in (("main", 2), ("index", 1)):
             for layer in range(layers):
@@ -98,7 +105,7 @@ class TestPrefixStore(unittest.TestCase):
                     torch.ones(4, dtype=torch.bool),
                 )
                 target[3, :4] = values
-        store.verify_alive(3, 4)
+        store.verify_source(3, 4)
         save = dict(
             rid="A",
             op_id=1,
@@ -130,11 +137,11 @@ class TestPrefixStore(unittest.TestCase):
                 )
                 target[5, 4:6] = values
         with self.assertLogs("ascend_mempool.prefix", level="INFO") as logs:
-            store.verify_alive(5, 2, start=4)
+            store.verify_source(5, 2, start=4)
             # Native buffers can now be gone; fill uses retained prefix references.
             events[-1].done = True
             store.fill(**fill)
-            store.verify_alive(5, 6)
+            store.verify_source(5, 6)
         self.assertEqual(len(logs.output), 3)
         store.release_source("B")
 
@@ -159,7 +166,7 @@ class TestPrefixStore(unittest.TestCase):
                     torch.arange(4),
                     torch.ones(4, dtype=torch.bool),
                 )
-        store.verify_alive(3, 4)
+        store.verify_source(3, 4)
         save = dict(
             rid="A",
             op_id=1,
@@ -213,15 +220,16 @@ class TestPrefixStore(unittest.TestCase):
         receipt = store.load_back(**read)
         for flag in (
             "gathered_verified",
-            "private_replica_verified",
             "native_verified",
         ):
             self.assertTrue(receipt["split_read"][flag])
+        self.assertEqual(receipt["split_read"]["oracle"], "computed_source")
+        self.assertNotIn("private_replica_verified", receipt["split_read"])
         self.assertEqual(len(scatter_buffers), 2)
         self.assertEqual(read_buffers, scatter_buffers)
         self.assertEqual(receipt["split_read"]["read_bytes"], 80)
-        self.assertEqual(receipt["split_read"]["oracle_read_bytes"], 160)
-        self.assertEqual(sum(copied_bytes), 240)
+        self.assertEqual(receipt["split_read"]["oracle_read_bytes"], 0)
+        self.assertEqual(sum(copied_bytes), 80)
         self.assertEqual(receipt["prefix_indices"], [6, 7, 2, 3])
         self.assertEqual(receipt["tokens"], 4)
         self.assertEqual(k[0, indices, 0].tolist(), [[0, 1], [4, 5], [8, 9], [12, 13]])
@@ -383,7 +391,7 @@ class TestPrefixStore(unittest.TestCase):
         store.release_source("r1")
         self.assertEqual(store.free_pages, (1, 2))
 
-    def test_acceptance_compares_original_alive_prefix_and_retained_values(self):
+    def test_source_snapshots_survive_source_mutation_and_release(self):
         store, manager, kernel, events = self.make_store(verify=True)
         store.begin_request("r1", 3, 6)
         for region, layers in (("main", 2), ("index", 1)):
@@ -406,8 +414,9 @@ class TestPrefixStore(unittest.TestCase):
                     torch.ones(6, dtype=torch.bool),
                 )
                 alive[3, :6] = values
+                values.zero_()
         with self.assertLogs("ascend_mempool.prefix", level="INFO") as logs:
-            store.verify_alive(3, 6)
+            store.verify_source(3, 6)
             operation = dict(
                 rid="r1",
                 op_id=7,
@@ -426,12 +435,23 @@ class TestPrefixStore(unittest.TestCase):
                     ].zero_()
             store.release_source("r1")
         self.assertEqual(len(logs.output), 3)
-        # A later no-save request still rechecks every retained page after free.
+        reports = [json.loads(line.split("data=", 1)[1]) for line in logs.output]
+        self.assertTrue(all(r["content_source"] == "computed_source" for r in reports))
+        self.assertTrue(all(r["bm_readback"] is False for r in reports))
+        self.assertEqual(
+            reports[1]["pages"],
+            {"1": reports[0]["pages"]["2"], "2": reports[0]["pages"]["0"]},
+        )
+        self.assertEqual(reports[2]["pages"], reports[1]["pages"])
+        # Unused DRAM corruption is outside this verification's coverage.
         store.begin_request("r2", 3, 6)
         target = kernel.buffers[manager.view(0, 0, region="prefix_index").device_base]
         target[1, 0, 0, 0] += 1
-        with self.assertRaisesRegex(RuntimeError, "prefix content mismatch"):
+        with self.assertLogs("ascend_mempool.prefix", level="INFO") as later:
             store.release_source("r2")
+        retained = json.loads(later.output[0].split("data=", 1)[1])
+        self.assertEqual(retained["pages"], reports[2]["pages"])
+        self.assertFalse(retained["bm_readback"])
 
     def test_copy_failure_retains_target_and_prevents_source_release(self):
         store, _, _, _ = self.make_store()

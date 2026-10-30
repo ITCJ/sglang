@@ -1,4 +1,4 @@
-"""K1-03 traffic, private-replica oracle and all-rank completion evidence."""
+"""K1-03 traffic, computed-source oracle and all-rank completion evidence."""
 
 from __future__ import annotations
 
@@ -64,8 +64,8 @@ def check_split_read(
                 or proof["logical_pages"] != expected
                 or proof["padded_pages"] != (count + 15) // 16
                 or proof["read_bytes"] != len(expected) * 128 * token_bytes
-                or proof["oracle_read_bytes"] != 2 * done["hit_len"] * token_bytes
-                or proof["private_replica_verified"] is not True
+                or proof["oracle_read_bytes"] != 0
+                or proof["oracle"] != "computed_source"
                 or proof["gathered_verified"] is not True
                 or proof["native_verified"] is not True
                 or proof["path"] != ["H2D", "all_gather", "scatter"]
@@ -102,9 +102,10 @@ def check_split_read(
         status="passed",
         assignment=assignment,
         requests=requests,
-        oracle="gathered slots and native HBM rows exactly equal each local private replica",
+        oracle="gathered slots and native HBM rows exactly equal independent computed-source snapshots",
+        bm_readback=False,
         completion="ack follows every rank's device-complete receipt",
-        traffic="split_read data copies only; acceptance oracle reads counted separately",
+        traffic="split_read data copies only; no extra BM reads for acceptance",
     )
 
 

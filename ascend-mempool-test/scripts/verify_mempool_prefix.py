@@ -55,6 +55,9 @@ class Reports(msgspec.Struct):
         line_no, value = self.contents[key]
         if (
             value["slot"] != slot
+            or value["content_source"]
+            != ("native_hbm" if stage == "load_back" else "computed_source")
+            or value["bm_readback"] is not False
             or value["prompt_tokens"] != prompt_tokens
             or value["main_layers"] != 78
             or value["index_layers"] != 21
@@ -153,7 +156,9 @@ def check_prefix(
         main_layers=78,
         index_layers=21,
         cold_only=True,
-        contents="original == alive == prefix == retained after alive free",
+        contents="computed-source snapshots and page ownership retained after alive free",
+        bm_readback=False,
+        unverified=["alive DRAM contents", "prefix DRAM contents"],
     )
 
 
@@ -343,7 +348,7 @@ def check_rank(
         )
         retained.update(copied["pages"])
     if saved["pages"] != retained or len(saved["pages"]) != total:
-        raise ValueError("prefix contents changed after alive free or a later request")
+        raise ValueError("saved source snapshots changed after free or a later request")
 
 
 def check_copied_pages(

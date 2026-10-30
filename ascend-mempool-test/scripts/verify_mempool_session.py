@@ -178,6 +178,7 @@ def summarize(root: Path) -> dict[str, Any]:
         rounds=rounds,
         user_accepted=False,
         limitations=[
+            "Prefix verification uses computed-source snapshots and restored native HBM; alive/prefix/fill DRAM contents are not read back.",
             "V3 uses independent fixture answers; no fresh formal-service comparison or cold A/C stability run.",
             "V8 capacity rejection replays actual registration on CPU; no isolated worker failure run.",
             "Physical NUMA placement and performance are not accepted by this run.",

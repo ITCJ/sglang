@@ -31,21 +31,32 @@ class TensorCollective:
 
 
 class TestSplitRead(unittest.TestCase):
-    def test_gathered_contents_must_match_the_private_replica(self):
+    def test_gathered_and_native_contents_must_match_computed_source(self):
+        for phase in ("gather", "native"):
+            for region in ("main", "index"):
+                with self.subTest(phase=phase, region=region):
+                    self.check_corruption(phase, region)
+
+    def check_corruption(self, phase, region):
         helper = test_prefix.TestPrefixStore()
         self.addCleanup(helper.doCleanups)
+        dim = 4 if region == "main" else 2
 
         def corrupt_gather(output, value):
             output.copy_(torch.cat((value, value)))
-            # The gathered data still matches A; only the live private copy
-            # changes. Using only the saved reference would miss this corruption.
-            private = kernel.buffers[
-                manager.view(0, 0, region="prefix_main").device_base
-            ]
-            private[0] += 1
+            if phase == "gather" and output.shape[-1] == dim:
+                output[0] += 1
+
+        def corrupt_scatter(*args):
+            test_prefix.cpu_scatter_rows(*args)
+            if phase == "native" and args[0].shape[-1] == dim:
+                args[2][2] += 1
 
         store, manager, kernel, events = helper.make_store(
-            verify=True, readers=2, all_gather=corrupt_gather
+            verify=True,
+            readers=2,
+            all_gather=corrupt_gather,
+            scatter_kernel=corrupt_scatter,
         )
         store.begin_request("A", 3, 2)
         for region, layers in (("main", 2), ("index", 1)):
@@ -63,7 +74,7 @@ class TestSplitRead(unittest.TestCase):
                     torch.arange(2),
                     torch.ones(2, dtype=torch.bool),
                 )
-        store.verify_alive(3, 2)
+        store.verify_source(3, 2)
         save = dict(
             rid="A",
             op_id=1,
@@ -93,15 +104,24 @@ class TestSplitRead(unittest.TestCase):
                 get_index_k_buffer=lambda i: buffers[4],
             )
         )
-        with self.assertRaisesRegex(RuntimeError, "private prefix replica"):
-            store.load_back(
-                rid="B",
-                op_id=2,
-                slot=5,
-                source_pages=[0],
-                indices=torch.tensor([2, 3]),
-                pool=pool,
-            )
+        read = dict(
+            rid="B",
+            op_id=2,
+            slot=5,
+            source_pages=[0],
+            indices=torch.tensor([2, 3]),
+            pool=pool,
+        )
+        if phase == "native":
+            self.assertIsNone(store.load_back(**read))
+            events[-1].done = True
+        message = (
+            "computed source snapshot"
+            if phase == "gather"
+            else "native .*content mismatch"
+        )
+        with self.assertRaisesRegex(RuntimeError, message):
+            store.load_back(**read)
         with self.assertRaisesRegex(RuntimeError, "pending or failed"):
             store.release_source("B")
 
