@@ -21,6 +21,7 @@ class MempoolKVOffload:
         *,
         block_dim: int = 48,
         kernel: Any = None,
+        feature_part: tuple[int, int] = (0, 1),
     ) -> None:
         """Retain the mapped destination; an injected kernel supports CPU tests."""
         import torch
@@ -31,6 +32,11 @@ class MempoolKVOffload:
         self.target = target
         self.block_dim = block_dim
         self._kernel = kernel
+        self.part, self.parts = feature_part
+        if target.layout.dim % self.parts or not 0 <= self.part < self.parts:
+            raise ValueError(
+                "feature writers must evenly partition the compact dimension"
+            )
         # A CPU dtype placeholder preserves NPU dispatch from the source/indices.
         self._target_dtype = torch.empty(1, dtype=torch.bfloat16, device="cpu")
 
@@ -93,17 +99,28 @@ class MempoolKVOffload:
             & (positions < layout.tokens)
         )
         destination = torch.where(valid, slots * layout.tokens + positions, 0)
+        heads = torch.arange(layout.heads, dtype=torch.int64, device=values.device)
+        source = torch.arange(rows, dtype=torch.int64, device=values.device)
+        if self.parts > 1:
+            source = (
+                (source[:, None] * layout.heads + heads) * self.parts + self.part
+            ).flatten()
+            destination = (
+                (destination[:, None] * layout.heads + heads) * self.parts + self.part
+            ).flatten()
+            valid = valid[:, None].expand(-1, layout.heads).flatten()
+        chunks = layout.heads * self.parts if self.parts > 1 else 1
         # Always launch: a zero-valid capture must still contain the write path.
         self._kernel(
             values,
             self._target_dtype,
-            torch.arange(rows, dtype=torch.int64, device=values.device),
+            source,
             destination,
             valid,
-            rows,
-            layout.slots * layout.tokens,
-            layout.row_bytes,
-            rows,
+            rows * chunks,
+            layout.slots * layout.tokens * chunks,
+            layout.row_bytes // chunks,
+            source.numel(),
             self.block_dim,
             None,
             self.target.device_base,

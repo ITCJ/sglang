@@ -17,6 +17,7 @@ from torch import Tensor
 
 from .config import MempoolConfig
 from .copy import KVFetch
+from .decode_write import DecodeKV, DecodeWriter
 from .diagnostics import diagnostics_enabled, startup_stage
 from .layout import check_index, positive_int
 from .manager import MempoolKVManager
@@ -82,6 +83,9 @@ class _Binding(msgspec.Struct):
     prompt_bm_rows: int = 0
     decode_bm_rows: int = 0
     main_written: int = 0
+    shared_checked_rows: int = 0
+    shared_written_bytes: int = 0
+    current_kv_rows: int = 0
 
 
 class _Forward(msgspec.Struct):
@@ -112,6 +116,7 @@ class _Completion(msgspec.Struct):
     retained: tuple[Tensor, ...] = ()
     range_errors: Optional[Tensor] = None
     index_totals: Optional[tuple[int, ...]] = None
+    shared_checks: Optional[Tensor] = None
 
 
 class MempoolRuntime:
@@ -147,6 +152,8 @@ class MempoolRuntime:
         index_kernels: Optional[Sequence[Any]] = None,
         prefix_store: Optional[PrefixStore] = None,
         page_writer: Optional[PageWriter] = None,
+        decode_writer: Optional[DecodeWriter] = None,
+        verify_decode: bool = False,
     ) -> None:
         """Allocate stable bindings/counters after BM mappings are ready."""
         if mlapo_enabled:
@@ -203,9 +210,24 @@ class MempoolRuntime:
                 manager.view(manager.rank, layer),
                 block_dim=block_dim,
                 kernel=kernels[layer] if kernels is not None else None,
+                feature_part=decode_writer.feature_part
+                if decode_writer is not None
+                else (0, 1),
             )
             for layer in range(self.layout.layers)
         ]
+        self._decode = (
+            DecodeKV(
+                manager,
+                decode_writer,
+                req_pool_rows,
+                device,
+                verify_decode,
+                fetch_kernel,
+            )
+            if decode_writer is not None
+            else None
+        )
         self._index_pool = index_pool
         self._index_writers: dict[int, MempoolKVOffload] = {}
         self._index_counts: Optional[Tensor] = None
@@ -481,6 +503,8 @@ class MempoolRuntime:
             self._fetch_checks.zero_()
         if self._fetch_sources is not None:
             self._fetch_sources.zero_()
+        if self._decode is not None:
+            self._decode.checks.zero_()
         if self.manager.rank == 1:
             for write in writes:
                 if self._fetch is not None and write.rows != 1:
@@ -553,12 +577,17 @@ class MempoolRuntime:
         main_valid = valid
         if self.page_writer is not None:
             main_valid = main_valid & self.page_writer.mask(local_pos, prompt)
+        if self._decode is not None:
+            self._decode.prepare(layer, values, safe_req, slots, local_pos, valid)
+            if not self._decode.writer.owns_layer(layer):
+                main_valid = torch.zeros_like(valid)
         self._writers[layer].write(
             values, slots=slots, positions=local_pos, valid=main_valid
         )
         safe_slot = torch.where(valid, slots, 0)
         # Device counters catch silent invalid masks, including on graph replay.
-        self._write_counts[layer].scatter_add_(0, safe_slot, main_valid.to(torch.int32))
+        counted = valid if self._decode is not None else main_valid
+        self._write_counts[layer].scatter_add_(0, safe_slot, counted.to(torch.int32))
         active.layers.add(layer)
         if active.writes and self.prefix_store is not None:
             self.prefix_store.capture_source(
@@ -677,6 +706,15 @@ class MempoolRuntime:
             raise RuntimeError(
                 "fetch requires exactly one validated selection per layer"
             )
+        if self._decode is not None:
+            misses = self._decode.supply_current(
+                layer,
+                req_rows,
+                positions,
+                misses,
+                output,
+                self.row_prompt_len + self.row_decode_len,
+            )
         self._fetch.gather(
             layer,
             req_rows,
@@ -722,7 +760,7 @@ class MempoolRuntime:
                 raise RuntimeError("cannot report an in-flight decode")
             progress = self._bindings[row]
         forwards = progress.forwards if progress else 0
-        return {
+        report: dict[str, Any] = {
             "status": "completed" if forwards else "zero_decode",
             "row": binding.req_pool_idx if binding else None,
             "prompt_slot": binding.prompt_slot if binding else None,
@@ -737,6 +775,18 @@ class MempoolRuntime:
             "prompt_bm_rows": progress.prompt_bm_rows if progress else 0,
             "decode_bm_rows": progress.decode_bm_rows if progress else 0,
         }
+        if self._decode is not None:
+            report["shared_decode"] = dict(
+                assignment=self._decode.writer.assignment,
+                member=self._decode.writer.member,
+                members=self._decode.writer.members,
+                verified=self._decode.verify,
+                checked_rows=progress.shared_checked_rows if progress else 0,
+                written_bytes=progress.shared_written_bytes if progress else 0,
+                current_rows=progress.current_kv_rows if progress else 0,
+                ordering="compute_stream_before_post_attention_tp_collective",
+            )
+        return report
 
     def end_forward(self) -> None:
         """Record completion after eager work or replay, without synchronizing."""
@@ -786,6 +836,9 @@ class MempoolRuntime:
             self._index_counts.clone() if self._index_counts is not None else None
         )
         range_errors = self._range_errors.clone() if self.manager.rank == 0 else None
+        shared_checks = (
+            self._decode.checks.clone() if self._decode is not None else None
+        )
         event = self._event_factory()
         event.record()
         self._pending.append(
@@ -802,6 +855,7 @@ class MempoolRuntime:
                 tuple(active.retained),
                 range_errors,
                 tuple(self._index_slot_totals),
+                shared_checks,
             )
         )
         self._active = None
@@ -828,6 +882,12 @@ class MempoolRuntime:
             source_counts = (
                 item.sources.cpu().sum(0).tolist() if item.sources is not None else None
             )
+            shared_counts = (
+                item.shared_checks.cpu() if item.shared_checks is not None else None
+            )
+            if shared_counts is not None and bool(shared_counts[:, :, 1].any()):
+                self.fault = "shared decode previous-token sentinel mismatch"
+                raise RuntimeError(self.fault)
             if fetch_counts is not None:
                 for layer, samples in enumerate(fetch_counts):
                     for row, sample in enumerate(samples):
@@ -851,6 +911,10 @@ class MempoolRuntime:
                 progress.main_written = counts[0][progress.attachment.slot]
                 progress.forwards += 1
                 progress.replay_forwards += int(item.replay)
+                if shared_counts is not None:
+                    progress.shared_checked_rows += int(shared_counts[:, row, 0].sum())
+                    progress.shared_written_bytes += int(shared_counts[:, row, 2].sum())
+                    progress.current_kv_rows += int(shared_counts[:, row, 3].sum())
                 if source_counts is not None:
                     progress.prompt_bm_rows += source_counts[row][0]
                     progress.decode_bm_rows += source_counts[row][1]
@@ -1027,7 +1091,8 @@ def initialize_for_model_runner(model_runner: Any) -> None:
         nic_port=address.port or 0,
         pool_id=config.pool_id,
         prefill_shared=bool(router and router.prefill_shared),
-        prefill_groups=router.prefill_groups if router else (),
+        prefill_groups=router.session_groups if router else (),
+        decode_shared=bool(router and router.decode_shared),
     )
     manager = MempoolKVManager.initialize_session(
         session=plan.session(model_runner.ps.tp_rank),
@@ -1087,6 +1152,17 @@ def initialize_for_model_runner(model_runner: Any) -> None:
             index_pool=native_pool if prefix_store is not None else None,
             prefix_store=prefix_store,
             page_writer=page_writer,
+            decode_writer=DecodeWriter(
+                session.members.index(session.tp_rank),
+                len(session.members),
+                router.decode_write_assignment,
+            )
+            if router
+            and router.decode_shared
+            and session is not None
+            and manager.rank == 1
+            else None,
+            verify_decode=bool(router and router.verify_decode),
         )
     runtime.config = config
     seen = set()

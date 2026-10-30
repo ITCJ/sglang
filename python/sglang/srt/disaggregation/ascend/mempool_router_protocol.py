@@ -49,8 +49,28 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
         (r, r + 1) for r in range(0, 16, 2)
     )
     prefill_write_assignment: str = "contiguous"
+    decode_shared: bool = False
+    decode_groups: tuple[tuple[int, ...], ...] = tuple(
+        (r, r + 1) for r in range(0, 16, 2)
+    )
+    decode_write_assignment: str = "features"
+    verify_decode: bool = False
 
     def __post_init__(self) -> None:
+        if self.decode_write_assignment not in ("features", "layers"):
+            raise ValueError("decode_write_assignment must be features or layers")
+        if not all(self.decode_groups) or sorted(
+            r for g in self.decode_groups for r in g
+        ) != list(range(16)):
+            raise ValueError(
+                "decode_groups must cover each TP rank exactly once; first member is owner"
+            )
+        if (
+            self.prefill_shared
+            and self.decode_shared
+            and self.prefill_groups != self.decode_groups
+        ):
+            raise ValueError("shared P/D must use the same BM session groups")
         if self.prefill_write_assignment not in ("contiguous", "round_robin"):
             raise ValueError(
                 "prefill_write_assignment must be contiguous or round_robin"
@@ -130,13 +150,22 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     def replicas(self, role: str = "prefill") -> dict[str, int]:
         enabled = 16 if self.prefix_pages else 0
         return dict(
-            alive_main=len(self.prefill_groups)
-            if self.prefill_shared and role == "prefill"
-            else 16,
+            alive_main=len(self.main_groups(role)),
             alive_index=enabled,
             prefix_main=enabled,
             prefix_index=enabled,
         )
+
+    def main_groups(self, role: str) -> tuple[tuple[int, ...], ...]:
+        if role == "prefill" and self.prefill_shared:
+            return self.prefill_groups
+        if role == "decode" and self.decode_shared:
+            return self.decode_groups
+        return tuple((r,) for r in range(16))
+
+    @property
+    def session_groups(self) -> tuple[tuple[int, ...], ...]:
+        return self.prefill_groups if self.prefill_shared else self.decode_groups
 
     def backend(self, role: str) -> str:
         host, port = (

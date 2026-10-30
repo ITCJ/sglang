@@ -13,8 +13,16 @@ from ascend_mempool.sharing_plan import HostTopology, MempoolNumaConfig
 from ascend_mempool_pd.mempool_router_protocol import RouterConfig
 
 
-def shared_registration(testcase):
-    config = RouterConfig("p", "d", "/model", prefix_pages=40, prefill_shared=True)
+def shared_registration(testcase, decode_shared=False):
+    config = RouterConfig(
+        "p",
+        "d",
+        "/model",
+        prefix_pages=40,
+        prefill_shared=True,
+        decode_shared=decode_shared,
+        verify_decode=decode_shared,
+    )
     layout = MempoolConfig(
         prefill_capacity=8192, decode_capacity=128, page_size=128
     ).make_mla_layout(
@@ -35,6 +43,7 @@ def shared_registration(testcase):
             kv_identity="model",
             layout=layout,
             prefill_shared=True,
+            decode_shared=decode_shared,
             prefill_groups=config.prefill_groups,
         )
         for row in registrations[role]["ranks"]:
@@ -61,10 +70,65 @@ def shared_registration(testcase):
                     bytes=2304,
                 ),
             )
+            if decode_shared and side == 1:
+                row["shared_probe"]["decode_order"] = dict(
+                    status="passed",
+                    engine="graph_replay",
+                    negative_without_wait=True,
+                    positive_with_wait=True,
+                )
     return config, registrations
 
 
 class TestSharedEvidence(unittest.TestCase):
+    def test_decode_residence_is_not_inferred_from_prefill_residence(self):
+        config, registrations = shared_registration(self, decode_shared=True)
+        for row in registrations["prefill"]["ranks"]:
+            row["numa_placement_verified"] = True
+        report = verify_mempool_shared.check_registration(registrations, config)
+        self.assertFalse(report["physical_placement_verified"])
+        self.assertEqual(
+            sum(n["allocated_bytes"] for n in report["decode_per_numa"].values()),
+            8 * 2**30,
+        )
+
+    def test_decode_registration_and_receipts_reject_unproven_sharing(self):
+        from verify_mempool_decode import check_completion
+
+        config, registrations = shared_registration(self, decode_shared=True)
+        report = verify_mempool_shared.check_registration(registrations, config)
+        self.assertEqual(report["decode_main_replicas"], 8)
+        self.assertEqual(
+            sum(r["local_dram_bytes"] for r in registrations["decode"]["ranks"]),
+            8 * 2**30,
+        )
+        data = dict(
+            forwards=3,
+            replay_forwards=3,
+            layers=78,
+            shared_decode=dict(
+                assignment="features",
+                member=1,
+                members=2,
+                verified=True,
+                checked_rows=156,
+                written_bytes=134784,
+                current_rows=234,
+                ordering="compute_stream_before_post_attention_tp_collective",
+            ),
+        )
+        self.assertEqual(check_completion(data, 1, config)["steps"], 3)
+        for key in ("checked_rows", "written_bytes"):
+            bad = copy.deepcopy(data)
+            bad["shared_decode"][key] -= 1
+            with self.assertRaisesRegex(ValueError, "coverage"):
+                check_completion(bad, 1, config)
+        registrations["decode"]["ranks"][1]["shared_probe"]["decode_order"][
+            "negative_without_wait"
+        ] = False
+        with self.assertRaisesRegex(ValueError, "Graph ordering"):
+            verify_mempool_shared.check_registration(registrations, config)
+
     def test_shared_registration_rejects_private_aliases_and_missing_peer_reads(self):
         config, registrations = shared_registration(self)
         result = verify_mempool_shared.check_registration(registrations, config)

@@ -115,7 +115,7 @@ class MainRouter:
         if self.config.match_prefix:
             expected["match_prefix"] = True
             expected["prefix_read_assignment"] = self.config.prefix_read_assignment
-        if self.config.prefill_shared:
+        if self.config.prefill_shared or self.config.decode_shared:
             # P members contribute either shared main + private regions, or
             # only their private regions. Their physical sizes are not uniform.
             expected.pop("local_dram_bytes", None)

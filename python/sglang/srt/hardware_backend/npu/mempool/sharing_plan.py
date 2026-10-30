@@ -133,6 +133,14 @@ class PoolSession:
     pool_id: int
     identity: str
     prefill_shared: bool = False
+    decode_shared: bool = False
+
+    @property
+    def regional_sharing(self) -> bool:
+        return self.prefill_shared or self.decode_shared
+
+    def shares_main(self, side: int) -> bool:
+        return (self.prefill_shared, self.decode_shared)[side]
 
     @property
     def participant(self) -> int:
@@ -140,9 +148,7 @@ class PoolSession:
 
     @property
     def owners(self) -> tuple[int, int]:
-        return 0, len(self.members) + (
-            self.members.index(self.tp_rank) if self.prefill_shared else 0
-        )
+        return self.region_owner(0), self.region_owner(1)
 
     @property
     def world_size(self) -> int:
@@ -150,7 +156,7 @@ class PoolSession:
 
     @property
     def contribution(self) -> int:
-        if self.prefill_shared:
+        if self.regional_sharing:
             return self.contribution_for(self.participant)
         return (
             self.layout.contribution_bytes(self.side)
@@ -159,14 +165,16 @@ class PoolSession:
         )
 
     def region_owner(self, side: int, region: str = "alive_main") -> int:
-        if self.prefill_shared and (side == 1 or region != "alive_main"):
+        if self.regional_sharing and (
+            not self.shares_main(side) or region != "alive_main"
+        ):
             return side * len(self.members) + self.members.index(self.tp_rank)
         return (0, len(self.members))[side]
 
     def regions(self, participant: int) -> dict[str, tuple[int, KVLayout]]:
         side, member = divmod(participant, len(self.members))
         regions = self.layout.regions(side)
-        if not self.prefill_shared or side == 1 or member == 0:
+        if not self.regional_sharing or not self.shares_main(side) or member == 0:
             return regions
         result = {}
         offset = 0
@@ -182,6 +190,8 @@ class PoolSession:
         )
 
     def contribution_for(self, participant: int) -> int:
+        if participant >= len(self.members) and not self.regions(participant):
+            return 0
         alignment = self.layout.alignment_bytes
         required = self.probe_offset(participant) + self.layout.probe_bytes
         return (required + alignment - 1) // alignment * alignment
@@ -203,6 +213,7 @@ class SharingPlan:
     nic_port: int = 25670
     pool_id: int = 104
     prefill_shared: bool = False
+    decode_shared: bool = False
 
     def session(self, tp_rank: int) -> PoolSession:
         """Use the same group, ports and allocation contract for a live pool."""
@@ -221,6 +232,7 @@ class SharingPlan:
             self.pool_id,
             self.group_identity(group),
             self.prefill_shared,
+            self.decode_shared,
         )
 
     def validate_peer(self, peer: SharingPlan) -> None:
@@ -232,6 +244,7 @@ class SharingPlan:
             "kv_identity",
             "mempool_share",
             "prefill_shared",
+            "decode_shared",
             "pool_id",
             "base_port",
         ):
@@ -282,6 +295,7 @@ class SharingPlan:
             "tp_size": len(self.assignments),
             "mempool_share": self.mempool_share,
             "prefill_shared": self.prefill_shared,
+            "decode_shared": self.decode_shared,
             "members": group.members,
             "pool_id": self.pool_id,
             "layout": self.group_layout(group).signature(),
@@ -327,13 +341,15 @@ class SharingPlan:
                         "placement_verified": False,
                     }
                 )
-        if self.prefill_shared:
+        if self.prefill_shared or self.decode_shared:
             for row in rows:
                 session = self.session(row["rank"])
                 row.update(
-                    owner_tp_rank=session.tp_rank,
+                    owner_tp_rank=session.members[0]
+                    if side == 1 and self.decode_shared
+                    else session.tp_rank,
                     main_owner_tp_rank=session.members[0]
-                    if side == 0
+                    if session.shares_main(side)
                     else session.tp_rank,
                     owner_participant=session.region_owner(side),
                     contribution_bytes=session.contribution,
@@ -352,8 +368,10 @@ class SharingPlan:
         return {
             "allocation_status": "applied" if registrations is not None else "planned",
             "prefill_shared": self.prefill_shared,
+            "decode_shared": self.decode_shared,
             "main_replica_count": len(self.assignments)
-            if self.prefill_shared and side == 1
+            if (self.prefill_shared or self.decode_shared)
+            and not (self.prefill_shared, self.decode_shared)[side]
             else len(self.groups),
             "role": self.role,
             "mempool_share": self.mempool_share,
@@ -476,6 +494,7 @@ class MempoolNumaConfig:
         pool_id: int = 104,
         prefill_shared: bool = False,
         prefill_groups: Sequence[Sequence[int]] = (),
+        decode_shared: bool = False,
     ) -> SharingPlan:
         """Resolve NUMA first, then apply the sharing switch to that assignment."""
         positive_int("tp_size", tp_size)
@@ -519,7 +538,7 @@ class MempoolNumaConfig:
             raise ValueError(
                 f"topology missing TP ranks: {sorted(set(range(tp_size)) - rank_hosts.keys())}"
             )
-        shared = self.mempool_share or prefill_shared
+        shared = self.mempool_share or prefill_shared or decode_shared
         assignments: list[RankNuma] = []
         warnings = []
         if self.rank_map is not None:
@@ -566,7 +585,7 @@ class MempoolNumaConfig:
             members.setdefault(key, []).append(assignment.rank)
         groups = []
         nic_offset = 0
-        if prefill_shared and prefill_groups:
+        if (prefill_shared or decode_shared) and prefill_groups:
             by_rank = {a.rank: a for a in assignments}
             members = {}
             for group in prefill_groups:
@@ -576,9 +595,7 @@ class MempoolNumaConfig:
                     != (owner.host, owner.numa_node)
                     for r in group
                 ):
-                    raise ValueError(
-                        "prefill shared members must use the same host and NUMA"
-                    )
+                    raise ValueError("shared members must use the same host and NUMA")
                 members[owner.host, owner.numa_node, owner.rank] = list(group)
         for (host_id, node, _), ranks in members.items():
             groups.append(SharingGroup(host_id, node, tuple(ranks), nic_offset))
@@ -604,4 +621,5 @@ class MempoolNumaConfig:
             nic_port,
             pool_id,
             prefill_shared,
+            decode_shared,
         )

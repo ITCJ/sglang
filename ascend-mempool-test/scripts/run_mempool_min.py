@@ -31,7 +31,7 @@ import verify_mempool_reuse
 import verify_mempool_session
 import verify_service
 
-SESSION_MODES = ("session-acceptance", "p-sharing-acceptance")
+SESSION_MODES = ("session-acceptance", "p-sharing-acceptance", "d-sharing-acceptance")
 from run_ticket10 import (
     available_port,
     connect,
@@ -107,6 +107,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "numa-acceptance",
             "session-acceptance",
             "p-sharing-acceptance",
+            "d-sharing-acceptance",
         ),
         required=True,
     )
@@ -186,12 +187,22 @@ def memory_budget(config: RouterConfig, role: str) -> dict[str, int]:
     )
     rank = 0 if role == "prefill" else 1
     bm = 16 * layout.contribution_bytes(rank)
-    if config.prefill_shared:
+    if config.prefill_shared or config.decode_shared:
         bm = sum(
             PoolSession(
-                layout, rank, member, group, 0, 0, 0, 0, "budget", True
+                layout,
+                rank,
+                member,
+                group,
+                0,
+                0,
+                0,
+                0,
+                "budget",
+                config.prefill_shared,
+                config.decode_shared,
             ).contribution
-            for group in config.prefill_groups
+            for group in config.session_groups
             for member in group
         )
     # Acceptance retains CPU source + <=40 saved pages and bounded readback scratch.
@@ -240,7 +251,9 @@ class Runner:
             status="running",
             role=args.role,
             mode=args.mode,
-            coverage="K1-05 reduced functional acceptance"
+            coverage="K1-06 reduced functional acceptance"
+            if config.decode_shared and self.session_acceptance
+            else "K1-05 reduced functional acceptance"
             if config.prefill_shared and self.session_acceptance
             else "K1-02 reduced functional acceptance"
             if self.session_acceptance
@@ -861,8 +874,8 @@ class Runner:
                     25670,
                     25670
                     + (
-                        sum(2 * len(g) ** 2 for g in self.config.prefill_groups)
-                        if self.config.prefill_shared
+                        sum(2 * len(g) ** 2 for g in self.config.session_groups)
+                        if self.config.prefill_shared or self.config.decode_shared
                         else 32
                     ),
                 ),
@@ -997,7 +1010,10 @@ class Runner:
             self.stage(target=True, restart=phase == "restart")
         if self.is_p:
             acceptance = verify_mempool_session.summarize(
-                self.root, config=self.config if self.config.prefill_shared else None
+                self.root,
+                config=self.config
+                if self.config.prefill_shared or self.config.decode_shared
+                else None,
             )
             self.peer.send("session-result", acceptance=acceptance)
         else:
@@ -1005,8 +1021,10 @@ class Runner:
         write_json(
             self.root
             / (
-                "p-sharing-acceptance.json"
-                if self.config.prefill_shared
+                "d-sharing-acceptance.json"
+                if self.config.decode_shared
+                else "p-sharing-acceptance.json"
+                if self.config.prefill_shared or self.config.decode_shared
                 else "session-acceptance.json"
             ),
             acceptance,
@@ -1090,6 +1108,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "numa-acceptance",
         "session-acceptance",
         "p-sharing-acceptance",
+        "d-sharing-acceptance",
     ):
         config = msgspec.structs.replace(
             config,
@@ -1102,6 +1121,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "numa-acceptance",
                 "session-acceptance",
                 "p-sharing-acceptance",
+                "d-sharing-acceptance",
             ),
         )
     elif args.mode == "acceptance" and config.prefix_pages:
@@ -1110,6 +1130,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if args.mode == "p-sharing-acceptance":
         config = msgspec.structs.replace(config, prefill_shared=True)
+    if args.mode == "d-sharing-acceptance":
+        config = msgspec.structs.replace(
+            config, prefill_shared=True, decode_shared=True, verify_decode=True
+        )
     args.config = root / "effective-config.json"
     if args.describe:
         print(

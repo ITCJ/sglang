@@ -12,6 +12,46 @@ from ascend_mempool.sharing_plan import HostTopology, MempoolNumaConfig
 
 
 class TestPoolSession(unittest.TestCase):
+    def test_decode_shared_owner_allocates_once_with_private_or_shared_prefill(self):
+        layer = KVLayout(2, 2, 16, 1, 8)
+        layout = PoolLayout(layer, layer, alignment_bytes=64)
+        for prefill_shared in (False, True):
+            pools = []
+            for side, role in enumerate(("prefill", "decode")):
+                plan = MempoolNumaConfig(False, "0").plan(
+                    hosts=(HostTopology(role, (0, 1), "0"),),
+                    tp_size=2,
+                    role=role,
+                    instance_id="d-shared",
+                    kv_identity="model",
+                    layout=layout,
+                    prefill_shared=prefill_shared,
+                    decode_shared=True,
+                )
+                for rank in (0, 1):
+                    session = plan.session(rank)
+                    pool = MempoolKVManager.create(
+                        session.layout,
+                        side,
+                        session=session,
+                        bm_module=GroupSDK(session.participant),
+                    )
+                    self.addCleanup(pool.close, drain=lambda: None)
+                    pool.join(0.1)
+                    pools.append(pool)
+            self.assertEqual([p.contribution for p in pools[2:]], [1152, 0])
+            self.assertEqual(pools[2].view(1, 0).gva_base, pools[3].view(1, 0).gva_base)
+            self.assertEqual(
+                pools[0].view(0, 0).gva_base == pools[1].view(0, 0).gva_base,
+                prefill_shared,
+            )
+            self.assertNotEqual(pools[2].probe_gva(1), pools[3].probe_gva(1))
+            self.assertNotEqual(pools[0].probe_gva(0), pools[1].probe_gva(0))
+            self.assertEqual(
+                pools[3].replica_registration()["alive_main"]["members"], [0, 1]
+            )
+            self.assertEqual(pools[3].replica_registration()["alive_main"]["owner"], 0)
+
     def test_prefill_group_shares_main_but_keeps_index_prefix_and_decode_private(self):
         layout = PoolLayout(
             KVLayout(2, 2, 128, 1, 8),

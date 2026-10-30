@@ -1,0 +1,6 @@
+test_decode_cli_enables_shared_graph_checks_with_eight_allocations (test_mempool_session_acceptance.TestSessionAcceptance.test_decode_cli_enables_shared_graph_checks_with_eight_allocations) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.075s
+
+OK

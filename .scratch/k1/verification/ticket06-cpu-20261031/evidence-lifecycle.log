@@ -1,0 +1,7 @@
+test_decode_registration_and_receipts_reject_unproven_sharing (test_mempool_shared_evidence.TestSharedEvidence.test_decode_registration_and_receipts_reject_unproven_sharing) ... ok
+test_decode_free_waits_for_readers_and_reports_zero (test_mempool_subrouter.TestSubrouter.test_decode_free_waits_for_readers_and_reports_zero) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.112s
+
+OK

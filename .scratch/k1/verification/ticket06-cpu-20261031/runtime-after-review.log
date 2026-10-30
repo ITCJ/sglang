@@ -1,0 +1,43 @@
+test_admission_requires_the_approved_attachment_for_the_actual_req_row (test_runtime.TestMempoolRuntime.test_admission_requires_the_approved_attachment_for_the_actual_req_row)
+Project kv.req_pool_idx outside runtime; reject missing or stale approval. ... ok
+test_binding_reuse_preserves_tensor_addresses_and_rejects_conflicts (test_runtime.TestMempoolRuntime.test_binding_reuse_preserves_tensor_addresses_and_rejects_conflicts)
+A drained allocation can be rebound without replacing captured tables. ... ok
+test_binding_updates_cannot_interleave_an_open_capture (test_runtime.TestMempoolRuntime.test_binding_updates_cannot_interleave_an_open_capture)
+Dummy capture also consumes binding tables and cannot change them mid-forward. ... ok
+test_capture_cannot_access_a_real_binding (test_runtime.TestMempoolRuntime.test_capture_cannot_access_a_real_binding)
+Graph setup must not bypass normal tracking for live request storage. ... ok
+test_decode_first_row_and_last_capacity_row_use_relative_positions (test_runtime.TestMempoolRuntime.test_decode_first_row_and_last_capacity_row_use_relative_positions)
+Eight decode rows fill exactly one slot without touching its neighbor. ... ok
+test_detach_preserves_completed_facts_before_request_row_reuse (test_runtime.TestMempoolRuntime.test_detach_preserves_completed_facts_before_request_row_reuse)
+Consume local completion before detaching; retain old KV after row reuse. ... ok
+test_extra_writes_to_a_bound_request_fail_expectation_check (test_runtime.TestMempoolRuntime.test_extra_writes_to_a_bound_request_fail_expectation_check)
+A layer may not silently write a request absent from the host plan. ... ok
+test_forward_scope_requires_preparation_and_keeps_exceptions_fatal (test_runtime.TestMempoolRuntime.test_forward_scope_requires_preparation_and_keeps_exceptions_fatal)
+Host scopes record real forwards once and cannot disguise failed launches. ... ok
+test_forward_waits_for_latest_binding_install_event (test_runtime.TestMempoolRuntime.test_forward_waits_for_latest_binding_install_event)
+The injected SDK wait orders table initialization and later rebinding. ... ok
+test_hardware_gate_examples_match_full_dram_reference_on_cpu (test_runtime.TestMempoolRuntime.test_hardware_gate_examples_match_full_dram_reference_on_cpu)
+The actual gate's inputs cover both BM roles through the same runtime. ... ok
+test_index_writeback_uses_native_indices_and_survives_native_row_release (test_runtime.TestMempoolRuntime.test_index_writeback_uses_native_indices_and_survives_native_row_release) ... ok
+test_layer_coverage_is_required_even_for_dummy_capture (test_runtime.TestMempoolRuntime.test_layer_coverage_is_required_even_for_dummy_capture)
+An empty expectation list cannot bypass missing/duplicate layer checks. ... ok
+test_overlap_completion_snapshots_do_not_observe_later_writes (test_runtime.TestMempoolRuntime.test_overlap_completion_snapshots_do_not_observe_later_writes)
+Both forwards can be submitted before polling their distinct events. ... ok
+test_page_writers_touch_only_their_half_and_allow_an_empty_suffix_share (test_runtime.TestMempoolRuntime.test_page_writers_touch_only_their_half_and_allow_an_empty_suffix_share) ... ok
+test_prefill_row_reuse_keeps_old_slot_until_its_own_done (test_runtime.TestMempoolRuntime.test_prefill_row_reuse_keeps_old_slot_until_its_own_done)
+A controlled caller separates native row reuse from protocol ownership. ... ok
+test_prompt_chunks_and_layers_are_counted_once_after_device_completion (test_runtime.TestMempoolRuntime.test_prompt_chunks_and_layers_are_counted_once_after_device_completion)
+Two forwards fill prompt KV, and readiness waits for all layer writes. ... ok
+test_rejects_unsupported_preprocessing_and_non_contiguous_progress (test_runtime.TestMempoolRuntime.test_rejects_unsupported_preprocessing_and_non_contiguous_progress)
+Only supported preprocessing and monotonically written KV are accepted. ... ok
+test_replay_requires_external_work_and_does_not_fabricate_layer_calls (test_runtime.TestMempoolRuntime.test_replay_requires_external_work_and_does_not_fabricate_layer_calls)
+Host expectation alone cannot claim a captured write actually happened. ... ok
+test_suffix_counts_only_computed_rows_and_retains_its_range_after_detach (test_runtime.TestMempoolRuntime.test_suffix_counts_only_computed_rows_and_retains_its_range_after_detach) ... ok
+test_unbound_rows_are_masked_and_detected_as_missing_expected_writes (test_runtime.TestMempoolRuntime.test_unbound_rows_are_masked_and_detected_as_missing_expected_writes)
+Device masking must not make a mismatched real batch appear successful. ... ok
+test_split_writers_supply_current_locally_and_read_complete_previous_rows (test_shared_decode.TestSharedDecode.test_split_writers_supply_current_locally_and_read_complete_previous_rows) ... ok
+
+----------------------------------------------------------------------
+Ran 21 tests in 0.057s
+
+OK

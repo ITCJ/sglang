@@ -1,0 +1,6 @@
+test_split_writers_supply_current_locally_and_read_complete_previous_rows (test_shared_decode.TestSharedDecode.test_split_writers_supply_current_locally_and_read_complete_previous_rows) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.041s
+
+OK

@@ -137,20 +137,24 @@ def attach_subrouter(
             allocator, prefix, verify_boundaries=config.verify_prefix
         )
         install_prefill_cache(scheduler, restore)
-    session = runtime.manager.session if config.prefill_shared else None
-    groups = (
-        config.prefill_groups if config.prefill_shared and role == "prefill" else ()
+    session = (
+        runtime.manager.session
+        if config.prefill_shared or config.decode_shared
+        else None
     )
-    if groups:
+    groups = config.main_groups(role)
+    if config.prefill_shared and role == "prefill":
         from sglang.srt.hardware_backend.npu.mempool.page_write import PageWriter
 
-    writers = {
-        rank: PageWriter(
-            member, len(group), config.page_size, config.prefill_write_assignment
-        )
-        for group in groups
-        for member, rank in enumerate(group)
-    }
+        writers = {
+            rank: PageWriter(
+                member, len(group), config.page_size, config.prefill_write_assignment
+            )
+            for group in groups
+            for member, rank in enumerate(group)
+        }
+    else:
+        writers = {}
     shard = RouterShard(
         control,
         native=native,
@@ -161,9 +165,7 @@ def attach_subrouter(
         prefix=prefix,
         restore=restore,
         main_groups=groups,
-        main_region=session.identity
-        if session is not None and role == "prefill"
-        else None,
+        main_region=session.identity if session is not None else None,
         page_writers=[writers[rank] for rank in range(16)] if writers else (),
     )
     connection = (
@@ -201,7 +203,11 @@ def attach_subrouter(
         replica_locations=runtime.manager.replica_registration(),
         graph=not args.disable_cuda_graph,
     )
-    if runtime.config.numa.rank_map is not None or config.prefill_shared:
+    if (
+        runtime.config.numa.rank_map is not None
+        or config.prefill_shared
+        or config.decode_shared
+    ):
         registration.update(
             runtime.manager.placement_registration(
                 control.local.tp_rank, urlsplit(runtime.config.nic).hostname or ""
@@ -229,6 +235,19 @@ def attach_subrouter(
             str(runtime.row_slot.device),
         )
         probe.write()
+
+    def verify_mapping() -> dict[str, Any]:
+        result = probe.verify() if probe is not None else {}
+        if role == "decode" and config.decode_shared and config.verify_decode:
+            from sglang.srt.distributed import get_tp_group
+            from sglang.srt.hardware_backend.npu.mempool.decode_probe import (
+                verify_decode_order,
+            )
+
+            result["decode_order"] = verify_decode_order(
+                runtime.manager, config.decode_write_assignment, get_tp_group()
+            )
+        return result
 
     def registered() -> dict[str, Any]:
         if control.peer is None:
@@ -270,7 +289,10 @@ def attach_subrouter(
         send=connection.send if connection else lambda message: None,
         registration=registered,
         timeout=config.operation_timeout,
-        verify_mapping=probe.verify if probe is not None else None,
+        verify_mapping=verify_mapping
+        if probe is not None
+        or (role == "decode" and config.decode_shared and config.verify_decode)
+        else None,
     )
 
 

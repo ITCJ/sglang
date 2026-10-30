@@ -17,9 +17,11 @@ else:
 def check_registration(
     registrations: dict[str, Any], config: RouterConfig
 ) -> dict[str, Any]:
-    groups = {rank: group for group in config.prefill_groups for rank in group}
-    main: dict[int, dict[str, Any]] = {}
-    numa: dict[int, dict[str, int]] = {}
+    groups = {rank: group for group in config.session_groups for rank in group}
+    main: dict[tuple[int, int], dict[str, Any]] = {}
+    numa_by_role: dict[str, dict[int, dict[str, int]]] = {
+        role: {} for role in ("prefill", "decode")
+    }
     placement = True
     for side, role in enumerate(("prefill", "decode")):
         rows = registrations[role]["ranks"]
@@ -39,12 +41,15 @@ def check_registration(
                 raise ValueError("shared registration lacks storage regions")
             owned = 0
             for name, value in regions.items():
-                shared = side == 0 and name == "alive_main"
+                shared = (config.prefill_shared, config.decode_shared)[
+                    side
+                ] and name == "alive_main"
                 if (
                     value["owner"] != (group[0] if shared else rank)
                     or value["members"] != (list(group) if shared else [rank])
                     or value["participant"] != participant
-                    or value["owner_participant"] != (0 if shared else participant)
+                    or value["owner_participant"]
+                    != (side * len(group) if shared else participant)
                     or value["world_size"] != 2 * len(group)
                     or value["numa_node"] != row["numa_node"]
                     or not value["session"]
@@ -53,7 +58,7 @@ def check_registration(
                 if value["owner"] == rank:
                     owned += value["bytes"]
                 if shared:
-                    old = main.setdefault(group[0], value)
+                    old = main.setdefault((side, group[0]), value)
                     if any(
                         old[key] != value[key]
                         for key in ("session", "bytes", "numa_node", "members")
@@ -62,12 +67,14 @@ def check_registration(
                             "shared members describe different physical replicas"
                         )
             aligned = (owned + 64 * len(group) + 2**30 - 1) // 2**30 * 2**30
+            if side == 1 and config.decode_shared and rank != group[0]:
+                aligned = 0
             if row["local_dram_bytes"] != aligned:
                 raise ValueError(
                     "BM allocation differs from owned shared/private payloads"
                 )
-            probe = row["shared_probe"]
-            if (
+            probe = row.get("shared_probe", {})
+            if config.prefill_shared and (
                 probe["status"] != "passed"
                 or probe["reader"] != rank
                 or probe["writers"] != list(group)
@@ -76,22 +83,37 @@ def check_registration(
                 or probe["bytes"] != len(group) * row["dim"] * 2
             ):
                 raise ValueError("missing live cross-writer shared prompt read")
-            if side == 0:
-                node = numa.setdefault(
-                    row["numa_node"],
-                    dict(main_replicas=0, main_payload_bytes=0, allocated_bytes=0),
-                )
-                node["allocated_bytes"] += row["local_dram_bytes"]
-                if rank == group[0]:
-                    node["main_replicas"] += 1
-                    node["main_payload_bytes"] += regions["alive_main"]["bytes"]
+            if side == 1 and config.decode_shared and config.verify_decode:
+                order = probe.get("decode_order", {})
+                if (
+                    order.get("status") != "passed"
+                    or order.get("engine") != "graph_replay"
+                    or not order.get("negative_without_wait")
+                    or not order.get("positive_with_wait")
+                ):
+                    raise ValueError("missing shared decode Graph ordering proof")
+            node = numa_by_role[role].setdefault(
+                row["numa_node"],
+                dict(main_replicas=0, main_payload_bytes=0, allocated_bytes=0),
+            )
+            node["allocated_bytes"] += row["local_dram_bytes"]
+            if rank == regions["alive_main"]["owner"]:
+                node["main_replicas"] += 1
+                node["main_payload_bytes"] += regions["alive_main"]["bytes"]
+            if row["local_dram_bytes"]:
                 placement = placement and bool(row["numa_placement_verified"])
-    if len(main) != len(config.prefill_groups):
-        raise ValueError("P physical main replica count is wrong")
+    p_count = sum(side == 0 for side, _ in main)
+    d_count = sum(side == 1 for side, _ in main)
+    if p_count != (
+        len(config.prefill_groups) if config.prefill_shared else 0
+    ) or d_count != (len(config.decode_groups) if config.decode_shared else 0):
+        raise ValueError("physical main replica count is wrong")
     return dict(
         status="passed",
-        main_replicas=len(main),
-        per_numa=numa,
+        main_replicas=p_count or 16,
+        decode_main_replicas=d_count or 16,
+        per_numa=numa_by_role["prefill"],
+        decode_per_numa=numa_by_role["decode"],
         physical_placement_verified=placement,
         allocation_evidence="BM local_mem_size matched each participant contribution at join",
         resident_page_limit="NUMA allocation/registration is separate from physical page residence",
@@ -121,9 +143,9 @@ def check_stage(root: Path, config: RouterConfig) -> dict[str, Any]:
         ]
         if not ready:
             raise ValueError("shared prompt never became completely ready")
-        rows = ready[-1]["writer_rows"]
+        rows = ready[-1].get("writer_rows", [])
         fill = done["reads"].get("fill")
-        for group in config.prefill_groups:
+        for group in config.prefill_groups if config.prefill_shared else ():
             covered: list[int] = []
             descriptors = [done["allocations"]["prefill"][r]["pages"] for r in group]
             if any(p != descriptors[0] for p in descriptors):

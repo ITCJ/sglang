@@ -16,6 +16,34 @@ from ascend_mempool_pd.mempool_router_protocol import RouterConfig
 
 
 class TestSessionAcceptance(unittest.TestCase):
+    def test_decode_cli_enables_shared_graph_checks_with_eight_allocations(self):
+        with tempfile.TemporaryDirectory() as folder:
+            config = Path(folder) / "config.json"
+            config.write_text(
+                json.dumps(dict(prefill_host="p", decode_host="d", model_path="/model"))
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                run_mempool_min.main(
+                    [
+                        "--role",
+                        "decode",
+                        "--mode",
+                        "d-sharing-acceptance",
+                        "--config",
+                        str(config),
+                        "--run-id",
+                        "k1-06-cpu",
+                        "--describe",
+                    ]
+                )
+            value = json.loads(output.getvalue())
+            self.assertTrue(value["config"]["decode_shared"])
+            self.assertTrue(value["config"]["verify_decode"])
+            self.assertTrue(value["config"]["prefill_shared"])
+            self.assertEqual(value["service_rounds"], 2)
+            self.assertEqual(value["memory_budget"]["bm_bytes"], 8 * 2**30)
+
     def test_shared_cli_describes_eight_prefill_replicas_and_two_model_starts(self):
         with tempfile.TemporaryDirectory() as folder:
             config = Path(folder) / "config.json"

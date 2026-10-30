@@ -412,7 +412,7 @@ class MempoolKVManager:
     def _mapped_bases(self) -> dict[int, tuple[int, int]] | None:
         """Check every mapped slab, then resolve the local P/D logical views."""
         session = self.session
-        shared = session is not None and session.prefill_shared
+        shared = session is not None and session.regional_sharing
         participants = (
             tuple(range(session.world_size))
             if shared and session is not None
@@ -421,6 +421,12 @@ class MempoolKVManager:
         first = self._handle.peer_rank_ptr(0, self._bm.BmMemType.HOST)
         bases = {}
         for side, participant in enumerate(participants):
+            if (
+                shared
+                and session is not None
+                and not session.contribution_for(participant)
+            ):
+                continue
             gva = self._handle.peer_rank_ptr(participant, self._bm.BmMemType.HOST)
             if not first or not gva:
                 self._mapping_pending = (
@@ -473,8 +479,8 @@ class MempoolKVManager:
         assert session is not None
         result = {}
         for name, (_, geometry) in self.layout.regions(self.rank).items():
-            shared = not session.prefill_shared or (
-                self.rank == 0 and name == "alive_main"
+            shared = not session.regional_sharing or (
+                session.shares_main(self.rank) and name == "alive_main"
             )
             members = session.members if shared else (session.tp_rank,)
             result[name] = dict(
@@ -497,8 +503,20 @@ class MempoolKVManager:
         from .placement import sample_pool_placement
 
         session = self.session
-        shared = session is not None and session.prefill_shared
+        shared = session is not None and session.regional_sharing
         participant = session.participant if shared and session is not None else None
+        if not self.contribution:
+            assert session is not None
+            return dict(
+                host=host,
+                owner_tp_rank=session.members[0],
+                numa_placement_verified=False,
+                numa_evidence=dict(
+                    allocation_bytes=0,
+                    placement_verified=False,
+                    note="shared follower; physical pages belong to owner",
+                ),
+            )
         gva, device = self.view_bases(self.rank, participant)
         host_base = self._handle.gva_to_va(gva, self._bm.BmMemType.LOCAL_HOST)
         regions = {
@@ -533,7 +551,7 @@ class MempoolKVManager:
     ) -> MempoolKVView:
         """Return a typed layer view that keeps its owning pool alive."""
         participant = None
-        if self.session is not None and self.session.prefill_shared:
+        if self.session is not None and self.session.regional_sharing:
             participant = self.session.region_owner(rank, region)
             offset, layout = self.session.regions(participant)[region]
         else:
@@ -555,12 +573,18 @@ class MempoolKVManager:
 
     def probe_gva(self, side: int) -> int:
         session = self.session
-        if session is not None and session.prefill_shared:
+        if session is not None and session.regional_sharing:
             participant = side * len(session.members) + session.members.index(
                 session.tp_rank
             )
-            return self.view_bases(side, participant)[0] + session.probe_offset(
-                participant
+            offset = 0
+            if side == 1 and session.decode_shared:
+                participant = session.region_owner(side)
+                offset = 64 * session.members.index(session.tp_rank)
+            return (
+                self.view_bases(side, participant)[0]
+                + session.probe_offset(participant)
+                + offset
             )
         return self.bases(side)[0] + self.layout.probe_offset(side)
 

@@ -9,7 +9,7 @@
 **State:** open
 
 - [ ] A / B / C / E 与 V1–V10 全过；V4 加“读对方 rank 写的 token 的最早一步”（第 1 步读位置 prompt_len）
-- [ ] 核对并记录：现在写回走哪条流、是 memcpy 还是能入图的写 kernel；所依赖的集合通信是全员的，不是 broadcast
+- [x] 核对并记录：现在写回走哪条流、是 memcpy 还是能入图的写 kernel；所依赖的集合通信是全员的，不是 broadcast
 - [ ] 哨兵每步校验通过：debug 模式下第 t+1 步开始前本 rank 从 DRAM 读回 token t 整行，与自己 HBM 里的 token t 一致
 - [ ] 负测试通过：在对方写回流里注入延迟，关掉等待失败、打开等待通过
 - [ ] Graph replay 模式下写回和 event 在捕获范围内，校验通过
@@ -26,3 +26,25 @@
 
 按用户要求导入已定稿的票据。目标、验收项及依赖沿用原文；
 本地补充 State 与依赖链接。尚未开始本票实现或 NPU 验收。
+
+### 2026-10-31：实现与本机交付完成，等待用户NPU验收
+
+基点`cc14b0518105921dd6320358f84cf912f28a9aeb`。
+D共享owner分配、同组分工写入、当前token本地供给、历史DRAM读取、逐步哨兵、
+Graph延迟写者负测试及Main/SR共享描述符与双读者释放接线已实现。
+支持features/layers两种分工及P私有或共享；不新增通用主线功能改动。
+
+写回是当前计算流的`unidex_copy`，位于同层post-attention全员TP通信之前。
+复用既有流依赖；不新增跨进程消息、共享标志或通用shutdown改造。
+生产同流不需要新的写回event；验收探针单独验证异步写流的event等待。
+
+510项CPU覆盖收齐，完整套件运行一次；23项环境受阻用例定向补跑通过。
+19个Python文件静态检查、14模块strict mypy通过；Standards/Spec复审均0项。
+评审发现的P无prefix探针回归、D驻留标记、快照完成事件与负测试判据均已修正。
+用户澄清“两次”指每轮最多两次，失败修正后可重跑；组合测试修复夹具后已通过。
+
+[源码清单与顺序](../delivery-ticket06.md)、[CPU记录](../verification/ticket06-cpu-20261031/README.md)、
+[双机入口](../../../ascend-mempool-test/K1_TICKET06.md)已交付。
+NPU尚未运行，State保持open，09的06依赖尚未满足。
+入口沿用两轮精简功能范围；V3独立答案、V8注册CPU重放，物理NUMA驻留与性能另记。
+旧票性能基线条款按spec移至baselinetest，本轮不增加性能埋点。

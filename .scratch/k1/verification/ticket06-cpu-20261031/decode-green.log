@@ -1,0 +1,23 @@
+test_split_writers_supply_current_locally_and_read_complete_previous_rows (test_shared_decode.TestSharedDecode.test_split_writers_supply_current_locally_and_read_complete_previous_rows) ... ERROR
+
+======================================================================
+ERROR: test_split_writers_supply_current_locally_and_read_complete_previous_rows (test_shared_decode.TestSharedDecode.test_split_writers_supply_current_locally_and_read_complete_previous_rows)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_shared_decode.py", line 57, in test_split_writers_supply_current_locally_and_read_complete_previous_rows
+    runtime.fetch_selected_kv(layer, batch.req_pool_indices, positions, mask, output)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/runtime.py", line 704, in fetch_selected_kv
+    self._fetch.gather(
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/copy.py", line 227, in gather
+    copier.gather()
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/copy.py", line 147, in gather
+    self._kernel(
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_shared_decode.py", line 30, in read
+    source = sources[sp] if sp is not None else src
+             ~~~~~~~^^^^
+KeyError: 343597383680
+
+----------------------------------------------------------------------
+Ran 1 test in 0.035s
+
+FAILED (errors=1)

@@ -241,6 +241,7 @@ class TestSubrouter(unittest.TestCase):
     def test_decode_free_waits_for_readers_and_reports_zero(self):
         from msgspec.structs import replace
 
+        self.setUp(decode_groups=tuple((r, r + 1) for r in range(0, 16, 2)))
         self.test_late_native_transfer_holds_first_token_and_explicit_free()
         facts = [
             [
@@ -260,7 +261,7 @@ class TestSubrouter(unittest.TestCase):
             for r in range(16)
         ]
         self.advance("decode", facts)
-        self.assertEqual(self.ticks["decode"][0].shard.readers.counts, [0] * 15 + [1])
+        self.assertEqual(self.ticks["decode"][0].shard.readers.counts, [0] * 7 + [1])
         facts[15] = [replace(facts[15][0], drained=True, host_drained=True)]
         self.advance("decode", facts)
         self.advance("decode", facts)
@@ -520,7 +521,7 @@ class TestSubrouter(unittest.TestCase):
             all(store.free_pages == tuple(range(1, 40)) for store in stores)
         )
 
-    def setUp(self, main_groups=()):
+    def setUp(self, main_groups=(), decode_groups=()):
         self.controls, self.ticks, self.effects = {}, {}, {}
         self.commands, self.messages = (
             {r: [] for r in ("prefill", "decode")},
@@ -558,7 +559,7 @@ class TestSubrouter(unittest.TestCase):
                         ].append(kind),
                         reply_to="tcp://d:1",
                         page_size=128,
-                        main_groups=main_groups if role == "prefill" else (),
+                        main_groups=main_groups if role == "prefill" else decode_groups,
                         main_region=f"group-{rank // 2}" if main_groups else None,
                         page_writers=[PageWriter(r % 2, 2, 128) for r in range(16)]
                         if main_groups and role == "prefill"

@@ -1,0 +1,15 @@
+test_decode_shared_owner_allocates_once_with_private_or_shared_prefill (test_pool_session.TestPoolSession.test_decode_shared_owner_allocates_once_with_private_or_shared_prefill) ... ERROR
+
+======================================================================
+ERROR: test_decode_shared_owner_allocates_once_with_private_or_shared_prefill (test_pool_session.TestPoolSession.test_decode_shared_owner_allocates_once_with_private_or_shared_prefill)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_pool_session.py", line 21, in test_decode_shared_owner_allocates_once_with_private_or_shared_prefill
+    plan = MempoolNumaConfig(False, "0").plan(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: MempoolNumaConfig.plan() got an unexpected keyword argument 'decode_shared'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (errors=1)

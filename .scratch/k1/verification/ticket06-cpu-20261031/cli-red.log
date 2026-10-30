@@ -1,0 +1,57 @@
+test_decode_cli_enables_shared_graph_checks_with_eight_allocations (test_mempool_session_acceptance.TestSessionAcceptance.test_decode_cli_enables_shared_graph_checks_with_eight_allocations) ... usage: python -m unittest [-h] --role {prefill,decode} --mode
+                          {serve,acceptance,prefix-acceptance,reuse-acceptance,full-acceptance,numa-acceptance,session-acceptance,p-sharing-acceptance}
+                          --config CONFIG --run-id RUN_ID
+                          [--log-root LOG_ROOT] [--describe]
+python -m unittest: error: argument --mode: invalid choice: 'd-sharing-acceptance' (choose from serve, acceptance, prefix-acceptance, reuse-acceptance, full-acceptance, numa-acceptance, session-acceptance, p-sharing-acceptance)
+ERROR
+
+======================================================================
+ERROR: test_decode_cli_enables_shared_graph_checks_with_eight_allocations (test_mempool_session_acceptance.TestSessionAcceptance.test_decode_cli_enables_shared_graph_checks_with_eight_allocations)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/argparse.py", line 1943, in _parse_known_args2
+    namespace, args = self._parse_known_args(args, namespace, intermixed)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/argparse.py", line 2184, in _parse_known_args
+    start_index = consume_optional(start_index)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/argparse.py", line 2113, in consume_optional
+    take_action(action, args, option_string)
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/argparse.py", line 2003, in take_action
+    argument_values = self._get_values(action, argument_strings)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/argparse.py", line 2514, in _get_values
+    self._check_value(action, value)
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/argparse.py", line 2573, in _check_value
+    raise ArgumentError(action, msg % args)
+argparse.ArgumentError: argument --mode: invalid choice: 'd-sharing-acceptance' (choose from serve, acceptance, prefix-acceptance, reuse-acceptance, full-acceptance, numa-acceptance, session-acceptance, p-sharing-acceptance)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py", line 25, in test_decode_cli_enables_shared_graph_checks_with_eight_allocations
+    run_mempool_min.main(["--role", "decode", "--mode", "d-sharing-acceptance",
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/scripts/run_mempool_min.py", line 1082, in main
+    args = parse_args(argv)
+           ^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/scripts/run_mempool_min.py", line 119, in parse_args
+    args = parser.parse_args(argv)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/argparse.py", line 1904, in parse_args
+    args, argv = self.parse_known_args(args, namespace)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/argparse.py", line 1914, in parse_known_args
+    return self._parse_known_args2(args, namespace, intermixed=False)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/argparse.py", line 1945, in _parse_known_args2
+    self.error(str(err))
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/argparse.py", line 2650, in error
+    self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/argparse.py", line 2637, in exit
+    _sys.exit(status)
+SystemExit: 2
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+FAILED (errors=1)

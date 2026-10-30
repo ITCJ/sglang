@@ -182,6 +182,7 @@ def check_target(
     if len(snapshots) != len(cases):
         raise ValueError("missing request ledger snapshots")
     source_rows = dict(prompt=0, decode=0)
+    decode_sentinel_rows = 0
     request_evidence = []
     previous: dict[tuple[str, int], int] = {}
     for index, (snapshot, case) in enumerate(zip(snapshots, cases)):
@@ -258,6 +259,7 @@ def check_target(
                 raise ValueError("P/D source evidence was not captured")
             source_rows["prompt"] += data["prompt_bm_rows"]
             source_rows["decode"] += data["decode_bm_rows"]
+            decode_sentinel_rows += data.get("shared_decode", {}).get("checked_rows", 0)
             if (prefix or case["name"].startswith("cold")) and data["forwards"] < 1:
                 raise ValueError("cold request never executed decode")
             if case["name"] == "first-token" and data["forwards"] != 0:
@@ -271,7 +273,7 @@ def check_target(
                 decode=decode_receipts,
             )
         )
-    if any(count <= 0 for count in source_rows.values()):
+    if source_rows["prompt"] <= 0 or source_rows["decode"] + decode_sentinel_rows <= 0:
         raise ValueError("service has no completed BM reads from one of P/D")
     return dict(
         status="passed",
@@ -279,6 +281,7 @@ def check_target(
         requests=len(cases),
         ranks_per_side=16,
         source_rows=source_rows,
+        decode_sentinel_rows=decode_sentinel_rows,
         graph=True,
         page_size=page_size,
         request_evidence=request_evidence,

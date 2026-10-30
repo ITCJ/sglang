@@ -56,7 +56,7 @@ def capacity_check(
 def check_registration(
     registrations: dict[str, Any], *, config: RouterConfig | None = None
 ) -> None:
-    if config is not None and config.prefill_shared:
+    if config is not None and (config.prefill_shared or config.decode_shared):
         from verify_mempool_shared import check_registration as check_shared
 
         check_shared(registrations, config)
@@ -168,6 +168,11 @@ def summarize(root: Path, *, config: RouterConfig | None = None) -> dict[str, An
         )
         if config is None:
             check_registration(read("registrations.json"))
+        decode = None
+        if config is not None and config.decode_shared:
+            from verify_mempool_decode import check_stage
+
+            decode = check_stage(stage, config)
         for filename in (
             "process-cleanup.json",
             "ports-released.json",
@@ -179,8 +184,11 @@ def summarize(root: Path, *, config: RouterConfig | None = None) -> dict[str, An
             dict(
                 stage=name,
                 status="passed",
-                accounting=accounting(stage, shared=config is not None),
+                accounting=accounting(
+                    stage, shared=bool(config and config.prefill_shared)
+                ),
                 sharing=shared,
+                shared_decode=decode,
             )
         )
     timeout = json.loads((root / "target/timeout.json").read_text())
@@ -195,7 +203,9 @@ def summarize(root: Path, *, config: RouterConfig | None = None) -> dict[str, An
         raise ValueError("P/D/mixed fetch smoke failed")
     return dict(
         status="passed",
-        coverage="K1-05 reduced functional acceptance"
+        coverage="K1-06 reduced functional acceptance"
+        if config is not None and config.decode_shared
+        else "K1-05 reduced functional acceptance"
         if config is not None
         else "K1-02 reduced functional acceptance",
         service_rounds=len(SERVICE_STAGES),
