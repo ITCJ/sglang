@@ -37,7 +37,12 @@ class TestSplitRead(unittest.TestCase):
 
         def corrupt_gather(output, value):
             output.copy_(torch.cat((value, value)))
-            output[0] += 1
+            # The gathered data still matches A; only the live private copy
+            # changes. Using only the saved reference would miss this corruption.
+            private = kernel.buffers[
+                manager.view(0, 0, region="prefix_main").device_base
+            ]
+            private[0] += 1
 
         store, manager, kernel, events = helper.make_store(
             verify=True, readers=2, all_gather=corrupt_gather

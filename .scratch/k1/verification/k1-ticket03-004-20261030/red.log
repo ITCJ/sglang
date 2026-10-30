@@ -1,0 +1,24 @@
+test_load_back_restores_split_native_buffers_at_discontiguous_token_indices (test_prefix.TestPrefixStore.test_load_back_restores_split_native_buffers_at_discontiguous_token_indices) ... [MEMPOOL_INIT] FAIL stage=bm.create2 pid=43609 tid=40582262 bm_rank=0 pool_id=0 local_dram_bytes=1073741824 max_dram_bytes=1073741824 local_hbm_bytes=0 max_hbm_bytes=0 data_op=SDMA tp_rank=None local_numa_nodes=() numa_node=-1 bm_flags=512 elapsed=0.000s error=RuntimeError('HalMemSetAccess failed: 65534; create bm handle failed.')
+ERROR
+
+======================================================================
+ERROR: test_load_back_restores_split_native_buffers_at_discontiguous_token_indices (test_prefix.TestPrefixStore.test_load_back_restores_split_native_buffers_at_discontiguous_token_indices)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix.py", line 144, in test_load_back_restores_split_native_buffers_at_discontiguous_token_indices
+    store, manager, kernel, events = self.make_store(verify=True)
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix.py", line 276, in make_store
+    manager = MempoolKVManager.create(
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/manager.py", line 189, in create
+    handle = bm_module.create2(
+             ^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_pool.py", line 22, in create2
+    raise RuntimeError("HalMemSetAccess failed: 65534; create bm handle failed.")
+RuntimeError: HalMemSetAccess failed: 65534; create bm handle failed.
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (errors=1)

@@ -17,6 +17,11 @@ class FakeBM:
         self.handle = None
 
     def create2(self, **options):
+        # NPU004: enabling DRAM_MAP_HOST_VA fails in this deployment's driver.
+        if options["flags"] & (1 << 9):
+            raise RuntimeError(
+                "HalMemSetAccess failed: 65534; create bm handle failed."
+            )
         self.handle = FakeHandle(self.rank, options)
         return self.handle
 

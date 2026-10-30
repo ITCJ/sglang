@@ -18,27 +18,19 @@ class MappedCopy:
 
     def __init__(self, manager):
         self.buffers = {}
-        host_addresses = {}
         for region, (_, layout) in manager.layout.regions(0).items():
             for layer in range(layout.layers):
                 view = manager.view(0, layer, region=region)
                 self.buffers[view.device_base] = torch.full(
                     layout.shape, -99, dtype=torch.bfloat16
                 )
-                host_addresses[view.gva_base] = self.buffers[
-                    view.device_base
-                ].data_ptr()
-        # VMM may return a device-only VA for LOCAL_HOST without host mapping.
-        # Reject it at the SDK test boundary instead of segfaulting this process.
+        # The real pool is only NPU-readable; never dereference its VA on CPU.
         manager._bm.BmMemType.LOCAL_HOST = "local_host"
         translate = manager._handle.gva_to_va
 
         def mapped_address(gva, kind):
             if kind == "local_host":
-                assert manager._handle.options["flags"] & (1 << 9), (
-                    "private prefix CPU read requires DRAM_MAP_HOST_VA"
-                )
-                return host_addresses[gva]
+                raise AssertionError("BM address is not CPU-readable")
             return translate(gva, kind)
 
         manager._handle.gva_to_va = mapped_address
@@ -202,6 +194,18 @@ class TestPrefixStore(unittest.TestCase):
         read = dict(
             rid="B", op_id=2, slot=5, source_pages=[2, 0], indices=indices, pool=pool
         )
+        read_buffers, scatter_buffers, copied_bytes = set(), set(), []
+
+        def observe_copy(*args):
+            read_buffers.add(args[1].data_ptr())
+            copied_bytes.append(args[7] * args[8])
+            kernel(*args)
+
+        def observe_scatter(*args):
+            scatter_buffers.add(args[0].data_ptr())
+            cpu_scatter_rows(*args)
+
+        store._kernel, store._scatter_kernel = observe_copy, observe_scatter
         self.assertIsNone(store.load_back(**read))
         with self.assertRaisesRegex(RuntimeError, "pending"):
             store.release_source("B")
@@ -213,6 +217,11 @@ class TestPrefixStore(unittest.TestCase):
             "native_verified",
         ):
             self.assertTrue(receipt["split_read"][flag])
+        self.assertEqual(len(scatter_buffers), 2)
+        self.assertEqual(read_buffers, scatter_buffers)
+        self.assertEqual(receipt["split_read"]["read_bytes"], 80)
+        self.assertEqual(receipt["split_read"]["oracle_read_bytes"], 160)
+        self.assertEqual(sum(copied_bytes), 240)
         self.assertEqual(receipt["prefix_indices"], [6, 7, 2, 3])
         self.assertEqual(receipt["tokens"], 4)
         self.assertEqual(k[0, indices, 0].tolist(), [[0, 1], [4, 5], [8, 9], [12, 13]])
@@ -222,6 +231,7 @@ class TestPrefixStore(unittest.TestCase):
         self.assertEqual(index[indices, 0].tolist(), [[0, 1], [2, 3], [4, 5], [6, 7]])
         self.assertTrue(torch.all(k[:, [0, 1, 4, 5, 8, 9]] == -9))
         self.assertEqual(store.load_back(**read), receipt)
+        store._kernel = kernel
         store.release_source("B")
 
     def test_fill_reads_saved_pages_into_a_new_alive_slot_and_waits_for_completion(
@@ -281,9 +291,7 @@ class TestPrefixStore(unittest.TestCase):
             indexer_layers=1,
             index_head_dim=2,
         )
-        manager = MempoolKVManager.create(
-            layout, 0, bm_module=FakeBM(0), cpu_access=verify
-        )
+        manager = MempoolKVManager.create(layout, 0, bm_module=FakeBM(0))
         manager.join(0.1)
         self.addCleanup(manager.close, drain=lambda: None)
         kernel = MappedCopy(manager)

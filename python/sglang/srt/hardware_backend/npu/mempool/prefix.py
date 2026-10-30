@@ -57,6 +57,8 @@ class _Read(msgspec.Struct):
     receipt: dict[str, Any] | None = None
     split_read: dict[str, Any] = msgspec.field(default_factory=dict)
     timing: Any = None
+    restore_buffers: dict[str, Tensor] = msgspec.field(default_factory=dict)
+    oracle_indices: tuple[Tensor, Tensor, Tensor] | None = None
 
 
 class PrefixStore:
@@ -271,6 +273,8 @@ class PrefixStore:
                 if self.profile:
                     operation.receipt["split_read"]["timings_ms"] = timings
             operation.retained.clear()
+            operation.restore_buffers.clear()
+            operation.oracle_indices = None
         return copy.deepcopy(operation.receipt)
 
     def _verify_read(self, operation: _Read) -> None:
@@ -319,11 +323,7 @@ class PrefixStore:
         }
         for region, layer in references[0]:
             expected = torch.cat([ref[region, layer] for ref in references.values()])
-            private = self.manager.local_cpu_view(layer, region="prefix_" + region)
-            private_values = torch.cat([private[p] for p in operation.source_pages])
-            operation.split_read["oracle_read_bytes"] += (
-                private_values.numel() * private_values.element_size()
-            )
+            private_values = self._read_private_prefix(operation, region, layer)
             if not torch.equal(expected, private_values):
                 raise RuntimeError("load_back private prefix differs from saved source")
             cpu_indices = indices.cpu()
@@ -448,7 +448,7 @@ class PrefixStore:
         table = torch.tensor(
             [slot_rows, native_rows], dtype=torch.int64, device=self.device
         )
-        buffers = {
+        buffers = operation.restore_buffers = {
             region: torch.empty(
                 (total_rows, 1, layout.dim), dtype=torch.bfloat16, device=self.device
             )
@@ -458,9 +458,18 @@ class PrefixStore:
             region: value.numel() * value.element_size()
             for region, value in buffers.items()
         }
-        operation.retained.extend(
-            (source, target, valid, indices, table, *buffers.values())
-        )
+        operation.retained.extend((source, target, valid, indices, table))
+        if self.verify:
+            # Acceptance metadata only; the oracle reuses the two KV buffers.
+            oracle_pages = torch.tensor(
+                operation.source_pages, dtype=torch.int64, device=self.device
+            )
+            oracle_source = (oracle_pages[:, None] * self.page_size + offsets).flatten()
+            operation.oracle_indices = (
+                oracle_source,
+                torch.arange(count, dtype=torch.int64, device=self.device),
+                torch.ones_like(oracle_source, dtype=torch.bool),
+            )
         operation.split_read = dict(
             assignment=self.read_assignment,
             readers=self.readers,
@@ -529,20 +538,9 @@ class PrefixStore:
                         self.all_gather(gathered, local)
                         operation.split_read["launches"]["all_gather"] += 1
                 if self.verify:
-                    # CPU-only oracle: no extra HBM staging or reordered KV buffer.
-                    actual = gathered.cpu().reshape(-1, self.page_size, 1, layout.dim)
-                    private = self.manager.local_cpu_view(
-                        layer, region="prefix_" + region
-                    )
-                    for slot, page in enumerate(slot_pages):
-                        if page is not None and not torch.equal(
-                            actual[slot], private[operation.source_pages[page]]
-                        ):
-                            raise RuntimeError(
-                                "split_read differs from private prefix replica"
-                            )
-                    operation.split_read["oracle_read_bytes"] += (
-                        count * layout.row_bytes
+                    # Snapshot before scatter; its input is reused by the oracle.
+                    actual = gathered.to(device="cpu", copy=True).reshape(
+                        -1, self.page_size, 1, layout.dim
                     )
                 if region == "main":
                     model_layer = pool.start_layer + layer
@@ -578,9 +576,48 @@ class PrefixStore:
                     operation.timing,
                 )
                 operation.split_read["launches"]["scatter"] += 1
+                if self.verify:
+                    private = self._read_private_prefix(
+                        operation, region, layer
+                    ).reshape(-1, self.page_size, 1, layout.dim)
+                    for slot, logical_page in enumerate(slot_pages):
+                        if logical_page is not None and not torch.equal(
+                            actual[slot], private[logical_page]
+                        ):
+                            raise RuntimeError(
+                                "split_read differs from private prefix replica"
+                            )
         operation.split_read["gathered_verified"] = self.verify
         operation.event = self._event_factory()
         operation.event.record()
+
+    def _read_private_prefix(self, operation: _Read, region: str, layer: int) -> Tensor:
+        """Read the actual replica via NPU into an idle restore buffer for V2."""
+        assert operation.oracle_indices is not None
+        source, target, valid = operation.oracle_indices
+        buffer = operation.restore_buffers[region]
+        view = self.manager.view(0, layer, region="prefix_" + region)
+        count = source.numel()
+        # At submission this follows scatter on the same stream. At receipt the
+        # restore event has completed. CPU copying drains this diagnostic read.
+        with self._read_context():
+            self._copy(
+                self._dtype,
+                buffer,
+                source,
+                target,
+                valid,
+                view.layout.slots * view.layout.tokens,
+                buffer.shape[0],
+                view.layout.row_bytes,
+                count,
+                48,
+                view.device_base,
+                None,
+            )
+            result = buffer[:count].to(device="cpu", copy=True)
+        operation.split_read["oracle_read_bytes"] += count * view.layout.row_bytes
+        return result
 
     def _submit_fill(self, operation: _Read) -> None:
         offsets = torch.arange(self.page_size, dtype=torch.int64, device=self.device)

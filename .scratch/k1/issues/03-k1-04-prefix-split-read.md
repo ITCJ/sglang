@@ -19,6 +19,19 @@
 
 ## Comments
 
+### 2026-10-30：NPU004撤销失败的host映射路径
+
+首错为HalMemSetAccess failed: 65534，多个rank在bm.create2失败。
+新增bit9已生效；scheduler异常触发SGLang默认进程树清理，shell最终返回137。
+回传OOM记录属于前一日logcollector，不是本轮故障证据。
+上轮host映射修复在该环境失败，现撤销cpu_access及直接CPU视图。
+V2改为scatter后复用汇总HBM缓冲，经NPU读取真实私有prefix并用CPU快照比较；
+完成后再读回核对原生内容，额外读取计入oracle_read_bytes。
+没有增加第三块HBM数据缓冲；验收NPU读会影响诊断计时，不能视作纯生产性能。
+完整494项CPU单轮通过，7模块strict mypy及静态检查通过，Standards/Spec均0项。
+见[004诊断](../verification/k1-ticket03-004-20261030/README.md)；下一轮k1-ticket03-005。
+004失败，State=open，验收项保持未勾选。
+
 ### 2026-10-30：NPU003私有prefix CPU比较段错误
 
 A完成并保存32页；B在16rank打印split_read_buffers之后发生SIGSEGV。

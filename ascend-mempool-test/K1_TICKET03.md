@@ -15,8 +15,9 @@ P/D各TP16，page128，P slot8192、D slot128，P eager、D Graph。
 002在模型初始化期间因`BadStatusLine`提前退出。测试入口已修复该异常的有界重试；
 只有HTTP 200才算就绪，超时显示目标URL及最后异常，进程失败仍立即中断。
 回显来源尚未证实。003已完成A，但B恢复在私有prefix的CPU比较处SIGSEGV。
-现由P侧prefix验收显式请求SDK的DRAM_MAP_HOST_VA，保留NUMA位和两块HBM缓冲；
-004用于复测此修复，003不算通过。详见[故障记录](../.scratch/k1/verification/k1-ticket03-003-20261030/README.md)。
+004的host映射修复触发HalMemSetAccess 65534，BM创建失败，默认清理后返回137。
+现恢复原映射，V2通过NPU读取实际私有副本，复用scatter之后的汇总缓冲。
+005用于复测；003/004均未通过。详见[004故障记录](../.scratch/k1/verification/k1-ticket03-004-20261030/README.md)。
 
 31（P）：
 
@@ -24,7 +25,7 @@ P/D各TP16，page128，P slot8192、D slot128，P eager、D Graph。
 bash ascend-mempool-test/scripts/run_mempool_min.sh \
   --role prefill --mode split-read-acceptance \
   --config /home/cryang/mempool-min-ticket01-3132.json \
-  --run-id k1-ticket03-004
+  --run-id k1-ticket03-005
 ```
 
 32（D）：
@@ -33,7 +34,7 @@ bash ascend-mempool-test/scripts/run_mempool_min.sh \
 bash ascend-mempool-test/scripts/run_mempool_min.sh \
   --role decode --mode split-read-acceptance \
   --config /home/cryang/mempool-min-ticket01-3132.json \
-  --run-id k1-ticket03-004
+  --run-id k1-ticket03-005
 ```
 
 新环境的host、model_path和interface配置方式见[K1-ticket02](K1_TICKET02.md)。
@@ -60,7 +61,8 @@ P-only/D-only/mixed复制smoke仅运行一次；不增加第三次服务启动�
 - 原有KV内容、Graph、来源读取、prefix保存/命中、非连续HBM页、后缀计算、
   延迟fill、ready/free账本、槽位复用、故障与双端清理检查通过。
 - 每个rank逐层核对all_gather汇总缓冲、散开后HBM与私有prefix，主KV和Index K均精确相等。
-- 核对每类每层H2D/all_gather/散开各一次，主KV78层、Index K21层。
+- 核对生产恢复每类每层H2D/all_gather/散开各一次，主KV78层、Index K21层。
+  V2另有每层两次诊断NPU读取及CPU取回，复用同一汇总缓冲，分别核对gather和原生内容。
 - 两块KV缓冲分别为4,718,592B与1,048,576B；首次恢复每rank一行`split_read_buffers`日志。
 - 槽位表只建一次，含有效token行；31页命中跳过rank15第二槽位，两个策略均通过V2。
 - `read_bytes`只统计分工数据读取；全rank总和等于命中数据字节，每有效页恰好一次。
@@ -78,7 +80,7 @@ V3用独立标准答案，不另启正式参考服务；V8用实际注册在CPU�
 
 ## 报告
 
-两机日志根目录：`/home/cryang/log/mempool-min/k1-ticket03-004/`。
+两机日志根目录：`/home/cryang/log/mempool-min/k1-ticket03-005/`。
 请回传P侧`prefill/summary.json`、`prefill/split-read-acceptance.json`、
 `prefill/split-read-timings.json`及`.md`和两机终端结果。
 失败时同时保留对应阶段的`prefill.log`、`decode.log`和`snapshots.json`。
@@ -105,7 +107,8 @@ op2是Main下发至收到完整ack的同进程墙钟区间。
 
 每策略每用例只有1次请求，表中明确n；T_lb_rank保留16个rank的原值。
 历史baseline01-002的op2及rank min/max行并列输出，旧基线的四段记为未测。
-V2打开会影响墙钟及rank间等待，不能据此宣称生产吞吐收益或纯通信时间。
+V2的额外NPU读取和CPU取回会影响T_lb_rank、墙钟及rank间等待，
+不能据此宣称生产吞吐收益或纯通信时间；生产三段event不包围这些诊断读取。
 新表不设性能门槛；回传后按分段分析变差，必要时再安排关闭V2的对照。
 
 用户确认验收后清理临时工程测试接线，具体清单见[交付说明](../.scratch/k1/delivery-ticket03.md)。
