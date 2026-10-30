@@ -1,6 +1,7 @@
 """Exercise paired orchestration and child ownership without NPU libraries."""
 
 import concurrent.futures
+import io
 import json
 import signal
 import socket
@@ -9,7 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from test_service_gate import service_logs
 
@@ -17,6 +18,76 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 import run_ticket10 as runner
 import verify_model_tokens
 from ticket10_processes import Peer, Processes
+
+
+class CapturedHTTPConnection:
+    """Replay bytes at the socket boundary; keep urllib's HTTP parser real."""
+
+    def __init__(self, response):
+        self.response = response
+
+    def setsockopt(self, *args):
+        pass
+
+    def sendall(self, request):
+        assert request.startswith(b"GET /ready HTTP/1.1\r\n"), request
+
+    def makefile(self, *args):
+        return io.BytesIO(self.response)
+
+    def close(self):
+        pass
+
+
+class TestHTTPReadiness(unittest.TestCase):
+    url = "http://127.0.0.1:8000/ready"
+    echoed_request = b"GET /ready HTTP/1.1\r\n"
+
+    def test_echo_then_unready_then_http_200(self):
+        responses = [
+            self.echoed_request,
+            b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n",
+            b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n",
+        ]
+        check = Mock()
+        with (
+            patch(
+                "socket.create_connection",
+                side_effect=[CapturedHTTPConnection(data) for data in responses],
+            ) as connect,
+            patch.object(runner.time, "sleep"),
+        ):
+            runner.wait_http(self.url, 10, check)
+        self.assertEqual(connect.call_count, 3)
+        self.assertEqual(check.call_count, 3)
+
+    def test_persistent_echo_times_out_with_url_and_last_error(self):
+        with (
+            patch(
+                "socket.create_connection",
+                return_value=CapturedHTTPConnection(self.echoed_request),
+            ),
+            patch.object(runner.time, "monotonic", side_effect=[0, 1]),
+        ):
+            with self.assertRaises(TimeoutError) as caught:
+                runner.wait_http(self.url, 1, lambda: None)
+        message = str(caught.exception)
+        self.assertIn(self.url, message)
+        self.assertIn("BadStatusLine", message)
+        self.assertIn("GET /ready HTTP/1.1", message)
+
+    def test_process_failure_interrupts_wait_after_echo(self):
+        check = Mock(side_effect=[None, RuntimeError("NPU service exited")])
+        with (
+            patch(
+                "socket.create_connection",
+                return_value=CapturedHTTPConnection(self.echoed_request),
+            ) as connect,
+            patch.object(runner.time, "sleep"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "NPU service exited"):
+                runner.wait_http(self.url, 10, check)
+        self.assertEqual(connect.call_count, 1)
 
 
 class TestAcceptanceRunner(unittest.TestCase):

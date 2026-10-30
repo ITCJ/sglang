@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import http.client
 import json
 import math
 import os
@@ -187,16 +188,20 @@ def available_port(host: str, port: int) -> None:
 def wait_http(url: str, timeout: float, check: Callable[[], None]) -> None:
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     deadline = time.monotonic() + timeout
+    last_error: Optional[Exception] = None
     while True:
         check()
         try:
             with opener.open(url, timeout=3) as response:
                 if response.status == 200:
                     return
-        except (OSError, urllib.error.URLError):
-            pass
+        except (OSError, urllib.error.URLError, http.client.BadStatusLine) as exc:
+            # A listening socket may not yet return HTTP during startup.
+            last_error = exc
         if time.monotonic() >= deadline:
-            raise TimeoutError(f"service not ready: {url}")
+            raise TimeoutError(
+                f"service not ready: {url}; last error: {last_error!r}"
+            ) from last_error
         time.sleep(1)
 
 

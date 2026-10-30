@@ -12,13 +12,17 @@ P/D各TP16，page128，P slot8192、D slot128，P eager、D Graph。
 环境需要Triton-Ascend（原生NPU内核已使用该依赖）；新增散开核首次恢复时JIT编译。
 两机使用同一代码版本，在仓库根目录执行。先P后D；入口自动等待并协调后续步骤。
 
+002在模型初始化期间因`BadStatusLine`提前退出。测试入口已修复该异常的有界重试；
+只有HTTP 200才算就绪，超时显示目标URL及最后异常，进程失败仍立即中断。
+回显来源尚未证实；003用于复测，不代表002已完成任何split_read验收。
+
 31（P）：
 
 ```bash
 bash ascend-mempool-test/scripts/run_mempool_min.sh \
   --role prefill --mode split-read-acceptance \
   --config /home/cryang/mempool-min-ticket01-3132.json \
-  --run-id k1-ticket03-002
+  --run-id k1-ticket03-003
 ```
 
 32（D）：
@@ -27,7 +31,7 @@ bash ascend-mempool-test/scripts/run_mempool_min.sh \
 bash ascend-mempool-test/scripts/run_mempool_min.sh \
   --role decode --mode split-read-acceptance \
   --config /home/cryang/mempool-min-ticket01-3132.json \
-  --run-id k1-ticket03-002
+  --run-id k1-ticket03-003
 ```
 
 新环境的host、model_path和interface配置方式见[K1-ticket02](K1_TICKET02.md)。
@@ -72,7 +76,7 @@ V3用独立标准答案，不另启正式参考服务；V8用实际注册在CPU�
 
 ## 报告
 
-两机日志根目录：`/home/cryang/log/mempool-min/k1-ticket03-002/`。
+两机日志根目录：`/home/cryang/log/mempool-min/k1-ticket03-003/`。
 请回传P侧`prefill/summary.json`、`prefill/split-read-acceptance.json`、
 `prefill/split-read-timings.json`及`.md`和两机终端结果。
 失败时同时保留对应阶段的`prefill.log`、`decode.log`和`snapshots.json`。

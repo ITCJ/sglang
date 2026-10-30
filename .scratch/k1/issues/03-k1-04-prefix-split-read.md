@@ -19,6 +19,22 @@
 
 ## Comments
 
+### 2026-10-30：NPU002就绪探测提前失败
+
+用户回传31侧`BadStatusLine: GET /ready HTTP/1.1\r\n`。
+端口为8000/8001、6699、16700、18891、8995，无配置重叠。
+router.log为空；模型分片已加载100%，后续rank仍在初始化。
+尚无本轮split_read正确性或性能验收结果，不将加载日志中的提示当作根因。
+
+实际`wait_http`加真实urllib解析器回放用户响应字节，可稳定复现相同异常。
+修复测试入口漏处理BadStatusLine，沿用原有轮询和超时，只认HTTP 200；
+超时保留URL和最后异常，进程/对端失败继续立即中断。
+回显由哪个远端组件或连接产生尚未证实；修复不声称已排除该环境问题。
+三项回放验证先失败后通过；完整494项CPU、strict mypy、静态检查通过。
+Standards/Spec均0项发现；完整CPU及复审记录见
+[NPU002分析](../verification/k1-ticket03-002-20261030/README.md)。
+下一轮使用`k1-ticket03-003`，仍待用户NPU验收，State=open。
+
 ### 2026-10-30：合并缓冲版本交付
 
 两块汇总buffer、共享slot表、in-place all_gather及单核散开完成。
