@@ -13,7 +13,7 @@ from typing import Any
 
 import msgspec
 
-from .layout import PoolLayout, positive_int
+from .layout import KVLayout, PoolLayout, positive_int
 
 SHARE_ENV = "SGLANG_NPU_MEMPOOL_SHARE"
 NUMA_ENV = "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE"
@@ -132,6 +132,7 @@ class PoolSession:
     nic_base_port: int
     pool_id: int
     identity: str
+    prefill_shared: bool = False
 
     @property
     def participant(self) -> int:
@@ -139,7 +140,9 @@ class PoolSession:
 
     @property
     def owners(self) -> tuple[int, int]:
-        return 0, len(self.members)
+        return 0, len(self.members) + (
+            self.members.index(self.tp_rank) if self.prefill_shared else 0
+        )
 
     @property
     def world_size(self) -> int:
@@ -147,11 +150,41 @@ class PoolSession:
 
     @property
     def contribution(self) -> int:
+        if self.prefill_shared:
+            return self.contribution_for(self.participant)
         return (
             self.layout.contribution_bytes(self.side)
             if self.tp_rank == self.members[0]
             else 0
         )
+
+    def region_owner(self, side: int, region: str = "alive_main") -> int:
+        if self.prefill_shared and (side == 1 or region != "alive_main"):
+            return side * len(self.members) + self.members.index(self.tp_rank)
+        return (0, len(self.members))[side]
+
+    def regions(self, participant: int) -> dict[str, tuple[int, KVLayout]]:
+        side, member = divmod(participant, len(self.members))
+        regions = self.layout.regions(side)
+        if not self.prefill_shared or side == 1 or member == 0:
+            return regions
+        result = {}
+        offset = 0
+        for name, (_, geometry) in regions.items():
+            if name != "alive_main":
+                result[name] = offset, geometry
+                offset += geometry.total_bytes
+        return result
+
+    def probe_offset(self, participant: int) -> int:
+        return sum(
+            geometry.total_bytes for _, geometry in self.regions(participant).values()
+        )
+
+    def contribution_for(self, participant: int) -> int:
+        alignment = self.layout.alignment_bytes
+        required = self.probe_offset(participant) + self.layout.probe_bytes
+        return (required + alignment - 1) // alignment * alignment
 
 
 @dataclass(frozen=True)
@@ -169,6 +202,7 @@ class SharingPlan:
     base_port: int = 19000
     nic_port: int = 25670
     pool_id: int = 104
+    prefill_shared: bool = False
 
     def session(self, tp_rank: int) -> PoolSession:
         """Use the same group, ports and allocation contract for a live pool."""
@@ -186,6 +220,7 @@ class SharingPlan:
             self._nic_port(group, member) - participant,
             self.pool_id,
             self.group_identity(group),
+            self.prefill_shared,
         )
 
     def validate_peer(self, peer: SharingPlan) -> None:
@@ -196,6 +231,7 @@ class SharingPlan:
             "instance_id",
             "kv_identity",
             "mempool_share",
+            "prefill_shared",
             "pool_id",
             "base_port",
         ):
@@ -245,6 +281,7 @@ class SharingPlan:
             "kv_identity": self.kv_identity,
             "tp_size": len(self.assignments),
             "mempool_share": self.mempool_share,
+            "prefill_shared": self.prefill_shared,
             "members": group.members,
             "pool_id": self.pool_id,
             "layout": self.group_layout(group).signature(),
@@ -290,6 +327,18 @@ class SharingPlan:
                         "placement_verified": False,
                     }
                 )
+        if self.prefill_shared:
+            for row in rows:
+                session = self.session(row["rank"])
+                row.update(
+                    owner_tp_rank=session.tp_rank,
+                    main_owner_tp_rank=session.members[0]
+                    if side == 0
+                    else session.tp_rank,
+                    owner_participant=session.region_owner(side),
+                    contribution_bytes=session.contribution,
+                    probe_offset=session.probe_offset(session.participant),
+                )
         rows.sort(key=lambda row: row["rank"])
         if registrations is not None:
             keys = ("rank", "host", "numa_node", "owner_tp_rank")
@@ -302,6 +351,10 @@ class SharingPlan:
                 )
         return {
             "allocation_status": "applied" if registrations is not None else "planned",
+            "prefill_shared": self.prefill_shared,
+            "main_replica_count": len(self.assignments)
+            if self.prefill_shared and side == 1
+            else len(self.groups),
             "role": self.role,
             "mempool_share": self.mempool_share,
             "group_count": len(self.groups),
@@ -421,6 +474,8 @@ class MempoolNumaConfig:
         base_port: int = 19000,
         nic_port: int = 25670,
         pool_id: int = 104,
+        prefill_shared: bool = False,
+        prefill_groups: Sequence[Sequence[int]] = (),
     ) -> SharingPlan:
         """Resolve NUMA first, then apply the sharing switch to that assignment."""
         positive_int("tp_size", tp_size)
@@ -464,6 +519,7 @@ class MempoolNumaConfig:
             raise ValueError(
                 f"topology missing TP ranks: {sorted(set(range(tp_size)) - rank_hosts.keys())}"
             )
+        shared = self.mempool_share or prefill_shared
         assignments: list[RankNuma] = []
         warnings = []
         if self.rank_map is not None:
@@ -477,7 +533,7 @@ class MempoolNumaConfig:
                 try:
                     nodes = parse_numa_nodes(self.legacy_nodes, host.online_nodes or "")
                 except ValueError as error:
-                    if self.mempool_share:
+                    if shared:
                         raise ValueError(
                             f"host {host.host!r}: {NUMA_ENV}: {error}"
                         ) from error
@@ -485,7 +541,7 @@ class MempoolNumaConfig:
                         f"host {host.host!r}: Cannot apply {NUMA_ENV}={self.legacy_nodes!r}: "
                         f"{error}; falling back to default BM allocation (flags=0)"
                     )
-            if self.mempool_share and not nodes:
+            if shared and not nodes:
                 raise ValueError(
                     f"host {host.host!r}: sharing requires an explicit NUMA assignment"
                 )
@@ -505,11 +561,25 @@ class MempoolNumaConfig:
             key = (
                 assignment.host,
                 assignment.numa_node,
-                -1 if self.mempool_share else assignment.rank,
+                -1 if shared else assignment.rank,
             )
             members.setdefault(key, []).append(assignment.rank)
         groups = []
         nic_offset = 0
+        if prefill_shared and prefill_groups:
+            by_rank = {a.rank: a for a in assignments}
+            members = {}
+            for group in prefill_groups:
+                owner = by_rank[group[0]]
+                if any(
+                    (by_rank[r].host, by_rank[r].numa_node)
+                    != (owner.host, owner.numa_node)
+                    for r in group
+                ):
+                    raise ValueError(
+                        "prefill shared members must use the same host and NUMA"
+                    )
+                members[owner.host, owner.numa_node, owner.rank] = list(group)
         for (host_id, node, _), ranks in members.items():
             groups.append(SharingGroup(host_id, node, tuple(ranks), nic_offset))
             # MF adds participant rank to the supplied NIC base. Give each
@@ -533,4 +603,5 @@ class MempoolNumaConfig:
             base_port,
             nic_port,
             pool_id,
+            prefill_shared,
         )

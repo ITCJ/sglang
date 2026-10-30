@@ -9,27 +9,39 @@ from typing import Any
 class PromptCoverage:
     """Join real fill and write completions without treating a hit as a write."""
 
-    def __init__(self, tokens: int, hit: int, page_size: int, replicas: int) -> None:
+    def __init__(
+        self,
+        tokens: int,
+        hit: int,
+        page_size: int,
+        writers: int,
+        groups: Sequence[Sequence[int]] = (),
+        writer_pages: Sequence[Sequence[int]] = (),
+    ) -> None:
         self.tokens, self.hit, self.page_size = tokens, hit, page_size
+        self.groups = groups or [(r,) for r in range(writers)]
+        self.rank_to_replica = {
+            rank: index for index, group in enumerate(self.groups) for rank in group
+        }
+        self.writer_pages = writer_pages
         self.pages = [
-            bytearray((tokens + page_size - 1) // page_size) for _ in range(replicas)
+            bytearray((tokens + page_size - 1) // page_size) for _ in self.groups
         ]
-        self.ends = [hit] * replicas
-        self.filled = [not hit] * replicas
+        self.ends = [hit] * writers
+        self.filled = [not hit] * writers
 
-    def observe(self, replica: int, start: int, end: int, filled: bool) -> None:
+    def observe(self, rank: int, start: int, end: int, filled: bool) -> None:
         # Runtime has already checked layer counts, Index K and contiguous writes.
         # Stage zero reports complete pages, with an end-page for small CPU fixtures.
-        for page in range(
-            start // self.page_size, (end + self.page_size - 1) // self.page_size
-        ):
-            if min((page + 1) * self.page_size, self.tokens) <= end:
-                self.pages[replica][page] = 1
-        if filled:
-            self.pages[replica][: self.hit // self.page_size] = b"\x01" * (
-                self.hit // self.page_size
-            )
-        self.ends[replica], self.filled[replica] = self.hit + end - start, filled
+        pages = self.pages[self.rank_to_replica[rank]]
+        owned = self.writer_pages[rank] if self.writer_pages else range(len(pages))
+        for page in owned:
+            if (filled and (page + 1) * self.page_size <= self.hit) or (
+                page * self.page_size >= start
+                and min((page + 1) * self.page_size, self.tokens) <= end
+            ):
+                pages[page] = 1
+        self.ends[rank], self.filled[rank] = self.hit + end - start, filled
 
     def snapshot(self) -> dict[str, Any]:
         contiguous = [
@@ -39,6 +51,7 @@ class PromptCoverage:
         ready = min(self.tokens, min(contiguous) * self.page_size)
         # Independent old counter calculation, recorded on the same actual events.
         counter = min(self.ends) if all(self.filled) else 0
+        ready = min(ready, counter)
         return dict(
             ready_tokens=ready,
             counter_tokens=counter,

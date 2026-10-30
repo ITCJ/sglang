@@ -558,6 +558,18 @@ class MempoolPDService:
                     or (state is not None and state.phase == "CANCELLING"),
                     native_freed=record.native_freed,
                     write_range=self._written_range(record, row),
+                    main_written=(
+                        (
+                            self.runtime.main_written_tokens(row)
+                            if row is not None
+                            else record.receipt.main_written
+                            if record.receipt is not None
+                            else 0
+                        )
+                        if self.subrouter is not None
+                        and self.subrouter.shard.page_writers
+                        else 0
+                    ),
                 )
             )
         return facts

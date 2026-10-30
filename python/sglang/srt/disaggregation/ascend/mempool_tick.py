@@ -34,6 +34,7 @@ class RequestObservation(msgspec.Struct, frozen=True):
     cancel: bool = False
     native_freed: bool = False
     write_range: tuple[int, int] = (0, 0)
+    main_written: int = 0
 
 
 class _RequestState(msgspec.Struct, frozen=True):

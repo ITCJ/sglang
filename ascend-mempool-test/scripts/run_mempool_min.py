@@ -30,6 +30,8 @@ import verify_mempool_prefix
 import verify_mempool_reuse
 import verify_mempool_session
 import verify_service
+
+SESSION_MODES = ("session-acceptance", "p-sharing-acceptance")
 from run_ticket10 import (
     available_port,
     connect,
@@ -47,8 +49,10 @@ if TYPE_CHECKING:
         RouterConfig,
     )
     from sglang.srt.hardware_backend.npu.mempool.config import MempoolConfig
+    from sglang.srt.hardware_backend.npu.mempool.sharing_plan import PoolSession
 else:
     from ascend_mempool.config import MempoolConfig
+    from ascend_mempool.sharing_plan import PoolSession
     from ascend_mempool_pd.mempool_router_protocol import (
         CONFIG_ENV,
         RUN_ENV,
@@ -102,6 +106,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "full-acceptance",
             "numa-acceptance",
             "session-acceptance",
+            "p-sharing-acceptance",
         ),
         required=True,
     )
@@ -181,6 +186,14 @@ def memory_budget(config: RouterConfig, role: str) -> dict[str, int]:
     )
     rank = 0 if role == "prefill" else 1
     bm = 16 * layout.contribution_bytes(rank)
+    if config.prefill_shared:
+        bm = sum(
+            PoolSession(
+                layout, rank, member, group, 0, 0, 0, 0, "budget", True
+            ).contribution
+            for group in config.prefill_groups
+            for member in group
+        )
     # Acceptance retains CPU source + <=40 saved pages and bounded readback scratch.
     verification = 0
     if rank == 0 and config.verify_prefix:
@@ -218,8 +231,8 @@ class Runner:
         self, args: argparse.Namespace, config: RouterConfig, peer: Peer, root: Path
     ) -> None:
         self.args, self.config, self.peer, self.root = args, config, peer, root
-        self.session_acceptance = args.mode == "session-acceptance"
-        self.full = args.mode in ("full-acceptance", "session-acceptance")
+        self.session_acceptance = args.mode in SESSION_MODES
+        self.full = args.mode == "full-acceptance" or self.session_acceptance
         self.tokenizer: Any = None
         self.is_p = args.role == "prefill"
         self.host = config.prefill_host if self.is_p else config.decode_host
@@ -227,7 +240,9 @@ class Runner:
             status="running",
             role=args.role,
             mode=args.mode,
-            coverage="K1-02 reduced functional acceptance"
+            coverage="K1-05 reduced functional acceptance"
+            if config.prefill_shared and self.session_acceptance
+            else "K1-02 reduced functional acceptance"
             if self.session_acceptance
             else "ticket04 complete sparse stage0/L0"
             if self.full
@@ -668,7 +683,9 @@ class Runner:
             if self.session_acceptance and self.is_p:
                 registrations = request_json(base + "/status")["registrations"]
                 write_json(root / "registrations.json", registrations)
-                verify_mempool_session.check_registration(registrations)
+                verify_mempool_session.check_registration(
+                    registrations, config=self.config
+                )
                 write_json(
                     root / "capacity-replay.json",
                     verify_mempool_session.capacity_check(
@@ -840,7 +857,15 @@ class Runner:
         if self.session_acceptance:
             ports = {
                 self.config.prefill_port if self.is_p else self.config.decode_port,
-                *range(25670, 25702),
+                *range(
+                    25670,
+                    25670
+                    + (
+                        sum(2 * len(g) ** 2 for g in self.config.prefill_groups)
+                        if self.config.prefill_shared
+                        else 32
+                    ),
+                ),
             }
             if self.is_p:
                 ports.update(
@@ -971,11 +996,21 @@ class Runner:
         for phase in verify_mempool_session.SERVICE_STAGES:
             self.stage(target=True, restart=phase == "restart")
         if self.is_p:
-            acceptance = verify_mempool_session.summarize(self.root)
+            acceptance = verify_mempool_session.summarize(
+                self.root, config=self.config if self.config.prefill_shared else None
+            )
             self.peer.send("session-result", acceptance=acceptance)
         else:
             acceptance = self.peer.expect("session-result")["acceptance"]
-        write_json(self.root / "session-acceptance.json", acceptance)
+        write_json(
+            self.root
+            / (
+                "p-sharing-acceptance.json"
+                if self.config.prefill_shared
+                else "session-acceptance.json"
+            ),
+            acceptance,
+        )
         self.report.update(status="passed", acceptance=acceptance, user_accepted=False)
 
     def run_full(self) -> None:
@@ -1054,6 +1089,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "full-acceptance",
         "numa-acceptance",
         "session-acceptance",
+        "p-sharing-acceptance",
     ):
         config = msgspec.structs.replace(
             config,
@@ -1065,12 +1101,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "full-acceptance",
                 "numa-acceptance",
                 "session-acceptance",
+                "p-sharing-acceptance",
             ),
         )
     elif args.mode == "acceptance" and config.prefix_pages:
         raise ValueError(
             "ticket01 acceptance requires prefix_pages=0; use prefix-acceptance"
         )
+    if args.mode == "p-sharing-acceptance":
+        config = msgspec.structs.replace(config, prefill_shared=True)
     args.config = root / "effective-config.json"
     if args.describe:
         print(
@@ -1083,7 +1122,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     memory_budget=memory_budget(config, args.role),
                     output_policy=mempool_logical_cases.POLICY
                     if args.mode
-                    in ("full-acceptance", "numa-acceptance", "session-acceptance")
+                    in ("full-acceptance", "numa-acceptance", *SESSION_MODES)
                     else "strict full output IDs",
                     acceptance_controls=(
                         "one skipped allocator page; fill submitted after native_freed"
@@ -1091,7 +1130,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         else "none"
                     ),
                     service_rounds=len(verify_mempool_session.SERVICE_STAGES)
-                    if args.mode == "session-acceptance"
+                    if args.mode in SESSION_MODES
                     else None,
                     stages=[
                         "paired preflight; one P/D/mixed fetch smoke (48, one replay)",
@@ -1099,7 +1138,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "round 2: same-port restart, ABCE + load/EOS, default process cleanup",
                         "independent answers; capacity rejection CPU replay; paired port cleanup",
                     ]
-                    if args.mode == "session-acceptance"
+                    if args.mode in SESSION_MODES
                     else [
                         "local startup rejection codes: offline node / duplicate rank / missing rank",
                         "default and swapped explicit maps: A/B/C/E and V1-V10",

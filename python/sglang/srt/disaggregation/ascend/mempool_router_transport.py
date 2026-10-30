@@ -137,6 +137,20 @@ def attach_subrouter(
             allocator, prefix, verify_boundaries=config.verify_prefix
         )
         install_prefill_cache(scheduler, restore)
+    session = runtime.manager.session if config.prefill_shared else None
+    groups = (
+        config.prefill_groups if config.prefill_shared and role == "prefill" else ()
+    )
+    if groups:
+        from sglang.srt.hardware_backend.npu.mempool.page_write import PageWriter
+
+    writers = {
+        rank: PageWriter(
+            member, len(group), config.page_size, config.prefill_write_assignment
+        )
+        for group in groups
+        for member, rank in enumerate(group)
+    }
     shard = RouterShard(
         control,
         native=native,
@@ -146,6 +160,11 @@ def attach_subrouter(
         bootstrap=(config.prefill_host, config.bootstrap_port),
         prefix=prefix,
         restore=restore,
+        main_groups=groups,
+        main_region=session.identity
+        if session is not None and role == "prefill"
+        else None,
+        page_writers=[writers[rank] for rank in range(16)] if writers else (),
     )
     connection = (
         SRConnection(config.control_endpoint, role, control.local.session)
@@ -178,11 +197,11 @@ def attach_subrouter(
         ),
         numa_node=runtime.manager.numa_node,
         numa_placement_verified=False,
-        replicas=config.replicas(),
+        replicas=config.replicas(role),
         replica_locations=runtime.manager.replica_registration(),
         graph=not args.disable_cuda_graph,
     )
-    if runtime.config.numa.rank_map is not None:
+    if runtime.config.numa.rank_map is not None or config.prefill_shared:
         registration.update(
             runtime.manager.placement_registration(
                 control.local.tp_rank, urlsplit(runtime.config.nic).hostname or ""
@@ -191,14 +210,25 @@ def attach_subrouter(
     if config.prefix_pages:
         registration.update(
             prefix_pages=config.prefix_pages if role == "prefill" else 0,
-            local_dram_bytes=runtime.manager.layout.contribution_bytes(
-                runtime.manager.rank
-            ),
+            local_dram_bytes=runtime.manager.contribution,
             verify_prefix=config.verify_prefix,
         )
     if config.match_prefix:
         registration["match_prefix"] = True
         registration["prefix_read_assignment"] = config.prefix_read_assignment
+    probe = None
+    if config.prefill_shared and config.verify_prefix:
+        from sglang.srt.hardware_backend.npu.mempool.shared_probe import (
+            SharedPromptProbe,
+        )
+
+        probe = SharedPromptProbe(
+            runtime.manager,
+            config.page_size,
+            config.prefill_write_assignment,
+            str(runtime.row_slot.device),
+        )
+        probe.write()
 
     def registered() -> dict[str, Any]:
         if control.peer is None:
@@ -240,6 +270,7 @@ def attach_subrouter(
         send=connection.send if connection else lambda message: None,
         registration=registered,
         timeout=config.operation_timeout,
+        verify_mapping=probe.verify if probe is not None else None,
     )
 
 

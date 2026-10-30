@@ -21,6 +21,7 @@ from .diagnostics import diagnostics_enabled, startup_stage
 from .layout import check_index, positive_int
 from .manager import MempoolKVManager
 from .offload import MempoolKVOffload
+from .page_write import PageWriter
 from .prefix import PrefixStore
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,7 @@ class KVWriteReceipt(msgspec.Struct, frozen=True):
     binding: KVRowBinding
     submitted: int
     completed: int
+    main_written: int = 0
 
 
 class _Binding(msgspec.Struct):
@@ -79,6 +81,7 @@ class _Binding(msgspec.Struct):
     replay_forwards: int = 0
     prompt_bm_rows: int = 0
     decode_bm_rows: int = 0
+    main_written: int = 0
 
 
 class _Forward(msgspec.Struct):
@@ -108,6 +111,7 @@ class _Completion(msgspec.Struct):
     index_snapshot: Optional[Tensor] = None
     retained: tuple[Tensor, ...] = ()
     range_errors: Optional[Tensor] = None
+    index_totals: Optional[tuple[int, ...]] = None
 
 
 class MempoolRuntime:
@@ -142,6 +146,7 @@ class MempoolRuntime:
         index_pool: Any = None,
         index_kernels: Optional[Sequence[Any]] = None,
         prefix_store: Optional[PrefixStore] = None,
+        page_writer: Optional[PageWriter] = None,
     ) -> None:
         """Allocate stable bindings/counters after BM mappings are ready."""
         if mlapo_enabled:
@@ -153,6 +158,7 @@ class MempoolRuntime:
         self.config: Optional[MempoolConfig] = None
         self.manager = manager
         self.prefix_store = prefix_store
+        self.page_writer = page_writer
         manager.bases(manager.rank)
         self.layout = manager.layout.layout_for_rank(manager.rank)
         if kernels is not None and len(kernels) != self.layout.layers:
@@ -245,6 +251,7 @@ class MempoolRuntime:
         self._prepared: Optional[tuple[KVWriteExpectation, ...]] = None
         self._bindings: dict[int, _Binding] = {}
         self._slot_totals = [0] * self.layout.slots
+        self._index_slot_totals = [0] * self.layout.slots
         self._pending: deque[_Completion] = deque()
         self._active: Optional[_Forward] = None
         self._capture_validated = False
@@ -324,6 +331,7 @@ class MempoolRuntime:
         self._range_errors[req_pool_idx] = 0
         self._write_counts[:, slot].zero_()
         self._slot_totals[slot] = 0
+        self._index_slot_totals[slot] = 0
         if self._index_counts is not None:
             self._index_counts[:, slot] = 0
         self._record_binding_update()
@@ -346,7 +354,9 @@ class MempoolRuntime:
             raise RuntimeError("cannot detach an in-flight request row")
         self.assert_bound(req_pool_idx, binding)
         progress = self._bindings[req_pool_idx]
-        receipt = KVWriteReceipt(binding, progress.submitted, progress.completed)
+        receipt = KVWriteReceipt(
+            binding, progress.submitted, progress.completed, progress.main_written
+        )
         self.row_slot[req_pool_idx] = -1
         self.row_prompt_len[req_pool_idx] = -1
         self.row_prompt_slot[req_pool_idx] = -1
@@ -540,12 +550,15 @@ class MempoolRuntime:
                 )
                 self._range_errors.scatter_add_(0, safe_req, (valid & ~in_range).long())
                 valid = valid & in_range
+        main_valid = valid
+        if self.page_writer is not None:
+            main_valid = main_valid & self.page_writer.mask(local_pos, prompt)
         self._writers[layer].write(
-            values, slots=slots, positions=local_pos, valid=valid
+            values, slots=slots, positions=local_pos, valid=main_valid
         )
         safe_slot = torch.where(valid, slots, 0)
         # Device counters catch silent invalid masks, including on graph replay.
-        self._write_counts[layer].scatter_add_(0, safe_slot, valid.to(torch.int32))
+        self._write_counts[layer].scatter_add_(0, safe_slot, main_valid.to(torch.int32))
         active.layers.add(layer)
         if active.writes and self.prefix_store is not None:
             self.prefix_store.capture_source(
@@ -752,7 +765,17 @@ class MempoolRuntime:
         for write in active.writes:
             binding = self._bindings[write.req_pool_idx]
             binding.submitted += write.rows
-            self._slot_totals[binding.attachment.slot] = binding.submitted
+            slot = binding.attachment.slot
+            self._index_slot_totals[slot] = binding.submitted
+            self._slot_totals[slot] = (
+                self.page_writer.rows(
+                    binding.attachment.write_start,
+                    binding.attachment.write_start + binding.submitted,
+                    binding.attachment.prompt_tokens,
+                )
+                if self.page_writer is not None
+                else binding.submitted
+            )
         totals = tuple(self._bindings[row].submitted for row in rows)
         snapshot = self._write_counts.clone()
         fetch = self._fetch_checks.clone() if self._fetch_checks is not None else None
@@ -778,6 +801,7 @@ class MempoolRuntime:
                 index_snapshot,
                 tuple(active.retained),
                 range_errors,
+                tuple(self._index_slot_totals),
             )
         )
         self._active = None
@@ -795,7 +819,7 @@ class MempoolRuntime:
                 self.fault = "mempool valid write counts differ from expected rows"
                 raise RuntimeError(self.fault)
             if item.index_snapshot is not None and any(
-                tuple(layer) != item.slot_totals
+                tuple(layer) != item.index_totals
                 for layer in item.index_snapshot.cpu().tolist()
             ):
                 self.fault = "mempool Index K write counts differ from expected rows"
@@ -824,6 +848,7 @@ class MempoolRuntime:
                         start=progress.attachment.write_start,
                     )
                 progress.completed = total
+                progress.main_written = counts[0][progress.attachment.slot]
                 progress.forwards += 1
                 progress.replay_forwards += int(item.replay)
                 if source_counts is not None:
@@ -836,6 +861,9 @@ class MempoolRuntime:
     def written_tokens(self, req_pool_idx: int) -> int:
         """Return locally completed KV rows, distinct from generated tokens."""
         return self._bindings[req_pool_idx].completed
+
+    def main_written_tokens(self, req_pool_idx: int) -> int:
+        return self._bindings[req_pool_idx].main_written
 
     def written_range(self, req_pool_idx: int) -> tuple[int, int]:
         binding = self._bindings[req_pool_idx]
@@ -998,6 +1026,8 @@ def initialize_for_model_runner(model_runner: Any) -> None:
         base_port=config.base_port,
         nic_port=address.port or 0,
         pool_id=config.pool_id,
+        prefill_shared=bool(router and router.prefill_shared),
+        prefill_groups=router.prefill_groups if router else (),
     )
     manager = MempoolKVManager.initialize_session(
         session=plan.session(model_runner.ps.tp_rank),
@@ -1008,6 +1038,20 @@ def initialize_for_model_runner(model_runner: Any) -> None:
     )
     with startup_stage("runtime.allocate", bm_rank=manager.rank):
         device = str(model_runner.req_to_token_pool.req_to_token.device)
+        session = manager.session
+        page_writer = (
+            PageWriter(
+                session.members.index(session.tp_rank),
+                len(session.members),
+                config.page_size,
+                router.prefill_write_assignment,
+            )
+            if session is not None
+            and session.prefill_shared
+            and manager.rank == 0
+            and router is not None
+            else None
+        )
         prefix_group = None
         if router and router.match_prefix and manager.rank == 0:
             from sglang.srt.distributed import get_tp_group
@@ -1027,6 +1071,7 @@ def initialize_for_model_runner(model_runner: Any) -> None:
                 all_gather=prefix_group.all_gather_into_tensor
                 if prefix_group is not None
                 else None,
+                page_writer=page_writer,
             )
             if prefix_pages and manager.rank == 0
             else None
@@ -1041,6 +1086,7 @@ def initialize_for_model_runner(model_runner: Any) -> None:
             fetch_enabled=mode is SparseKVOffloadMode.PD_DECODE_MEMPOOL,
             index_pool=native_pool if prefix_store is not None else None,
             prefix_store=prefix_store,
+            page_writer=page_writer,
         )
     runtime.config = config
     seen = set()

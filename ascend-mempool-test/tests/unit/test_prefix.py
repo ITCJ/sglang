@@ -77,6 +77,39 @@ def cpu_scatter_rows(source, table, key, rope, key_dim, rope_dim, page_size, nz)
 
 
 class TestPrefixStore(unittest.TestCase):
+    def test_shared_fill_partitions_main_pages_but_fills_all_private_index_pages(self):
+        from ascend_mempool.page_write import PageWriter
+
+        store, manager, kernel, events = self.make_store(
+            page_writer=PageWriter(1, 2, 2, "contiguous")
+        )
+        for region, layers in (("main", 2), ("index", 1)):
+            for layer in range(layers):
+                kernel.buffers[
+                    manager.view(0, layer, region="alive_" + region).device_base
+                ][3, :6] = 17
+        save = dict(
+            rid="A",
+            op_id=1,
+            slot=3,
+            prompt_tokens=6,
+            source_pages=[0, 1, 2],
+            target_pages=[2, 0, 1],
+        )
+        store.admit(**save)
+        events[-1].done = True
+        store.admit(**save)
+        store.release_source("A")
+        store.begin_request("B", 5, 6)
+        fill = dict(rid="B", op_id=2, slot=5, source_pages=[2, 0, 1])
+        self.assertIsNone(store.fill(**fill))
+        events[-1].done = True
+        self.assertEqual(store.fill(**fill)["tokens"], 6)
+        main = kernel.buffers[manager.view(0, 0).device_base]
+        index = kernel.buffers[manager.view(0, 0, region="alive_index").device_base]
+        self.assertEqual(main[5, :6, 0, 0].tolist(), [-99, -99, -99, -99, 17, 17])
+        self.assertEqual(index[5, :6, 0, 0].tolist(), [17] * 6)
+
     def test_reuse_evidence_joins_saved_prefix_and_computed_suffix_after_native_release(
         self,
     ):

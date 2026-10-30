@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="blueprint" data-mode="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Answer me with HTML 0.4.3">
+<title>K1-ticket05：P alive 主 KV 共享</title>
+<style>
+html[data-theme="blueprint"], html[data-theme="blueprint"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 0px;
+  --shadow: none;
+  --bw: 1.5px;
+  --head-font: var(--font-sans);
+  --bg: #f6f6f3;
+  --paper: #ffffff;
+  --ink: #16181d;
+  --ink-2: #4b5260;
+  --ink-3: #8b929e;
+  --line: #1d2026;
+  --line-2: #d6dae1;
+  --fill: #f3f5f8;
+  --accent: #1d5fbf;
+  --accent-bg: #e4ecf8;
+  --ok: #1d5fbf;
+  --ok-bg: #e4ecf8;
+  --err: #c62828;
+  --err-bg: #fbeaea;
+  --warn: #a8620a;
+  --warn-bg: #fdf3e2;
+  --head-bg: #16181d;
+  --head-fg: #ffffff;
+}
+html[data-theme="blueprint"][data-mode="dark"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="blueprint"][data-mode="auto"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+}
+
+html[data-theme="shadcn"], html[data-theme="shadcn"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 8px;
+  --shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --bw: 1px;
+  --head-font: var(--font-sans);
+  --bg: #fafafa;
+  --paper: #ffffff;
+  --ink: #09090b;
+  --ink-2: #71717a;
+  --ink-3: #a1a1aa;
+  --line: #e4e4e7;
+  --line-2: #f0f0f2;
+  --fill: #f4f4f5;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --ok: #16a34a;
+  --ok-bg: #f0fdf4;
+  --err: #dc2626;
+  --err-bg: #fef2f2;
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --head-bg: #18181b;
+  --head-fg: #fafafa;
+}
+html[data-theme="shadcn"][data-mode="dark"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="shadcn"][data-mode="auto"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+}
+
+/* Answer me with HTML base — 只引用主题变量，禁止写死颜色（主题 token 见 themes/index.js） */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd { font-family: var(--font-mono); }
+
+/* ── 工具栏 ─────────────────────────────── */
+.am-toolbar {
+  position: fixed; top: 12px; right: 12px; z-index: 10; display: flex; gap: 6px;
+}
+.am-btn {
+  font: 12px/1 var(--font-sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding: 7px 10px; cursor: pointer;
+}
+.am-btn:hover { border-color: var(--ink-3); }
+.am-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── 页头 ───────────────────────────────── */
+.am-head { margin: 0 0 20px; padding-right: 260px; }
+.am-head h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; }
+.am-sub { margin: 4px 0 0; color: var(--ink-2); }
+.am-head-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 12px; color: var(--ink-2); }
+.am-head-meta b { font-family: var(--font-mono); font-weight: 400; color: var(--ink-3); margin-right: 6px; }
+.am-intro { margin-top: 12px; max-width: 80ch; }
+
+/* ── sheet 图纸板 ────────────────────────── */
+.am-sheet { max-width: 1680px; margin: 0 auto; padding: 32px 28px 40px; }
+.am-frame { position: relative; }
+.am-grid {
+  display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 20px; align-items: start;
+}
+.am-ruler { display: none; }
+html[data-theme="blueprint"] .am-frame { border: 1px solid var(--line); padding: 30px; }
+html[data-theme="blueprint"] .am-frame::before {
+  content: ""; position: absolute; inset: 18px; border: 1px solid var(--line); pointer-events: none;
+}
+html[data-theme="blueprint"] .am-ruler {
+  display: flex; position: absolute; font: 10px/1 var(--font-mono); color: var(--ink-3);
+}
+.am-ruler span { flex: 1; display: flex; align-items: center; justify-content: center; }
+.am-ruler--top, .am-ruler--bottom { left: 18px; right: 18px; height: 18px; }
+.am-ruler--top { top: 0; }
+.am-ruler--bottom { bottom: 0; }
+.am-ruler--left, .am-ruler--right { top: 18px; bottom: 18px; width: 18px; flex-direction: column; }
+.am-ruler--left { left: 0; }
+.am-ruler--right { right: 0; }
+.am-ruler--top span + span, .am-ruler--bottom span + span { border-left: 1px solid var(--line); }
+.am-ruler--left span + span, .am-ruler--right span + span { border-top: 1px solid var(--line); }
+
+/* ── 面板 ───────────────────────────────── */
+.am-panel {
+  background: var(--paper); border: var(--bw) solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); min-width: 0; overflow: hidden;
+}
+.am-panel-head {
+  display: flex; align-items: stretch; gap: 0; border-bottom: var(--bw) solid var(--line); min-height: 34px;
+}
+.am-panel-id {
+  display: flex; align-items: center; justify-content: center; min-width: 34px; padding: 0 8px;
+  background: var(--head-bg); color: var(--head-fg); font-weight: 600; font-size: 14px;
+}
+html[data-theme="shadcn"] .am-panel-id { border-radius: 6px; min-width: 24px; height: 24px; margin: 9px 0 9px 14px; font-size: 12px; }
+html[data-theme="shadcn"] .am-panel-head { border-bottom-width: 1px; }
+.am-panel-head h2 { margin: 0; padding: 7px 12px; font-size: 15px; font-weight: 600; flex: 1; display: flex; align-items: center; }
+.am-panel-meta { align-self: center; padding: 0 12px; font: 11px/1.3 var(--font-mono); color: var(--ink-2); text-align: right; }
+.am-panel-body { padding: 14px 16px 16px; }
+.am-panel-body > * + * { margin-top: 12px; }
+
+/* ── Markdown 正文 ───────────────────────── */
+.am-md > :first-child { margin-top: 0; }
+.am-md > :last-child { margin-bottom: 0; }
+.am-md p { margin: 0 0 8px; }
+.am-md ul, .am-md ol { margin: 0 0 8px; padding-left: 20px; }
+.am-md li + li { margin-top: 3px; }
+.am-md h3, .am-md h4 { margin: 14px 0 6px; font-size: 13px; }
+.am-md a { color: var(--accent); }
+.am-md blockquote { margin: 0 0 8px; padding: 2px 12px; border-left: 3px solid var(--line-2); color: var(--ink-2); }
+.am-md :not(pre) > code { font-size: 0.9em; background: var(--fill); padding: 1px 5px; border-radius: 4px; }
+.am-md hr { border: 0; border-top: 1px solid var(--line-2); margin: 12px 0; }
+.am-md table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.am-md th {
+  text-align: left; font: 11px/1.3 var(--font-mono); color: var(--ink-2); font-weight: 400;
+  padding: 6px 10px; border-bottom: 1px solid var(--line-2);
+}
+.am-md td { padding: 7px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.am-md tbody tr:nth-child(even) td { background: var(--fill); }
+.am-table-wrap { overflow-x: auto; }
+.am-code {
+  margin: 0; padding: 12px 14px; background: var(--fill); border: 1px solid var(--line-2);
+  border-radius: var(--radius); overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+}
+
+/* ── 状态徽章 ok / no / warn ──────────────── */
+.am-status { white-space: nowrap; font-weight: 500; }
+.am-status--ok { color: var(--ok); }
+.am-status--no { color: var(--err); }
+.am-status--warn { color: var(--warn); }
+.am-status-icon { display: inline-block; width: 1.1em; font-weight: 700; }
+
+/* ── callout ─────────────────────────────── */
+.am-callout {
+  border: 1px solid var(--line-2); border-left: 3px solid var(--accent); background: var(--accent-bg);
+  padding: 10px 14px; border-radius: var(--radius);
+}
+.am-callout--ok { border-left-color: var(--ok); background: var(--ok-bg); }
+.am-callout--warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.am-callout--err { border-left-color: var(--err); background: var(--err-bg); }
+.am-callout-title { font-weight: 600; margin-bottom: 4px; }
+
+/* ── kv 标题栏格 ─────────────────────────── */
+.am-kv {
+  display: grid; grid-template-columns: repeat(var(--kv-cols, 2), minmax(0, 1fr)); margin: 0;
+  border-top: var(--bw) solid var(--line); border-left: var(--bw) solid var(--line);
+}
+.am-kv-cell { border-right: var(--bw) solid var(--line); border-bottom: var(--bw) solid var(--line); padding: 6px 10px 8px; min-width: 0; }
+.am-kv-cell--wide { grid-column: 1 / -1; }
+.am-kv dt { font: 11px/1.4 var(--font-mono); color: var(--ink-2); }
+.am-kv dd { margin: 2px 0 0; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.am-kv-cell--wide dd { font-size: 17px; font-weight: 600; }
+html[data-theme="shadcn"] .am-kv { border-color: var(--line); border-radius: var(--radius); overflow: hidden; }
+
+/* ── timeline ────────────────────────────── */
+.am-timeline { list-style: none; margin: 0; padding: 0; }
+.am-timeline--h { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); padding-top: 4px; }
+.am-timeline--h li { position: relative; text-align: center; padding: 0 6px; }
+.am-timeline--h li::before {
+  content: ""; position: absolute; top: 31px; left: 0; right: 0; border-top: var(--bw) solid var(--line);
+}
+.am-timeline--h li:first-child::before { left: 50%; }
+.am-timeline--h li:last-child::before { right: 50%; }
+.am-tl-when { display: block; font-size: 15px; font-weight: 500; height: 24px; }
+.am-tl-dot {
+  position: relative; display: block; width: 11px; height: 11px; margin: 2px auto 8px;
+  border: var(--bw) solid var(--line); border-radius: 50%; background: var(--paper);
+}
+.am-tl-item--hi .am-tl-dot { background: var(--accent); border-color: var(--accent); }
+.am-tl-title { display: block; font-size: 12.5px; font-weight: 500; }
+.am-tl-text { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.45; }
+.am-timeline--v li { position: relative; padding: 0 0 14px 22px; }
+.am-timeline--v li::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: -6px; border-left: var(--bw) solid var(--line-2); }
+.am-timeline--v li:last-child::before { display: none; }
+.am-timeline--v .am-tl-dot { position: absolute; left: 0; top: 4px; margin: 0; }
+.am-timeline--v .am-tl-when { display: inline; height: auto; font: 12px var(--font-mono); color: var(--ink-2); margin-right: 8px; }
+.am-timeline--v .am-tl-title { display: inline; font-size: 14px; }
+.am-timeline--v .am-tl-text { margin-top: 2px; }
+
+/* ── annot 句子标注 ──────────────────────── */
+.am-annot + .am-annot { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.am-annot-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.am-annot-meta { font: 11px var(--font-mono); font-weight: 400; color: var(--ink-2); }
+.am-annot-scroll { overflow-x: auto; }
+.am-annot-line {
+  position: relative; display: inline-block; white-space: pre; font: 14px/1.6 var(--font-mono);
+  padding-bottom: calc(var(--rows, 0) * 17px + 14px);
+}
+.am-annot-line--wrap { display: block; white-space: normal; padding-bottom: 10px; }
+.am-annot-line--wrap .am-seg { white-space: nowrap; }
+.am-seg { position: relative; }
+.am-seg::after {
+  content: ""; position: absolute; left: 1px; right: 1px; top: calc(100% + 1px); height: 5px;
+  border: 1px solid var(--accent); border-top: 0;
+}
+.am-seg-n {
+  position: absolute; left: 0; top: calc(100% + 8px + var(--row, 0) * 17px);
+  font: 11px/16px var(--font-sans); color: var(--accent); white-space: nowrap;
+}
+.am-seg--err { color: var(--err); }
+.am-seg--err::after { border-color: var(--err); }
+.am-seg--err .am-seg-n { color: var(--err); }
+.am-annot-caption { font-size: 12px; color: var(--ink-2); }
+
+/* ── limits 限值条 ───────────────────────── */
+.am-lim + .am-lim { margin-top: 14px; }
+.am-lim-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; margin-bottom: 4px; }
+.am-lim-val { font: 12px var(--font-mono); color: var(--accent); white-space: nowrap; }
+.am-lim-track { position: relative; height: 12px; border: 1px solid var(--line-2); background: var(--fill); border-radius: calc(var(--radius) / 2); }
+.am-lim-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-bg); border-right: 1px solid var(--accent); }
+.am-lim-mark { position: absolute; top: -4px; bottom: -4px; border-left: 2px solid var(--accent); }
+.am-lim.is-over .am-lim-fill { background: var(--err-bg); border-right-color: var(--err); }
+.am-lim.is-over .am-lim-val { color: var(--err); }
+.am-lim-ticks { position: relative; height: 16px; font: 10px/16px var(--font-mono); color: var(--ink-3); }
+.am-lim-ticks span { position: absolute; transform: translateX(-50%); }
+.am-lim-ticks span:first-child { transform: none; }
+.am-lim-note { font-size: 11px; color: var(--ink-2); margin-left: 6px; }
+
+/* ── tree 结构树 ─────────────────────────── */
+.am-tree { font-size: 13px; }
+.am-tree-root { display: flex; justify-content: center; position: relative; padding-bottom: 18px; }
+.am-tree-root::after { content: ""; position: absolute; bottom: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-root--solo { padding-bottom: 12px; }
+.am-tree-root--solo::after { display: none; }
+.am-tree-box {
+  border: var(--bw) solid var(--line); background: var(--paper); padding: 6px 14px; text-align: center;
+  border-radius: var(--radius); font-weight: 600;
+}
+.am-tree-box small { display: block; font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.am-tree-box--root { background: var(--accent-bg); font-size: 15px; padding: 8px 28px; }
+.am-tree-cols { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
+.am-tree-col { position: relative; padding: 18px 8px 0; min-width: 0; }
+.am-tree-col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; border-top: var(--bw) solid var(--line); }
+.am-tree-col:first-child::before { left: 50%; }
+.am-tree-col:last-child::before { right: 50%; }
+.am-tree-col::after { content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-list, .am-tree-list ul { list-style: none; margin: 0; padding: 0; }
+.am-tree-col > .am-tree-list { margin: 8px 0 0 14px; }
+.am-tree-list ul { margin-left: 16px; }
+.am-tree-list li { position: relative; padding: 3px 0 3px 18px; }
+.am-tree-list li::before { content: ""; position: absolute; left: 0; top: 0.95em; width: 12px; border-top: 1px solid var(--ink-3); }
+.am-tree-list li::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--ink-3); }
+.am-tree-list li:last-child::after { bottom: auto; height: 0.95em; }
+.am-tree-tag { font: 11px var(--font-mono); color: var(--ink-3); margin-right: 4px; }
+.am-tree code { font: 12px var(--font-mono); }
+.am-tree-sub { display: block; font-size: 11.5px; color: var(--ink-2); }
+.am-tree-hi > .am-tree-label { color: var(--accent); font-weight: 600; }
+
+/* ── 图（flow / sequence）───────────────── */
+.am-diagram { margin: 0; overflow-x: auto; text-align: center; }
+.am-diagram svg { max-width: 100%; height: auto; font-family: var(--font-sans); }
+.am-diagram text { fill: var(--ink); font-size: 13px; }
+.am-node-shape { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-node--hi .am-node-shape { fill: var(--accent-bg); stroke: var(--accent); }
+.am-node--hi text { fill: var(--accent); font-weight: 600; }
+.am-edge { fill: none; stroke: var(--ink-2); stroke-width: 1.3; }
+.am-edge--dashed { stroke-dasharray: 5 4; }
+.am-arrow { fill: var(--ink-2); }
+.am-edge-label rect { fill: var(--paper); }
+.am-diagram .am-edge-label text { fill: var(--accent); font-size: 11.5px; }
+.am-cluster { fill: var(--fill); stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 4 3; }
+.am-diagram .am-cluster-label { fill: var(--ink-2); font: 11px var(--font-mono); }
+.am-lifeline { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 4 4; }
+.am-actor { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-note { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 1; }
+.am-diagram .am-step { fill: var(--ink-3); font: 10px var(--font-mono); }
+
+/* ── doc 线性讲解 ────────────────────────── */
+.am-doc { max-width: 1120px; margin: 0 auto; padding: 40px 28px 64px; }
+.am-doc-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
+.am-doc-layout--notoc { grid-template-columns: minmax(0, 1fr); max-width: 860px; }
+.am-toc { position: sticky; top: 24px; font-size: 13px; }
+.am-toc a { display: block; color: var(--ink-2); text-decoration: none; padding: 4px 0 4px 10px; border-left: 2px solid var(--line-2); }
+.am-toc a:hover { color: var(--ink); border-left-color: var(--accent); }
+.am-doc-body > .am-panel + .am-panel { margin-top: 20px; }
+
+/* ── 响应式与打印 ─────────────────────────── */
+@media (max-width: 1100px) {
+  .am-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .am-grid > .am-panel { grid-column: auto !important; }
+  .am-grid > .am-panel.am-span-wide { grid-column: 1 / -1 !important; }
+}
+@media (max-width: 760px) {
+  .am-sheet, .am-doc { padding: 56px 12px 24px; }
+  .am-head { padding-right: 0; }
+  .am-grid { grid-template-columns: minmax(0, 1fr); }
+  .am-grid > .am-panel.am-span-wide { grid-column: auto !important; }
+  html[data-theme="blueprint"] .am-frame { padding: 0; border: 0; }
+  html[data-theme="blueprint"] .am-frame::before, html[data-theme="blueprint"] .am-ruler { display: none; }
+  .am-doc-layout { grid-template-columns: minmax(0, 1fr); }
+  .am-toc { position: static; }
+  .am-timeline--h { grid-template-columns: minmax(0, 1fr); }
+  .am-tree-cols { grid-template-columns: minmax(0, 1fr); }
+}
+.am-colophon { text-align: center; padding: 0 0 28px; font: 11px var(--font-mono); color: var(--ink-3); }
+
+@media print {
+  .am-toolbar { display: none; }
+  body { background: var(--paper); }
+  .am-panel { break-inside: avoid; box-shadow: none; }
+}
+.am-panel--bare { border: 0; background: transparent; box-shadow: none; }
+.am-panel--bare > .am-panel-body { padding: 0; }
+.am-panel--bare .am-kv { background: var(--paper); }
+
+</style>
+</head>
+<body>
+<div class="am-toolbar">
+<button class="am-btn" type="button" data-am="theme" data-labels="{&quot;blueprint&quot;:&quot;主题：图纸&quot;,&quot;shadcn&quot;:&quot;主题：卡片&quot;}">主题：图纸</button>
+<button class="am-btn" type="button" data-am="mode" data-labels="{&quot;auto&quot;:&quot;明暗：跟随系统&quot;,&quot;light&quot;:&quot;明暗：亮&quot;,&quot;dark&quot;:&quot;明暗：暗&quot;}">明暗：跟随系统</button>
+<button class="am-btn" type="button" data-am="copy" data-done="已复制 ✓">复制源稿</button>
+</div>
+<main class="am-doc">
+<header class="am-head"><h1>K1-ticket05：P alive 主 KV 共享</h1><p class="am-sub">本地 05 · K1-03a · 实现交付与源码阅读顺序</p><div class="am-head-meta"><span><b>date</b>2026-10-30</span><span><b>status</b>实现、CPU与双轴评审完成；等待用户 NPU 验收</span></div><div class="am-intro am-md"><div class="am-md"><p><strong>P 主 KV 从 16 份变为 8 份，共享组成员分工写整页。</strong>
+D 主 KV、P Index K、prefix 主 KV 和 prefix Index K 各保留 16 份。
+基点为 <code>4c0e79b55046ba69a1559eaab39d061ce3eec8ed</code>。
+本票保持 open，NPU 尚未运行。</p>
+</div></div></header>
+<div class="am-doc-layout">
+<nav class="am-toc" aria-label="目录"><a href="#panel-A">A · 正常执行路径</a><a href="#panel-B">B · Ascend/NPU 功能源码</a><a href="#panel-C">C · 通用主线与目录例外</a><a href="#panel-D">D · 脚本、测试与运行说明</a><a href="#panel-E">E · 验收边界</a></nav><div class="am-doc-body">
+<section class="am-panel" id="panel-A">
+<header class="am-panel-head"><span class="am-panel-id">A</span><h2>正常执行路径</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>每组 BM 会话包含两个 P 成员和两个 D 成员。
+P owner 分配共享主 KV 和自己的附属区域。
+另一 P 成员只分配自己的 Index K、prefix 和配对探针。
+每个 D 成员分配自己的主 KV。</p>
+</div>
+<figure class="am-diagram am-flow"><svg viewBox="0 0 461 134" width="461" height="134" role="img" aria-label="流程图：P0、共享主KV、P1、D0、D1" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am1-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><g></g><g><g data-step="0"><path class="am-edge" d="M78,102.5 L104,102.5 Q130,102.5 156,92.7 L182,82.9" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="102" y="93.5" width="56" height="18" rx="3"/><text x="130" y="102.5" text-anchor="middle" dominant-baseline="central">写前半页</text></g></g><g data-step="1"><path class="am-edge" d="M78,31.5 L104,31.5 Q130,31.5 156,41.3 L182,51.1" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="102" y="22.5" width="56" height="18" rx="3"/><text x="130" y="31.5" text-anchor="middle" dominant-baseline="central">写后半页</text></g></g><g data-step="2"><path class="am-edge" d="M266.7,82 L295.6,92.3 Q324.4,102.5 353.3,102.5 L382.2,102.5" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="290.7" y="93.5" width="67.5" height="18" rx="3"/><text x="324.4" y="102.5" text-anchor="middle" dominant-baseline="central">读完整副本</text></g></g><g data-step="3"><path class="am-edge" d="M266.7,52 L295.6,41.7 Q324.4,31.5 353.3,31.5 L382.2,31.5" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="290.7" y="22.5" width="67.5" height="18" rx="3"/><text x="324.4" y="31.5" text-anchor="middle" dominant-baseline="central">读完整副本</text></g></g></g><g><g class="am-node am-node--rect" data-key="P0" data-step="0"><rect class="am-node-shape" x="14" y="85" width="64" height="35" rx="3"/><text x="46" y="102.5" text-anchor="middle" dominant-baseline="central">P0</text></g><g class="am-node am-node--rect" data-key="共享主KV" data-step="0"><rect class="am-node-shape" x="182" y="49.5" width="84.7" height="35" rx="3"/><text x="224.3" y="67" text-anchor="middle" dominant-baseline="central">共享主KV</text></g><g class="am-node am-node--rect" data-key="P1" data-step="1"><rect class="am-node-shape" x="14" y="14" width="64" height="35" rx="3"/><text x="46" y="31.5" text-anchor="middle" dominant-baseline="central">P1</text></g><g class="am-node am-node--rect" data-key="D0" data-step="2"><rect class="am-node-shape" x="382.2" y="85" width="64" height="35" rx="3"/><text x="414.2" y="102.5" text-anchor="middle" dominant-baseline="central">D0</text></g><g class="am-node am-node--rect" data-key="D1" data-step="3"><rect class="am-node-shape" x="382.2" y="14" width="64" height="35" rx="3"/><text x="414.2" y="31.5" text-anchor="middle" dominant-baseline="central">D1</text></g></g></svg></figure>
+<div class="am-md"><p><code>prefill_groups</code> 指定分组，首成员为 owner。
+<code>prefill_write_assignment</code> 控制连续分块或轮转。
+每次 forward 的主 KV 计数与 Index K 计数分别核对。
+因此一个 rank 可以没有后缀主 KV 写入，仍须完成其 Index K 写入。</p>
+<p>prefix fill 只写本成员负责的主 KV 页，并恢复全部私有 Index K。
+admit 从共享主 KV 和本 rank 的 Index K 保存到私有 prefix。
+SR 合并同组页位图，再取各副本与 Index K 的共同完成进度。</p>
+<p>Main 先收齐 D 完成及 drain，再发 P free。
+SR 等齐写者清理并完成全 rank 回执后，Main 才归还额度。
+槽和额度继续使用逻辑容量；物理份数由注册和去重后的页描述符表达。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-B">
+<header class="am-panel-head"><span class="am-panel-id">B</span><h2>Ascend/NPU 功能源码</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>按配置、存储、执行、协调的顺序阅读：</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>顺序</th>
+<th>文件</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td><a href="../../python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py">mempool_router_protocol.py</a></td>
+<td>P 共享开关、分组、写策略与两侧副本数</td>
+</tr>
+<tr>
+<td>2</td>
+<td><a href="../../python/sglang/srt/hardware_backend/npu/mempool/sharing_plan.py">sharing_plan.py</a></td>
+<td>会话成员、每个成员的贡献量、区域 owner 与 NUMA</td>
+</tr>
+<tr>
+<td>3</td>
+<td><a href="../../python/sglang/srt/hardware_backend/npu/mempool/manager.py">manager.py</a></td>
+<td>实际 BM 分配、映射、私有探针、区域视图与注册</td>
+</tr>
+<tr>
+<td>4</td>
+<td><a href="../../python/sglang/srt/hardware_backend/npu/mempool/page_write.py">page_write.py</a></td>
+<td>整页写分工，供计算写回、fill 和 SR 使用</td>
+</tr>
+<tr>
+<td>5</td>
+<td><a href="../../python/sglang/srt/hardware_backend/npu/mempool/runtime.py">runtime.py</a></td>
+<td>按页写主 KV、完整写 Index K，保留真实完成行数</td>
+</tr>
+<tr>
+<td>6</td>
+<td><a href="../../python/sglang/srt/hardware_backend/npu/mempool/prefix.py">prefix.py</a></td>
+<td>分工 fill、共享源 admit、独立完成事件</td>
+</tr>
+<tr>
+<td>7</td>
+<td><a href="../../python/sglang/srt/disaggregation/ascend/mempool_tick.py">mempool_tick.py</a></td>
+<td>完成事实携带实际主 KV 写行数</td>
+</tr>
+<tr>
+<td>8</td>
+<td><a href="../../python/sglang/srt/disaggregation/ascend/mempool_service.py">mempool_service.py</a></td>
+<td>从 runtime 或脱离原生行后的 receipt 提取写入事实</td>
+</tr>
+<tr>
+<td>9</td>
+<td><a href="../../python/sglang/srt/disaggregation/ascend/mempool_accounting.py">mempool_accounting.py</a></td>
+<td>按副本合并页完成，并保留各 rank 的 Index K 门控</td>
+</tr>
+<tr>
+<td>10</td>
+<td><a href="../../python/sglang/srt/disaggregation/ascend/mempool_subrouter.py">mempool_subrouter.py</a></td>
+<td>共享描述符、双读者记账、就绪和释放汇总</td>
+</tr>
+<tr>
+<td>11</td>
+<td><a href="../../python/sglang/srt/disaggregation/ascend/mempool_router_transport.py">mempool_router_transport.py</a></td>
+<td>接线配置、区域注册、NUMA 证据和验收探针</td>
+</tr>
+<tr>
+<td>12</td>
+<td><a href="../../python/sglang/srt/disaggregation/ascend/mempool_router.py">mempool_router.py</a></td>
+<td>接受 P/D 不同份数，去重不透明共享页描述符</td>
+</tr>
+<tr>
+<td>13</td>
+<td><a href="../../python/sglang/srt/hardware_backend/npu/mempool/shared_probe.py">shared_probe.py</a></td>
+<td>验收开关下在请求接入前核对跨写者 NPU 读写</td>
+</tr>
+</tbody></table></div>
+</div></div>
+</section>
+<section class="am-panel" id="panel-C">
+<header class="am-panel-head"><span class="am-panel-id">C</span><h2>通用主线与目录例外</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>本票没有通用主线功能源码改动。
+SGLang 默认退出路径保持原有实现。</p>
+<p>目录外改动位于 <code>ascend-mempool-test/</code>，用于独立测试与运行编排。
+这些代码运行在测试进程，不属于 worker 的 Ascend/NPU hook。
+功能源码清单与脚本、测试、说明文档分别列出。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-D">
+<header class="am-panel-head"><span class="am-panel-id">D</span><h2>脚本、测试与运行说明</h2></header>
+<div class="am-panel-body"><div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>文件</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="../../ascend-mempool-test/scripts/run_mempool_min.py">run_mempool_min.py</a></td>
+<td>新增 p-sharing-acceptance，复用两轮服务、清理与报告</td>
+</tr>
+<tr>
+<td><a href="../../ascend-mempool-test/scripts/verify_mempool_session.py">verify_mempool_session.py</a></td>
+<td>复用原有 ABCE、故障、重启及释放检查</td>
+</tr>
+<tr>
+<td><a href="../../ascend-mempool-test/scripts/verify_mempool_shared.py">verify_mempool_shared.py</a></td>
+<td>核对共享区域、贡献量、跨写者哨兵与写入计数</td>
+</tr>
+<tr>
+<td><a href="../../ascend-mempool-test/K1_TICKET05.md">K1_TICKET05.md</a></td>
+<td>环境、逐机命令、覆盖边界和日志回传清单</td>
+</tr>
+</tbody></table></div>
+<p>CPU 测试按公开接口覆盖池会话、runtime/prefix、SR/Main 和验收入口。
+组合测试贯穿共享写入、私有 Index K、admit 与 fill。
+证据测试拒绝把附属区域误报为共享，也拒绝缺少跨写者读取。</p>
+<p>502项CPU覆盖最终全部通过；25文件静态检查与15模块strict mypy通过。
+两轴评审发现的问题已修正，复审均为0项。
+详细测试记录见 <a href="verification/ticket05-cpu-20261030/README.md">本机验证</a>。
+测试文件清单与真实执行次数记录在该目录。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-E">
+<header class="am-panel-head"><span class="am-panel-id">E</span><h2>验收边界</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>默认 BM 本机贡献量为 P 120 GiB、D 16 GiB。
+P owner 每组 13 GiB，另一成员的私有区域每组 2 GiB。
+实际数字在 BM join 时核对，再按 NUMA 汇总。</p>
+<p>物理 NUMA 驻留独立记录，容器权限不足时保持 unverified。
+自运行入口标为精简功能验收，沿用独立答案和容量 CPU 重放。
+完整性能复测按约定留在测试分支。</p>
+<p>只有用户确认本票 NPU 结果后才能关闭 05。
+本票关闭后，08 还需等待 07 自身验收。</p>
+</div></div>
+</section>
+</div>
+</div>
+</main>
+<footer class="am-colophon">Generated by Answer me with HTML 0.4.3 · 2026-10-30 22:59</footer>
+<textarea id="am-source" hidden readonly aria-hidden="true">---
+title: K1-ticket05：P alive 主 KV 共享
+subtitle: 本地 05 · K1-03a · 实现交付与源码阅读顺序
+template: doc
+theme: blueprint
+lang: zh
+date: 2026-10-30
+status: 实现、CPU与双轴评审完成；等待用户 NPU 验收
+---
+
+**P 主 KV 从 16 份变为 8 份，共享组成员分工写整页。**
+D 主 KV、P Index K、prefix 主 KV 和 prefix Index K 各保留 16 份。
+基点为 `4c0e79b55046ba69a1559eaab39d061ce3eec8ed`。
+本票保持 open，NPU 尚未运行。
+
+## A 正常执行路径
+
+每组 BM 会话包含两个 P 成员和两个 D 成员。
+P owner 分配共享主 KV 和自己的附属区域。
+另一 P 成员只分配自己的 Index K、prefix 和配对探针。
+每个 D 成员分配自己的主 KV。
+
+```flow LR
+P0 -&gt; 共享主KV: 写前半页
+P1 -&gt; 共享主KV: 写后半页
+共享主KV -&gt; D0: 读完整副本
+共享主KV -&gt; D1: 读完整副本
+```
+
+`prefill_groups` 指定分组，首成员为 owner。
+`prefill_write_assignment` 控制连续分块或轮转。
+每次 forward 的主 KV 计数与 Index K 计数分别核对。
+因此一个 rank 可以没有后缀主 KV 写入，仍须完成其 Index K 写入。
+
+prefix fill 只写本成员负责的主 KV 页，并恢复全部私有 Index K。
+admit 从共享主 KV 和本 rank 的 Index K 保存到私有 prefix。
+SR 合并同组页位图，再取各副本与 Index K 的共同完成进度。
+
+Main 先收齐 D 完成及 drain，再发 P free。
+SR 等齐写者清理并完成全 rank 回执后，Main 才归还额度。
+槽和额度继续使用逻辑容量；物理份数由注册和去重后的页描述符表达。
+
+## B Ascend/NPU 功能源码
+
+按配置、存储、执行、协调的顺序阅读：
+
+| 顺序 | 文件 | 用途 |
+|---|---|---|
+| 1 | [mempool_router_protocol.py](../../python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py) | P 共享开关、分组、写策略与两侧副本数 |
+| 2 | [sharing_plan.py](../../python/sglang/srt/hardware_backend/npu/mempool/sharing_plan.py) | 会话成员、每个成员的贡献量、区域 owner 与 NUMA |
+| 3 | [manager.py](../../python/sglang/srt/hardware_backend/npu/mempool/manager.py) | 实际 BM 分配、映射、私有探针、区域视图与注册 |
+| 4 | [page_write.py](../../python/sglang/srt/hardware_backend/npu/mempool/page_write.py) | 整页写分工，供计算写回、fill 和 SR 使用 |
+| 5 | [runtime.py](../../python/sglang/srt/hardware_backend/npu/mempool/runtime.py) | 按页写主 KV、完整写 Index K，保留真实完成行数 |
+| 6 | [prefix.py](../../python/sglang/srt/hardware_backend/npu/mempool/prefix.py) | 分工 fill、共享源 admit、独立完成事件 |
+| 7 | [mempool_tick.py](../../python/sglang/srt/disaggregation/ascend/mempool_tick.py) | 完成事实携带实际主 KV 写行数 |
+| 8 | [mempool_service.py](../../python/sglang/srt/disaggregation/ascend/mempool_service.py) | 从 runtime 或脱离原生行后的 receipt 提取写入事实 |
+| 9 | [mempool_accounting.py](../../python/sglang/srt/disaggregation/ascend/mempool_accounting.py) | 按副本合并页完成，并保留各 rank 的 Index K 门控 |
+| 10 | [mempool_subrouter.py](../../python/sglang/srt/disaggregation/ascend/mempool_subrouter.py) | 共享描述符、双读者记账、就绪和释放汇总 |
+| 11 | [mempool_router_transport.py](../../python/sglang/srt/disaggregation/ascend/mempool_router_transport.py) | 接线配置、区域注册、NUMA 证据和验收探针 |
+| 12 | [mempool_router.py](../../python/sglang/srt/disaggregation/ascend/mempool_router.py) | 接受 P/D 不同份数，去重不透明共享页描述符 |
+| 13 | [shared_probe.py](../../python/sglang/srt/hardware_backend/npu/mempool/shared_probe.py) | 验收开关下在请求接入前核对跨写者 NPU 读写 |
+
+## C 通用主线与目录例外
+
+本票没有通用主线功能源码改动。
+SGLang 默认退出路径保持原有实现。
+
+目录外改动位于 `ascend-mempool-test/`，用于独立测试与运行编排。
+这些代码运行在测试进程，不属于 worker 的 Ascend/NPU hook。
+功能源码清单与脚本、测试、说明文档分别列出。
+
+## D 脚本、测试与运行说明
+
+| 文件 | 用途 |
+|---|---|
+| [run_mempool_min.py](../../ascend-mempool-test/scripts/run_mempool_min.py) | 新增 p-sharing-acceptance，复用两轮服务、清理与报告 |
+| [verify_mempool_session.py](../../ascend-mempool-test/scripts/verify_mempool_session.py) | 复用原有 ABCE、故障、重启及释放检查 |
+| [verify_mempool_shared.py](../../ascend-mempool-test/scripts/verify_mempool_shared.py) | 核对共享区域、贡献量、跨写者哨兵与写入计数 |
+| [K1_TICKET05.md](../../ascend-mempool-test/K1_TICKET05.md) | 环境、逐机命令、覆盖边界和日志回传清单 |
+
+CPU 测试按公开接口覆盖池会话、runtime/prefix、SR/Main 和验收入口。
+组合测试贯穿共享写入、私有 Index K、admit 与 fill。
+证据测试拒绝把附属区域误报为共享，也拒绝缺少跨写者读取。
+
+502项CPU覆盖最终全部通过；25文件静态检查与15模块strict mypy通过。
+两轴评审发现的问题已修正，复审均为0项。
+详细测试记录见 [本机验证](verification/ticket05-cpu-20261030/README.md)。
+测试文件清单与真实执行次数记录在该目录。
+
+## E 验收边界
+
+默认 BM 本机贡献量为 P 120 GiB、D 16 GiB。
+P owner 每组 13 GiB，另一成员的私有区域每组 2 GiB。
+实际数字在 BM join 时核对，再按 NUMA 汇总。
+
+物理 NUMA 驻留独立记录，容器权限不足时保持 unverified。
+自运行入口标为精简功能验收，沿用独立答案和容量 CPU 重放。
+完整性能复测按约定留在测试分支。
+
+只有用户确认本票 NPU 结果后才能关闭 05。
+本票关闭后，08 还需等待 07 自身验收。
+</textarea>
+<script>
+(() => {
+  const root = document.documentElement;
+  const cycle = (list, cur) => list[(list.indexOf(cur) + 1) % list.length];
+  const label = (btn, value) => {
+    const map = JSON.parse(btn.dataset.labels || '{}');
+    btn.textContent = map[value] || value;
+  };
+  const bind = (name, attr, values) => {
+    const btn = document.querySelector(`[data-am="${name}"]`);
+    if (!btn) return;
+    label(btn, root.getAttribute(attr));
+    btn.addEventListener('click', () => {
+      const next = cycle(values, root.getAttribute(attr));
+      root.setAttribute(attr, next);
+      label(btn, next);
+    });
+  };
+  bind('theme', 'data-theme', ['blueprint', 'shadcn']);
+  bind('mode', 'data-mode', ['auto', 'light', 'dark']);
+
+  const copyBtn = document.querySelector('[data-am="copy"]');
+  copyBtn?.addEventListener('click', async () => {
+    const text = document.getElementById('am-source').value;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = Object.assign(document.createElement('textarea'), { value: text });
+      document.body.append(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    const original = copyBtn.textContent;
+    copyBtn.textContent = copyBtn.dataset.done;
+    setTimeout(() => { copyBtn.textContent = original; }, 1400);
+  });
+})();
+</script>
+</body>
+</html>

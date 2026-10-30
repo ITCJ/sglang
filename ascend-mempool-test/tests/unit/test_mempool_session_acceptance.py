@@ -16,6 +16,33 @@ from ascend_mempool_pd.mempool_router_protocol import RouterConfig
 
 
 class TestSessionAcceptance(unittest.TestCase):
+    def test_shared_cli_describes_eight_prefill_replicas_and_two_model_starts(self):
+        with tempfile.TemporaryDirectory() as folder:
+            config = Path(folder) / "config.json"
+            config.write_text(
+                json.dumps(dict(prefill_host="p", decode_host="d", model_path="/model"))
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = run_mempool_min.main(
+                    [
+                        "--role",
+                        "prefill",
+                        "--mode",
+                        "p-sharing-acceptance",
+                        "--config",
+                        str(config),
+                        "--run-id",
+                        "k1-05-cpu",
+                        "--describe",
+                    ]
+                )
+            value = json.loads(output.getvalue())
+            self.assertEqual(result, 0)
+            self.assertTrue(value["config"]["prefill_shared"])
+            self.assertEqual(value["service_rounds"], 2)
+            self.assertEqual(value["memory_budget"]["bm_bytes"], 120 * 2**30)
+
     def test_post_shutdown_port_probe_allows_time_wait_but_rejects_a_listener(self):
         with socket.socket() as server:
             server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

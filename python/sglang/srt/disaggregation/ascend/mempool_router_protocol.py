@@ -44,8 +44,23 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     verify_prefix: bool = False
     match_prefix: bool = False
     prefix_read_assignment: str = "round_robin"
+    prefill_shared: bool = False
+    prefill_groups: tuple[tuple[int, ...], ...] = tuple(
+        (r, r + 1) for r in range(0, 16, 2)
+    )
+    prefill_write_assignment: str = "contiguous"
 
     def __post_init__(self) -> None:
+        if self.prefill_write_assignment not in ("contiguous", "round_robin"):
+            raise ValueError(
+                "prefill_write_assignment must be contiguous or round_robin"
+            )
+        if not all(self.prefill_groups) or sorted(
+            r for group in self.prefill_groups for r in group
+        ) != list(range(16)):
+            raise ValueError(
+                "prefill_groups must cover each TP rank exactly once; first member is owner"
+            )
         if self.prefix_read_assignment not in ("round_robin", "contiguous"):
             raise ValueError("prefix_read_assignment must be round_robin or contiguous")
         if type(self.match_prefix) is not bool or (
@@ -112,10 +127,12 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     def read(cls, path: str) -> RouterConfig:
         return msgspec.json.decode(Path(path).read_bytes(), type=cls)
 
-    def replicas(self) -> dict[str, int]:
+    def replicas(self, role: str = "prefill") -> dict[str, int]:
         enabled = 16 if self.prefix_pages else 0
         return dict(
-            alive_main=16,
+            alive_main=len(self.prefill_groups)
+            if self.prefill_shared and role == "prefill"
+            else 16,
             alive_index=enabled,
             prefix_main=enabled,
             prefix_index=enabled,

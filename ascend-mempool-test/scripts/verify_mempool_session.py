@@ -53,7 +53,14 @@ def capacity_check(
     )
 
 
-def check_registration(registrations: dict[str, Any]) -> None:
+def check_registration(
+    registrations: dict[str, Any], *, config: RouterConfig | None = None
+) -> None:
+    if config is not None and config.prefill_shared:
+        from verify_mempool_shared import check_registration as check_shared
+
+        check_shared(registrations, config)
+        return
     for role in ("prefill", "decode"):
         rows = registrations[role]["ranks"]
         if [r["rank"] for r in rows] != list(range(16)):
@@ -92,7 +99,7 @@ def log_records(path: Path, kind: str) -> list[dict[str, Any]]:
     ]
 
 
-def accounting(root: Path) -> dict[str, Any]:
+def accounting(root: Path, *, shared: bool = False) -> dict[str, Any]:
     snapshots = json.loads((root / "snapshots.json").read_text())
     requests = {s["completed"][-1]["rid"] for s in snapshots}
     prefix = root / "prefill-normal.log"
@@ -101,7 +108,7 @@ def accounting(root: Path) -> dict[str, Any]:
     records = log_records(prefix, "ready_accounting")
     if not requests or {r["rid"] for r in records} != requests:
         raise ValueError("missing ready accounting for completed requests")
-    if any(r["ready_tokens"] != r["counter_tokens"] for r in records):
+    if not shared and any(r["ready_tokens"] != r["counter_tokens"] for r in records):
         raise ValueError("bitmap and old counter differ on the same event")
     cases = json.loads((root / "responses.json").read_text())["cases"]
     for snapshot, case in zip(snapshots, cases):
@@ -126,12 +133,15 @@ def accounting(root: Path) -> dict[str, Any]:
     return dict(
         status="passed",
         requests=len(requests),
-        equivalent_events=len(records),
+        equivalent_events=None if shared else len(records),
+        ready_events=len(records),
         reader_counts_zero=True,
     )
 
 
-def summarize(root: Path) -> dict[str, Any]:
+def summarize(root: Path, *, config: RouterConfig | None = None) -> dict[str, Any]:
+    import verify_mempool_shared
+
     rounds = []
     for name in SERVICE_STAGES:
         stage = root / name
@@ -151,7 +161,13 @@ def summarize(root: Path) -> dict[str, Any]:
         rejections = read("input-rejections.json")
         if rejections["status"] != "passed" or not rejections["ledger_unchanged"]:
             raise ValueError(f"{name}: input rejection failed")
-        check_registration(read("registrations.json"))
+        shared = (
+            verify_mempool_shared.check_stage(stage, config)
+            if config is not None
+            else None
+        )
+        if config is None:
+            check_registration(read("registrations.json"))
         for filename in (
             "process-cleanup.json",
             "ports-released.json",
@@ -159,7 +175,14 @@ def summarize(root: Path) -> dict[str, Any]:
         ):
             if read(filename)["status"] != "passed":
                 raise ValueError(f"{name}: {filename} failed")
-        rounds.append(dict(stage=name, status="passed", accounting=accounting(stage)))
+        rounds.append(
+            dict(
+                stage=name,
+                status="passed",
+                accounting=accounting(stage, shared=config is not None),
+                sharing=shared,
+            )
+        )
     timeout = json.loads((root / "target/timeout.json").read_text())
     if (
         timeout["status"] != "passed"
@@ -172,7 +195,9 @@ def summarize(root: Path) -> dict[str, Any]:
         raise ValueError("P/D/mixed fetch smoke failed")
     return dict(
         status="passed",
-        coverage="K1-02 reduced functional acceptance",
+        coverage="K1-05 reduced functional acceptance"
+        if config is not None
+        else "K1-02 reduced functional acceptance",
         service_rounds=len(SERVICE_STAGES),
         shutdown="SGLang default parent/process cleanup; no per-rank graceful BM release requirement",
         rounds=rounds,

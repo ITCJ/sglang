@@ -60,6 +60,22 @@ def payload(tokens=4096, new_tokens=128):
 
 
 class TestMainRouter(unittest.TestCase):
+    def test_prefill_shared_registration_keeps_decode_private(self):
+        config = RouterConfig("host-p", "host-d", "/model", prefill_shared=True)
+        router = MainRouter(config, "cpu")
+        prefill = registration("prefill")
+        for rank in prefill["ranks"]:
+            rank["replicas"]["alive_main"] = 8
+        router.register(prefill)
+        router.register(registration("decode"))
+        self.assertTrue(router.ready)
+        self.assertEqual(
+            router.status()["registrations"]["prefill"]["ranks"][0]["replicas"][
+                "alive_main"
+            ],
+            8,
+        )
+
     def setUp(self):
         self.main = MainRouter(
             RouterConfig("p", "d", "/model"),

@@ -16,6 +16,7 @@ from torch import Tensor
 
 from .layout import check_index, positive_int
 from .manager import MempoolKVManager
+from .page_write import PageWriter
 from .split_read import assign_pages
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ class _Read(msgspec.Struct):
     event: Any = None
     retained: list[Tensor] = msgspec.field(default_factory=list)
     receipt: dict[str, Any] | None = None
+    main_rows: Tensor | None = None
 
 
 class PrefixStore:
@@ -72,6 +74,7 @@ class PrefixStore:
         read_assignment: str = "round_robin",
         all_gather: Callable[[Tensor, Tensor], None] | None = None,
         scatter_kernel: Any = None,
+        page_writer: PageWriter | None = None,
     ) -> None:
         positive_int("page_size", page_size)
         layout = manager.layout.prefix_main
@@ -79,6 +82,8 @@ class PrefixStore:
             raise ValueError("prefix store requires P's configured page regions")
         self.manager, self.page_size, self.device = manager, page_size, device
         self.verify = verify
+        self.page_writer = page_writer
+        self._prompt_tokens = 0
         self.replica = replica
         self.readers, self.read_assignment, self.all_gather = (
             readers,
@@ -252,6 +257,8 @@ class PrefixStore:
             )
             if operation.indices is not None:
                 operation.receipt["prefix_indices"] = operation.indices.cpu().tolist()
+            if operation.main_rows is not None:
+                operation.receipt["main_rows"] = int(operation.main_rows.item())
             operation.retained.clear()
         return copy.deepcopy(operation.receipt)
 
@@ -490,6 +497,14 @@ class PrefixStore:
         operation.retained.extend((source, target, valid))
         for region in ("main", "index"):
             _, layout = self.manager.layout.regions(0)["prefix_" + region]
+            region_valid = valid
+            if region == "main" and self.page_writer is not None:
+                positions = target - operation.slot * self.manager.layout.prompt.tokens
+                region_valid = valid & self.page_writer.mask(
+                    positions, torch.full_like(positions, self._prompt_tokens)
+                )
+                operation.retained.append(region_valid)
+                operation.main_rows = region_valid.sum()
             for layer in range(layout.layers):
                 src = self.manager.view(0, layer, region="prefix_" + region)
                 dst = self.manager.view(0, layer, region="alive_" + region)
@@ -498,7 +513,7 @@ class PrefixStore:
                     self._dtype,
                     source,
                     target,
-                    valid,
+                    region_valid,
                     src.layout.slots * src.layout.tokens,
                     dst.layout.slots * dst.layout.tokens,
                     src.layout.row_bytes,
@@ -608,6 +623,7 @@ class PrefixStore:
         }
 
     def begin_request(self, rid: str, slot: int, tokens: int) -> None:
+        self._prompt_tokens = tokens
         if self.verify:
             if self._source is not None:
                 raise RuntimeError("prefix verification request was not released")

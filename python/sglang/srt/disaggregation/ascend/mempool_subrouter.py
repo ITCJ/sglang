@@ -15,6 +15,7 @@ from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from sglang.srt.hardware_backend.npu.mempool.page_write import PageWriter
     from sglang.srt.hardware_backend.npu.mempool.prefix import PrefixStore
 
 from .mempool_accounting import PromptCoverage, ReplicaReaders
@@ -42,6 +43,9 @@ class RouterShard:
         bootstrap: tuple[str, int] | None = None,
         prefix: PrefixStore | None = None,
         restore: PrefillRestore | None = None,
+        main_groups: Sequence[Sequence[int]] = (),
+        main_region: str | None = None,
+        page_writers: Sequence[PageWriter] = (),
     ) -> None:
         self.control, self.native, self.effect, self.reply_to = (
             control,
@@ -57,6 +61,15 @@ class RouterShard:
         self.bootstrap = bootstrap
         self.prefix = prefix
         self.restore = restore
+        self.main_groups = main_groups or [(i,) for i in range(control.local.tp_size)]
+        self.main_replica = next(
+            i
+            for i, group in enumerate(self.main_groups)
+            if control.local.tp_rank in group
+        )
+        self.main_owner = self.main_groups[self.main_replica][0]
+        self.main_region = main_region or control.local.session
+        self.page_writers = page_writers
         self.fill_complete = False
         self.coverage: PromptCoverage | None = None
         self.readers = ReplicaReaders(())
@@ -197,15 +210,18 @@ class RouterShard:
             if self.restore is not None:
                 self.restore.begin_request(request, slot=slot)
             self.fill_complete = request.get("hit_len", 0) == 0
-            self.readers = ReplicaReaders(
-                [(i,) for i in range(self.control.local.tp_size)]
-            )
+            self.readers = ReplicaReaders(self.main_groups)
             self.coverage = (
                 PromptCoverage(
                     request["prompt_tokens"],
                     request.get("hit_len", 0),
                     self.page_size,
                     self.control.local.tp_size,
+                    self.main_groups,
+                    [
+                        writer.pages(request["prompt_tokens"])
+                        for writer in self.page_writers
+                    ],
                 )
                 if role == "prefill"
                 else None
@@ -221,8 +237,8 @@ class RouterShard:
             result["pages"] = [
                 dict(
                     pool="alive_main",
-                    region=self.control.local.session,
-                    replica=rank,
+                    region=self.main_region,
+                    replica=self.main_owner,
                     logical_page=slot * (capacity // self.page_size) + i,
                     page_size=self.page_size,
                 )
@@ -267,7 +283,7 @@ class RouterShard:
                 result.update(
                     freed=True,
                     native_freed=True,
-                    readers_remaining=self.readers.counts[rank],
+                    readers_remaining=self.readers.counts[self.main_replica],
                 )
                 logger.info(
                     "mempool free_accounting data=%s",
@@ -276,7 +292,7 @@ class RouterShard:
                             rid=command["rid"],
                             role=role,
                             rank=rank,
-                            readers_remaining=self.readers.counts[rank],
+                            readers_remaining=self.readers.counts[self.main_replica],
                         )
                     ),
                 )
@@ -379,8 +395,8 @@ class RouterShard:
             pages=[
                 dict(
                     pool="alive_main",
-                    region=self.control.local.session,
-                    replica=rank,
+                    region=self.main_region,
+                    replica=self.main_owner,
                     logical_page=state.p_slot.slot * capacity + page,
                     page_size=self.page_size,
                 )
@@ -504,10 +520,12 @@ class MempoolSubrouter:
         registration: Callable[[], dict[str, Any]],
         timeout: float = 600,
         clock: Callable[[], float] = time.monotonic,
+        verify_mapping: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
         self.shard, self.run_id, self.gather = shard, run_id, gather
         self.receive, self.send, self.registration = receive, send, registration
         self.timeout, self.clock = timeout, clock
+        self.verify_mapping = verify_mapping
         self.last_main = clock()
         self.last_sent = float("-inf")
         self.registered = False
@@ -560,7 +578,7 @@ class MempoolSubrouter:
             )
         )
         results: dict[str, Any] = dict(
-            error=None, ack=None, events=[], registration=None
+            error=None, ack=None, events=[], registration=None, mapping=None
         )
         command = None
         dispatch = self.shard.dispatch
@@ -583,6 +601,8 @@ class MempoolSubrouter:
                 o["registration"] is not None for o in observations
             ):
                 results["registration"] = [o["registration"] for o in observations]
+                if self.verify_mapping is not None:
+                    results["mapping"] = self.verify_mapping()
                 self.registered = True
             for message in observations[0]["incoming"]:
                 if (
@@ -614,6 +634,10 @@ class MempoolSubrouter:
                             observation["filled"],
                         )
                 progress = coverage.snapshot()
+                if self.shard.page_writers:
+                    progress["writer_rows"] = [
+                        f.main_written if f is not None else 0 for f in common_facts
+                    ]
                 ready_tokens = progress["ready_tokens"]
                 if leader and progress != self.shard.last_coverage:
                     assert self.shard.request is not None
@@ -623,7 +647,12 @@ class MempoolSubrouter:
                     )
                 self.shard.last_coverage = progress
             for rank, fact in enumerate(common_facts):
-                if fact is not None and fact.drained and fact.writes_done:
+                if (
+                    control.local.role == "decode"
+                    and fact is not None
+                    and fact.drained
+                    and fact.writes_done
+                ):
                     self.shard.readers.stopped(rank)
             if self.pending:
                 command = self.pending[0]
@@ -697,7 +726,13 @@ class MempoolSubrouter:
             return
         envelope = dict(run_id=self.run_id, role=control.local.role)
         if results["registration"] is not None:
-            self.send(dict(envelope, kind="register", ranks=results["registration"]))
+            ranks = results["registration"]
+            if self.verify_mapping is not None:
+                ranks = [
+                    dict(rank, shared_probe=result["mapping"])
+                    for rank, result in zip(ranks, committed)
+                ]
+            self.send(dict(envelope, kind="register", ranks=ranks))
         if acknowledged and command is not None:
             self.send(
                 {

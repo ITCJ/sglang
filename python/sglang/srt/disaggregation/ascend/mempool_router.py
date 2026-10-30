@@ -103,7 +103,7 @@ class MainRouter:
             decode_capacity=self.config.decode_capacity,
             page_size=self.config.page_size,
             hbm_page_size=self.config.page_size,
-            replicas=self.config.replicas(),
+            replicas=self.config.replicas(role),
             graph=role == "decode",
         )
         if self.config.prefix_pages:
@@ -115,6 +115,10 @@ class MainRouter:
         if self.config.match_prefix:
             expected["match_prefix"] = True
             expected["prefix_read_assignment"] = self.config.prefix_read_assignment
+        if self.config.prefill_shared:
+            # P members contribute either shared main + private regions, or
+            # only their private regions. Their physical sizes are not uniform.
+            expected.pop("local_dram_bytes", None)
         for rank in ranks:
             if any(rank.get(k) != v for k, v in expected.items()):
                 raise ValueError("SR registered incompatible ticket01 capabilities")
@@ -517,9 +521,12 @@ class MainRouter:
                 )
             else:
                 for index, hash_value in enumerate(active["hashes"]):
-                    self.directory[hash_value]["locations"] = [
-                        r["pages"][index] for r in ranks
-                    ]
+                    locations = []
+                    for rank in ranks:
+                        page = rank["pages"][index]
+                        if page not in locations:
+                            locations.append(page)
+                    self.directory[hash_value]["locations"] = locations
                 self._command(
                     "decode", "dispatch", request=active["request"], bindings=ranks
                 )

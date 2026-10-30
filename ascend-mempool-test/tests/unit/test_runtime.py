@@ -49,6 +49,37 @@ def prefill_batch(lengths=(2, 1), prefixes=(0, 0), rows=(1, 2)):
 class TestMempoolRuntime(unittest.TestCase):
     """Use real binding/index/counter logic with fake BM and device completion."""
 
+    def test_page_writers_touch_only_their_half_and_allow_an_empty_suffix_share(self):
+        from ascend_mempool.page_write import PageWriter
+
+        expected = ([10, 10, 10, 10, -1, -1], [-1, -1, -1, -1, 11, 11])
+        for member in (0, 1):
+            runtime, targets, events = self.make_runtime(
+                layers=1, page_writer=PageWriter(member, 2, 2, "contiguous")
+            )
+            runtime.bind(1, slot=0, prompt_tokens=6)
+            values = torch.full((6, 2), 10 + member, dtype=torch.bfloat16)
+            runtime.begin_forward([KVWriteExpectation(1, 0, 6)])
+            runtime.write_layer(5, values, values, prefill_batch((6,), (0,), (1,)))
+            runtime.end_forward()
+            self.assertEqual(targets[0][0, :6, 0, 0].tolist(), expected[member])
+            self.assertFalse(runtime.writes_done(1))
+            events[-1].done = True
+            runtime.poll_completed()
+            self.assertEqual(runtime.written_range(1), (0, 6))
+            runtime.bind(2, slot=1, prompt_tokens=6, start_position=4)
+            runtime.begin_forward([KVWriteExpectation(2, 4, 2)])
+            runtime.write_layer(
+                5, values[:2], values[:2], prefill_batch((2,), (4,), (2,))
+            )
+            runtime.end_forward()
+            events[-1].done = True
+            runtime.poll_completed()
+            self.assertEqual(
+                targets[0][1, 4:6, 0, 0].tolist(), [-1, -1] if member == 0 else [11, 11]
+            )
+            self.assertTrue(runtime.writes_done(2))
+
     def test_suffix_counts_only_computed_rows_and_retains_its_range_after_detach(self):
         runtime, targets, events = self.make_runtime(rank=0, layers=1)
         binding = runtime.bind(1, slot=3, prompt_tokens=6, start_position=4)

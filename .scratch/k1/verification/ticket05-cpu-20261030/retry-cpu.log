@@ -1,0 +1,47 @@
+test_failed_child_never_reports_completion (test_acceptance_runner.TestAcceptanceRunner.test_failed_child_never_reports_completion) ... START bad pid=68277 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpevhztxly/bad.log
+ok
+test_only_owned_process_is_stopped (test_acceptance_runner.TestAcceptanceRunner.test_only_owned_process_is_stopped) ... START server pid=68289 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpiqoj5l7c/server.log
+ok
+test_graph_updates_both_sides_checkpoint_and_resume_without_remeasuring (test_cd_benchmark.TestCDBenchmark.test_graph_updates_both_sides_checkpoint_and_resume_without_remeasuring) ... ok
+test_real_tp1_pair_maps_and_drains_without_dummy_ranks (test_cd_plan.TestCDPlan.test_real_tp1_pair_maps_and_drains_without_dummy_ranks) ... ok
+test_each_side_waits_for_http_then_sends_local_fake_warmup_before_freeze (test_http_startup.TestNativeHTTPWarmup.test_each_side_waits_for_http_then_sends_local_fake_warmup_before_freeze) ... ok
+test_isolated_timeout_starts_without_success_logs_and_retains_allocations (test_mempool_full.TestFullEntry.test_isolated_timeout_starts_without_success_logs_and_retains_allocations) ... START launcher pid=68543 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpmrihal8n/decode/timeout/launcher.log
+START router pid=68544 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpmrihal8n/prefill/timeout/router.log
+START launcher pid=68545 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpmrihal8n/prefill/timeout/launcher.log
+mempool_router fail-stop: SR heartbeat timeout
+ok
+test_paired_capacity_run_rejects_before_admission_and_cleans_owned_processes (test_mempool_full.TestFullEntry.test_paired_capacity_run_rejects_before_admission_and_cleans_owned_processes) ... START router pid=68568 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpnmtm02ss/prefill/capacity/router.log
+START launcher pid=68569 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpnmtm02ss/prefill/capacity/launcher.log
+mempool_router fail-stop: SR native capacities do not cover the configured limits
+START launcher pid=68580 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpnmtm02ss/decode/capacity/launcher.log
+ok
+test_full_reference_preserves_per_request_answer_results (test_mempool_min_entry.TestMinRunner.test_full_reference_preserves_per_request_answer_results) ... START launcher pid=68585 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmp5xma_6jz/reference/launcher.log
+START reference-router pid=68586 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmp5xma_6jz/reference/reference-router.log
+ok
+test_paired_timeout_retains_quota_and_reaps_only_owned_children (test_mempool_min_entry.TestMinRunner.test_paired_timeout_retains_quota_and_reaps_only_owned_children) ... START worker pid=68588 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmp21fi7c_v/prefill/worker.log
+START worker pid=68589 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmp21fi7c_v/decode/worker.log
+mempool_router fail-stop: SR heartbeat timeout
+ok
+test_prefix_reference_accepts_four_real_decode_requests_through_runner (test_mempool_min_entry.TestMinRunner.test_prefix_reference_accepts_four_real_decode_requests_through_runner) ... START launcher pid=68610 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpsnowr98z/reference/launcher.log
+START reference-router pid=68611 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpsnowr98z/reference/reference-router.log
+ok
+test_reuse_reference_accepts_three_real_decode_requests_through_runner (test_mempool_min_entry.TestMinRunner.test_reuse_reference_accepts_three_real_decode_requests_through_runner) ... START launcher pid=68613 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpmqwwdeit/reference/launcher.log
+START reference-router pid=68614 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpmqwwdeit/reference/reference-router.log
+ok
+test_worker_checks_actual_pool_allocator_transfer_and_dram_before_register (test_mempool_min_entry.TestMinRunner.test_worker_checks_actual_pool_allocator_transfer_and_dram_before_register) ... mempool acceptance_capacity data={"run_id": "cpu", "rank": 15, "actual_hbm_pages": 128, "advertised_hbm_pages": 64, "required_hbm_pages": 65}
+ok
+test_post_shutdown_port_probe_allows_time_wait_but_rejects_a_listener (test_mempool_session_acceptance.TestSessionAcceptance.test_post_shutdown_port_probe_allows_time_wait_but_rejects_a_listener) ... ok
+test_four_members_exchange_and_all_drain_before_release (test_sharing_control.TestSharingControl.test_four_members_exchange_and_all_drain_before_release) ... ok
+test_mismatched_phase_aborts_every_worker_but_still_allows_drain (test_sharing_control.TestSharingControl.test_mismatched_phase_aborts_every_worker_but_still_allows_drain) ... ok
+test_four_members_exchange_and_all_drain_before_release (test_sharing_control.TestTP4Control.test_four_members_exchange_and_all_drain_before_release) ... ok
+test_late_idle_member_does_not_abort_eight_worker_cohort (test_sharing_control.TestTP4Control.test_late_idle_member_does_not_abort_eight_worker_cohort) ... ok
+test_mismatched_phase_aborts_every_worker_but_still_allows_drain (test_sharing_control.TestTP4Control.test_mismatched_phase_aborts_every_worker_but_still_allows_drain) ... ok
+test_cleanup_failure_is_reported_and_never_authorizes_store_shutdown (test_sharing_shutdown.TestSharingShutdown.test_cleanup_failure_is_reported_and_never_authorizes_store_shutdown) ... ok
+test_failed_work_still_closes_pools_and_clients_before_store (test_sharing_shutdown.TestSharingShutdown.test_failed_work_still_closes_pools_and_clients_before_store) ... ok
+test_tp1_and_tp2_independent_store_owners_wait_for_clients (test_sharing_shutdown.TestSharingShutdown.test_tp1_and_tp2_independent_store_owners_wait_for_clients) ... ok
+test_tp4_shared_store_survives_slow_decode_leave (test_sharing_shutdown.TestSharingShutdown.test_tp4_shared_store_survives_slow_decode_leave) ... ok
+
+----------------------------------------------------------------------
+Ran 22 tests in 23.212s
+
+OK

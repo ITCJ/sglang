@@ -609,6 +609,7 @@ class TestMinRunner(unittest.TestCase):
                 layout=layout,
                 manager=SimpleNamespace(
                     numa_node=0,
+                    contribution=13 * 2**30,
                     replica_registration=lambda: {
                         "alive_main": dict(owner=1, members=[1])
                     },

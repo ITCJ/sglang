@@ -97,6 +97,7 @@ class MempoolKVManager:
         self._handle = handle
         self._bm = bm_module
         self._bases: dict[int, tuple[int, int]] = {}
+        self._participant_bases: dict[int, tuple[int, int]] = {}
         self._joined = False
         self._closed = False
         self._owns_bm_context = False
@@ -409,75 +410,104 @@ class MempoolKVManager:
             time.sleep(min(1.0, max(0, deadline - time.monotonic())))
 
     def _mapped_bases(self) -> dict[int, tuple[int, int]] | None:
-        """Check stride and device-contiguous layer ranges, or retry incomplete maps."""
+        """Check every mapped slab, then resolve the local P/D logical views."""
+        session = self.session
+        shared = session is not None and session.prefill_shared
+        participants = (
+            tuple(range(session.world_size))
+            if shared and session is not None
+            else self.owners
+        )
         first = self._handle.peer_rank_ptr(0, self._bm.BmMemType.HOST)
-        gvas = [
-            self._handle.peer_rank_ptr(owner, self._bm.BmMemType.HOST)
-            for owner in self.owners
-        ]
-        if not first or not all(gvas):
-            self._mapping_pending = f"owner_gvas={gvas}"
-            return None
-        if any(
-            gva - first != owner * self.layout.rank_stride_bytes
-            for owner, gva in zip(self.owners, gvas)
-        ):
-            raise RuntimeError("BM GVA rank stride differs from the common maximum")
         bases = {}
-        for rank, gva in enumerate(gvas):
-            device_va = self._handle.gva_to_va(gva, self._bm.BmMemType.LOCAL_DEVICE)
-            if not device_va:
-                self._mapping_pending = f"missing_rank={rank} gva={gva:#x} offset=0"
+        for side, participant in enumerate(participants):
+            gva = self._handle.peer_rank_ptr(participant, self._bm.BmMemType.HOST)
+            if not first or not gva:
+                self._mapping_pending = (
+                    f"missing_participant={participant} gva={gva:#x}"
+                )
                 return None
-            offsets = {self.layout.contribution_bytes(rank) - 1}
-            for base, layout in self.layout.regions(rank).values():
-                for layer in range(layout.layers):
-                    offsets.add(base + layer * layout.layer_bytes)
-                    offsets.add(base + (layer + 1) * layout.layer_bytes - 1)
+            if gva - first != participant * self.layout.rank_stride_bytes:
+                raise RuntimeError("BM GVA rank stride differs from the common maximum")
+            device = self._handle.gva_to_va(gva, self._bm.BmMemType.LOCAL_DEVICE)
+            if not device:
+                self._mapping_pending = f"missing_participant={participant} offset=0"
+                return None
+            regions = (
+                session.regions(participant)
+                if shared and session is not None
+                else self.layout.regions(side)
+            )
+            size = (
+                session.contribution_for(participant)
+                if shared and session is not None
+                else self.layout.contribution_bytes(side)
+            )
+            offsets = {size - 1}
+            for offset, geometry in regions.values():
+                for layer in range(geometry.layers):
+                    offsets.update(
+                        (
+                            offset + layer * geometry.layer_bytes,
+                            offset + (layer + 1) * geometry.layer_bytes - 1,
+                        )
+                    )
             for offset in offsets:
                 mapped = self._handle.gva_to_va(
                     gva + offset, self._bm.BmMemType.LOCAL_DEVICE
                 )
                 if not mapped:
                     self._mapping_pending = (
-                        f"missing_rank={rank} gva={gva + offset:#x} offset={offset}"
+                        f"missing_participant={participant} offset={offset}"
                     )
                     return None
-                if mapped != device_va + offset:
+                if mapped != device + offset:
                     raise RuntimeError("BM layer mapping is not device-contiguous")
-            bases[rank] = gva, device_va
-        return bases
+            bases[participant] = gva, device
+        self._participant_bases = bases
+        return {side: bases[owner] for side, owner in enumerate(self.owners)}
 
     def replica_registration(self) -> dict[str, Any]:
-        """Describe each local replica with the session's physical owner and members."""
+        """Describe physical regions independently of the session's participants."""
         session = self.session
         assert session is not None
-        return {
-            name: dict(
-                replica=session.members[0],
-                owner=session.members[0],
-                members=list(session.members),
+        result = {}
+        for name, (_, geometry) in self.layout.regions(self.rank).items():
+            shared = not session.prefill_shared or (
+                self.rank == 0 and name == "alive_main"
+            )
+            members = session.members if shared else (session.tp_rank,)
+            result[name] = dict(
+                replica=members[0],
+                owner=members[0],
+                members=list(members),
                 numa_node=self.numa_node,
                 session=session.identity,
                 participant=session.participant,
-                owner_participant=session.owners[self.rank],
+                owner_participant=session.region_owner(self.rank, name),
                 world_size=session.world_size,
                 store_port=session.store_port,
                 nic_port=session.nic_base_port + session.participant,
                 bytes=geometry.total_bytes,
             )
-            for name, (_, geometry) in self.layout.regions(self.rank).items()
-        }
+        return result
 
     def placement_registration(self, tp_rank: int, host: str) -> dict[str, Any]:
         """Describe this owner's replicas and query only its local BM contribution."""
         from .placement import sample_pool_placement
 
-        gva, device = self.bases(self.rank)
+        session = self.session
+        shared = session is not None and session.prefill_shared
+        participant = session.participant if shared and session is not None else None
+        gva, device = self.view_bases(self.rank, participant)
         host_base = self._handle.gva_to_va(gva, self._bm.BmMemType.LOCAL_HOST)
         regions = {
             name: (offset, layout.total_bytes)
-            for name, (offset, layout) in self.layout.regions(self.rank).items()
+            for name, (offset, layout) in (
+                session.regions(session.participant)
+                if shared and session is not None
+                else self.layout.regions(self.rank)
+            ).items()
         }
         evidence = sample_pool_placement(
             host_base,
@@ -487,7 +517,7 @@ class MempoolKVManager:
         )
         evidence["gpu_registered_range"] = dict(
             address=hex(device),
-            bytes=self.layout.contribution_bytes(self.rank),
+            bytes=self.contribution,
             registration_seconds=None,
             timing_note="SDK exposes no separate GPU registration timer",
         )
@@ -502,9 +532,14 @@ class MempoolKVManager:
         self, rank: int, layer: int, *, region: str = "alive_main"
     ) -> MempoolKVView:
         """Return a typed layer view that keeps its owning pool alive."""
-        offset, layout = self.layout.regions(rank)[region]
+        participant = None
+        if self.session is not None and self.session.prefill_shared:
+            participant = self.session.region_owner(rank, region)
+            offset, layout = self.session.regions(participant)[region]
+        else:
+            offset, layout = self.layout.regions(rank)[region]
         check_index("layer", layer, layout.layers)
-        return MempoolKVView(self, rank, layer, layout, offset)
+        return MempoolKVView(self, rank, layer, layout, offset, participant)
 
     def bases(self, rank: int) -> tuple[int, int]:
         """Return this process's verified GVA and NPU base for a pool rank."""
@@ -514,11 +549,26 @@ class MempoolKVManager:
             raise RuntimeError("mempool mappings are not ready")
         return self._bases[rank]
 
+    def view_bases(self, rank: int, participant: int | None) -> tuple[int, int]:
+        base = self.bases(rank)
+        return self._participant_bases[participant] if participant is not None else base
+
+    def probe_gva(self, side: int) -> int:
+        session = self.session
+        if session is not None and session.prefill_shared:
+            participant = side * len(session.members) + session.members.index(
+                session.tp_rank
+            )
+            return self.view_bases(side, participant)[0] + session.probe_offset(
+                participant
+            )
+        return self.bases(side)[0] + self.layout.probe_offset(side)
+
     def probe_peer(self, marker: Any) -> None:
         """Write a fixed-size marker to the peer's reserved startup probe range."""
         peer = 1 - self.rank
-        gva = self.bases(peer)[0] + self.layout.probe_offset(peer)
-        if marker.numel() * marker.element_size() != self.layout.probe_bytes:
+        gva = self.probe_gva(peer)
+        if marker.numel() * marker.element_size() != 64:
             raise ValueError("mapping probe size differs from the reserved range")
         self._copy_tensor_to_gva(marker, gva)
 
@@ -526,10 +576,10 @@ class MempoolKVManager:
         """Read the actual BM marker to prove the ZMQ peer is this pool's peer."""
         import torch
 
-        if len(expected) != self.layout.probe_bytes:
+        if len(expected) != 64:
             raise ValueError("pool identity probe must occupy exactly 64 bytes")
         marker = torch.empty(len(expected), dtype=torch.uint8, device=device)
-        gva = self.bases(self.rank)[0] + self.layout.probe_offset(self.rank)
+        gva = self.probe_gva(self.rank)
         ret = self._handle.copy_data(
             gva, marker.data_ptr(), len(expected), self._bm.BmCopyType.G2L, 0
         )
@@ -586,6 +636,7 @@ class MempoolKVView(msgspec.Struct, frozen=True):
     layer: int
     layout: KVLayout
     region_offset: int = 0
+    participant: int | None = None
 
     @property
     def shape(self) -> tuple[int, int, int, int]:
@@ -601,7 +652,7 @@ class MempoolKVView(msgspec.Struct, frozen=True):
     def gva_base(self) -> int:
         """Return the layer's GVA for SDK operations."""
         return (
-            self.owner.bases(self.rank)[0]
+            self.owner.view_bases(self.rank, self.participant)[0]
             + self.region_offset
             + self.layer * self.layout.layer_bytes
         )
@@ -610,7 +661,7 @@ class MempoolKVView(msgspec.Struct, frozen=True):
     def device_base(self) -> int:
         """Return the stable layer address used by this process's NPU kernels."""
         return (
-            self.owner.bases(self.rank)[1]
+            self.owner.view_bases(self.rank, self.participant)[1]
             + self.region_offset
             + self.layer * self.layout.layer_bytes
         )
@@ -618,14 +669,22 @@ class MempoolKVView(msgspec.Struct, frozen=True):
     def element_gva(self, slot: int, token: int, head: int = 0, column: int = 0) -> int:
         """Resolve a checked logical element to its SDK GVA."""
         offset = self.layout.byte_offset(self.layer, slot, token, head, column)
-        return self.owner.bases(self.rank)[0] + self.region_offset + offset
+        return (
+            self.owner.view_bases(self.rank, self.participant)[0]
+            + self.region_offset
+            + offset
+        )
 
     def element_device_ptr(
         self, slot: int, token: int, head: int = 0, column: int = 0
     ) -> int:
         """Resolve a checked logical element to its local NPU address."""
         offset = self.layout.byte_offset(self.layer, slot, token, head, column)
-        return self.owner.bases(self.rank)[1] + self.region_offset + offset
+        return (
+            self.owner.view_bases(self.rank, self.participant)[1]
+            + self.region_offset
+            + offset
+        )
 
     def write_rows(self, slot: int, token: int, values: Any) -> None:
         """Synchronously stage contiguous local KV rows outside Graph capture."""

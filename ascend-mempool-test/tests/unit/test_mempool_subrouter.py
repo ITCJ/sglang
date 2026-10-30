@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from test_mempool_native_reservation import Pages, Rows
 from test_pd_tick import CPUCollective
 
+from ascend_mempool.page_write import PageWriter
 from ascend_mempool_pd.mempool_control import MempoolPDControl
 from ascend_mempool_pd.mempool_native_reservation import NativeReservations
 from ascend_mempool_pd.mempool_protocol import PoolDescriptor, PoolPeer
@@ -16,6 +17,95 @@ from ascend_mempool_pd.mempool_tick import RequestObservation
 
 
 class TestSubrouter(unittest.TestCase):
+    def test_shared_slot_waits_for_last_writer_cleanup_before_free_ack(self):
+        from msgspec.structs import replace
+
+        self.setUp(main_groups=tuple((r, r + 1) for r in range(0, 16, 2)))
+        self.test_late_native_transfer_holds_first_token_and_explicit_free()
+        facts = [
+            [
+                RequestObservation(
+                    1,
+                    128,
+                    4,
+                    100,
+                    attempt="attempt",
+                    writes_done=True,
+                    native_freed=r != 15,
+                    write_range=(0, 128),
+                )
+            ]
+            for r in range(16)
+        ]
+        self.op += 1
+        self.commands["prefill"].append(
+            dict(
+                run_id="cpu",
+                role="prefill",
+                kind="free",
+                rid="r1",
+                room=1,
+                attempt="attempt",
+                op_id=self.op,
+            )
+        )
+        self.advance("prefill", facts)
+        self.assertFalse(any(m["kind"] == "free_ack" for m in self.messages["prefill"]))
+        self.assertTrue(
+            all(len(c.available_slots()) == 15 for c in self.controls["prefill"])
+        )
+        facts[15] = [replace(facts[15][0], native_freed=True)]
+        self.advance("prefill", facts)
+        ack = next(m for m in self.messages["prefill"] if m["kind"] == "free_ack")
+        self.assertEqual([r["readers_remaining"] for r in ack["ranks"]], [0] * 16)
+        self.assertTrue(
+            all(len(c.available_slots()) == 16 for c in self.controls["prefill"])
+        )
+
+    def test_shared_pages_wait_for_both_writers_and_keep_one_descriptor_per_replica(
+        self,
+    ):
+        groups = tuple((r, r + 1) for r in range(0, 16, 2))
+        self.setUp(main_groups=groups)
+        self.request.update(input_ids=[7] * 512, prompt_tokens=512)
+        d = self.command("decode", "alloc", request=self.request)
+        p = self.command("prefill", "alloc", request=self.request, bindings=d["ranks"])
+        self.assertEqual(p["ranks"][0]["pages"], p["ranks"][1]["pages"])
+        self.assertNotEqual(p["ranks"][0]["pages"], p["ranks"][2]["pages"])
+        d = self.command(
+            "decode", "dispatch", request=self.request, bindings=p["ranks"]
+        )
+        self.command("prefill", "dispatch", request=self.request, bindings=d["ranks"])
+        facts = [
+            [
+                RequestObservation(
+                    1,
+                    512,
+                    4,
+                    100,
+                    attempt="attempt",
+                    writes_done=True,
+                    write_range=(0, 512 if r % 2 else 0),
+                )
+            ]
+            for r in range(16)
+        ]
+        self.advance("prefill", facts)
+        self.advance("prefill", facts)
+        self.assertFalse(
+            any(m["kind"] == "ready_tokens" for m in self.messages["prefill"])
+        )
+        self.assertEqual(self.ticks["prefill"][0].shard.readers.counts, [2] * 8)
+        for rank in range(0, 16, 2):
+            facts[rank] = facts[1]
+        self.advance("prefill", facts)
+        ready = [m for m in self.messages["prefill"] if m["kind"] == "ready_tokens"]
+        self.assertEqual(len(ready), 1)
+        self.assertEqual(len(ready[0]["ranks"]), 16)
+        progress = self.ticks["prefill"][0].shard.coverage.snapshot()
+        self.assertEqual(progress["completed_pages"], [4] * 8)
+        self.assertEqual(progress["ready_tokens"], 512)
+
     def test_ready_requires_fill_and_the_last_replica_page(self):
         self.request.update(input_ids=[7] * 256, prompt_tokens=256, hit_len=128)
         d = self.command("decode", "alloc", request=self.request)
@@ -351,7 +441,7 @@ class TestSubrouter(unittest.TestCase):
             all(store.free_pages == tuple(range(1, 40)) for store in stores)
         )
 
-    def setUp(self):
+    def setUp(self, main_groups=()):
         self.controls, self.ticks, self.effects = {}, {}, {}
         self.commands, self.messages = (
             {r: [] for r in ("prefill", "decode")},
@@ -389,6 +479,11 @@ class TestSubrouter(unittest.TestCase):
                         ].append(kind),
                         reply_to="tcp://d:1",
                         page_size=128,
+                        main_groups=main_groups if role == "prefill" else (),
+                        main_region=f"group-{rank // 2}" if main_groups else None,
+                        page_writers=[PageWriter(r % 2, 2, 128) for r in range(16)]
+                        if main_groups and role == "prefill"
+                        else (),
                     ),
                     run_id="cpu",
                     gather=lambda value, r=rank: collective.gather(r, value),
