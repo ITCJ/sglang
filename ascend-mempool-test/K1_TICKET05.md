@@ -98,4 +98,5 @@ BM 的 `local_mem_size` 在 join 时核对实际贡献量。
 - `target/timeout.json`：超时 fail-stop 证据。
 
 报告中的 `user_accepted: false` 保留，用户确认另外记录。
-当前仅完成本机 CPU/静态验证；尚未运行本票 NPU 验收。
+2026-10-31，用户已确认db4b3ac1b9的k1-ticket05-002精简功能验收并关闭05。
+[验收确认与边界](../.scratch/k1/verification/k1-ticket05-002-20261031/acceptance.md)保留全部limitations；重新执行需使用新的run-id。

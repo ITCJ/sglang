@@ -1,0 +1,8 @@
+root@npu1-32:/home/cryang/sglang# bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role decode --mode p-sharing-acceptance \
+  --config /home/cryang/mempool-min-ticket01-3132.json \
+  --run-id k1-ticket05-002
+Waiting for peer at 10.120.72.31:18891
+START fetch pid=3101995 log=/home/cryang/log/mempool-min/k1-ticket05-002/decode/fetch/fetch.log
+START launcher pid=3102737 log=/home/cryang/log/mempool-min/k1-ticket05-002/decode/target/launcher.log
+START launcher pid=3155683 log=/home/cryang/log/mempool-min/k1-ticket05-002/decode/restart/launcher.log

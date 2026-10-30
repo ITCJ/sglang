@@ -4,14 +4,15 @@ subtitle: 本地 05 · K1-03a · 实现交付与源码阅读顺序
 template: doc
 theme: blueprint
 lang: zh
-date: 2026-10-30
-status: 实现、CPU与双轴评审完成；等待用户 NPU 验收
+date: 2026-10-31
+status: 用户已确认NPU002精简功能验收；05已关闭
 ---
 
 **P 主 KV 从 16 份变为 8 份，共享组成员分工写整页。**
 D 主 KV、P Index K、prefix 主 KV 和 prefix Index K 各保留 16 份。
 基点为 `4c0e79b55046ba69a1559eaab39d061ce3eec8ed`。
-本票保持 open，NPU 尚未运行。
+用户已接受`db4b3ac1b9`在31/32的NPU002精简功能验收，本票已closed。
+[人工确认、范围与性能代码检查](verification/k1-ticket05-002-20261031/acceptance.md)。
 
 ## A 正常执行路径
 
@@ -84,7 +85,9 @@ CPU 测试按公开接口覆盖池会话、runtime/prefix、SR/Main 和验收入
 
 502项CPU覆盖最终全部通过；25文件静态检查与15模块strict mypy通过。
 两轴评审发现的问题已修正，复审均为0项。
-详细测试记录见 [本机验证](verification/ticket05-cpu-20261030/README.md)。
+后续修复清除free后的旧统计，并保留空异常类型；40项相关CPU及NPU002通过。
+
+详细实现期测试记录见 [本机验证](verification/ticket05-cpu-20261030/README.md)。
 测试文件清单与真实执行次数记录在该目录。
 
 ## E 验收边界
@@ -97,5 +100,5 @@ P owner 每组 13 GiB，另一成员的私有区域每组 2 GiB。
 自运行入口标为精简功能验收，沿用独立答案和容量 CPU 重放。
 完整性能复测按约定留在测试分支。
 
-只有用户确认本票 NPU 结果后才能关闭 05。
-本票关闭后，08 还需等待 07 自身验收。
+用户已确认本次精简范围并关闭05；08仍等待07自身验收。
+验收后检查未发现本票工程性能测试或计时埋点，未修改运行代码。

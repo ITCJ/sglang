@@ -2,7 +2,7 @@
 
 **What to build:** prefix 主 KV 与 Index K 各只留 1 份，池切成 8 个 NUMA 段，段 k 的 owner 是 rank 2k；admit 分配连续页时在段间轮转（起始段按请求轮转，段空则取最空的），8 个 owner 并行各写本段的页、源是本 NUMA 的 alive 副本，全程本地（单 rank 版留作配置项）；fill 由 8 个组各自从全部段直接读进自己的副本；load_back 的读者分配切换为按段，组 k 读段 k、组内两成员平分，每 NUMA 两个读者；描述符编码段号与偏移，main router 仍只看到每页 1 个描述符；规划器补齐 8 段并定稿 8 / 8 / 1 / 1 / 1 映射。B、C 命中输出正确。细节见 k1-tickets.md 第 12 节。
 
-**Blocked by:** [05（K1-03a）](05-k1-03a-p-alive-main-kv-sharing.md)、[03（K1-04）](03-k1-04-prefix-split-read.md)、[07（K1-05a）](07-k1-05a-p-alive-index-k-single-copy.md)
+**Blocked by:** [05（K1-03a）](05-k1-03a-p-alive-main-kv-sharing.md)、[03（K1-04）](03-k1-04-prefix-split-read.md)、[07（K1-05a）](07-k1-05a-p-alive-index-k-single-copy.md)（03/05已验收关闭，仍等待07）
 
 **Status:** ready-for-agent
 
@@ -17,6 +17,11 @@
 - [ ] 基线表并列，重点看 op1、op2、op3、T_lb_rank；不设门槛，变差要解释
 
 ## Comments
+
+### 2026-10-31：05依赖已满足
+
+用户确认05的NPU002精简功能验收；03/05均closed。
+本票仍等待07自身验收，State保持open，本次不开始实施。
 
 ### 2026-10-29：同步 syncfile 定稿
 

@@ -1,0 +1,631 @@
+{
+  "status": "passed",
+  "coverage": "K1-05 reduced functional acceptance",
+  "service_rounds": 2,
+  "shutdown": "SGLang default parent/process cleanup; no per-rank graceful BM release requirement",
+  "rounds": [
+    {
+      "stage": "target",
+      "status": "passed",
+      "accounting": {
+        "status": "passed",
+        "requests": 6,
+        "equivalent_events": null,
+        "ready_events": 14,
+        "reader_counts_zero": true
+      },
+      "sharing": {
+        "status": "passed",
+        "registration": {
+          "status": "passed",
+          "main_replicas": 8,
+          "per_numa": {
+            "0": {
+              "main_replicas": 1,
+              "main_payload_bytes": 11777605632,
+              "allocated_bytes": 16106127360
+            },
+            "1": {
+              "main_replicas": 1,
+              "main_payload_bytes": 11777605632,
+              "allocated_bytes": 16106127360
+            },
+            "2": {
+              "main_replicas": 1,
+              "main_payload_bytes": 11777605632,
+              "allocated_bytes": 16106127360
+            },
+            "3": {
+              "main_replicas": 1,
+              "main_payload_bytes": 11777605632,
+              "allocated_bytes": 16106127360
+            },
+            "4": {
+              "main_replicas": 1,
+              "main_payload_bytes": 11777605632,
+              "allocated_bytes": 16106127360
+            },
+            "5": {
+              "main_replicas": 1,
+              "main_payload_bytes": 11777605632,
+              "allocated_bytes": 16106127360
+            },
+            "6": {
+              "main_replicas": 1,
+              "main_payload_bytes": 11777605632,
+              "allocated_bytes": 16106127360
+            },
+            "7": {
+              "main_replicas": 1,
+              "main_payload_bytes": 11777605632,
+              "allocated_bytes": 16106127360
+            }
+          },
+          "physical_placement_verified": false,
+          "allocation_evidence": "BM local_mem_size matched each participant contribution at join",
+          "resident_page_limit": "NUMA allocation/registration is separate from physical page residence"
+        },
+        "writes": [
+          {
+            "rid": "k1-ticket05-002-1",
+            "written_rows": [
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048
+            ],
+            "written_bytes": [
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088
+            ],
+            "hit_tokens": 0
+          },
+          {
+            "rid": "k1-ticket05-002-2",
+            "written_rows": [
+              0,
+              1024,
+              0,
+              1024,
+              0,
+              1024,
+              0,
+              1024,
+              0,
+              1024,
+              0,
+              1024,
+              0,
+              1024,
+              0,
+              1024
+            ],
+            "written_bytes": [
+              0,
+              92012544,
+              0,
+              92012544,
+              0,
+              92012544,
+              0,
+              92012544,
+              0,
+              92012544,
+              0,
+              92012544,
+              0,
+              92012544,
+              0,
+              92012544
+            ],
+            "hit_tokens": 4096
+          },
+          {
+            "rid": "k1-ticket05-002-3",
+            "written_rows": [
+              0,
+              128,
+              0,
+              128,
+              0,
+              128,
+              0,
+              128,
+              0,
+              128,
+              0,
+              128,
+              0,
+              128,
+              0,
+              128
+            ],
+            "written_bytes": [
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568
+            ],
+            "hit_tokens": 3968
+          },
+          {
+            "rid": "k1-ticket05-002-4",
+            "written_rows": [
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048
+            ],
+            "written_bytes": [
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088
+            ],
+            "hit_tokens": 0
+          },
+          {
+            "rid": "k1-ticket05-002-5",
+            "written_rows": [
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048
+            ],
+            "written_bytes": [
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088
+            ],
+            "hit_tokens": 0
+          },
+          {
+            "rid": "k1-ticket05-002-6",
+            "written_rows": [
+              128,
+              0,
+              128,
+              0,
+              128,
+              0,
+              128,
+              0,
+              128,
+              0,
+              128,
+              0,
+              128,
+              0,
+              128,
+              0
+            ],
+            "written_bytes": [
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0
+            ],
+            "hit_tokens": 0
+          }
+        ],
+        "cross_writer_read": "all P and D ranks used their own device mapping and unidex_copy",
+        "evidence_scope": "startup sentinel rows and completed model writes; no extra model-prefix DRAM readback"
+      }
+    },
+    {
+      "stage": "restart",
+      "status": "passed",
+      "accounting": {
+        "status": "passed",
+        "requests": 6,
+        "equivalent_events": null,
+        "ready_events": 14,
+        "reader_counts_zero": true
+      },
+      "sharing": {
+        "status": "passed",
+        "registration": {
+          "status": "passed",
+          "main_replicas": 8,
+          "per_numa": {
+            "0": {
+              "main_replicas": 1,
+              "main_payload_bytes": 11777605632,
+              "allocated_bytes": 16106127360
+            },
+            "1": {
+              "main_replicas": 1,
+              "main_payload_bytes": 11777605632,
+              "allocated_bytes": 16106127360
+            },
+            "2": {
+              "main_replicas": 1,
+              "main_payload_bytes": 11777605632,
+              "allocated_bytes": 16106127360
+            },
+            "3": {
+              "main_replicas": 1,
+              "main_payload_bytes": 11777605632,
+              "allocated_bytes": 16106127360
+            },
+            "4": {
+              "main_replicas": 1,
+              "main_payload_bytes": 11777605632,
+              "allocated_bytes": 16106127360
+            },
+            "5": {
+              "main_replicas": 1,
+              "main_payload_bytes": 11777605632,
+              "allocated_bytes": 16106127360
+            },
+            "6": {
+              "main_replicas": 1,
+              "main_payload_bytes": 11777605632,
+              "allocated_bytes": 16106127360
+            },
+            "7": {
+              "main_replicas": 1,
+              "main_payload_bytes": 11777605632,
+              "allocated_bytes": 16106127360
+            }
+          },
+          "physical_placement_verified": false,
+          "allocation_evidence": "BM local_mem_size matched each participant contribution at join",
+          "resident_page_limit": "NUMA allocation/registration is separate from physical page residence"
+        },
+        "writes": [
+          {
+            "rid": "k1-ticket05-002-1",
+            "written_rows": [
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048
+            ],
+            "written_bytes": [
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088
+            ],
+            "hit_tokens": 0
+          },
+          {
+            "rid": "k1-ticket05-002-2",
+            "written_rows": [
+              0,
+              1024,
+              0,
+              1024,
+              0,
+              1024,
+              0,
+              1024,
+              0,
+              1024,
+              0,
+              1024,
+              0,
+              1024,
+              0,
+              1024
+            ],
+            "written_bytes": [
+              0,
+              92012544,
+              0,
+              92012544,
+              0,
+              92012544,
+              0,
+              92012544,
+              0,
+              92012544,
+              0,
+              92012544,
+              0,
+              92012544,
+              0,
+              92012544
+            ],
+            "hit_tokens": 4096
+          },
+          {
+            "rid": "k1-ticket05-002-3",
+            "written_rows": [
+              0,
+              128,
+              0,
+              128,
+              0,
+              128,
+              0,
+              128,
+              0,
+              128,
+              0,
+              128,
+              0,
+              128,
+              0,
+              128
+            ],
+            "written_bytes": [
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568
+            ],
+            "hit_tokens": 3968
+          },
+          {
+            "rid": "k1-ticket05-002-4",
+            "written_rows": [
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048
+            ],
+            "written_bytes": [
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088
+            ],
+            "hit_tokens": 0
+          },
+          {
+            "rid": "k1-ticket05-002-5",
+            "written_rows": [
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048,
+              2048
+            ],
+            "written_bytes": [
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088,
+              184025088
+            ],
+            "hit_tokens": 0
+          },
+          {
+            "rid": "k1-ticket05-002-6",
+            "written_rows": [
+              128,
+              0,
+              128,
+              0,
+              128,
+              0,
+              128,
+              0,
+              128,
+              0,
+              128,
+              0,
+              128,
+              0,
+              128,
+              0
+            ],
+            "written_bytes": [
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0,
+              11501568,
+              0
+            ],
+            "hit_tokens": 0
+          }
+        ],
+        "cross_writer_read": "all P and D ranks used their own device mapping and unidex_copy",
+        "evidence_scope": "startup sentinel rows and completed model writes; no extra model-prefix DRAM readback"
+      }
+    }
+  ],
+  "user_accepted": false,
+  "limitations": [
+    "Prefix verification uses computed-source snapshots and restored native HBM; alive/prefix/fill DRAM contents are not read back.",
+    "V3 uses independent fixture answers; no fresh formal-service comparison or cold A/C stability run.",
+    "V8 capacity rejection replays actual registration on CPU; no isolated worker failure run.",
+    "Physical NUMA placement and performance are not accepted by this run.",
+    "Service teardown uses default process cleanup and restart checks; explicit BM leave/uninitialize and post-exit physical DRAM page counts are not accepted by this run."
+  ],
+  "retained": "ABCE, load/EOS, KV content, Graph, source fetch, slot reuse, ready/free accounting, fail-stop, restart and paired cleanup"
+}
