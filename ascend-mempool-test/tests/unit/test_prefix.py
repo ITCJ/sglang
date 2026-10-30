@@ -28,12 +28,20 @@ class MappedCopy:
                 host_addresses[view.gva_base] = self.buffers[
                     view.device_base
                 ].data_ptr()
-        # Back the BM LOCAL_HOST API with actual CPU storage.
+        # VMM may return a device-only VA for LOCAL_HOST without host mapping.
+        # Reject it at the SDK test boundary instead of segfaulting this process.
         manager._bm.BmMemType.LOCAL_HOST = "local_host"
         translate = manager._handle.gva_to_va
-        manager._handle.gva_to_va = lambda gva, kind: (
-            host_addresses[gva] if kind == "local_host" else translate(gva, kind)
-        )
+
+        def mapped_address(gva, kind):
+            if kind == "local_host":
+                assert manager._handle.options["flags"] & (1 << 9), (
+                    "private prefix CPU read requires DRAM_MAP_HOST_VA"
+                )
+                return host_addresses[gva]
+            return translate(gva, kind)
+
+        manager._handle.gva_to_va = mapped_address
 
     def __call__(
         self,
@@ -141,7 +149,8 @@ class TestPrefixStore(unittest.TestCase):
     def test_load_back_restores_split_native_buffers_at_discontiguous_token_indices(
         self,
     ):
-        store, manager, kernel, events = self.make_store()
+        store, manager, kernel, events = self.make_store(verify=True)
+        store.begin_request("A", 3, 4)
         for region, layers in (("main", 2), ("index", 1)):
             for layer in range(layers):
                 values = kernel.buffers[
@@ -150,6 +159,15 @@ class TestPrefixStore(unittest.TestCase):
                 values[3, :4] = (
                     torch.arange(4 * values.shape[-1]).reshape(4, 1, -1) + layer * 20
                 )
+                store.capture_source(
+                    region,
+                    layer,
+                    values[3, :4],
+                    torch.full((4,), 3),
+                    torch.arange(4),
+                    torch.ones(4, dtype=torch.bool),
+                )
+        store.verify_alive(3, 4)
         save = dict(
             rid="A",
             op_id=1,
@@ -162,6 +180,7 @@ class TestPrefixStore(unittest.TestCase):
         events[-1].done = True
         store.admit(**save)
         store.release_source("A")
+        store.begin_request("B", 5, 4)
         k = torch.full((2, 10, 1, 2), -9, dtype=torch.bfloat16)
         rope = torch.full_like(k, -9)
         index = torch.full((10, 1, 2), -9, dtype=torch.bfloat16)
@@ -188,6 +207,12 @@ class TestPrefixStore(unittest.TestCase):
             store.release_source("B")
         events[-1].done = True
         receipt = store.load_back(**read)
+        for flag in (
+            "gathered_verified",
+            "private_replica_verified",
+            "native_verified",
+        ):
+            self.assertTrue(receipt["split_read"][flag])
         self.assertEqual(receipt["prefix_indices"], [6, 7, 2, 3])
         self.assertEqual(receipt["tokens"], 4)
         self.assertEqual(k[0, indices, 0].tolist(), [[0, 1], [4, 5], [8, 9], [12, 13]])
@@ -256,7 +281,9 @@ class TestPrefixStore(unittest.TestCase):
             indexer_layers=1,
             index_head_dim=2,
         )
-        manager = MempoolKVManager.create(layout, 0, bm_module=FakeBM(0))
+        manager = MempoolKVManager.create(
+            layout, 0, bm_module=FakeBM(0), cpu_access=verify
+        )
         manager.join(0.1)
         self.addCleanup(manager.close, drain=lambda: None)
         kernel = MappedCopy(manager)

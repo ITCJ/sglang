@@ -1,7 +1,8 @@
 # K1-ticket03：prefix split_read交付
 
 整票基点`e23b57df7d`；本次修订基点`87e802de03`。按2026-10-30定稿改为合并缓冲。
-实现、本地检查与双轴评审已完成。NPU尚未执行，ticket保持open。
+实现、本地检查与双轴评审已完成。NPU003在B的私有副本CPU比较时SIGSEGV；
+后续修复按验收配置请求CPU可读映射，004待复测，ticket保持open。
 
 ## 正常路径与所有权
 
@@ -19,7 +20,8 @@ prefix副本、fill和admit的所有权及操作不变。
 SR复用已有全rank结果汇总，收齐所有设备完成回执后才向Main ack。
 后缀计算仍等整段恢复完成。进程退出沿用SGLang默认父进程清理。
 
-验收模式通过本地DRAM映射读取私有prefix，与gather后的槽位逐token比较。
+验收模式在P侧BM创建时请求DRAM_MAP_HOST_VA，再通过CPU映射读取私有prefix，
+与gather后的槽位逐token比较。仅LOCAL_HOST地址翻译不足以保证CPU可读。
 散开完成后在CPU核对原生HBM内容、私有prefix及保存来源，覆盖两类数据。
 原有保存来源、原生恢复及fill的内容检查同时保留。
 验收oracle读取量独立记账；本次另接入临时四段计时，验收后清理。
@@ -31,9 +33,9 @@ Ascend/NPU专用代码：
 1. [split_read.py](../../python/sglang/srt/hardware_backend/npu/mempool/split_read.py)：轮转/连续分块分配函数。
 2. [prefix.py](../../python/sglang/srt/hardware_backend/npu/mempool/prefix.py)：两块汇总缓冲、共享槽位表、三步恢复与精确oracle。
 3. [restore_kernel.py](../../python/sglang/srt/hardware_backend/npu/mempool/restore_kernel.py)：Triton-Ascend单次发射，直接散开到flat/FIA NZ及Index K。
-4. [manager.py](../../python/sglang/srt/hardware_backend/npu/mempool/manager.py)：验收借用本地DRAM层视图，由manager持有底层生命周期。
+4. [manager.py](../../python/sglang/srt/hardware_backend/npu/mempool/manager.py)：验收在创建时合并host映射与NUMA标志；借用本地DRAM层视图，由manager持有底层生命周期。
 5. [mempool_router_protocol.py](../../python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py)：分配策略和临时计时配置。
-6. [runtime.py](../../python/sglang/srt/hardware_backend/npu/mempool/runtime.py)：P侧接入TP设备组与配置。
+6. [runtime.py](../../python/sglang/srt/hardware_backend/npu/mempool/runtime.py)：P侧接入TP设备组与配置，并为prefix验收请求CPU可读映射。
 7. [mempool_router_transport.py](../../python/sglang/srt/disaggregation/ascend/mempool_router_transport.py)：注册实际分配策略。
 8. [mempool_router.py](../../python/sglang/srt/disaggregation/ascend/mempool_router.py)：核对策略；临时保存Main下发至ack的op2耗时。
 9. [mempool_subrouter.py](../../python/sglang/srt/disaggregation/ascend/mempool_subrouter.py)：全员设备完成后ack和因果证据。
@@ -49,7 +51,7 @@ Ascend/NPU专用代码：
 - `test_mempool_restore_kernel.py`：执行真实核函数的地址算式，用CPU边界验证flat/NZ、512/64拆分及跳过补齐。
 - `test_mempool_split_read_evidence.py`：三步/缓冲/槽位表证据反例、计时表和双角色CLI预览。
 - `test_mempool_subrouter.py`：既有延迟最后rank用例接入分工读取，验证不提前ack。
-- `test_prefix.py`、`test_mempool_router.py`：扩展既有存储/注册fixture。
+- `test_prefix.py`、`test_pool_session.py`、`test_mempool_router.py`：扩展既有存储/注册fixture，核对host映射要求和NUMA位保留。
 - [逐机运行说明](../../ascend-mempool-test/K1_TICKET03.md)、本记录、票据Comments与目标对齐D节。
 
 上述脚本和测试属于仓库约定的独立NPU验收目录，负责外部编排和CPU设备替身。
@@ -57,9 +59,11 @@ Ascend/NPU专用代码：
 
 ## 验证与下一步
 
-[合并缓冲本机验证](verification/ticket03-combined-cpu-20261030/README.md)记录最新检查。
+最新修复见[003诊断与检查](verification/k1-ticket03-003-20261030/README.md)：
+最终495项CPU、4模块strict mypy、静态检查及Standards/Spec通过，NPU004待用户执行。
+[合并缓冲本机验证](verification/ticket03-combined-cpu-20261030/README.md)记录此前检查。
 最终完整CPU491项通过，10模块strict mypy通过，Standards/Spec无剩余发现。
-本次核函数尚未在NPU编译执行。
+NPU003在首次scatter之前的CPU校验崩溃，尚无散开核执行通过证据。
 CPU地址语义验证不替代Triton-Ascend编译、HCCL输入输出别名和恢复stream实测。
 旧四跳版本的[验证记录](verification/ticket03-cpu-20261030/README.md)仅作历史保留。
 
@@ -68,7 +72,8 @@ CPU地址语义验证不替代Triton-Ascend编译、HCCL输入输出别名和恢
 用户明确本轮测试可放在当前commit，baselinetest分支暂不修改。
 用户确认NPU验收后，删除`restore_timing.py`及PrefixStore、runtime、RouterConfig、Main中的计时接线。
 同时清理本轮新增的工程验收探针（缓冲/发射计数、首次恢复日志、私有副本验证接线）；
-`manager.local_cpu_view`若无其余使用者一并删除。保留功能核、槽位表、两块缓冲和完成门控。
+`manager.local_cpu_view`及cpu_access创建/初始化接线若无其余使用者一并删除。
+保留功能核、槽位表、两块缓冲和完成门控。
 验收脚本、原始报告、此清单继续保留；以后需要时从本commit恢复临时探针。
 当前尚未验收，因此这些代码仍用于本次验证，不能提前删除。
 

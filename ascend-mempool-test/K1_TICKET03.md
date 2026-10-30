@@ -14,7 +14,9 @@ P/D各TP16，page128，P slot8192、D slot128，P eager、D Graph。
 
 002在模型初始化期间因`BadStatusLine`提前退出。测试入口已修复该异常的有界重试；
 只有HTTP 200才算就绪，超时显示目标URL及最后异常，进程失败仍立即中断。
-回显来源尚未证实；003用于复测，不代表002已完成任何split_read验收。
+回显来源尚未证实。003已完成A，但B恢复在私有prefix的CPU比较处SIGSEGV。
+现由P侧prefix验收显式请求SDK的DRAM_MAP_HOST_VA，保留NUMA位和两块HBM缓冲；
+004用于复测此修复，003不算通过。详见[故障记录](../.scratch/k1/verification/k1-ticket03-003-20261030/README.md)。
 
 31（P）：
 
@@ -22,7 +24,7 @@ P/D各TP16，page128，P slot8192、D slot128，P eager、D Graph。
 bash ascend-mempool-test/scripts/run_mempool_min.sh \
   --role prefill --mode split-read-acceptance \
   --config /home/cryang/mempool-min-ticket01-3132.json \
-  --run-id k1-ticket03-003
+  --run-id k1-ticket03-004
 ```
 
 32（D）：
@@ -31,7 +33,7 @@ bash ascend-mempool-test/scripts/run_mempool_min.sh \
 bash ascend-mempool-test/scripts/run_mempool_min.sh \
   --role decode --mode split-read-acceptance \
   --config /home/cryang/mempool-min-ticket01-3132.json \
-  --run-id k1-ticket03-003
+  --run-id k1-ticket03-004
 ```
 
 新环境的host、model_path和interface配置方式见[K1-ticket02](K1_TICKET02.md)。
@@ -76,7 +78,7 @@ V3用独立标准答案，不另启正式参考服务；V8用实际注册在CPU�
 
 ## 报告
 
-两机日志根目录：`/home/cryang/log/mempool-min/k1-ticket03-003/`。
+两机日志根目录：`/home/cryang/log/mempool-min/k1-ticket03-004/`。
 请回传P侧`prefill/summary.json`、`prefill/split-read-acceptance.json`、
 `prefill/split-read-timings.json`及`.md`和两机终端结果。
 失败时同时保留对应阶段的`prefill.log`、`decode.log`和`snapshots.json`。

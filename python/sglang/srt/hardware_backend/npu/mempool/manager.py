@@ -119,6 +119,7 @@ class MempoolKVManager:
         numa: MempoolNumaConfig | None = None,
         host: str = "",
         session: PoolSession | None = None,
+        cpu_access: bool = False,
     ) -> MempoolKVManager:
         """Allocate DRAM using contiguous NUMA blocks for this host's TP ranks.
 
@@ -148,6 +149,10 @@ class MempoolKVManager:
                 numa_node = contiguous_numa_node(numa_nodes, tp_rank, tp_size)
         # MF's performance bit enables the NUMA ID in the low seven bits.
         bm_flags = 0 if numa_node == -1 else (1 << 7) | numa_node
+        if cpu_access:
+            # SMEM_BM_FLAG_DRAM_MAP_HOST_VA: VMM's LOCAL_HOST translation alone
+            # can still name a device-only mapping. The V2 CPU oracle needs HVA.
+            bm_flags |= 1 << 9
         if bm_module is None:
             bm_module = importlib.import_module("memfabric_hybrid").bm
         local_bytes = (
@@ -211,6 +216,7 @@ class MempoolKVManager:
         device_id: int,
         timeout: float = 120.0,
         bm_module: Any = None,
+        cpu_access: bool = False,
     ) -> MempoolKVManager:
         """Initialize, allocate and map a planned session; retain MF for TransferEngine."""
         rank = session.participant
@@ -285,6 +291,7 @@ class MempoolKVManager:
                     bm_module,
                     tp_rank=tp_rank,
                     session=session,
+                    cpu_access=cpu_access,
                 )
                 manager.join(timeout)
             except Exception:
@@ -507,7 +514,7 @@ class MempoolKVManager:
         return MempoolKVView(self, rank, layer, layout, offset)
 
     def local_cpu_view(self, layer: int, *, region: str) -> Any:
-        """Borrow the local DRAM layer for acceptance; the manager owns its lifetime."""
+        """Borrow local DRAM for acceptance; requires cpu_access at pool creation."""
         import ctypes
 
         import torch

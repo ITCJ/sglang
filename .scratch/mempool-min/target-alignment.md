@@ -112,6 +112,19 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 
 ## D 名称、验收与实施票怎样对应
 
+2026-10-30 K1-03 NPU003修复交付：最终495项CPU通过，4模块strict mypy通过。
+静态检查通过，Standards/Spec均0项；首次完整CPU的1处测试准备遗漏已修正并归档。
+仅P侧prefix验收增加CPU可读映射请求；两块HBM缓冲及真实私有副本校验保留。
+NPU004双机重测命令已更新，实机SDK映射效果待用户确认，ticket仍open。
+
+[003诊断与本机检查](../k1/verification/k1-ticket03-003-20261030/README.md)。
+
+2026-10-30 K1-03 NPU003修复第1步：B恢复时CPU的torch.equal发生SIGSEGV。
+验收私有副本原来直接解引用LOCAL_HOST地址，BM创建未请求CPU可读映射。
+现仅P侧prefix验收请求DRAM_MAP_HOST_VA，保留NUMA位及两块HBM缓冲。
+SDK边界回归先失败后通过，12项定向CPU通过；完整检查与双轴评审待完成。
+实际NPU尚未复测，003验收失败，ticket保持open。
+
 2026-10-30 K1-03 NPU002启动失败修复：用户回传BadStatusLine，模型仍在初始化。
 验收脚本现按原有时限重试非HTTP状态行，仅HTTP 200判定就绪。
 三项响应字节回放由失败转为通过，覆盖恢复、超时和进程失败中断。

@@ -1,0 +1,29 @@
+test_load_back_restores_split_native_buffers_at_discontiguous_token_indices (test_prefix.TestPrefixStore.test_load_back_restores_split_native_buffers_at_discontiguous_token_indices) ... ok
+test_gathered_contents_must_match_the_private_replica (test_prefix_split_read.TestSplitRead.test_gathered_contents_must_match_the_private_replica) ... FAIL
+
+======================================================================
+FAIL: test_gathered_contents_must_match_the_private_replica (test_prefix_split_read.TestSplitRead.test_gathered_contents_must_match_the_private_replica)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix_split_read.py", line 92, in test_gathered_contents_must_match_the_private_replica
+    store.load_back(
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 196, in load_back
+    return self._read(
+           ^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 229, in _read
+    self._submit_load_back(operation)
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/prefix.py", line 534, in _submit_load_back
+    private = self.manager.local_cpu_view(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/manager.py", line 516, in local_cpu_view
+    address = self._handle.gva_to_va(view.gva_base, self._bm.BmMemType.LOCAL_HOST)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_prefix.py", line 38, in mapped_address
+    assert manager._handle.options["flags"] & (1 << 9), (
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~
+AssertionError: private prefix CPU read requires DRAM_MAP_HOST_VA
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.044s
+
+FAILED (failures=1)

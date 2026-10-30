@@ -1005,6 +1005,12 @@ def initialize_for_model_runner(model_runner: Any) -> None:
         nic_host=host,
         device_id=model_runner.gpu_id,
         timeout=config.timeout,
+        cpu_access=bool(
+            prefix_pages
+            and router
+            and router.verify_prefix
+            and args.disaggregation_mode == "prefill"
+        ),
     )
     with startup_stage("runtime.allocate", bm_rank=manager.rank):
         device = str(model_runner.req_to_token_pool.req_to_token.device)

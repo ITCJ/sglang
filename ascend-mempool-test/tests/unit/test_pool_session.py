@@ -3,7 +3,9 @@
 import unittest
 from unittest.mock import patch
 
+import torch
 from test_pair_startup import FakePairBM
+from test_prefix import MappedCopy
 from test_sharing_pool import GroupHandle
 
 from ascend_mempool.layout import KVLayout, PoolLayout
@@ -12,6 +14,38 @@ from ascend_mempool.sharing_plan import HostTopology, MempoolNumaConfig
 
 
 class TestPoolSession(unittest.TestCase):
+    def test_cpu_oracle_mapping_is_opt_in_and_preserves_numa(self):
+        session = self.plan().session(3)
+        for cpu_access in (False, True):
+            with self.subTest(cpu_access=cpu_access):
+                sdk = FakePairBM()
+                manager = MempoolKVManager.initialize_session(
+                    session=session,
+                    store_host="host-p",
+                    nic_host="host-p",
+                    device_id=3,
+                    bm_module=sdk,
+                    timeout=0.1,
+                    cpu_access=cpu_access,
+                )
+                try:
+                    memory = MappedCopy(manager)
+                    self.assertEqual(
+                        sdk.handle.options["flags"], 0x281 if cpu_access else 0x81
+                    )
+                    if not cpu_access:
+                        with self.assertRaisesRegex(AssertionError, "MAP_HOST_VA"):
+                            manager.local_cpu_view(1, region="alive_main")
+                        continue
+                    view = manager.view(0, 1)
+                    values = memory.buffers[view.device_base]
+                    values.fill_(37)
+                    cpu = manager.local_cpu_view(1, region="alive_main")
+                    self.assertEqual(cpu.data_ptr(), values.data_ptr())
+                    self.assertTrue(torch.equal(cpu, values))
+                finally:
+                    manager.close(drain=lambda: None)
+
     def test_group_follower_uses_owner_mappings_with_zero_contribution(self):
         session = self.plan(role="decode", share=True).session(3)
         sdk = FakePairBM()

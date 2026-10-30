@@ -1,0 +1,8 @@
+/private/tmp/sglang-pr43579-review-venv/bin/ruff check --config ascend-mempool-test/pyproject.toml python/sglang/srt/hardware_backend/npu/mempool/manager.py python/sglang/srt/hardware_backend/npu/mempool/runtime.py ascend-mempool-test/tests/unit/test_pool_session.py ascend-mempool-test/tests/unit/test_prefix.py
+All checks passed!
+/private/tmp/sglang-pr43579-review-venv/bin/ruff format --config ascend-mempool-test/pyproject.toml --check python/sglang/srt/hardware_backend/npu/mempool/manager.py python/sglang/srt/hardware_backend/npu/mempool/runtime.py ascend-mempool-test/tests/unit/test_pool_session.py ascend-mempool-test/tests/unit/test_prefix.py
+4 files already formatted
+/private/tmp/sglang-pr43579-review-venv/bin/isort --settings-path ascend-mempool-test/pyproject.toml --check-only python/sglang/srt/hardware_backend/npu/mempool/manager.py python/sglang/srt/hardware_backend/npu/mempool/runtime.py ascend-mempool-test/tests/unit/test_pool_session.py ascend-mempool-test/tests/unit/test_prefix.py
+/private/tmp/sglang-pr43579-review-venv/bin/mypy --config-file ascend-mempool-test/pyproject.toml python/sglang/srt/hardware_backend/npu/mempool/manager.py python/sglang/srt/hardware_backend/npu/mempool/runtime.py python/sglang/srt/hardware_backend/npu/mempool/layout.py python/sglang/srt/hardware_backend/npu/mempool/sharing_plan.py
+Success: no issues found in 4 source files
+Python 3.9 syntax: 4 files passed

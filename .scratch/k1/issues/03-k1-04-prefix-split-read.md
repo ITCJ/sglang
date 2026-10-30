@@ -19,6 +19,20 @@
 
 ## Comments
 
+### 2026-10-30：NPU003私有prefix CPU比较段错误
+
+A完成并保存32页；B在16rank打印split_read_buffers之后发生SIGSEGV。
+当前线程为prefix.py:538的torch.equal，native栈为cpu_equal。
+13:22:51 scheduler以-11退出，随后Main Host unreachable及诊断失败属于连带结果。
+验收视图曾把LOCAL_HOST地址直接包装成CPU tensor，创建时缺少host映射标志；
+本地SDK的VMM映射实现解释了此风险，实机SDK版本和映射效果仍待复测核对。
+修复仅在P侧prefix验收时显式请求DRAM_MAP_HOST_VA，保留NUMA位与两块HBM缓冲。
+SDK边界回归先失败后通过，定向12项通过；最终完整495项CPU、4模块strict mypy和静态检查通过。
+完整CPU仅两轮：首轮新增V2正向测试缺少verify_alive准备，补齐后第二轮全过。
+Standards/Spec两轴均0项发现。
+详见[003故障记录](../verification/k1-ticket03-003-20261030/README.md)。
+下一轮使用k1-ticket03-004；003失败，State=open，验收项不勾选。
+
 ### 2026-10-30：NPU002就绪探测提前失败
 
 用户回传31侧`BadStatusLine: GET /ready HTTP/1.1\r\n`。
