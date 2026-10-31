@@ -83,15 +83,6 @@ def check_registration(
                 or probe["bytes"] != len(group) * row["dim"] * 2
             ):
                 raise ValueError("missing live cross-writer shared prompt read")
-            if side == 1 and config.decode_shared and config.verify_decode:
-                order = probe.get("decode_order", {})
-                if (
-                    order.get("status") != "passed"
-                    or order.get("engine") != "graph_replay"
-                    or not order.get("negative_without_wait")
-                    or not order.get("positive_with_wait")
-                ):
-                    raise ValueError("missing shared decode Graph ordering proof")
             node = numa_by_role[role].setdefault(
                 row["numa_node"],
                 dict(main_replicas=0, main_payload_bytes=0, allocated_bytes=0),

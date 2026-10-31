@@ -1,10 +1,20 @@
 # K1-ticket06：D alive 主 KV 共享与每步顺序
 
+用户已确认NPU001精简功能验收，06已关闭。以下专用验收命令对应
+`9b760a1addddec05ce2a01d2f2a554a7abe33f67`，仅用于在独立checkout复现历史验收。
+清理后的版本已删除`d-sharing-acceptance`、`verify_decode`及工程哨兵/延迟探针。
+[人工确认和证据边界](../.scratch/k1/verification/k1-ticket06-001-20261031/acceptance.md)。
+
+当前正常服务使用`serve`，配置`decode_shared: true`；
+通用`session-acceptance`也读取此配置，覆盖现有功能回归，报告标明不含D顺序探针。
+它不能替代下面旧版本的逐步哨兵/负测试。
+旧报告可用独立脚本`verify_mempool_decode.py`离线核对；该脚本不在worker中运行。
+
 P、D各一台TP16，GLM-5.2，page128，P eager、D Graph。
 本入口默认开启P/D共享：两侧主KV各8份；Index K和prefix保持既有布局。
 同组D成员按特征维分写，当前token从本rank的HBM供给，历史token读取共享DRAM。
 
-## 每机一条命令
+## 历史验收：每机一条命令
 
 两机使用相同提交、权重和配置，复用前票的CANN、ATB、MemFabric环境。
 配置可以沿用`/home/cryang/mempool-min-ticket01-3132.json`。
@@ -37,7 +47,8 @@ BM分配预算为P120GiB、D8GiB；P的CPU源快照预算另计32GiB。
 同组成员必须在同一NUMA；P/D同时共享时使用相同会话分组。
 `decode_write_assignment`支持`features`（默认）或`layers`。
 前者均分576维，后者按本地层号轮转；其他成员仍保存本rank的完整当前KV。
-`verify_decode`只在验收时启用逐步读回和启动负测试。
+旧验收版本的`verify_decode`只在验收时启用逐步读回和启动负测试。
+清理后的配置不再包含此字段。
 
 生产写回是当前计算流上的`unidex_copy`，可随decode graph捕获。
 写回排在同层attention输出后的全员TP集合通信之前。
@@ -77,4 +88,4 @@ NUMA实际页驻留、性能基线不由本轮通过声明替代。
 `target/`与`restart/`中包含注册、请求、账本、内容、容量和清理证据。
 注册的`shared_probe.decode_order`保存Graph负测试与正测试结果。
 decode日志中的`decode_completion.shared_decode`保存每请求逐步检查和写字节数。
-报告中的`user_accepted: false`保留，用户确认另行记录；06在确认前保持open。
+原报告中的`user_accepted: false`保留，用户确认另行记录；06现已closed。

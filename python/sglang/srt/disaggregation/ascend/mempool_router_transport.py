@@ -236,19 +236,6 @@ def attach_subrouter(
         )
         probe.write()
 
-    def verify_mapping() -> dict[str, Any]:
-        result = probe.verify() if probe is not None else {}
-        if role == "decode" and config.decode_shared and config.verify_decode:
-            from sglang.srt.distributed import get_tp_group
-            from sglang.srt.hardware_backend.npu.mempool.decode_probe import (
-                verify_decode_order,
-            )
-
-            result["decode_order"] = verify_decode_order(
-                runtime.manager, config.decode_write_assignment, get_tp_group()
-            )
-        return result
-
     def registered() -> dict[str, Any]:
         if control.peer is None:
             raise RuntimeError("native control handshake has not completed")
@@ -289,10 +276,7 @@ def attach_subrouter(
         send=connection.send if connection else lambda message: None,
         registration=registered,
         timeout=config.operation_timeout,
-        verify_mapping=verify_mapping
-        if probe is not None
-        or (role == "decode" and config.decode_shared and config.verify_decode)
-        else None,
+        verify_mapping=probe.verify if probe is not None else None,
     )
 
 

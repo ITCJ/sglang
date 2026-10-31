@@ -16,11 +16,19 @@ from ascend_mempool_pd.mempool_router_protocol import RouterConfig
 
 
 class TestSessionAcceptance(unittest.TestCase):
-    def test_decode_cli_enables_shared_graph_checks_with_eight_allocations(self):
+    def test_session_cli_keeps_shared_decode_with_eight_allocations(self):
         with tempfile.TemporaryDirectory() as folder:
             config = Path(folder) / "config.json"
             config.write_text(
-                json.dumps(dict(prefill_host="p", decode_host="d", model_path="/model"))
+                json.dumps(
+                    dict(
+                        prefill_host="p",
+                        decode_host="d",
+                        model_path="/model",
+                        prefill_shared=True,
+                        decode_shared=True,
+                    )
+                )
             )
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
@@ -29,7 +37,7 @@ class TestSessionAcceptance(unittest.TestCase):
                         "--role",
                         "decode",
                         "--mode",
-                        "d-sharing-acceptance",
+                        "session-acceptance",
                         "--config",
                         str(config),
                         "--run-id",
@@ -39,7 +47,6 @@ class TestSessionAcceptance(unittest.TestCase):
                 )
             value = json.loads(output.getvalue())
             self.assertTrue(value["config"]["decode_shared"])
-            self.assertTrue(value["config"]["verify_decode"])
             self.assertTrue(value["config"]["prefill_shared"])
             self.assertEqual(value["service_rounds"], 2)
             self.assertEqual(value["memory_budget"]["bm_bytes"], 8 * 2**30)

@@ -21,7 +21,6 @@ def shared_registration(testcase, decode_shared=False):
         prefix_pages=40,
         prefill_shared=True,
         decode_shared=decode_shared,
-        verify_decode=decode_shared,
     )
     layout = MempoolConfig(
         prefill_capacity=8192, decode_capacity=128, page_size=128
@@ -93,7 +92,7 @@ class TestSharedEvidence(unittest.TestCase):
         )
 
     def test_decode_registration_and_receipts_reject_unproven_sharing(self):
-        from verify_mempool_decode import check_completion
+        from verify_mempool_decode import check_completion, check_order
 
         config, registrations = shared_registration(self, decode_shared=True)
         report = verify_mempool_shared.check_registration(registrations, config)
@@ -117,6 +116,7 @@ class TestSharedEvidence(unittest.TestCase):
                 ordering="compute_stream_before_post_attention_tp_collective",
             ),
         )
+        check_order(registrations)
         self.assertEqual(check_completion(data, 1, config)["steps"], 3)
         for key in ("checked_rows", "written_bytes"):
             bad = copy.deepcopy(data)
@@ -127,7 +127,7 @@ class TestSharedEvidence(unittest.TestCase):
             "negative_without_wait"
         ] = False
         with self.assertRaisesRegex(ValueError, "Graph ordering"):
-            verify_mempool_shared.check_registration(registrations, config)
+            check_order(registrations)
 
     def test_shared_registration_rejects_private_aliases_and_missing_peer_reads(self):
         config, registrations = shared_registration(self)

@@ -1,0 +1,53 @@
+{
+  "kind": "Arithmetic checks of compacted user-reported counters, not a hardware rerun",
+  "requests": 12,
+  "rank_receipts": 192,
+  "checked_rows_total": 491712,
+  "written_bytes_total": 291852288,
+  "current_rows_total": 506656,
+  "decode_allocated_bytes": 8589934592,
+  "cases": [
+    {
+      "case": "A",
+      "steps": 17,
+      "checked_rows": 1248,
+      "written_bytes": 763776,
+      "current_rows": 1326
+    },
+    {
+      "case": "B",
+      "steps": 17,
+      "checked_rows": 1248,
+      "written_bytes": 763776,
+      "current_rows": 1325
+    },
+    {
+      "case": "C",
+      "steps": 17,
+      "checked_rows": 1248,
+      "written_bytes": 763776,
+      "current_rows": 1326
+    },
+    {
+      "case": "E",
+      "steps": 17,
+      "checked_rows": 1248,
+      "written_bytes": 763776,
+      "current_rows": 1326
+    },
+    {
+      "case": "long-generation",
+      "steps": 128,
+      "checked_rows": 9906,
+      "written_bytes": 5750784,
+      "current_rows": 9984
+    },
+    {
+      "case": "early-eos",
+      "steps": 7,
+      "checked_rows": 468,
+      "written_bytes": 314496,
+      "current_rows": 546
+    }
+  ]
+}

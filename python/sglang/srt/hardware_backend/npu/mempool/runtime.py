@@ -83,9 +83,6 @@ class _Binding(msgspec.Struct):
     prompt_bm_rows: int = 0
     decode_bm_rows: int = 0
     main_written: int = 0
-    shared_checked_rows: int = 0
-    shared_written_bytes: int = 0
-    current_kv_rows: int = 0
 
 
 class _Forward(msgspec.Struct):
@@ -116,7 +113,6 @@ class _Completion(msgspec.Struct):
     retained: tuple[Tensor, ...] = ()
     range_errors: Optional[Tensor] = None
     index_totals: Optional[tuple[int, ...]] = None
-    shared_checks: Optional[Tensor] = None
 
 
 class MempoolRuntime:
@@ -153,7 +149,6 @@ class MempoolRuntime:
         prefix_store: Optional[PrefixStore] = None,
         page_writer: Optional[PageWriter] = None,
         decode_writer: Optional[DecodeWriter] = None,
-        verify_decode: bool = False,
     ) -> None:
         """Allocate stable bindings/counters after BM mappings are ready."""
         if mlapo_enabled:
@@ -222,7 +217,6 @@ class MempoolRuntime:
                 decode_writer,
                 req_pool_rows,
                 device,
-                verify_decode,
                 fetch_kernel,
             )
             if decode_writer is not None
@@ -503,8 +497,6 @@ class MempoolRuntime:
             self._fetch_checks.zero_()
         if self._fetch_sources is not None:
             self._fetch_sources.zero_()
-        if self._decode is not None:
-            self._decode.checks.zero_()
         if self.manager.rank == 1:
             for write in writes:
                 if self._fetch is not None and write.rows != 1:
@@ -578,7 +570,7 @@ class MempoolRuntime:
         if self.page_writer is not None:
             main_valid = main_valid & self.page_writer.mask(local_pos, prompt)
         if self._decode is not None:
-            self._decode.prepare(layer, values, safe_req, slots, local_pos, valid)
+            self._decode.save_current(layer, values, safe_req)
             if not self._decode.writer.owns_layer(layer):
                 main_valid = torch.zeros_like(valid)
         self._writers[layer].write(
@@ -775,17 +767,6 @@ class MempoolRuntime:
             "prompt_bm_rows": progress.prompt_bm_rows if progress else 0,
             "decode_bm_rows": progress.decode_bm_rows if progress else 0,
         }
-        if self._decode is not None:
-            report["shared_decode"] = dict(
-                assignment=self._decode.writer.assignment,
-                member=self._decode.writer.member,
-                members=self._decode.writer.members,
-                verified=self._decode.verify,
-                checked_rows=progress.shared_checked_rows if progress else 0,
-                written_bytes=progress.shared_written_bytes if progress else 0,
-                current_rows=progress.current_kv_rows if progress else 0,
-                ordering="compute_stream_before_post_attention_tp_collective",
-            )
         return report
 
     def end_forward(self) -> None:
@@ -836,9 +817,6 @@ class MempoolRuntime:
             self._index_counts.clone() if self._index_counts is not None else None
         )
         range_errors = self._range_errors.clone() if self.manager.rank == 0 else None
-        shared_checks = (
-            self._decode.checks.clone() if self._decode is not None else None
-        )
         event = self._event_factory()
         event.record()
         self._pending.append(
@@ -855,7 +833,6 @@ class MempoolRuntime:
                 tuple(active.retained),
                 range_errors,
                 tuple(self._index_slot_totals),
-                shared_checks,
             )
         )
         self._active = None
@@ -882,12 +859,6 @@ class MempoolRuntime:
             source_counts = (
                 item.sources.cpu().sum(0).tolist() if item.sources is not None else None
             )
-            shared_counts = (
-                item.shared_checks.cpu() if item.shared_checks is not None else None
-            )
-            if shared_counts is not None and bool(shared_counts[:, :, 1].any()):
-                self.fault = "shared decode previous-token sentinel mismatch"
-                raise RuntimeError(self.fault)
             if fetch_counts is not None:
                 for layer, samples in enumerate(fetch_counts):
                     for row, sample in enumerate(samples):
@@ -911,10 +882,6 @@ class MempoolRuntime:
                 progress.main_written = counts[0][progress.attachment.slot]
                 progress.forwards += 1
                 progress.replay_forwards += int(item.replay)
-                if shared_counts is not None:
-                    progress.shared_checked_rows += int(shared_counts[:, row, 0].sum())
-                    progress.shared_written_bytes += int(shared_counts[:, row, 2].sum())
-                    progress.current_kv_rows += int(shared_counts[:, row, 3].sum())
                 if source_counts is not None:
                     progress.prompt_bm_rows += source_counts[row][0]
                     progress.decode_bm_rows += source_counts[row][1]
@@ -1162,7 +1129,6 @@ def initialize_for_model_runner(model_runner: Any) -> None:
             and session is not None
             and manager.rank == 1
             else None,
-            verify_decode=bool(router and router.verify_decode),
         )
     runtime.config = config
     seen = set()

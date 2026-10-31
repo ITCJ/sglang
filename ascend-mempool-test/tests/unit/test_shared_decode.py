@@ -83,7 +83,6 @@ class TestSharedDecode(unittest.TestCase):
                     ],
                     event_factory=event,
                     decode_writer=DecodeWriter(member, 2, assignment),
-                    verify_decode=True,
                 )
                 runtimes.append(runtime)
                 bindings.append(runtime.bind(1, slot=0, prompt_tokens=2, prompt_slot=1))
@@ -137,32 +136,7 @@ class TestSharedDecode(unittest.TestCase):
                         ],
                     )
             for runtime, binding in zip(runtimes, bindings):
-                report = runtime.completion_report(binding)["shared_decode"]
-                self.assertEqual(report["checked_rows"], 2)
-                self.assertEqual(report["written_bytes"], 16)
-                self.assertEqual(report["current_rows"], 4)
-            # A missing previous-row write must fail even when top-k selects
-            # only the current token. The sentinel is independent of selection.
-            runtime = runtimes[0]
-            batch.seq_lens = torch.tensor([5, 0])
-            runtime.begin_forward([KVWriteExpectation(1, 4, 1)])
-            for layer in range(2):
-                memory[layer][0, 1].fill_(-9)
-                values = torch.full((2, 2), 42, dtype=torch.bfloat16)
-                runtime.write_layer(layer, values, values, batch)
-                positions = torch.tensor([[4, -1], [4, -1]])
-                mask = runtime.selected_kv_valid(
-                    layer, batch.req_pool_indices, positions
-                )
-                output = torch.empty((2, 2, 1, 4), dtype=torch.bfloat16)
-                runtime.fetch_selected_kv(
-                    layer, batch.req_pool_indices, positions, mask, output
-                )
-            runtime.end_forward()
-            with self.assertRaisesRegex(
-                RuntimeError, "previous-token sentinel mismatch"
-            ):
-                runtime.poll_completed()
+                self.assertEqual(runtime.completion_report(binding)["written_kv"], 2)
 
 
 if __name__ == "__main__":

@@ -168,11 +168,6 @@ def summarize(root: Path, *, config: RouterConfig | None = None) -> dict[str, An
         )
         if config is None:
             check_registration(read("registrations.json"))
-        decode = None
-        if config is not None and config.decode_shared:
-            from verify_mempool_decode import check_stage
-
-            decode = check_stage(stage, config)
         for filename in (
             "process-cleanup.json",
             "ports-released.json",
@@ -188,7 +183,6 @@ def summarize(root: Path, *, config: RouterConfig | None = None) -> dict[str, An
                     stage, shared=bool(config and config.prefill_shared)
                 ),
                 sharing=shared,
-                shared_decode=decode,
             )
         )
     timeout = json.loads((root / "target/timeout.json").read_text())
@@ -203,7 +197,7 @@ def summarize(root: Path, *, config: RouterConfig | None = None) -> dict[str, An
         raise ValueError("P/D/mixed fetch smoke failed")
     return dict(
         status="passed",
-        coverage="K1-06 reduced functional acceptance"
+        coverage="shared decode functional regression (without ordering probes)"
         if config is not None and config.decode_shared
         else "K1-05 reduced functional acceptance"
         if config is not None

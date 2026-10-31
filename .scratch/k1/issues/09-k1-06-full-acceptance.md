@@ -2,7 +2,7 @@
 
 **What to build:** 在最终版本（8 / 8 / 1 / 1 / 1，split_read 按段，interleave 开）上重跑阶段 0 全部验收项和补充用例（长生成到 G_max、提前结束、入口拒绝四例、超时、双端清理），把四类新证据合在一起核对，基线表与票 01 并列并逐段解释变差，重报三项基线遗留，归档拓扑与版本快照。用户在真实环境核对后关闭，K1 结束。细节见 k1-tickets.md 第 13 节。
 
-**Blocked by:** [06（K1-03b）](06-k1-03b-d-alive-main-kv-sharing-step-order.md)、[08（K1-05b）](08-k1-05b-prefix-single-copy-numa-interleave.md)
+**Blocked by:** [06（K1-03b）](06-k1-03b-d-alive-main-kv-sharing-step-order.md)、[08（K1-05b）](08-k1-05b-prefix-single-copy-numa-interleave.md)（06已验收关闭；08仍未满足）
 
 **Status:** ready-for-agent
 
@@ -20,3 +20,7 @@
 
 按用户要求导入已定稿的票据。目标、验收项及依赖沿用原文；
 本地补充 State 与依赖链接。尚未开始本票实现或 NPU 验收。
+
+### 2026-10-31：06依赖满足
+
+用户确认ticket06 NPU001精简功能验收并关闭06。08仍未验收；本票保持open，尚未实施。

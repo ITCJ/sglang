@@ -31,7 +31,7 @@ import verify_mempool_reuse
 import verify_mempool_session
 import verify_service
 
-SESSION_MODES = ("session-acceptance", "p-sharing-acceptance", "d-sharing-acceptance")
+SESSION_MODES = ("session-acceptance", "p-sharing-acceptance")
 from run_ticket10 import (
     available_port,
     connect,
@@ -107,7 +107,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "numa-acceptance",
             "session-acceptance",
             "p-sharing-acceptance",
-            "d-sharing-acceptance",
         ),
         required=True,
     )
@@ -251,7 +250,7 @@ class Runner:
             status="running",
             role=args.role,
             mode=args.mode,
-            coverage="K1-06 reduced functional acceptance"
+            coverage="shared decode functional regression (without ordering probes)"
             if config.decode_shared and self.session_acceptance
             else "K1-05 reduced functional acceptance"
             if config.prefill_shared and self.session_acceptance
@@ -1021,7 +1020,7 @@ class Runner:
         write_json(
             self.root
             / (
-                "d-sharing-acceptance.json"
+                "session-acceptance.json"
                 if self.config.decode_shared
                 else "p-sharing-acceptance.json"
                 if self.config.prefill_shared or self.config.decode_shared
@@ -1108,7 +1107,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         "numa-acceptance",
         "session-acceptance",
         "p-sharing-acceptance",
-        "d-sharing-acceptance",
     ):
         config = msgspec.structs.replace(
             config,
@@ -1121,7 +1119,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "numa-acceptance",
                 "session-acceptance",
                 "p-sharing-acceptance",
-                "d-sharing-acceptance",
             ),
         )
     elif args.mode == "acceptance" and config.prefix_pages:
@@ -1130,10 +1127,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if args.mode == "p-sharing-acceptance":
         config = msgspec.structs.replace(config, prefill_shared=True)
-    if args.mode == "d-sharing-acceptance":
-        config = msgspec.structs.replace(
-            config, prefill_shared=True, decode_shared=True, verify_decode=True
-        )
     args.config = root / "effective-config.json"
     if args.describe:
         print(

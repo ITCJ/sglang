@@ -1,4 +1,7 @@
-"""Validate real shared decode writes, previous-row reads, and Graph receipts."""
+"""Validate archived K1-06 reports from acceptance commit 9b760a1add.
+
+Current workers no longer emit these probes or per-step evidence.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +14,18 @@ if TYPE_CHECKING:
     from sglang.srt.disaggregation.ascend.mempool_router_protocol import RouterConfig
 else:
     from ascend_mempool_pd.mempool_router_protocol import RouterConfig
+
+
+def check_order(registrations: dict[str, Any]) -> None:
+    for row in registrations["decode"]["ranks"]:
+        order = row.get("shared_probe", {}).get("decode_order", {})
+        if (
+            order.get("status") != "passed"
+            or order.get("engine") != "graph_replay"
+            or not order.get("negative_without_wait")
+            or not order.get("positive_with_wait")
+        ):
+            raise ValueError("missing shared decode Graph ordering proof")
 
 
 def check_completion(
@@ -44,6 +59,7 @@ def check_completion(
 
 
 def check_stage(root: Path, config: RouterConfig) -> dict[str, Any]:
+    check_order(json.loads((root / "registrations.json").read_text()))
     snapshots = json.loads((root / "snapshots.json").read_text())
     path = root / "decode-normal.log"
     if not path.exists():

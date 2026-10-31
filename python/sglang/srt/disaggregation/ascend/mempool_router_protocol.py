@@ -54,7 +54,6 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
         (r, r + 1) for r in range(0, 16, 2)
     )
     decode_write_assignment: str = "features"
-    verify_decode: bool = False
 
     def __post_init__(self) -> None:
         if self.decode_write_assignment not in ("features", "layers"):
