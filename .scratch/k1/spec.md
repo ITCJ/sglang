@@ -9,7 +9,7 @@ K1功能实现与NUMA验收继续推进；下文性能复测、基线并列和�
 
 **State:** open
 
-本地规格采用 [K1 拆票定稿](k1-tickets.md)及下列十张票。
+本地规格采用 [K1 拆票定稿](k1-tickets.md)及下列十一张票。
 用户指定 [syncfile K1 目录](/Users/hibikid/Documents/syncfile/sglang-kv-explainer/mempool-min-demo/k1/)为依据。
 执行文本和[基线目标](k1-01-baseline-prompt.md)按原文同步；各票仅补充本地状态、依赖链接和 Comments。
 设计决策回查 [mempool-min 讨论](/Users/hibikid/Documents/syncfile/sglang-kv-explainer/mempool-min-demo/discussion.md)及[完整设计讨论](/Users/hibikid/Documents/syncfile/sglang-kv-explainer/mempool-design/discussion.md)。
@@ -26,8 +26,9 @@ K1功能实现与NUMA验收继续推进；下文性能复测、基线并列和�
 | 06 | [K1-03b D alive 主 KV 共享与每步顺序](issues/06-k1-03b-d-alive-main-kv-sharing-step-order.md) | 01、02 |
 | 07 | [K1-05a P alive Index K 单份](issues/07-k1-05a-p-alive-index-k-single-copy.md) | 01、02 |
 | 08 | [K1-05b prefix 单份与 NUMA interleave](issues/08-k1-05b-prefix-single-copy-numa-interleave.md) | 05、03、07 |
-| 09 | [K1-06 完整验收](issues/09-k1-06-full-acceptance.md) | 06、08 |
+| 09 | [K1-06 完整验收](issues/09-k1-06-full-acceptance.md) | 06、08、11 |
 | 10 | [X 旁路定位](issues/10-x-baseline-anomaly-triage.md) | 无；不阻塞其他票 |
+| 11 | [池间搬运与分片执行器](issues/11-k1-02c-pool-copy-executor.md) | 08 |
 
 ## Comments
 
@@ -96,3 +97,24 @@ K1-01 NUMA功能保留，双映射功能验收不再运行perf。
 [确认记录](verification/k1-ticket06-001-20261031/acceptance.md)保留NUMA、性能和V3/V8限制。
 已按授权删除本票工程中的临时探针、额外读回与计数；核心共享KV路径保留。
 [清理记录](verification/ticket06-cleanup-20261031/README.md)：510项CPU单轮、静态和两轴复审通过；清理后未重跑NPU。
+
+### 2026-11-01：同步改序并开始07
+
+用户授权实施07。同步syncfile执行文本及07/08/09/11，主线为07→08→11→09。
+01/02已验收，07保持open。07沿用索引拷贝，访问共享Index K的分片均建立设备映射。
+底层BM单会话覆盖P/D共32参与者；P Index K的物理成员为16个P分片，主KV仍按原组共享。
+性能工具留测试分支；真正并发留阶段3a；06清理是撤掉临时工程探针，历史证据保留。
+这些本地执行说明优先于同步原文残留的CPU拷贝、仅rank0设备注册等旧表述。
+
+### 2026-11-01：07验证规则补充
+
+用户重申不新增直接读BM验收；授权一组逻辑精度实验。通过后沿用原替代方法，
+实际发现精度问题后再讨论直接读BM或其他方案。入口复用两轮服务，各追加3题。
+不新增性能埋点，NUMA驻留与硬件结论保持独立。
+
+### 2026-11-01：07实现交付
+
+单份Index K及单写者/fill/admit/就绪记账已接通；基于32成员会话保留主KV分组。
+[交付说明](delivery-ticket07.html)包含源码顺序和两轮验收入口。
+519项CPU覆盖、24文件静态、17模块strict mypy与双轴复审通过。
+硬件尚未运行；07保持open，08仍等待07，11尚未实现。

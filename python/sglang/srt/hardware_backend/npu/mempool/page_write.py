@@ -19,6 +19,8 @@ class PageWriter:
     assignment: str = "contiguous"
 
     def pages(self, tokens: int) -> list[int]:
+        if self.member < 0:
+            return []
         count = (tokens + self.page_size - 1) // self.page_size
         return assign_pages(range(count), self.members, self.assignment)[self.member]
 

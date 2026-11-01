@@ -19,6 +19,7 @@ def check_registration(
 ) -> dict[str, Any]:
     groups = {rank: group for group in config.session_groups for rank in group}
     main: dict[tuple[int, int], dict[str, Any]] = {}
+    index: dict[str, Any] | None = None
     numa_by_role: dict[str, dict[int, dict[str, int]]] = {
         role: {} for role in ("prefill", "decode")
     }
@@ -29,7 +30,8 @@ def check_registration(
             raise ValueError("shared registration lacks TP16 ranks")
         for row in rows:
             rank, group = row["rank"], groups[row["rank"]]
-            participant = side * len(group) + group.index(rank)
+            session_members = tuple(range(16)) if config.prefill_index_shared else group
+            participant = side * len(session_members) + session_members.index(rank)
             if row["replicas"] != config.replicas(role):
                 raise ValueError("shared replica counts differ from configuration")
             regions = row["replica_locations"]
@@ -44,14 +46,23 @@ def check_registration(
                 shared = (config.prefill_shared, config.decode_shared)[
                     side
                 ] and name == "alive_main"
+                shared_index = name == "alive_index" and config.prefill_index_shared
+                members = (
+                    list(range(16))
+                    if shared_index
+                    else list(group)
+                    if shared
+                    else [rank]
+                )
+                owner = members[0]
                 if (
-                    value["owner"] != (group[0] if shared else rank)
-                    or value["members"] != (list(group) if shared else [rank])
+                    value["owner"] != owner
+                    or value["members"] != members
                     or value["participant"] != participant
                     or value["owner_participant"]
-                    != (side * len(group) if shared else participant)
-                    or value["world_size"] != 2 * len(group)
-                    or value["numa_node"] != row["numa_node"]
+                    != side * len(session_members) + session_members.index(owner)
+                    or value["world_size"] != 2 * len(session_members)
+                    or value["numa_node"] != (0 if shared_index else row["numa_node"])
                     or not value["session"]
                 ):
                     raise ValueError("shared owner/member/participant mismatch")
@@ -66,7 +77,23 @@ def check_registration(
                         raise ValueError(
                             "shared members describe different physical replicas"
                         )
-            aligned = (owned + 64 * len(group) + 2**30 - 1) // 2**30 * 2**30
+                if shared_index:
+                    if index is None:
+                        index = value
+                    if any(
+                        index[key] != value[key]
+                        for key in (
+                            "session",
+                            "bytes",
+                            "numa_node",
+                            "members",
+                            "owner_participant",
+                        )
+                    ):
+                        raise ValueError(
+                            "shared Index K members describe different physical replicas"
+                        )
+            aligned = (owned + 64 * len(session_members) + 2**30 - 1) // 2**30 * 2**30
             if side == 1 and config.decode_shared and rank != group[0]:
                 aligned = 0
             if row["local_dram_bytes"] != aligned:
@@ -103,6 +130,7 @@ def check_registration(
         status="passed",
         main_replicas=p_count or 16,
         decode_main_replicas=d_count or 16,
+        index_replicas=1 if index is not None else 16,
         per_numa=numa_by_role["prefill"],
         decode_per_numa=numa_by_role["decode"],
         physical_placement_verified=placement,
@@ -169,6 +197,35 @@ def check_stage(root: Path, config: RouterConfig) -> dict[str, Any]:
                 hit_tokens=hit,
             )
         )
+        if config.prefill_index_shared:
+            index_rows = ready[-1].get("index_writer_rows", [])
+            if (
+                len(index_rows) != 16
+                or ready[-1].get("index_completed_pages") != tokens // config.page_size
+            ):
+                raise ValueError("single Index K lacks completed write coverage")
+            for rank in range(16):
+                writer = PageWriter(
+                    config.prefill_index_writers.index(rank)
+                    if rank in config.prefill_index_writers
+                    else -1,
+                    len(config.prefill_index_writers),
+                    config.page_size,
+                )
+                if index_rows[rank] != writer.rows(hit, tokens, tokens):
+                    raise ValueError(
+                        "actual Index K writes differ from writer assignment"
+                    )
+                if hit and (
+                    fill is None
+                    or fill["ack"]["ranks"][rank].get("index_rows")
+                    != writer.rows(0, hit, tokens)
+                ):
+                    raise ValueError(
+                        "actual Index K fill differs from writer assignment"
+                    )
+            evidence[-1]["index_written_rows"] = index_rows
+            evidence[-1]["index_written_bytes"] = [n * 21 * 256 for n in index_rows]
     return dict(
         status="passed",
         registration=registration,

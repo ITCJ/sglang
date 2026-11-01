@@ -56,7 +56,9 @@ def capacity_check(
 def check_registration(
     registrations: dict[str, Any], *, config: RouterConfig | None = None
 ) -> None:
-    if config is not None and (config.prefill_shared or config.decode_shared):
+    if config is not None and (
+        config.prefill_shared or config.decode_shared or config.prefill_index_shared
+    ):
         from verify_mempool_shared import check_registration as check_shared
 
         check_shared(registrations, config)
@@ -143,6 +145,7 @@ def summarize(root: Path, *, config: RouterConfig | None = None) -> dict[str, An
     import verify_mempool_shared
 
     rounds = []
+    expected_requests = 9 if config and config.prefill_index_shared else 6
     for name in SERVICE_STAGES:
         stage = root / name
 
@@ -152,11 +155,13 @@ def summarize(root: Path, *, config: RouterConfig | None = None) -> dict[str, An
         evidence, answers = read("evidence.json"), read("answers.json")
         if (
             evidence["status"] != "passed"
-            or evidence["requests"] != 6
+            or evidence["requests"] != expected_requests
             or evidence["prefix"]["status"] != "passed"
         ):
             raise ValueError(f"{name}: incomplete model/content/lifecycle evidence")
-        if len(answers) != 6 or any(a["status"] != "passed" for a in answers):
+        if len(answers) != expected_requests or any(
+            a["status"] != "passed" for a in answers
+        ):
             raise ValueError(f"{name}: logical answers failed")
         rejections = read("input-rejections.json")
         if rejections["status"] != "passed" or not rejections["ledger_unchanged"]:
@@ -185,6 +190,20 @@ def summarize(root: Path, *, config: RouterConfig | None = None) -> dict[str, An
                 sharing=shared,
             )
         )
+        if config and config.prefill_index_shared:
+            from mempool_logical_cases import check_index_accuracy
+
+            responses = read("responses.json")
+            accuracy = check_index_accuracy(
+                responses["cases"], responses["results"], read("snapshots.json")
+            )
+            if accuracy["status"] != "passed" or accuracy != read(
+                "index-accuracy.json"
+            ):
+                raise ValueError(
+                    f"{name}: Index K logical accuracy failed or report differs"
+                )
+            rounds[-1]["index_accuracy"] = accuracy
     timeout = json.loads((root / "target/timeout.json").read_text())
     if (
         timeout["status"] != "passed"
@@ -197,7 +216,9 @@ def summarize(root: Path, *, config: RouterConfig | None = None) -> dict[str, An
         raise ValueError("P/D/mixed fetch smoke failed")
     return dict(
         status="passed",
-        coverage="shared decode functional regression (without ordering probes)"
+        coverage="K1-07 reduced functional acceptance"
+        if config is not None and config.prefill_index_shared
+        else "shared decode functional regression (without ordering probes)"
         if config is not None and config.decode_shared
         else "K1-05 reduced functional acceptance"
         if config is not None

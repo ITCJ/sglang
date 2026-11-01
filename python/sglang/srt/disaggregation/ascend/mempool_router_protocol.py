@@ -49,6 +49,8 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
         (r, r + 1) for r in range(0, 16, 2)
     )
     prefill_write_assignment: str = "contiguous"
+    prefill_index_shared: bool = False
+    prefill_index_writers: tuple[int, ...] = (0,)
     decode_shared: bool = False
     decode_groups: tuple[tuple[int, ...], ...] = tuple(
         (r, r + 1) for r in range(0, 16, 2)
@@ -56,6 +58,10 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     decode_write_assignment: str = "features"
 
     def __post_init__(self) -> None:
+        if self.prefill_index_shared and not self.prefix_pages:
+            raise ValueError("shared Index K requires prefix storage")
+        if self.prefill_index_writers not in ((0,), (0, 1)):
+            raise ValueError("prefill_index_writers must be (0,) or (0, 1)")
         if self.decode_write_assignment not in ("features", "layers"):
             raise ValueError("decode_write_assignment must be features or layers")
         if not all(self.decode_groups) or sorted(
@@ -150,7 +156,7 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
         enabled = 16 if self.prefix_pages else 0
         return dict(
             alive_main=len(self.main_groups(role)),
-            alive_index=enabled,
+            alive_index=1 if self.prefill_index_shared else enabled,
             prefix_main=enabled,
             prefix_index=enabled,
         )

@@ -12,6 +12,62 @@ from ascend_mempool.sharing_plan import HostTopology, MempoolNumaConfig
 
 
 class TestPoolSession(unittest.TestCase):
+    def test_single_index_spans_prefill_ranks_without_merging_main_replicas(self):
+        layout = PoolLayout(
+            KVLayout(2, 2, 128, 1, 8),
+            KVLayout(2, 2, 16, 1, 8),
+            alignment_bytes=64,
+            prompt_index=KVLayout(1, 2, 128, 1, 4),
+            prefix_main=KVLayout(2, 3, 128, 1, 8),
+            prefix_index=KVLayout(1, 3, 128, 1, 4),
+        )
+        pools = []
+        for side, role in enumerate(("prefill", "decode")):
+            plan = MempoolNumaConfig(
+                False, "0,1,2,3,4,5,6,7" if side == 0 else "7,6,5,4,3,2,1,0"
+            ).plan(
+                hosts=(HostTopology(role, tuple(range(16)), "0-7"),),
+                tp_size=16,
+                role=role,
+                instance_id="single-index",
+                kv_identity="model",
+                layout=layout,
+                prefill_shared=True,
+                decode_shared=True,
+                prefill_index_shared=True,
+            )
+            for rank in range(16):
+                session = plan.session(rank)
+                pool = MempoolKVManager.create(
+                    session.layout,
+                    side,
+                    session=session,
+                    bm_module=GroupSDK(session.participant),
+                )
+                self.addCleanup(pool.close, drain=lambda: None)
+                pool.join(0.1)
+                pools.append(pool)
+        for side in (0, 1):
+            self.assertEqual(len({p.view(side, 0).gva_base for p in pools}), 8)
+        for region, count in (
+            ("alive_index", 1),
+            ("prefix_main", 16),
+            ("prefix_index", 16),
+        ):
+            self.assertEqual(
+                len({p.view(0, 0, region=region).gva_base for p in pools}), count
+            )
+        for rank, pool in enumerate(pools[:16]):
+            registration = pool.replica_registration()
+            self.assertEqual(registration["alive_index"]["owner"], 0)
+            self.assertEqual(registration["alive_index"]["numa_node"], 0)
+            self.assertEqual(registration["alive_index"]["members"], list(range(16)))
+            self.assertEqual(registration["alive_main"]["owner"], rank // 2 * 2)
+        self.assertEqual(len({p.probe_gva(1) for p in pools[:16]}), 16)
+        self.assertEqual(
+            sum("alive_index" in pools[0].session.regions(i) for i in range(32)), 1
+        )
+
     def test_decode_shared_owner_allocates_once_with_private_or_shared_prefill(self):
         layer = KVLayout(2, 2, 16, 1, 8)
         layout = PoolLayout(layer, layer, alignment_bytes=64)

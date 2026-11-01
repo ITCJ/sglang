@@ -55,6 +55,7 @@ class _Read(msgspec.Struct):
     retained: list[Tensor] = msgspec.field(default_factory=list)
     receipt: dict[str, Any] | None = None
     main_rows: Tensor | None = None
+    index_rows: Tensor | None = None
 
 
 class PrefixStore:
@@ -75,6 +76,7 @@ class PrefixStore:
         all_gather: Callable[[Tensor, Tensor], None] | None = None,
         scatter_kernel: Any = None,
         page_writer: PageWriter | None = None,
+        index_writer: PageWriter | None = None,
     ) -> None:
         positive_int("page_size", page_size)
         layout = manager.layout.prefix_main
@@ -83,6 +85,7 @@ class PrefixStore:
         self.manager, self.page_size, self.device = manager, page_size, device
         self.verify = verify
         self.page_writer = page_writer
+        self.index_writer = index_writer
         self._prompt_tokens = 0
         self.replica = replica
         self.readers, self.read_assignment, self.all_gather = (
@@ -259,6 +262,8 @@ class PrefixStore:
                 operation.receipt["prefix_indices"] = operation.indices.cpu().tolist()
             if operation.main_rows is not None:
                 operation.receipt["main_rows"] = int(operation.main_rows.item())
+            if operation.index_rows is not None:
+                operation.receipt["index_rows"] = int(operation.index_rows.item())
             operation.retained.clear()
         return copy.deepcopy(operation.receipt)
 
@@ -496,32 +501,24 @@ class PrefixStore:
         valid = torch.ones_like(source, dtype=torch.bool)
         operation.retained.extend((source, target, valid))
         for region in ("main", "index"):
-            _, layout = self.manager.layout.regions(0)["prefix_" + region]
             region_valid = valid
-            if region == "main" and self.page_writer is not None:
+            writer = self.page_writer if region == "main" else self.index_writer
+            if writer is not None:
+                if writer.member < 0:
+                    operation.index_rows = valid.new_zeros((), dtype=torch.int64)
+                    continue
                 positions = target - operation.slot * self.manager.layout.prompt.tokens
-                region_valid = valid & self.page_writer.mask(
+                region_valid = valid & writer.mask(
                     positions, torch.full_like(positions, self._prompt_tokens)
                 )
                 operation.retained.append(region_valid)
-                operation.main_rows = region_valid.sum()
-            for layer in range(layout.layers):
-                src = self.manager.view(0, layer, region="prefix_" + region)
-                dst = self.manager.view(0, layer, region="alive_" + region)
-                self._copy(
-                    self._dtype,
-                    self._dtype,
-                    source,
-                    target,
-                    region_valid,
-                    src.layout.slots * src.layout.tokens,
-                    dst.layout.slots * dst.layout.tokens,
-                    src.layout.row_bytes,
-                    source.numel(),
-                    48,
-                    src.device_base,
-                    dst.device_base,
-                )
+                if region == "main":
+                    operation.main_rows = region_valid.sum()
+                else:
+                    operation.index_rows = region_valid.sum()
+            self._copy_region(
+                "prefix_" + region, "alive_" + region, source, target, region_valid
+            )
         operation.event = self._event_factory()
         operation.event.record()
 
@@ -555,6 +552,34 @@ class PrefixStore:
             self._kernel = torch.ops.npu.unidex_copy
         self._kernel(*args)
 
+    def _copy_region(
+        self,
+        source_region: str,
+        target_region: str,
+        source: Tensor,
+        target: Tensor,
+        valid: Tensor,
+    ) -> None:
+        """Resolve this shard's mappings separately from page selection and submission."""
+        _, layout = self.manager.layout.regions(0)[source_region]
+        for layer in range(layout.layers):
+            src = self.manager.view(0, layer, region=source_region)
+            dst = self.manager.view(0, layer, region=target_region)
+            self._copy(
+                self._dtype,
+                self._dtype,
+                source,
+                target,
+                valid,
+                src.layout.slots * src.layout.tokens,
+                dst.layout.slots * dst.layout.tokens,
+                src.layout.row_bytes,
+                source.numel(),
+                48,
+                src.device_base,
+                dst.device_base,
+            )
+
     def _submit(self, operation: _Admit) -> None:
         offsets = torch.arange(self.page_size, dtype=torch.int64, device=self.device)
         source = torch.tensor(
@@ -569,24 +594,9 @@ class PrefixStore:
         valid = torch.ones_like(source, dtype=torch.bool)
         operation.retained.extend((source, target, valid))
         for region in ("main", "index"):
-            _, destination_layout = self.manager.layout.regions(0)["prefix_" + region]
-            for layer in range(destination_layout.layers):
-                src = self.manager.view(0, layer, region="alive_" + region)
-                dst = self.manager.view(0, layer, region="prefix_" + region)
-                self._copy(
-                    self._dtype,
-                    self._dtype,
-                    source,
-                    target,
-                    valid,
-                    src.layout.slots * src.layout.tokens,
-                    dst.layout.slots * dst.layout.tokens,
-                    src.layout.row_bytes,
-                    source.numel(),
-                    48,
-                    src.device_base,
-                    dst.device_base,
-                )
+            self._copy_region(
+                "alive_" + region, "prefix_" + region, source, target, valid
+            )
         operation.event = self._event_factory()
         operation.event.record()
 

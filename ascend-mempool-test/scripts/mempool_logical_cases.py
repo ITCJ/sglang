@@ -167,6 +167,106 @@ def unique_fields(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return value
 
 
+INDEX_CASE_NAMES = ("index-cold", "index-update", "index-full-hit")
+
+
+def make_index_cases(
+    tokenizer: Any, base: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """One extra experiment using the retained A prefix and independent answers."""
+    cold = (
+        "A warehouse has 31 tiles. It ships 8 tiles and receives 6 tiles.\n"
+        + PAD
+        + '\nReply only with JSON keys "tiles" and "route". Report the final tile count. '
+        + 'Choose "west" when the final count is odd, otherwise "east".\n'
+    )
+    update = (
+        "Independent audit of the original harbor record, ignoring any other updates.\n"
+        + PAD
+        + "\nMira gives away 7 pencils and then receives 2 pencils. The marker is blue.\n"
+        + QUESTION
+    )
+    cases = []
+    for name, messages, size, expected in (
+        (
+            INDEX_CASE_NAMES[0],
+            [dict(role="user", content=cold)],
+            4096,
+            dict(tiles=29, route="west"),
+        ),
+        (
+            INDEX_CASE_NAMES[1],
+            base[0]["messages"]
+            + [base[1]["messages"][-2], dict(role="user", content=update)],
+            5120,
+            dict(place="harbor", pencils=17, route="north"),
+        ),
+    ):
+        messages, text, ids = padded_messages(tokenizer, messages, size)
+        cases.append(
+            dict(
+                copy.deepcopy(base[0]),
+                name=name,
+                messages=messages,
+                rendered_input=text,
+                input_ids=ids,
+                expected_answer=expected,
+            )
+        )
+    if (
+        cases[0]["input_ids"][:128] == base[0]["input_ids"][:128]
+        or cases[1]["input_ids"][:4096] != base[0]["input_ids"]
+        or cases[1]["input_ids"][4096:4224] == base[1]["input_ids"][4096:4224]
+    ):
+        raise ValueError(
+            "Index K logic experiment lacks its cold/4096-token hit boundaries"
+        )
+    cases.append(dict(copy.deepcopy(base[0]), name=INDEX_CASE_NAMES[2]))
+    return cases
+
+
+def check_index_accuracy(
+    cases: list[dict[str, Any]],
+    results: list[dict[str, Any]],
+    snapshots: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """A logical failure is evidence to investigate, never permission to read BM."""
+    if (
+        len(cases) != 9
+        or len(results) != 9
+        or len(snapshots) != 9
+        or tuple(c["name"] for c in cases[6:]) != INDEX_CASE_NAMES
+    ):
+        raise ValueError(
+            "Index K accuracy experiment requires its complete nine-request sequence"
+        )
+    checks = []
+    for case, result, snapshot, hit in zip(
+        cases[6:], results[6:], snapshots[6:], (0, 4096, 3968)
+    ):
+        checked = answer(case, result)
+        actual_hit = snapshot["completed"][-1]["hit_len"]
+        if actual_hit != hit:
+            checked = dict(
+                status="failed", category="reuse", error="unexpected prefix hit length"
+            )
+        checks.append(
+            dict(
+                checked,
+                case=case["name"],
+                hit_len=actual_hit,
+                expected=case["expected_answer"],
+            )
+        )
+    return dict(
+        status="passed" if all(c["status"] == "passed" for c in checks) else "failed",
+        cases=checks,
+        bm_readback=False,
+        cold_vs_full_hit_ids=id_difference(results[0], results[8]),
+        failure_action="preserve outputs and discuss diagnosis; no automatic BM readback",
+    )
+
+
 def make_controls(tokenizer: Any, page_size: int) -> list[dict[str, Any]]:
     cases = []
     for name, text, length, ignore_eos, expected in (

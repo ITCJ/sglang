@@ -70,6 +70,7 @@ class KVWriteReceipt(msgspec.Struct, frozen=True):
     submitted: int
     completed: int
     main_written: int = 0
+    index_written: int = 0
 
 
 class _Binding(msgspec.Struct):
@@ -83,6 +84,7 @@ class _Binding(msgspec.Struct):
     prompt_bm_rows: int = 0
     decode_bm_rows: int = 0
     main_written: int = 0
+    index_written: int = 0
 
 
 class _Forward(msgspec.Struct):
@@ -148,6 +150,7 @@ class MempoolRuntime:
         index_kernels: Optional[Sequence[Any]] = None,
         prefix_store: Optional[PrefixStore] = None,
         page_writer: Optional[PageWriter] = None,
+        index_writer: Optional[PageWriter] = None,
         decode_writer: Optional[DecodeWriter] = None,
     ) -> None:
         """Allocate stable bindings/counters after BM mappings are ready."""
@@ -161,6 +164,7 @@ class MempoolRuntime:
         self.manager = manager
         self.prefix_store = prefix_store
         self.page_writer = page_writer
+        self.index_writer = index_writer
         manager.bases(manager.rank)
         self.layout = manager.layout.layout_for_rank(manager.rank)
         if kernels is not None and len(kernels) != self.layout.layers:
@@ -371,7 +375,11 @@ class MempoolRuntime:
         self.assert_bound(req_pool_idx, binding)
         progress = self._bindings[req_pool_idx]
         receipt = KVWriteReceipt(
-            binding, progress.submitted, progress.completed, progress.main_written
+            binding,
+            progress.submitted,
+            progress.completed,
+            progress.main_written,
+            progress.index_written,
         )
         self.row_slot[req_pool_idx] = -1
         self.row_prompt_len[req_pool_idx] = -1
@@ -591,6 +599,10 @@ class MempoolRuntime:
                 valid=valid,
             )
         if active.writes and layer_id in self._index_writers:
+            active.index_layers.add(layer_id)
+            owns_index = self.index_writer is None or self.index_writer.member >= 0
+            if not owns_index and not (self.prefix_store and self.prefix_store.verify):
+                return
             writer = self._index_writers[layer_id]
             native = self._index_pool.get_index_k_buffer(layer_id).reshape(
                 -1, 1, writer.target.layout.dim
@@ -599,14 +611,17 @@ class MempoolRuntime:
             index_valid = valid & (locations >= 0) & (locations < native.shape[0])
             safe_locations = torch.where(index_valid, locations, 0)
             index_values = native.index_select(0, safe_locations).contiguous()
-            writer.write(
-                index_values, slots=slots, positions=local_pos, valid=index_valid
-            )
+            owned_index = index_valid
+            if self.index_writer is not None and owns_index:
+                owned_index = owned_index & self.index_writer.mask(local_pos, prompt)
             assert self._index_counts is not None
-            self._index_counts[writer.target.layer].scatter_add_(
-                0, safe_slot, index_valid.to(torch.int32)
-            )
-            active.index_layers.add(layer_id)
+            if owns_index:
+                writer.write(
+                    index_values, slots=slots, positions=local_pos, valid=owned_index
+                )
+                self._index_counts[writer.target.layer].scatter_add_(
+                    0, safe_slot, owned_index.to(torch.int32)
+                )
             active.retained.append(index_values)
             if self.prefix_store is not None:
                 self.prefix_store.capture_source(
@@ -797,7 +812,15 @@ class MempoolRuntime:
             binding = self._bindings[write.req_pool_idx]
             binding.submitted += write.rows
             slot = binding.attachment.slot
-            self._index_slot_totals[slot] = binding.submitted
+            self._index_slot_totals[slot] = (
+                self.index_writer.rows(
+                    binding.attachment.write_start,
+                    binding.attachment.write_start + binding.submitted,
+                    binding.attachment.prompt_tokens,
+                )
+                if self.index_writer is not None
+                else binding.submitted
+            )
             self._slot_totals[slot] = (
                 self.page_writer.rows(
                     binding.attachment.write_start,
@@ -849,9 +872,13 @@ class MempoolRuntime:
             if any(tuple(layer) != item.slot_totals for layer in counts):
                 self.fault = "mempool valid write counts differ from expected rows"
                 raise RuntimeError(self.fault)
-            if item.index_snapshot is not None and any(
-                tuple(layer) != item.index_totals
-                for layer in item.index_snapshot.cpu().tolist()
+            index_counts = (
+                item.index_snapshot.cpu().tolist()
+                if item.index_snapshot is not None
+                else None
+            )
+            if index_counts is not None and any(
+                tuple(layer) != item.index_totals for layer in index_counts
             ):
                 self.fault = "mempool Index K write counts differ from expected rows"
                 raise RuntimeError(self.fault)
@@ -880,6 +907,8 @@ class MempoolRuntime:
                     )
                 progress.completed = total
                 progress.main_written = counts[0][progress.attachment.slot]
+                if index_counts is not None:
+                    progress.index_written = index_counts[0][progress.attachment.slot]
                 progress.forwards += 1
                 progress.replay_forwards += int(item.replay)
                 if source_counts is not None:
@@ -895,6 +924,9 @@ class MempoolRuntime:
 
     def main_written_tokens(self, req_pool_idx: int) -> int:
         return self._bindings[req_pool_idx].main_written
+
+    def index_written_tokens(self, req_pool_idx: int) -> int:
+        return self._bindings[req_pool_idx].index_written
 
     def written_range(self, req_pool_idx: int) -> tuple[int, int]:
         binding = self._bindings[req_pool_idx]
@@ -1060,6 +1092,7 @@ def initialize_for_model_runner(model_runner: Any) -> None:
         prefill_shared=bool(router and router.prefill_shared),
         prefill_groups=router.session_groups if router else (),
         decode_shared=bool(router and router.decode_shared),
+        prefill_index_shared=bool(router and router.prefill_index_shared),
     )
     manager = MempoolKVManager.initialize_session(
         session=plan.session(model_runner.ps.tp_rank),
@@ -1073,8 +1106,8 @@ def initialize_for_model_runner(model_runner: Any) -> None:
         session = manager.session
         page_writer = (
             PageWriter(
-                session.members.index(session.tp_rank),
-                len(session.members),
+                session.region_members(0).index(session.tp_rank),
+                len(session.region_members(0)),
                 config.page_size,
                 router.prefill_write_assignment,
             )
@@ -1085,6 +1118,20 @@ def initialize_for_model_runner(model_runner: Any) -> None:
             else None
         )
         prefix_group = None
+        index_writer = (
+            PageWriter(
+                router.prefill_index_writers.index(session.tp_rank)
+                if session.tp_rank in router.prefill_index_writers
+                else -1,
+                len(router.prefill_index_writers),
+                config.page_size,
+            )
+            if router
+            and router.prefill_index_shared
+            and session is not None
+            and manager.rank == 0
+            else None
+        )
         if router and router.match_prefix and manager.rank == 0:
             from sglang.srt.distributed import get_tp_group
 
@@ -1104,6 +1151,7 @@ def initialize_for_model_runner(model_runner: Any) -> None:
                 if prefix_group is not None
                 else None,
                 page_writer=page_writer,
+                index_writer=index_writer,
             )
             if prefix_pages and manager.rank == 0
             else None
@@ -1119,9 +1167,10 @@ def initialize_for_model_runner(model_runner: Any) -> None:
             index_pool=native_pool if prefix_store is not None else None,
             prefix_store=prefix_store,
             page_writer=page_writer,
+            index_writer=index_writer,
             decode_writer=DecodeWriter(
-                session.members.index(session.tp_rank),
-                len(session.members),
+                session.region_members(1).index(session.tp_rank),
+                len(session.region_members(1)),
                 router.decode_write_assignment,
             )
             if router

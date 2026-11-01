@@ -570,6 +570,18 @@ class MempoolPDService:
                         and self.subrouter.shard.page_writers
                         else 0
                     ),
+                    index_written=(
+                        (
+                            self.runtime.index_written_tokens(row)
+                            if row is not None
+                            else record.receipt.index_written
+                            if record.receipt is not None
+                            else 0
+                        )
+                        if self.subrouter is not None
+                        and self.subrouter.shard.index_writers
+                        else 0
+                    ),
                 )
             )
         return facts

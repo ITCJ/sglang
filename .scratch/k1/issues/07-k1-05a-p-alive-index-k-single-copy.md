@@ -1,8 +1,8 @@
 # 07: K1-05a P alive Index K 单份
 
-**What to build:** P alive 的 Index K DRAM 区域只留 1 份，放 NUMA 0，owner 是 rank 0，16 个进程 CPU 映射、只有 rank 0 做 GPU 注册；write_through 的 Index K 全部由 rank 0 写（按页分给 rank 1 留作配置项），op1 的 Index K 部分由 rank 0 的分片填，op3 时每个 rank 从这块区域把 Index K 拷进自己那份 prefix，ready_tokens 的 Index K 项改为这块区域的完成。顺带第一次做出 16 参与者会话（1 个 owner 加 15 个映射者）。prefix 仍 16 份；D 不读它，prompt 的 Index K 仍从 HBM 推送。细节见 k1-tickets.md 第 11 节。
+**What to build:** P alive 的 Index K DRAM 区域只留 1 份，放 NUMA 0，owner 是 rank 0，16 个 P 分片持有执行拷贝所需的设备映射（不增加物理副本）；write_through 的 Index K 全部由 rank 0 写（按页分给 rank 1 留作配置项），op1 的 Index K 部分由 rank 0 的分片填，op3 时每个 rank 的分片从这块区域把 Index K 拷进自己那份 prefix（两者沿用现有索引拷贝，换批量异步接口是票 11 的事；实现上把选页、地址解析与底层拷贝提交分开，地址由持有映射的分片解析，不把具体拷贝参数散进协调者和账本，不提前建通用框架；映射范围覆盖执行分片实际访问的区域，增加映射不等于增加物理副本），ready_tokens 的 Index K 项改为这块区域的完成。共享区域有 16 个 P 参与者（1 个 owner 加 15 个映射者）；底层 BM 会话包含 P/D 共 32 个参与者。prefix 仍 16 份；D 不读它，prompt 的 Index K 仍从 HBM 推送。细节见 k1-tickets.md 第 11 节。
 
-**Blocked by:** [01（K1-02a）](01-k1-02a-explicit-numa-mapping.md)、[02（K1-02b）](02-k1-02b-shared-pool-adapter-share0.md)（均已用户验收关闭，依赖已满足）
+**Blocked by:** [01（K1-02a 显式映射启动与页驻留证据）](01-k1-02a-explicit-numa-mapping.md)、[02（K1-02b 共享池适配器接入（share=0）与记账骨架）](02-k1-02b-shared-pool-adapter-share0.md)
 
 **Status:** ready-for-agent
 
@@ -11,10 +11,12 @@
 - [ ] A / B / C / E 与 V1–V10 全过；V2 加 Index K 内容核对：admit 后每 rank 那份 prefix 的 Index K 与区域一致
 - [ ] 注册快照 R_ai = 1，区域 applied，页驻留在 NUMA 0
 - [ ] 字节计数证明只有 rank 0 写这块区域
-- [ ] 16 参与者会话的创建与关闭干净（正常结束与 fail-stop）
+- [ ] 16 个 P 分片共享映射可用；32 参与者会话正常结束与 fail-stop 均沿用默认父进程清理
+- [ ] 选页、地址解析、拷贝提交三层分开：协调者与账本只见页号，地址只在持有映射的分片解析
 - [ ] 基线表并列，重点看 T_wt_rank、T_ready、op1、op3
 
 ## Comments
+
 
 ### 2026-10-30：前置依赖已满足
 
@@ -24,3 +26,37 @@
 
 按用户要求导入已定稿的票据。目标、验收项及依赖沿用原文；
 本地补充 State 与依赖链接。尚未开始本票实现或 NPU 验收。
+
+### 2026-11-01：实施第1步
+
+已接入单份Index K的会话规划与映射：同一底层会话覆盖32个P/D参与者，
+数据区由rank0持有，16个P分片共享；P/D主KV仍各8份，prefix仍各16份。
+新增公开池接口检查先失败，映射实现后本文件5项CPU检查通过。
+原文仅rank0设备注册不适用于现有索引拷贝；所有执行分片映射实际访问区域，不增加副本。
+接下来接写回、fill、就绪记账及自运行验收。硬件未运行，State=open。
+
+### 2026-11-01：实施第2、3步及用户验收边界
+
+已接通单写者/可选双写者、共享fill、各分片admit、单份注册与Index K就绪位图。
+9模块及后续16模块类型检查通过；SR/服务/规划31项集成检查通过。
+独立入口index-sharing-acceptance沿用两轮模型启动，每轮原6请求加一组3题逻辑精度实验。
+
+用户重申不直接读BM；允许先增加逻辑精度实验。实验通过就沿用计算源快照、
+正常load_back后的native数据与写入计数；若发现精度问题，先讨论诊断方案，不自动加读回。
+因此原V2中“逐份直接读回Index K”的解释不采用，CPU拷贝内容与实际模型恢复证据分别记录。
+[实机入口与覆盖边界](../../../ascend-mempool-test/K1_TICKET07.md)已备齐。
+硬件未运行；后续完整CPU验证和双轴评审进行中，本票保持open。
+
+### 2026-11-01：用户授权逻辑精度实验
+
+用户允许增加一组逻辑精度实验；若确认出现精度问题，再讨论直接获取BM数据或更好替代方案。
+否则沿用原替代直接读取BM的方法。已补3题，正常两轮各9请求，不增加模型启动轮数。
+答案错误与命中路径错误均使入口失败，原始输出先归档；无自动BM读回。
+
+### 2026-11-01：实现交付
+
+功能、两轮自运行入口和新增三题逻辑实验已完成。
+完整CPU单轮518项加评审新增回归共519项覆盖通过；21项沙箱权限阻断仅定向补跑。
+24文件静态、17模块strict mypy通过；Standards/Spec最终均0项未解决问题。
+[交付与源码顺序](../delivery-ticket07.html)、[本机证据](../verification/ticket07-cpu-20261101/README.md)。
+未运行硬件，未直接读回BM，NUMA驻留及性能未验收。State保持open，08不解锁。

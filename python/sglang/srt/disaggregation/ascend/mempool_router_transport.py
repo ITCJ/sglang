@@ -139,7 +139,7 @@ def attach_subrouter(
         install_prefill_cache(scheduler, restore)
     session = (
         runtime.manager.session
-        if config.prefill_shared or config.decode_shared
+        if config.prefill_shared or config.decode_shared or config.prefill_index_shared
         else None
     )
     groups = config.main_groups(role)
@@ -155,6 +155,20 @@ def attach_subrouter(
         }
     else:
         writers = {}
+    index_writers = []
+    if config.prefill_index_shared and role == "prefill":
+        from sglang.srt.hardware_backend.npu.mempool.page_write import PageWriter
+
+        index_writers = [
+            PageWriter(
+                config.prefill_index_writers.index(rank)
+                if rank in config.prefill_index_writers
+                else -1,
+                len(config.prefill_index_writers),
+                config.page_size,
+            )
+            for rank in range(16)
+        ]
     shard = RouterShard(
         control,
         native=native,
@@ -167,6 +181,7 @@ def attach_subrouter(
         main_groups=groups,
         main_region=session.identity if session is not None else None,
         page_writers=[writers[rank] for rank in range(16)] if writers else (),
+        index_writers=index_writers,
     )
     connection = (
         SRConnection(config.control_endpoint, role, control.local.session)
@@ -207,6 +222,7 @@ def attach_subrouter(
         runtime.config.numa.rank_map is not None
         or config.prefill_shared
         or config.decode_shared
+        or config.prefill_index_shared
     ):
         registration.update(
             runtime.manager.placement_registration(

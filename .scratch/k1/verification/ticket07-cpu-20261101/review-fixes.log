@@ -1,0 +1,7 @@
+test_index_experiment_preserves_the_full_acceptance_six_request_contract (test_mempool_session_acceptance.TestSessionAcceptance.test_index_experiment_preserves_the_full_acceptance_six_request_contract) ... ok
+test_single_index_spans_prefill_ranks_without_merging_main_replicas (test_pool_session.TestPoolSession.test_single_index_spans_prefill_ranks_without_merging_main_replicas) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.918s
+
+OK

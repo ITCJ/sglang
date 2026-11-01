@@ -46,6 +46,7 @@ class RouterShard:
         main_groups: Sequence[Sequence[int]] = (),
         main_region: str | None = None,
         page_writers: Sequence[PageWriter] = (),
+        index_writers: Sequence[PageWriter] = (),
     ) -> None:
         self.control, self.native, self.effect, self.reply_to = (
             control,
@@ -70,6 +71,7 @@ class RouterShard:
         self.main_owner = self.main_groups[self.main_replica][0]
         self.main_region = main_region or control.local.session
         self.page_writers = page_writers
+        self.index_writers = index_writers
         self.fill_complete = False
         self.coverage: PromptCoverage | None = None
         self.readers = ReplicaReaders(())
@@ -221,6 +223,10 @@ class RouterShard:
                     [
                         writer.pages(request["prompt_tokens"])
                         for writer in self.page_writers
+                    ],
+                    index_writer_pages=[
+                        writer.pages(request["prompt_tokens"])
+                        for writer in self.index_writers
                     ],
                 )
                 if role == "prefill"
@@ -638,6 +644,10 @@ class MempoolSubrouter:
                 if self.shard.page_writers:
                     progress["writer_rows"] = [
                         f.main_written if f is not None else 0 for f in common_facts
+                    ]
+                if self.shard.index_writers:
+                    progress["index_writer_rows"] = [
+                        f.index_written if f is not None else 0 for f in common_facts
                     ]
                 ready_tokens = progress["ready_tokens"]
                 if leader and progress != self.shard.last_coverage:

@@ -47,6 +47,27 @@ class CharacterTokenizer:
 
 
 class TestLogicalFixtures(unittest.TestCase):
+    def test_index_experiment_has_new_cold_and_changed_suffix_answers(self):
+        tokenizer = CharacterTokenizer()
+        base = logical.make_cases(tokenizer, 128)
+        extra = logical.make_index_cases(tokenizer, base)
+        self.assertEqual([len(c["input_ids"]) for c in extra], [4096, 5120, 4096])
+        self.assertNotEqual(extra[0]["input_ids"][:128], base[0]["input_ids"][:128])
+        self.assertEqual(extra[1]["input_ids"][:4096], base[0]["input_ids"])
+        self.assertNotEqual(
+            extra[1]["input_ids"][4096:4224], base[1]["input_ids"][4096:4224]
+        )
+        self.assertEqual(extra[2]["input_ids"], base[0]["input_ids"])
+        self.assertEqual(extra[0]["expected_answer"], dict(tiles=29, route="west"))
+        self.assertEqual(
+            extra[1]["expected_answer"], dict(place="harbor", pencils=17, route="north")
+        )
+        for case in extra:
+            self.assertEqual(
+                case["input_ids"],
+                tokenizer.apply_chat_template(case["messages"], tokenize=True),
+            )
+
     def test_real_transformers_templates_keep_exact_ids_across_return_defaults(self):
         from tokenizers import Tokenizer, models, pre_tokenizers
         from transformers import PreTrainedTokenizerFast
@@ -126,6 +147,43 @@ class TestLogicalFixtures(unittest.TestCase):
 
 
 class TestLogicalAnswers(unittest.TestCase):
+    def test_index_accuracy_rejects_wrong_answer_or_missing_reuse_without_readback(
+        self,
+    ):
+        tokenizer = CharacterTokenizer()
+        cases = logical.make_cases(tokenizer, 128) + logical.make_controls(
+            tokenizer, 128
+        )
+        cases += logical.make_index_cases(tokenizer, cases)
+        results = [
+            dict(
+                text=json.dumps(c["expected_answer"]),
+                output_ids=[10, 11],
+                meta_info=dict(
+                    prompt_tokens=len(c["input_ids"]),
+                    completion_tokens=2,
+                    finish_reason=dict(type="stop"),
+                ),
+            )
+            for c in cases
+        ]
+        snapshots = [
+            dict(completed=[dict(hit_len=hit)])
+            for hit in (0, 4096, 3968, 0, 0, 0, 0, 4096, 3968)
+        ]
+        report = logical.check_index_accuracy(cases, results, snapshots)
+        self.assertEqual(report["status"], "passed")
+        self.assertFalse(report["bm_readback"])
+        results[7]["text"] = '{"place":"harbor","pencils":25,"route":"south"}'
+        self.assertEqual(
+            logical.check_index_accuracy(cases, results, snapshots)["status"], "failed"
+        )
+        results[7]["text"] = json.dumps(cases[7]["expected_answer"])
+        snapshots[7]["completed"][-1]["hit_len"] = 0
+        self.assertEqual(
+            logical.check_index_accuracy(cases, results, snapshots)["status"], "failed"
+        )
+
     def test_identical_cold_a_c_differences_are_a_separate_stability_anomaly(self):
         case = dict(
             input_ids=[7] * 4096,
@@ -218,6 +276,22 @@ class TestLogicalAnswers(unittest.TestCase):
 
 
 class TestFullReuseEvidence(unittest.TestCase):
+    def test_index_experiment_checks_all_nine_requests_and_retained_prefixes(self):
+        snapshots, cases, lines = evidence_fixtures.TestPrefixEvidence().evidence(
+            reuse=True, full=True, controls=True, index_checks=True
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "prefill.log"
+            path.write_text("\n".join(lines))
+            report = verify_mempool_reuse.check_reuse(path, snapshots, cases, full=True)
+            self.assertEqual(
+                report["hit_lengths"], [0, 4096, 3968, 0, 0, 0, 0, 4096, 3968]
+            )
+            self.assertFalse(report["bm_readback"])
+            path.write_text("\n".join(lines[:-1]))
+            with self.assertRaises(ValueError):
+                verify_mempool_reuse.check_reuse(path, snapshots, cases, full=True)
+
     def test_controls_after_e_keep_all_forty_pages_and_require_their_own_receipts(self):
         snapshots, cases, lines = evidence_fixtures.TestPrefixEvidence().evidence(
             reuse=True, full=True, controls=True

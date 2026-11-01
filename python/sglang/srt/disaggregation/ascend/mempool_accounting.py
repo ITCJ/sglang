@@ -17,6 +17,7 @@ class PromptCoverage:
         writers: int,
         groups: Sequence[Sequence[int]] = (),
         writer_pages: Sequence[Sequence[int]] = (),
+        index_writer_pages: Sequence[Sequence[int]] = (),
     ) -> None:
         self.tokens, self.hit, self.page_size = tokens, hit, page_size
         self.groups = groups or [(r,) for r in range(writers)]
@@ -24,6 +25,12 @@ class PromptCoverage:
             rank: index for index, group in enumerate(self.groups) for rank in group
         }
         self.writer_pages = writer_pages
+        self.index_writer_pages = index_writer_pages
+        self.index_pages = (
+            bytearray((tokens + page_size - 1) // page_size)
+            if index_writer_pages
+            else None
+        )
         self.pages = [
             bytearray((tokens + page_size - 1) // page_size) for _ in self.groups
         ]
@@ -35,12 +42,16 @@ class PromptCoverage:
         # Stage zero reports complete pages, with an end-page for small CPU fixtures.
         pages = self.pages[self.rank_to_replica[rank]]
         owned = self.writer_pages[rank] if self.writer_pages else range(len(pages))
-        for page in owned:
-            if (filled and (page + 1) * self.page_size <= self.hit) or (
-                page * self.page_size >= start
-                and min((page + 1) * self.page_size, self.tokens) <= end
-            ):
-                pages[page] = 1
+        targets = [(pages, owned)]
+        if self.index_pages is not None:
+            targets.append((self.index_pages, self.index_writer_pages[rank]))
+        for pages, owned in targets:
+            for page in owned:
+                if (filled and (page + 1) * self.page_size <= self.hit) or (
+                    page * self.page_size >= start
+                    and min((page + 1) * self.page_size, self.tokens) <= end
+                ):
+                    pages[page] = 1
         self.ends[rank], self.filled[rank] = self.hit + end - start, filled
 
     def snapshot(self) -> dict[str, Any]:
@@ -52,13 +63,21 @@ class PromptCoverage:
         # Independent old counter calculation, recorded on the same actual events.
         counter = min(self.ends) if all(self.filled) else 0
         ready = min(ready, counter)
-        return dict(
+        result = dict(
             ready_tokens=ready,
             counter_tokens=counter,
             completed_pages=contiguous,
             written_ends=list(self.ends),
             fill_complete=list(self.filled),
         )
+        if self.index_pages is not None:
+            index_end = next(
+                (i for i, done in enumerate(self.index_pages) if not done),
+                len(self.index_pages),
+            )
+            result["index_completed_pages"] = index_end
+            result["ready_tokens"] = min(ready, index_end * self.page_size)
+        return result
 
 
 class ReplicaReaders:

@@ -24,7 +24,7 @@ def check_reuse(
     full: bool = False,
 ) -> dict[str, Any]:
     count = len(cases) if full else 3
-    if full and count not in (4, 6):
+    if full and count not in (4, 6, 9):
         raise ValueError(
             "full acceptance requires ABCE with optional load/EOS controls"
         )
@@ -39,13 +39,22 @@ def check_reuse(
         len(cases[3]["input_ids"]) != 4096 or cases[3]["input_ids"][:128] == a[:128]
     ):
         raise ValueError("E must be an independent 4096-token cold request")
-    if count == 6 and (
-        [case["name"] for case in cases[4:]] != ["long-generation", "early-eos"]
-        or [len(case["input_ids"]) for case in cases[4:]] != [4096, 128]
+    if count >= 6 and (
+        [case["name"] for case in cases[4:6]] != ["long-generation", "early-eos"]
+        or [len(case["input_ids"]) for case in cases[4:6]] != [4096, 128]
     ):
         raise ValueError("full controls must be long-generation and early-eos")
-    hits = [0, 4096, 3968, 0, 0, 0][:count]
-    totals = [32, 40, 40, 40, 40, 40][:count]
+    if count == 9 and (
+        [case["name"] for case in cases[6:]]
+        != ["index-cold", "index-update", "index-full-hit"]
+        or [len(case["input_ids"]) for case in cases[6:]] != [4096, 5120, 4096]
+        or cases[6]["input_ids"][:128] == a[:128]
+        or cases[7]["input_ids"][:4096] != a
+        or cases[8]["input_ids"] != a
+    ):
+        raise ValueError("invalid Index K logical accuracy fixtures")
+    hits = [0, 4096, 3968, 0, 0, 0, 0, 4096, 3968][:count]
+    totals = [32] + [40] * (count - 1)
     reports = saved.Reports.read(prefill)
     progress: dict[tuple[str, int], list[tuple[int, dict[str, Any]]]] = {}
     for line_no, line in enumerate(prefill.read_text(errors="replace").splitlines()):
@@ -58,7 +67,7 @@ def check_reuse(
     previous: dict[str, Any] = {}
     base_hashes: list[str] = []
     for snapshot, case, hit, added, total in zip(
-        snapshots, cases, hits, (32, 8, 0, 0, 0, 0), totals
+        snapshots, cases, hits, [32, 8] + [0] * (count - 2), totals
     ):
         done, directory = snapshot["completed"][-1], snapshot["directory"]
         if (
@@ -118,7 +127,10 @@ def check_reuse(
     if reports.consumed != set(reports.contents):
         raise ValueError("unexpected reuse request/rank content receipt")
     expected_progress = {
-        (s["completed"][-1]["rid"], rank) for s in snapshots[1:3] for rank in range(16)
+        (s["completed"][-1]["rid"], rank)
+        for s, hit in zip(snapshots, hits)
+        if hit
+        for rank in range(16)
     }
     if set(progress) != expected_progress:
         raise ValueError("unexpected or missing reuse progress rank")

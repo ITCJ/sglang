@@ -1,0 +1,47 @@
+test_admit_waits_for_last_rank_before_any_queue_advances_or_source_frees (test_mempool_subrouter.TestSubrouter.test_admit_waits_for_last_rank_before_any_queue_advances_or_source_frees) ... ok
+test_backend_request_cannot_change_dispatch_sampling (test_mempool_subrouter.TestSubrouter.test_backend_request_cannot_change_dispatch_sampling) ... ok
+test_decode_free_waits_for_readers_and_reports_zero (test_mempool_subrouter.TestSubrouter.test_decode_free_waits_for_readers_and_reports_zero) ... ok
+test_duplicate_alloc_is_idempotent_and_error_retains_resources (test_mempool_subrouter.TestSubrouter.test_duplicate_alloc_is_idempotent_and_error_retains_resources) ... ok
+test_empty_commit_exception_stops_every_rank_before_registration_ack (test_mempool_subrouter.TestSubrouter.test_empty_commit_exception_stops_every_rank_before_registration_ack) ... ok
+test_late_native_transfer_holds_first_token_and_explicit_free (test_mempool_subrouter.TestSubrouter.test_late_native_transfer_holds_first_token_and_explicit_free) ... ok
+test_ready_requires_fill_and_the_last_replica_page (test_mempool_subrouter.TestSubrouter.test_ready_requires_fill_and_the_last_replica_page) ... ok
+test_restore_and_fill_wait_for_last_rank_while_native_release_can_progress (test_mempool_subrouter.TestSubrouter.test_restore_and_fill_wait_for_last_rank_while_native_release_can_progress) ... ok
+test_router_page_mismatch_is_rejected_before_native_allocation (test_mempool_subrouter.TestSubrouter.test_router_page_mismatch_is_rejected_before_native_allocation) ... ok
+test_shared_free_then_next_allocation_keeps_tp_ownership_consistent (test_mempool_subrouter.TestSubrouter.test_shared_free_then_next_allocation_keeps_tp_ownership_consistent) ... ok
+test_shared_pages_wait_for_both_writers_and_keep_one_descriptor_per_replica (test_mempool_subrouter.TestSubrouter.test_shared_pages_wait_for_both_writers_and_keep_one_descriptor_per_replica) ... ok
+test_shared_slot_waits_for_last_writer_cleanup_before_free_ack (test_mempool_subrouter.TestSubrouter.test_shared_slot_waits_for_last_writer_cleanup_before_free_ack) ... ok
+test_shared_write_counts_retire_before_the_next_allocation (test_mempool_subrouter.TestSubrouter.test_shared_write_counts_retire_before_the_next_allocation) ... ok
+test_whole_slot_descriptors_use_unified_pages (test_mempool_subrouter.TestSubrouter.test_whole_slot_descriptors_use_unified_pages) ... ok
+test_each_decode_step_records_actual_resident_and_executing_counts (test_mempool_min_service.TestRouterService.test_each_decode_step_records_actual_resident_and_executing_counts) ... ok
+test_real_write_receipt_survives_native_cleanup_and_zero_decode_free (test_mempool_min_service.TestRouterService.test_real_write_receipt_survives_native_cleanup_and_zero_decode_free) ... ok
+test_warmup_native_release_admit_and_alive_free_keep_both_prefix_regions (test_mempool_min_service.TestRouterService.test_warmup_native_release_admit_and_alive_free_keep_both_prefix_regions) ... ok
+test_contiguous_assignment_and_sharing_are_independent (test_numa_plan.TestMempoolNumaPlan.test_contiguous_assignment_and_sharing_are_independent)
+The 0,2 list assigns adjacent ranks regardless of the sharing switch. ... ok
+test_contiguous_assignment_balances_remainders_and_preserves_node_order (test_numa_plan.TestMempoolNumaPlan.test_contiguous_assignment_balances_remainders_and_preserves_node_order) ... ok
+test_contiguous_assignment_is_local_to_each_host (test_numa_plan.TestMempoolNumaPlan.test_contiguous_assignment_is_local_to_each_host) ... ok
+test_contiguous_tp16_plan_matches_default_two_ranks_per_node (test_numa_plan.TestMempoolNumaPlan.test_contiguous_tp16_plan_matches_default_two_ranks_per_node) ... ok
+test_explicit_map_supports_variable_groups_without_crossing_hosts (test_numa_plan.TestMempoolNumaPlan.test_explicit_map_supports_variable_groups_without_crossing_hosts)
+One, two, four and uneven member counts use the same grouping rule. ... ok
+test_group_report_separates_owners_participants_and_physical_contribution (test_numa_plan.TestMempoolNumaPlan.test_group_report_separates_owners_participants_and_physical_contribution)
+Planning preserves capacity and gives each member a private probe lane. ... ok
+test_incomplete_or_ambiguous_assignments_fail_before_a_plan_is_returned (test_numa_plan.TestMempoolNumaPlan.test_incomplete_or_ambiguous_assignments_fail_before_a_plan_is_returned)
+Every rank must occur once, on its declared host and an online node. ... ok
+test_legacy_fallback_is_preserved_only_for_independent_pools (test_numa_plan.TestMempoolNumaPlan.test_legacy_fallback_is_preserved_only_for_independent_pools)
+An unknown node cannot become a shared group key. ... ok
+test_map_file_rejects_invalid_schema_and_conflicting_inputs (test_numa_plan.TestMempoolNumaPlan.test_map_file_rejects_invalid_schema_and_conflicting_inputs)
+Explicit placement has no fallback, including when sharing is off. ... ok
+test_peer_matching_uses_logical_members_and_kv_identity (test_numa_plan.TestMempoolNumaPlan.test_peer_matching_uses_logical_members_and_kv_identity)
+P/D may use different host/node IDs, but must share one logical plan. ... ok
+test_peer_nic_collisions_are_checked_per_physical_host (test_numa_plan.TestMempoolNumaPlan.test_peer_nic_collisions_are_checked_per_physical_host)
+Different NIC bases can still produce the same MF listener endpoint. ... ok
+test_ports_remain_disjoint_for_nonadjacent_groups_and_independent_mode (test_numa_plan.TestMempoolNumaPlan.test_ports_remain_disjoint_for_nonadjacent_groups_and_independent_mode)
+MF adds participant to NIC base; separate member ranges avoid collisions. ... ok
+test_share_switch_is_explicit_and_strict (test_numa_plan.TestMempoolNumaPlan.test_share_switch_is_explicit_and_strict)
+Old launches stay independent; malformed switches never enable sharing. ... ok
+test_tp16_default_pairs_reduce_planned_replicas_without_resizing_kv (test_numa_plan.TestMempoolNumaPlan.test_tp16_default_pairs_reduce_planned_replicas_without_resizing_kv)
+The deployment default has eight owners; the planner has no eight-group limit. ... ok
+
+----------------------------------------------------------------------
+Ran 31 tests in 1.025s
+
+OK

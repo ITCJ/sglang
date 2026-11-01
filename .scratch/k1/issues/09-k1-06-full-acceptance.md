@@ -1,20 +1,21 @@
 # 09: K1-06 完整验收
 
-**What to build:** 在最终版本（8 / 8 / 1 / 1 / 1，split_read 按段，interleave 开）上重跑阶段 0 全部验收项和补充用例（长生成到 G_max、提前结束、入口拒绝四例、超时、双端清理），把四类新证据合在一起核对，基线表与票 01 并列并逐段解释变差，重报三项基线遗留，归档拓扑与版本快照。用户在真实环境核对后关闭，K1 结束。细节见 k1-tickets.md 第 13 节。
+**What to build:** 在最终版本（8 / 8 / 1 / 1 / 1，split_read 按段，interleave 开，票 11 的搬运路径）上重跑阶段 0 全部验收项和补充用例（长生成到 G_max、提前结束、入口拒绝四例、超时、双端清理），把四类新证据合在一起核对，基线表与票 01 并列并逐段解释变差，重报三项基线遗留，归档拓扑与版本快照。用户在真实环境核对后关闭，K1 结束。细节见 k1-tickets.md 第 13 节。
 
-**Blocked by:** [06（K1-03b）](06-k1-03b-d-alive-main-kv-sharing-step-order.md)、[08（K1-05b）](08-k1-05b-prefix-single-copy-numa-interleave.md)（06已验收关闭；08仍未满足）
+**Blocked by:** [06（K1-03b D alive 主 KV 共享与每步顺序）](06-k1-03b-d-alive-main-kv-sharing-step-order.md)、[08（K1-05b prefix 单份：8 段、numa interleave、按段读者、并行 admit、直接 fill）](08-k1-05b-prefix-single-copy-numa-interleave.md)、[11（K1-02c admit 与 fill 的池间搬运路径与分片执行器（行为不变））](11-k1-02c-pool-copy-executor.md)
 
 **Status:** ready-for-agent
 
 **State:** open
 
-- [ ] A / B / C / E 与按 05、06、07、08 调整后的 V1–V10 全过
+- [ ] A / B / C / E 与按 05、06、07、08、11 调整后的 V1–V10 全过
 - [ ] 补充用例全过：长生成、提前结束、入口拒绝四例、超时、双端清理
 - [ ] 四类证据合核通过：注册 = 映射 = 驻留；写覆盖；每步顺序的哨兵与负测试；读字节计数
 - [ ] 基线表与票 01 并列，每段变差有解释；三项基线遗留重报
 - [ ] 拓扑快照与版本快照归档
 
 ## Comments
+
 
 ### 2026-10-29：同步 syncfile 定稿
 

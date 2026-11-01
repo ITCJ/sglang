@@ -18,7 +18,7 @@ class SharedPromptProbe:
         self.manager, self.device = manager, device
         session = manager.session
         assert session is not None
-        self.members = session.members
+        self.members = session.region_members(0)
         self.rank = session.tp_rank
         view = manager.view(0, 0)
         self.view = view

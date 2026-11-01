@@ -479,15 +479,14 @@ class MempoolKVManager:
         assert session is not None
         result = {}
         for name, (_, geometry) in self.layout.regions(self.rank).items():
-            shared = not session.regional_sharing or (
-                session.shares_main(self.rank) and name == "alive_main"
-            )
-            members = session.members if shared else (session.tp_rank,)
+            members = session.region_members(self.rank, name)
             result[name] = dict(
                 replica=members[0],
                 owner=members[0],
                 members=list(members),
-                numa_node=self.numa_node,
+                numa_node=0
+                if name == "alive_index" and session.prefill_index_shared
+                else self.numa_node,
                 session=session.identity,
                 participant=session.participant,
                 owner_participant=session.region_owner(self.rank, name),
@@ -509,7 +508,7 @@ class MempoolKVManager:
             assert session is not None
             return dict(
                 host=host,
-                owner_tp_rank=session.members[0],
+                owner_tp_rank=session.region_members(self.rank)[0],
                 numa_placement_verified=False,
                 numa_evidence=dict(
                     allocation_bytes=0,
@@ -580,7 +579,7 @@ class MempoolKVManager:
             offset = 0
             if side == 1 and session.decode_shared:
                 participant = session.region_owner(side)
-                offset = 64 * session.members.index(session.tp_rank)
+                offset = 64 * session.region_members(side).index(session.tp_rank)
             return (
                 self.view_bases(side, participant)[0]
                 + session.probe_offset(participant)

@@ -7,7 +7,10 @@ import socket
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
+import msgspec
 import run_mempool_min
 import verify_mempool_session
 from test_mempool_router import registration
@@ -16,6 +19,62 @@ from ascend_mempool_pd.mempool_router_protocol import RouterConfig
 
 
 class TestSessionAcceptance(unittest.TestCase):
+    def test_index_experiment_preserves_the_full_acceptance_six_request_contract(self):
+        from test_mempool_full import CharacterTokenizer
+
+        config = RouterConfig(
+            "p", "d", "/model", prefix_pages=40, prefill_index_shared=True
+        )
+        peer = SimpleNamespace(
+            send=lambda *args, **kwargs: None, barrier=lambda *args: None
+        )
+        for mode, count in (("full-acceptance", 6), ("index-sharing-acceptance", 9)):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as folder:
+                runner = run_mempool_min.Runner(
+                    SimpleNamespace(role="prefill", mode=mode),
+                    config,
+                    peer,
+                    Path(folder),
+                )
+                with patch(
+                    "transformers.AutoTokenizer.from_pretrained",
+                    return_value=CharacterTokenizer(),
+                ):
+                    runner.prepare_full_cases()
+                self.assertEqual(len(runner.cases), count)
+
+    def test_index_cli_enables_single_index_without_changing_prefix_replicas(self):
+        with tempfile.TemporaryDirectory() as folder:
+            config = Path(folder) / "config.json"
+            config.write_text(
+                json.dumps(dict(prefill_host="p", decode_host="d", model_path="/model"))
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = run_mempool_min.main(
+                    [
+                        "--role",
+                        "prefill",
+                        "--mode",
+                        "index-sharing-acceptance",
+                        "--config",
+                        str(config),
+                        "--run-id",
+                        "k1-07-cpu",
+                        "--describe",
+                    ]
+                )
+            value = json.loads(output.getvalue())
+            actual = msgspec.convert(value["config"], type=RouterConfig)
+            self.assertEqual(result, 0)
+            self.assertEqual(
+                actual.replicas(),
+                dict(alive_main=8, alive_index=1, prefix_main=16, prefix_index=16),
+            )
+            self.assertTrue(actual.decode_shared)
+            self.assertEqual(value["service_rounds"], 2)
+            self.assertEqual(value["memory_budget"]["bm_bytes"], 105 * 2**30)
+
     def test_session_cli_keeps_shared_decode_with_eight_allocations(self):
         with tempfile.TemporaryDirectory() as folder:
             config = Path(folder) / "config.json"
