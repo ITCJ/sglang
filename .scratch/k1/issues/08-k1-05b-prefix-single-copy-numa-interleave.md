@@ -4,15 +4,15 @@
 
 **Blocked by:** [05（K1-03a P alive 主 KV 共享）](05-k1-03a-p-alive-main-kv-sharing.md)、[03（K1-04 prefix split_read（16 份布局））](03-k1-04-prefix-split-read.md)、[07（K1-05a P alive Index K 单份）](07-k1-05a-p-alive-index-k-single-copy.md)
 
-**Status:** needs-info
+**Status:** ready-for-agent
 
-**State:** open
+**State:** closed
 
 - [ ] A / B / C / E 与 V1–V10 全过；V2 改为冷算 A 时按页另存校验摘要，op1 后 8 份副本、op2 后 HBM 页都与摘要一致
 - [ ] 注册快照 = 映射文件（applied），R_pm = R_pi = 1；页驻留逐段核对；每 NUMA 常驻内存 = 1 份 alive 副本 + 本段 prefix（NUMA 0 另加 Index K 区域）
-- [ ] 分配日志：同一请求的连续页落在轮转的段上，起始段随请求轮转
+- [x] 分配日志：同一请求的连续页落在轮转的段上，起始段随请求轮转
 - [ ] 读字节计数：load_back 每段读取量相等（补齐后）；fill 每段被 8 个组各读八分之一；admit 的写全部落本段
-- [ ] admit 每页只有一个写者；账本 prefix 按 1 份、alive 按 8 份记，V6 等式用注册值重算
+- [x] admit 每页只有一个写者；账本 prefix 按 1 份、alive 按 8 份记，V6 等式用注册值重算
 - [ ] 共享段在首次触碰前绑定到目标 NUMA；GPU 只注册本段，注册范围和耗时记进快照
 - [ ] 选页、地址解析、拷贝提交三层分开；CPU 映射范围覆盖分片实际访问的区域，快照里映射者数与物理副本数分开记
 - [ ] 基线表并列，重点看 op1、op2、op3、T_lb_rank；不设门槛，变差要解释
@@ -58,3 +58,16 @@
 
 NPU未运行，原验收清单保持未勾选，State=open；用户确认后才能关闭并解锁11。
 默认入口是两轮六例精简功能验收，NUMA物理驻留、性能、直接fill DRAM比较等缺项单列。
+
+### 2026-11-01：001两轮NPU自动验收通过，等待用户确认
+
+用户回传31的summary与prefix-sharing-acceptance全文；版本4441eb9015，双侧identity通过。
+target/restart各6请求、8/8/1/1/1注册、交错分配、B/C恢复与fill、账本、超时保护及双端清理均passed。
+[结果与证据边界](../verification/k1-ticket08-001/README.md)已归档；NUMA物理驻留、性能与直接DRAM内容比较仍未验证。
+自动报告user_accepted=false；尚未收到明确关闭确认，State保持open，11未解锁。
+
+### 2026-11-01：用户确认验收并关闭
+
+用户回复“可以”，接受4441eb9015的001两轮精简NPU验收及已说明的边界，确认关闭08、解锁11。
+State=closed；复合验收项中未覆盖的NUMA物理驻留、性能、直接DRAM比较和完整V1–V10保持未勾选，不能解释为已验证。
+[人工确认](../verification/k1-ticket08-001/README.md)与自动报告结论分别记录。11保持open，尚未实施。

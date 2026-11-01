@@ -1,7 +1,7 @@
 # Ticket08 交付：八段单份 prefix
 
-目标布局已实现为 `8 / 8 / 1 / 1 / 1`，CPU 验证通过，等待用户 NPU 验收。
-08 保持 open；不启动 11。规格沿用 [实施计划](ticket08-implementation-plan.md)与 syncfile 最新票据。
+目标布局已实现为 `8 / 8 / 1 / 1 / 1`，001两轮NPU精简验收通过，用户已确认关闭08。
+11已解锁，尚未实施。规格沿用 [实施计划](ticket08-implementation-plan.md)与 syncfile 最新票据。
 
 一个新请求记录一次起始段，admit 按段交错选页，段满时选剩余页最多的段。
 八个 owner 从各自 alive 主 KV 副本和单份 Index K 保存本段；单 rank 对照可配置。
@@ -51,3 +51,5 @@ writer 按完整 prompt 划分；全部 fill 与后缀写回完成后才能 read
 NPU 验收由用户运行，每机一条命令。默认两轮均使用 owners admit；single_rank 对照当前有 CPU 证据。
 物理 NUMA 驻留、性能、直接读取八份 fill DRAM 内容未验证。V3 用独立答案、V8 用注册 CPU 重放；
 这套入口是精简功能验收，不宣称原始 V1–V10 全覆盖。需用户确认后才关闭 08、解锁 11。
+
+最新状态及保留边界见[用户验收确认](verification/k1-ticket08-001/README.md)；下方原交付期验证说明保留为历史记录。
