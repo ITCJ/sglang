@@ -235,9 +235,12 @@ def attach_subrouter(
             local_dram_bytes=runtime.manager.contribution,
             verify_prefix=config.verify_prefix,
         )
+        if config.prefix_shared and role == "prefill":
+            registration["prefix_region"] = shard.prefix_region
+            registration["prefix_policy"] = config.prefix_policy()
     if config.match_prefix:
         registration["match_prefix"] = True
-        registration["prefix_read_assignment"] = config.prefix_read_assignment
+        registration["prefix_read_assignment"] = config.read_assignment
     probe = None
     if config.prefill_shared and config.verify_prefix:
         from sglang.srt.hardware_backend.npu.mempool.shared_probe import (

@@ -47,11 +47,12 @@ def check_registration(
                     side
                 ] and name == "alive_main"
                 shared_index = name == "alive_index" and config.prefill_index_shared
+                shared_prefix = name.startswith("prefix_") and config.prefix_shared
                 members = (
                     list(range(16))
                     if shared_index
                     else list(group)
-                    if shared
+                    if shared or shared_prefix
                     else [rank]
                 )
                 owner = members[0]
@@ -67,7 +68,53 @@ def check_registration(
                 ):
                     raise ValueError("shared owner/member/participant mismatch")
                 if value["owner"] == rank:
-                    owned += value["bytes"]
+                    owned += (
+                        value["bytes"] // len(config.prefill_groups)
+                        if shared_prefix
+                        else value["bytes"]
+                    )
+                if shared_prefix:
+                    expected = [
+                        dict(
+                            segment=i,
+                            owner=g[0],
+                            members=list(g),
+                            numa_node=rows[g[0]]["numa_node"],
+                            bytes=value["bytes"] // len(config.prefill_groups),
+                        )
+                        for i, g in enumerate(config.prefill_groups)
+                    ]
+                    if (
+                        value.get("replica") != 0
+                        or value.get("segments") != expected
+                        or value.get("mapping_members") != list(range(16))
+                        or value.get("device_mapping_members") != list(range(16))
+                        or value.get("mapping_participants") != list(range(32))
+                        or value["bytes"]
+                        != (78 * 1152 if name == "prefix_main" else 21 * 256)
+                        * config.prefix_pages
+                        * config.page_size
+                        or value["session"] != rows[0]["prefix_region"]
+                        or row.get("prefix_policy") != config.prefix_policy()
+                    ):
+                        raise ValueError(
+                            "shared prefix segment mapping differs from applied registration"
+                        )
+                    ranges = value.get("device_ranges", [])
+                    if (
+                        len(ranges) != len(expected)
+                        or any(
+                            r.get("segment") != segment["segment"]
+                            or r.get("bytes") != segment["bytes"]
+                            or not int(r.get("address", "0"), 16)
+                            for r, segment in zip(ranges, expected)
+                        )
+                        or value.get("registration_seconds") is not None
+                        or not value.get("timing_note")
+                    ):
+                        raise ValueError(
+                            "shared prefix segment device ranges lack registration evidence"
+                        )
                 if shared:
                     old = main.setdefault((side, group[0]), value)
                     if any(
@@ -94,7 +141,10 @@ def check_registration(
                             "shared Index K members describe different physical replicas"
                         )
             aligned = (owned + 64 * len(session_members) + 2**30 - 1) // 2**30 * 2**30
-            if side == 1 and config.decode_shared and rank != group[0]:
+            if (
+                (side == 1 and config.decode_shared)
+                or (side == 0 and config.prefix_shared)
+            ) and rank != group[0]:
                 aligned = 0
             if row["local_dram_bytes"] != aligned:
                 raise ValueError(
@@ -128,14 +178,21 @@ def check_registration(
         raise ValueError("physical main replica count is wrong")
     return dict(
         status="passed",
+        allocation_status="applied",
         main_replicas=p_count or 16,
         decode_main_replicas=d_count or 16,
         index_replicas=1 if index is not None else 16,
+        prefix_replicas=1 if config.prefix_shared else 16,
         per_numa=numa_by_role["prefill"],
         decode_per_numa=numa_by_role["decode"],
         physical_placement_verified=placement,
         allocation_evidence="BM local_mem_size matched each participant contribution at join",
         resident_page_limit="NUMA allocation/registration is separate from physical page residence",
+        prefix_segments=registrations["prefill"]["ranks"][0]["replica_locations"][
+            "prefix_main"
+        ]["segments"]
+        if config.prefix_shared
+        else [],
     )
 
 
@@ -152,7 +209,8 @@ def check_stage(root: Path, config: RouterConfig) -> dict[str, Any]:
         log = root / "prefill.log"
     records = log_records(log, "ready_accounting")
     evidence = []
-    for snapshot, case in zip(snapshots, cases):
+    prefix_free = set(range(config.prefix_pages))
+    for request_index, (snapshot, case) in enumerate(zip(snapshots, cases)):
         done = snapshot["completed"][-1]
         tokens, hit = len(case["input_ids"]), done["hit_len"]
         ready = [
@@ -197,6 +255,10 @@ def check_stage(root: Path, config: RouterConfig) -> dict[str, Any]:
                 hit_tokens=hit,
             )
         )
+        if config.prefix_shared:
+            evidence[-1]["prefix"] = check_prefix_operations(
+                snapshot, config, tokens, request_index, prefix_free
+            )
         if config.prefill_index_shared:
             index_rows = ready[-1].get("index_writer_rows", [])
             if (
@@ -233,3 +295,135 @@ def check_stage(root: Path, config: RouterConfig) -> dict[str, Any]:
         cross_writer_read="all P and D ranks used their own device mapping and unidex_copy",
         evidence_scope="startup sentinel rows and completed model writes; no extra model-prefix DRAM readback",
     )
+
+
+def check_prefix_operations(
+    snapshot: dict[str, Any],
+    config: RouterConfig,
+    tokens: int,
+    request_index: int,
+    free: set[int],
+) -> dict[str, Any]:
+    """Count actual completed page transfers separately from collective padding."""
+    from ascend_mempool.prefix_layout import PrefixLayout
+
+    layout = PrefixLayout(config.prefix_pages, config.prefill_groups)
+    done = snapshot["completed"][-1]
+    registration = snapshot["registrations"]["prefill"]["ranks"][0]
+    row_bytes = dict(
+        main=registration["layers"] * registration["dim"] * 2,
+        index=len(registration["indexer_layers"]) * registration["index_dim"] * 2,
+    )
+    evidence = {}
+    if done["admit"] is not None:
+        operation = done["admit"]
+        ranks = operation["ack"]["ranks"]
+        start = (
+            config.prefix_start_segment
+            if config.prefix_start_segment is not None
+            else request_index % len(layout.groups)
+        )
+        targets = layout.select(free, len(operation["command"]["source_pages"]), start)
+        for rank, receipt in enumerate(ranks):
+            expected = [
+                p
+                for p in targets
+                if (
+                    config.prefix_admit_rank
+                    if config.prefix_admit_mode == "single_rank"
+                    else layout.groups[layout.decode(p)[0]][0]
+                )
+                == rank
+            ]
+            if (
+                receipt.get("target_pages") != targets
+                or receipt.get("written_pages") != expected
+                or receipt.get("start_segment") != start
+                or any(
+                    receipt.get(region + "_bytes")
+                    != len(expected) * config.page_size * size
+                    for region, size in row_bytes.items()
+                )
+            ):
+                raise ValueError("prefix admit allocation/writer/bytes mismatch")
+        free.difference_update(targets)
+        evidence["admit"] = dict(
+            start_segment=start,
+            target_pages=targets,
+            main_bytes=len(targets) * config.page_size * row_bytes["main"],
+            index_bytes=len(targets) * config.page_size * row_bytes["index"],
+        )
+    for kind, operation in done["reads"].items():
+        ranks = operation["ack"]["ranks"]
+        sources = [
+            p["logical_page"] for p in operation["command"]["sources"][0]["pages"]
+        ]
+        for region, size in row_bytes.items():
+            for rank, receipt in enumerate(ranks):
+                pages = receipt.get("read_pages", {}).get(region, [])
+                if kind == "fill":
+                    group = (
+                        next(g for g in layout.groups if rank in g)
+                        if region == "main"
+                        else config.prefill_index_writers
+                    )
+                    writer = PageWriter(
+                        group.index(rank) if rank in group else -1,
+                        len(group),
+                        config.page_size,
+                        config.prefill_write_assignment
+                        if region == "main"
+                        else "contiguous",
+                    )
+                    expected = [
+                        p for i, p in enumerate(sources) if i in writer.pages(tokens)
+                    ]
+                    if sorted(pages) != sorted(expected):
+                        raise ValueError(
+                            "prefix fill source pages differ from full-prompt writer assignment"
+                        )
+                elif config.read_assignment == "by_segment" and any(
+                    rank not in layout.groups[layout.decode(p)[0]] for p in pages
+                ):
+                    raise ValueError(
+                        "prefix load_back reader is outside its source segment"
+                    )
+                counts = [
+                    sum(layout.decode(p)[0] == segment for p in pages)
+                    * config.page_size
+                    for segment in range(len(layout.groups))
+                ]
+                if (
+                    receipt.get("segment_rows", {}).get(region) != counts
+                    or receipt.get(region + "_bytes")
+                    != len(pages) * config.page_size * size
+                ):
+                    raise ValueError("prefix read segment/byte counts mismatch")
+            if kind == "load_back" and sorted(
+                p for receipt in ranks for p in receipt["read_pages"][region]
+            ) != sorted(sources):
+                raise ValueError(
+                    "prefix load_back must read each physical page exactly once"
+                )
+        if kind == "load_back":
+            width = max(len(r["read_pages"]["main"]) for r in ranks)
+            if any(
+                r.get("gather_width_pages") != width
+                or r["read_pages"]["main"] != r["read_pages"]["index"]
+                for r in ranks
+            ):
+                raise ValueError(
+                    "prefix collective width or main/Index K assignment mismatch"
+                )
+        evidence[kind] = {
+            region + "_bytes": sum(r[region + "_bytes"] for r in ranks)
+            for region in row_bytes
+        }
+        evidence[kind]["segment_rows"] = {
+            region: [
+                sum(r["segment_rows"][region][s] for r in ranks)
+                for s in range(len(layout.groups))
+            ]
+            for region in row_bytes
+        }
+    return evidence

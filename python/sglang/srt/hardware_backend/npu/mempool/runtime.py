@@ -1093,6 +1093,7 @@ def initialize_for_model_runner(model_runner: Any) -> None:
         prefill_groups=router.session_groups if router else (),
         decode_shared=bool(router and router.decode_shared),
         prefill_index_shared=bool(router and router.prefill_index_shared),
+        prefix_shared=bool(router and router.prefix_shared),
     )
     manager = MempoolKVManager.initialize_session(
         session=plan.session(model_runner.ps.tp_rank),
@@ -1144,14 +1145,15 @@ def initialize_for_model_runner(model_runner: Any) -> None:
                 verify=bool(router and router.verify_prefix),
                 replica=model_runner.ps.tp_rank,
                 readers=prefix_group.world_size if prefix_group is not None else 1,
-                read_assignment=router.prefix_read_assignment
-                if router
-                else "round_robin",
+                read_assignment=router.read_assignment if router else "round_robin",
                 all_gather=prefix_group.all_gather_into_tensor
                 if prefix_group is not None
                 else None,
                 page_writer=page_writer,
                 index_writer=index_writer,
+                admit_mode=router.prefix_admit_mode if router else "owners",
+                admit_rank=router.prefix_admit_rank if router else 0,
+                start_segment=router.prefix_start_segment if router else None,
             )
             if prefix_pages and manager.rank == 0
             else None

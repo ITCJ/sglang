@@ -35,6 +35,7 @@ SESSION_MODES = (
     "session-acceptance",
     "p-sharing-acceptance",
     "index-sharing-acceptance",
+    "prefix-sharing-acceptance",
 )
 from run_ticket10 import (
     available_port,
@@ -112,6 +113,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "session-acceptance",
             "p-sharing-acceptance",
             "index-sharing-acceptance",
+            "prefix-sharing-acceptance",
             "index-cold-diagnosis",
         ),
         required=True,
@@ -217,6 +219,7 @@ def memory_budget(config: RouterConfig, role: str) -> dict[str, int]:
                 config.decode_shared,
                 config.prefill_index_shared,
                 config.session_groups if config.prefill_index_shared else (),
+                config.prefix_shared,
             ).contribution
             for group in config.session_groups
             for member in group
@@ -260,6 +263,7 @@ class Runner:
         self.args, self.config, self.peer, self.root = args, config, peer, root
         self.session_acceptance = args.mode in SESSION_MODES
         self.full = args.mode == "full-acceptance" or self.session_acceptance
+        self.index_acceptance = args.mode == "index-sharing-acceptance"
         self.tokenizer: Any = None
         self.is_p = args.role == "prefill"
         self.host = config.prefill_host if self.is_p else config.decode_host
@@ -269,6 +273,8 @@ class Runner:
             mode=args.mode,
             coverage="one saved Index K input without prefix reuse; diagnosis only"
             if args.mode == "index-cold-diagnosis"
+            else "K1-08 reduced functional acceptance"
+            if config.prefix_shared and self.session_acceptance
             else "K1-07 reduced functional acceptance"
             if config.prefill_index_shared and self.session_acceptance
             else "shared decode functional regression (without ordering probes)"
@@ -807,11 +813,7 @@ class Runner:
                             root / "stability.json",
                             mempool_logical_cases.check_stability(self.cases, results),
                         )
-                    if (
-                        target
-                        and self.config.prefill_index_shared
-                        and self.session_acceptance
-                    ):
+                    if target and self.index_acceptance:
                         accuracy = mempool_logical_cases.check_index_accuracy(
                             self.cases, results, snapshots
                         )
@@ -1043,7 +1045,7 @@ class Runner:
             self.cases += mempool_logical_cases.make_controls(
                 self.tokenizer, self.config.page_size
             )
-            if self.config.prefill_index_shared and self.session_acceptance:
+            if self.index_acceptance:
                 self.cases += mempool_logical_cases.make_index_cases(
                     self.tokenizer, self.cases
                 )
@@ -1067,6 +1069,7 @@ class Runner:
                 or self.config.decode_shared
                 or self.config.prefill_index_shared
                 else None,
+                mode=self.args.mode,
             )
             self.peer.send("session-result", acceptance=acceptance)
         else:
@@ -1074,8 +1077,10 @@ class Runner:
         write_json(
             self.root
             / (
-                "index-sharing-acceptance.json"
-                if self.config.prefill_index_shared
+                "prefix-sharing-acceptance.json"
+                if self.config.prefix_shared
+                else "index-sharing-acceptance.json"
+                if self.index_acceptance
                 else "session-acceptance.json"
                 if self.config.decode_shared
                 else "p-sharing-acceptance.json"
@@ -1171,6 +1176,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "session-acceptance",
         "p-sharing-acceptance",
         "index-sharing-acceptance",
+        "prefix-sharing-acceptance",
         "index-cold-diagnosis",
     ):
         config = msgspec.structs.replace(
@@ -1185,6 +1191,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "session-acceptance",
                 "p-sharing-acceptance",
                 "index-sharing-acceptance",
+                "prefix-sharing-acceptance",
             ),
         )
     elif args.mode == "acceptance" and config.prefix_pages:
@@ -1193,9 +1200,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if args.mode == "p-sharing-acceptance":
         config = msgspec.structs.replace(config, prefill_shared=True)
-    if args.mode in ("index-sharing-acceptance", "index-cold-diagnosis"):
+    if args.mode in (
+        "index-sharing-acceptance",
+        "index-cold-diagnosis",
+        "prefix-sharing-acceptance",
+    ):
         config = msgspec.structs.replace(
-            config, prefill_shared=True, decode_shared=True, prefill_index_shared=True
+            config,
+            prefill_shared=True,
+            decode_shared=True,
+            prefill_index_shared=True,
+            prefix_shared=args.mode == "prefix-sharing-acceptance"
+            or config.prefix_shared,
         )
     args.config = root / "effective-config.json"
     if args.describe:

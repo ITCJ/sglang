@@ -19,6 +19,41 @@ from ascend_mempool_pd.mempool_router_protocol import RouterConfig
 
 
 class TestSessionAcceptance(unittest.TestCase):
+    def test_prefix_cli_enables_single_segments_and_reports_both_budgets(self):
+        with tempfile.TemporaryDirectory() as folder:
+            config = Path(folder) / "config.json"
+            config.write_text(
+                json.dumps(dict(prefill_host="p", decode_host="d", model_path="/model"))
+            )
+            for role, gib in (("prefill", 96), ("decode", 8)):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    self.assertEqual(
+                        run_mempool_min.main(
+                            [
+                                "--role",
+                                role,
+                                "--mode",
+                                "prefix-sharing-acceptance",
+                                "--config",
+                                str(config),
+                                "--run-id",
+                                "k1-08-cpu",
+                                "--describe",
+                            ]
+                        ),
+                        0,
+                    )
+                value = json.loads(output.getvalue())
+                actual = msgspec.convert(value["config"], type=RouterConfig)
+                self.assertEqual(
+                    actual.replicas(),
+                    dict(alive_main=8, alive_index=1, prefix_main=1, prefix_index=1),
+                )
+                self.assertEqual(actual.read_assignment, "by_segment")
+                self.assertEqual(value["memory_budget"]["bm_bytes"], gib * 2**30)
+                self.assertEqual(value["service_rounds"], 2)
+
     def test_index_cold_diagnosis_keeps_layout_but_disables_reuse(self):
         with tempfile.TemporaryDirectory() as folder:
             config = Path(folder) / "config.json"
@@ -63,7 +98,11 @@ class TestSessionAcceptance(unittest.TestCase):
         peer = SimpleNamespace(
             send=lambda *args, **kwargs: None, barrier=lambda *args: None
         )
-        for mode, count in (("full-acceptance", 6), ("index-sharing-acceptance", 9)):
+        for mode, count in (
+            ("full-acceptance", 6),
+            ("index-sharing-acceptance", 9),
+            ("prefix-sharing-acceptance", 6),
+        ):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as folder:
                 runner = run_mempool_min.Runner(
                     SimpleNamespace(role="prefill", mode=mode),

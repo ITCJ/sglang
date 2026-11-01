@@ -25,6 +25,9 @@ def parse_args() -> argparse.Namespace:
         "--topology", type=Path, help="JSON array of host/ranks/online_nodes records"
     )
     parser.add_argument("--mempool-rank-numa-map")
+    parser.add_argument(
+        "--router-config", type=Path, help="Use the serving layout and sharing policies"
+    )
     parser.add_argument("--role", choices=("prefill", "decode"), default="prefill")
     parser.add_argument("--tp-size", type=int, default=16)
     parser.add_argument("--instance-id", default="plan-preview")
@@ -136,13 +139,28 @@ def main() -> int:
             config = MempoolNumaConfig.from_environment(
                 rank_numa_map=args.mempool_rank_numa_map
             )
+            from ascend_mempool_pd.mempool_router_protocol import RouterConfig
+
+            router = (
+                RouterConfig.read(str(args.router_config))
+                if args.router_config
+                else None
+            )
             layout = MempoolConfig(
-                prefill_capacity=args.prefill_capacity,
-                decode_capacity=args.decode_capacity,
+                prefill_capacity=router.prompt_capacity
+                if router
+                else args.prefill_capacity,
+                decode_capacity=router.decode_capacity
+                if router
+                else args.decode_capacity,
+                page_size=router.page_size if router else 128,
             ).make_mla_layout(
                 num_layers=args.layers,
                 kv_lora_rank=args.kv_lora_rank,
                 qk_rope_head_dim=args.qk_rope_head_dim,
+                prefix_pages=router.prefix_pages if router else 0,
+                indexer_layers=21 if router and router.prefix_pages else 0,
+                index_head_dim=128 if router and router.prefix_pages else 0,
             )
             plan = config.plan(
                 hosts=hosts,
@@ -154,6 +172,11 @@ def main() -> int:
                 base_port=args.base_port,
                 nic_port=args.nic_port,
                 pool_id=args.pool_id,
+                prefill_shared=bool(router and router.prefill_shared),
+                decode_shared=bool(router and router.decode_shared),
+                prefill_index_shared=bool(router and router.prefill_index_shared),
+                prefix_shared=bool(router and router.prefix_shared),
+                prefill_groups=router.session_groups if router else (),
             )
             report["plan"] = plan.report()
             print("[2/2] Planned rank mapping (no pool allocated)", flush=True)

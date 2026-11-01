@@ -1,0 +1,131 @@
+test_failed_child_never_reports_completion (unittest.loader._FailedTest.test_failed_child_never_reports_completion) ... ERROR
+test_only_owned_process_is_stopped (unittest.loader._FailedTest.test_only_owned_process_is_stopped) ... ERROR
+test_graph_updates_both_sides_checkpoint_and_resume_without_remeasuring (unittest.loader._FailedTest.test_graph_updates_both_sides_checkpoint_and_resume_without_remeasuring) ... ERROR
+test_real_tp1_pair_maps_and_drains_without_dummy_ranks (unittest.loader._FailedTest.test_real_tp1_pair_maps_and_drains_without_dummy_ranks) ... ERROR
+test_each_side_waits_for_http_then_sends_local_fake_warmup_before_freeze (unittest.loader._FailedTest.test_each_side_waits_for_http_then_sends_local_fake_warmup_before_freeze) ... ERROR
+test_isolated_timeout_starts_without_success_logs_and_retains_allocations (unittest.loader._FailedTest.test_isolated_timeout_starts_without_success_logs_and_retains_allocations) ... ERROR
+test_paired_capacity_run_rejects_before_admission_and_cleans_owned_processes (unittest.loader._FailedTest.test_paired_capacity_run_rejects_before_admission_and_cleans_owned_processes) ... ERROR
+test_full_reference_preserves_per_request_answer_results (unittest.loader._FailedTest.test_full_reference_preserves_per_request_answer_results) ... ERROR
+test_paired_timeout_retains_quota_and_reaps_only_owned_children (unittest.loader._FailedTest.test_paired_timeout_retains_quota_and_reaps_only_owned_children) ... ERROR
+test_prefix_reference_accepts_four_real_decode_requests_through_runner (unittest.loader._FailedTest.test_prefix_reference_accepts_four_real_decode_requests_through_runner) ... ERROR
+test_reuse_reference_accepts_three_real_decode_requests_through_runner (unittest.loader._FailedTest.test_reuse_reference_accepts_three_real_decode_requests_through_runner) ... ERROR
+test_post_shutdown_port_probe_allows_time_wait_but_rejects_a_listener (unittest.loader._FailedTest.test_post_shutdown_port_probe_allows_time_wait_but_rejects_a_listener) ... ERROR
+test_four_members_exchange_and_all_drain_before_release (unittest.loader._FailedTest.test_four_members_exchange_and_all_drain_before_release) ... ERROR
+test_mismatched_phase_aborts_every_worker_but_still_allows_drain (unittest.loader._FailedTest.test_mismatched_phase_aborts_every_worker_but_still_allows_drain) ... ERROR
+test_four_members_exchange_and_all_drain_before_release (unittest.loader._FailedTest.test_four_members_exchange_and_all_drain_before_release) ... ERROR
+test_late_idle_member_does_not_abort_eight_worker_cohort (unittest.loader._FailedTest.test_late_idle_member_does_not_abort_eight_worker_cohort) ... ERROR
+test_mismatched_phase_aborts_every_worker_but_still_allows_drain (unittest.loader._FailedTest.test_mismatched_phase_aborts_every_worker_but_still_allows_drain) ... ERROR
+test_cleanup_failure_is_reported_and_never_authorizes_store_shutdown (unittest.loader._FailedTest.test_cleanup_failure_is_reported_and_never_authorizes_store_shutdown) ... ERROR
+test_failed_work_still_closes_pools_and_clients_before_store (unittest.loader._FailedTest.test_failed_work_still_closes_pools_and_clients_before_store) ... ERROR
+test_tp1_and_tp2_independent_store_owners_wait_for_clients (unittest.loader._FailedTest.test_tp1_and_tp2_independent_store_owners_wait_for_clients) ... ERROR
+test_tp4_shared_store_survives_slow_decode_leave (unittest.loader._FailedTest.test_tp4_shared_store_survives_slow_decode_leave) ... ERROR
+
+======================================================================
+ERROR: test_failed_child_never_reports_completion (unittest.loader._FailedTest.test_failed_child_never_reports_completion)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_failed_child_never_reports_completion'
+
+======================================================================
+ERROR: test_only_owned_process_is_stopped (unittest.loader._FailedTest.test_only_owned_process_is_stopped)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_only_owned_process_is_stopped'
+
+======================================================================
+ERROR: test_graph_updates_both_sides_checkpoint_and_resume_without_remeasuring (unittest.loader._FailedTest.test_graph_updates_both_sides_checkpoint_and_resume_without_remeasuring)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_graph_updates_both_sides_checkpoint_and_resume_without_remeasuring'
+
+======================================================================
+ERROR: test_real_tp1_pair_maps_and_drains_without_dummy_ranks (unittest.loader._FailedTest.test_real_tp1_pair_maps_and_drains_without_dummy_ranks)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_real_tp1_pair_maps_and_drains_without_dummy_ranks'
+
+======================================================================
+ERROR: test_each_side_waits_for_http_then_sends_local_fake_warmup_before_freeze (unittest.loader._FailedTest.test_each_side_waits_for_http_then_sends_local_fake_warmup_before_freeze)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_each_side_waits_for_http_then_sends_local_fake_warmup_before_freeze'
+
+======================================================================
+ERROR: test_isolated_timeout_starts_without_success_logs_and_retains_allocations (unittest.loader._FailedTest.test_isolated_timeout_starts_without_success_logs_and_retains_allocations)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_isolated_timeout_starts_without_success_logs_and_retains_allocations'
+
+======================================================================
+ERROR: test_paired_capacity_run_rejects_before_admission_and_cleans_owned_processes (unittest.loader._FailedTest.test_paired_capacity_run_rejects_before_admission_and_cleans_owned_processes)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_paired_capacity_run_rejects_before_admission_and_cleans_owned_processes'
+
+======================================================================
+ERROR: test_full_reference_preserves_per_request_answer_results (unittest.loader._FailedTest.test_full_reference_preserves_per_request_answer_results)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_full_reference_preserves_per_request_answer_results'
+
+======================================================================
+ERROR: test_paired_timeout_retains_quota_and_reaps_only_owned_children (unittest.loader._FailedTest.test_paired_timeout_retains_quota_and_reaps_only_owned_children)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_paired_timeout_retains_quota_and_reaps_only_owned_children'
+
+======================================================================
+ERROR: test_prefix_reference_accepts_four_real_decode_requests_through_runner (unittest.loader._FailedTest.test_prefix_reference_accepts_four_real_decode_requests_through_runner)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_prefix_reference_accepts_four_real_decode_requests_through_runner'
+
+======================================================================
+ERROR: test_reuse_reference_accepts_three_real_decode_requests_through_runner (unittest.loader._FailedTest.test_reuse_reference_accepts_three_real_decode_requests_through_runner)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_reuse_reference_accepts_three_real_decode_requests_through_runner'
+
+======================================================================
+ERROR: test_post_shutdown_port_probe_allows_time_wait_but_rejects_a_listener (unittest.loader._FailedTest.test_post_shutdown_port_probe_allows_time_wait_but_rejects_a_listener)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_post_shutdown_port_probe_allows_time_wait_but_rejects_a_listener'
+
+======================================================================
+ERROR: test_four_members_exchange_and_all_drain_before_release (unittest.loader._FailedTest.test_four_members_exchange_and_all_drain_before_release)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_four_members_exchange_and_all_drain_before_release'
+
+======================================================================
+ERROR: test_mismatched_phase_aborts_every_worker_but_still_allows_drain (unittest.loader._FailedTest.test_mismatched_phase_aborts_every_worker_but_still_allows_drain)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_mismatched_phase_aborts_every_worker_but_still_allows_drain'
+
+======================================================================
+ERROR: test_four_members_exchange_and_all_drain_before_release (unittest.loader._FailedTest.test_four_members_exchange_and_all_drain_before_release)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_four_members_exchange_and_all_drain_before_release'
+
+======================================================================
+ERROR: test_late_idle_member_does_not_abort_eight_worker_cohort (unittest.loader._FailedTest.test_late_idle_member_does_not_abort_eight_worker_cohort)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_late_idle_member_does_not_abort_eight_worker_cohort'
+
+======================================================================
+ERROR: test_mismatched_phase_aborts_every_worker_but_still_allows_drain (unittest.loader._FailedTest.test_mismatched_phase_aborts_every_worker_but_still_allows_drain)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_mismatched_phase_aborts_every_worker_but_still_allows_drain'
+
+======================================================================
+ERROR: test_cleanup_failure_is_reported_and_never_authorizes_store_shutdown (unittest.loader._FailedTest.test_cleanup_failure_is_reported_and_never_authorizes_store_shutdown)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_cleanup_failure_is_reported_and_never_authorizes_store_shutdown'
+
+======================================================================
+ERROR: test_failed_work_still_closes_pools_and_clients_before_store (unittest.loader._FailedTest.test_failed_work_still_closes_pools_and_clients_before_store)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_failed_work_still_closes_pools_and_clients_before_store'
+
+======================================================================
+ERROR: test_tp1_and_tp2_independent_store_owners_wait_for_clients (unittest.loader._FailedTest.test_tp1_and_tp2_independent_store_owners_wait_for_clients)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_tp1_and_tp2_independent_store_owners_wait_for_clients'
+
+======================================================================
+ERROR: test_tp4_shared_store_survives_slow_decode_leave (unittest.loader._FailedTest.test_tp4_shared_store_survives_slow_decode_leave)
+----------------------------------------------------------------------
+AttributeError: 'function' object has no attribute 'test_tp4_shared_store_survives_slow_decode_leave'
+
+----------------------------------------------------------------------
+Ran 21 tests in 0.001s
+
+FAILED (errors=21)

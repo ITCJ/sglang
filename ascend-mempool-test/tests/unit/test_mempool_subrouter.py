@@ -421,18 +421,38 @@ class TestSubrouter(unittest.TestCase):
         )
 
     def test_admit_waits_for_last_rank_before_any_queue_advances_or_source_frees(self):
+        self.admit_waits_for_last_rank(shared=False)
+
+    def test_shared_admit_waits_for_segment_owner_before_publication_or_free(self):
+        self.admit_waits_for_last_rank(shared=True)
+
+    def admit_waits_for_last_rank(self, *, shared):
         import test_prefix as prefix_fixture
 
         stores, events = [], []
-        for tick in self.ticks["prefill"]:
-            helper = prefix_fixture.TestPrefixStore()
+        if shared:
+            import test_prefix_shared
+
+            self.setUp(main_groups=tuple((r, r + 1) for r in range(0, 16, 2)))
+            helper = test_prefix_shared.TestSharedPrefix()
             self.addCleanup(helper.doCleanups)
-            store, _, _, device_events = helper.make_store(
-                pages=40, page_size=128, prompt_capacity=8192
-            )
-            tick.shard.prefix = store
-            stores.append(store)
-            events.append(device_events)
+            states, _ = helper.group(page_size=128, capacity=8192)
+            for tick, (store, _, _, device_events) in zip(
+                self.ticks["prefill"], states
+            ):
+                tick.shard.prefix = store
+                stores.append(store)
+                events.append(device_events)
+        else:
+            for tick in self.ticks["prefill"]:
+                helper = prefix_fixture.TestPrefixStore()
+                self.addCleanup(helper.doCleanups)
+                store, _, _, device_events = helper.make_store(
+                    pages=40, page_size=128, prompt_capacity=8192
+                )
+                tick.shard.prefix = store
+                stores.append(store)
+                events.append(device_events)
         d = self.command("decode", "alloc", request=self.request)
         p = self.command("prefill", "alloc", request=self.request, bindings=d["ranks"])
         d = self.command(
@@ -491,8 +511,10 @@ class TestSubrouter(unittest.TestCase):
         )
         self.commands["prefill"].append(command)
         self.advance("prefill", facts)
-        for rank_events in events[:15]:
-            rank_events[-1].done = True
+        delayed = 0 if shared else 15
+        for rank, rank_events in enumerate(events):
+            if rank != delayed:
+                rank_events[-1].done = True
         self.advance("prefill", facts)
         self.assertFalse(
             any(m["kind"] == "admit_ack" for m in self.messages["prefill"])
@@ -504,7 +526,7 @@ class TestSubrouter(unittest.TestCase):
         self.assertTrue(
             all(store.free_pages == tuple(range(1, 40)) for store in stores)
         )
-        events[15][-1].done = True
+        events[delayed][-1].done = True
         self.advance("prefill", facts)
         ack = next(m for m in self.messages["prefill"] if m["kind"] == "admit_ack")
         self.assertEqual(len(ack["ranks"]), 16)

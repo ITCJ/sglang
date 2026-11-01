@@ -495,6 +495,39 @@ class MempoolKVManager:
                 nic_port=session.nic_base_port + session.participant,
                 bytes=geometry.total_bytes,
             )
+            if session.prefix_shared and name.startswith("prefix_"):
+                result[name].update(
+                    replica=0,
+                    mapping_members=list(session.members),
+                    device_mapping_members=list(session.members),
+                    mapping_participants=list(range(session.world_size)),
+                    device_ranges=[
+                        dict(
+                            segment=i,
+                            address=hex(
+                                self.view(0, 0, region=name, segment=i).device_base
+                            ),
+                            bytes=self.view(
+                                0, 0, region=name, segment=i
+                            ).layout.total_bytes,
+                        )
+                        for i in range(len(session.main_groups))
+                    ],
+                    registration_seconds=None,
+                    timing_note="SDK exposes no separate GPU registration timer",
+                    segments=[
+                        dict(
+                            segment=segment,
+                            owner=group[0],
+                            members=list(group),
+                            numa_node=session.prefix_nodes[segment],
+                            bytes=session.regions(
+                                session.region_owner(0, name, segment)
+                            )[name][1].total_bytes,
+                        )
+                        for segment, group in enumerate(session.main_groups)
+                    ],
+                )
         return result
 
     def placement_registration(self, tp_rank: int, host: str) -> dict[str, Any]:
@@ -546,12 +579,17 @@ class MempoolKVManager:
         )
 
     def view(
-        self, rank: int, layer: int, *, region: str = "alive_main"
+        self,
+        rank: int,
+        layer: int,
+        *,
+        region: str = "alive_main",
+        segment: int | None = None,
     ) -> MempoolKVView:
         """Return a typed layer view that keeps its owning pool alive."""
         participant = None
         if self.session is not None and self.session.regional_sharing:
-            participant = self.session.region_owner(rank, region)
+            participant = self.session.region_owner(rank, region, segment)
             offset, layout = self.session.regions(participant)[region]
         else:
             offset, layout = self.layout.regions(rank)[region]
@@ -573,18 +611,8 @@ class MempoolKVManager:
     def probe_gva(self, side: int) -> int:
         session = self.session
         if session is not None and session.regional_sharing:
-            participant = side * len(session.members) + session.members.index(
-                session.tp_rank
-            )
-            offset = 0
-            if side == 1 and session.decode_shared:
-                participant = session.region_owner(side)
-                offset = 64 * session.region_members(side).index(session.tp_rank)
-            return (
-                self.view_bases(side, participant)[0]
-                + session.probe_offset(participant)
-                + offset
-            )
+            participant, offset = session.probe_location(side)
+            return self.view_bases(side, participant)[0] + offset
         return self.bases(side)[0] + self.layout.probe_offset(side)
 
     def probe_peer(self, marker: Any) -> None:

@@ -269,6 +269,66 @@ class TestMainRouter(unittest.TestCase):
 
 
 class TestPrefixMainRouter(unittest.TestCase):
+    def test_shared_abce_publishes_one_location_and_reads_interleaved_pages(self):
+        from ascend_mempool.prefix_layout import PrefixLayout
+
+        self.setUp(shared=True)
+        geometry = PrefixLayout(40, self.main.config.prefill_groups)
+        free = set(range(40))
+        for start, (tokens, hit, used) in enumerate(
+            (
+                ([7] * 4096, 0, 32),
+                ([7] * 4096 + [8] * 1024, 4096, 40),
+                ([7] * 4096, 3968, 40),
+                ([9] * 4096, 0, 40),
+            )
+        ):
+            request, p_dispatch, d_dispatch = self.start_inference(tokens)
+            self.assertEqual(request["hit_len"], hit)
+            if hit:
+                for kind in ("load_back", "fill"):
+                    command = self.main.outbox.popleft()
+                    self.assertEqual(command["kind"], kind)
+                    self.assertTrue(
+                        all(
+                            s["pages"] == command["sources"][0]["pages"]
+                            for s in command["sources"]
+                        )
+                    )
+                    self.ack(
+                        command,
+                        lambda rank: dict(
+                            slot=5,
+                            readable=True,
+                            tokens=hit,
+                            source_pages=[
+                                p["logical_page"]
+                                for p in command["sources"][rank]["pages"]
+                            ],
+                            main_layers=78,
+                            index_layers=21,
+                            **(
+                                {"prefix_indices": list(range(128, hit + 128))}
+                                if kind == "load_back"
+                                else {}
+                            ),
+                        ),
+                    )
+            self.finish_started(request, p_dispatch, d_dispatch)
+            if start < 2:
+                command = self.main.outbox.popleft()
+                targets = geometry.select(free, len(command["source_pages"]), start)
+                free.difference_update(targets)
+                self.main.receive(self.admit_ack(command, targets))
+            self.free()
+            self.assertEqual(self.main.ledger["p_prefix"].outstanding, used)
+            self.assertTrue(
+                all(
+                    len(n["prefix"]["locations"]) == 1
+                    for n in self.main.directory.values()
+                )
+            )
+
     def test_invalid_restore_and_early_ready_fail_stop_without_unlocking_sources(self):
         from msgspec.structs import replace
 
@@ -391,9 +451,19 @@ class TestPrefixMainRouter(unittest.TestCase):
             self.free()
             self.assertEqual(self.main.ledger["p_prefix"].outstanding, 40)
 
-    def setUp(self):
+    def setUp(self, shared=False):
         self.main = MainRouter(
-            RouterConfig("p", "d", "/model", prefix_pages=40),
+            RouterConfig(
+                "p",
+                "d",
+                "/model",
+                prefix_pages=40,
+                prefix_shared=shared,
+                prefill_shared=shared,
+                decode_shared=shared,
+                prefill_index_shared=shared,
+                match_prefix=shared,
+            ),
             "cpu",
             hasher=lambda ids, size: [
                 hashlib.sha256(bytes(ids[:end])).hexdigest()
@@ -408,9 +478,14 @@ class TestPrefixMainRouter(unittest.TestCase):
                     local_dram_bytes=(13 if role == "prefill" else 1) * 2**30,
                     verify_prefix=False,
                 )
-                rank["replicas"] = dict(
-                    alive_main=16, alive_index=16, prefix_main=16, prefix_index=16
-                )
+                rank["replicas"] = self.main.config.replicas(role)
+                if shared:
+                    rank.update(
+                        prefix_region="shared-prefix",
+                        prefix_policy=self.main.config.prefix_policy(),
+                        match_prefix=True,
+                        prefix_read_assignment="by_segment",
+                    )
             self.main.register(value)
 
     def ack(self, command, rank_value=lambda rank: {}):
@@ -502,13 +577,20 @@ class TestPrefixMainRouter(unittest.TestCase):
                     pages=[
                         dict(
                             pool="prefix",
-                            region=f"prefill-{rank}",
-                            replica=rank,
+                            region="shared-prefix"
+                            if self.main.config.prefix_shared
+                            else f"prefill-{rank}",
+                            replica=0 if self.main.config.prefix_shared else rank,
                             logical_page=page,
                             page_size=128,
                         )
                         for page in targets
                     ],
+                    **(
+                        {"written_pages": [p for p in targets if p // 5 * 2 == rank]}
+                        if self.main.config.prefix_shared
+                        else {}
+                    ),
                 )
                 for rank in range(16)
             ],

@@ -11,9 +11,29 @@ import verify_mempool_prefix as verifier
 
 
 class TestPrefixEvidence(unittest.TestCase):
-    def evidence(self, *, reuse=False, full=False, controls=False, index_checks=False):
+    def evidence(
+        self,
+        *,
+        reuse=False,
+        full=False,
+        controls=False,
+        index_checks=False,
+        shared=False,
+    ):
         system = fixture.TestPrefixMainRouter()
-        system.setUp()
+        system.setUp(shared=shared)
+        physical_order = []
+
+        def source_value(rank, page):
+            return (
+                {
+                    "main": f"{rank * 100 + page:064x}",
+                    "index": f"{rank * 200 + page + 10000:064x}",
+                }
+                if shared
+                else f"{rank * 100 + page:064x}"
+            )
+
         snapshots, cases, lines = [], [], []
         retained = [{} for _ in range(16)]
         scenarios = (
@@ -50,7 +70,9 @@ class TestPrefixEvidence(unittest.TestCase):
                         slot=5,
                         readable=True,
                         tokens=hit,
-                        source_pages=list(range(hit // 128)),
+                        source_pages=[
+                            p["logical_page"] for p in load["sources"][rank]["pages"]
+                        ],
                         main_layers=78,
                         index_layers=21,
                     )
@@ -70,9 +92,31 @@ class TestPrefixEvidence(unittest.TestCase):
             system.finish_started(request, p_dispatch, d_dispatch)
             command = system.main.outbox.popleft() if added else None
             if command:
-                system.main.receive(
-                    system.admit_ack(command, list(range(total - added, total)))
-                )
+                targets = list(range(total - added, total))
+                if shared:
+                    from ascend_mempool.prefix_layout import PrefixLayout
+
+                    targets = PrefixLayout(
+                        40, system.main.config.prefill_groups
+                    ).select(set(range(40)) - set(physical_order), added, index)
+                physical_order.extend(targets)
+                ack = system.admit_ack(command, targets)
+                writers = {}
+                if shared:
+                    for page, target in zip(command["source_pages"], targets):
+                        writers[str(target)] = verifier.prefix_source_writers(
+                            system.main.status(), page, target, len(tokens)
+                        )
+                    for receipt in ack["ranks"]:
+                        receipt["source_digests"] = {
+                            str(target): {
+                                region: source_value(writer, page)[region]
+                                for region, writer in writers[str(target)].items()
+                                if writer == receipt["rank"]
+                            }
+                            for page, target in zip(command["source_pages"], targets)
+                        }
+                system.main.receive(ack)
             system.free()
             snapshots.append(system.main.status())
             cases.append(
@@ -98,9 +142,10 @@ class TestPrefixEvidence(unittest.TestCase):
                     main_layers=78,
                     index_layers=21,
                     page_size=128,
+                    prefix_shared=shared,
                 )
                 source = {
-                    str(page): f"{rank * 100 + page:064x}"
+                    str(page): source_value(rank, page)
                     for page in range(len(tokens) // 128)
                 }
 
@@ -127,12 +172,14 @@ class TestPrefixEvidence(unittest.TestCase):
 
                 if hit:
                     prefix_values = {
-                        str(p): retained[rank][str(p)] for p in range(hit // 128)
+                        str(p): retained[rank][str(physical_order[p])]
+                        for p in range(hit // 128)
                     }
+                    source.update(prefix_values)
                     report(
                         "load_back",
                         load["op_id"],
-                        list(range(hit // 128)),
+                        physical_order[: hit // 128],
                         prefix_values,
                         prefix_indices=indices,
                         parts=[512, 64],
@@ -173,7 +220,10 @@ class TestPrefixEvidence(unittest.TestCase):
 
                     progress(False)
                     report(
-                        "fill", fill["op_id"], list(range(hit // 128)), prefix_values
+                        "fill",
+                        fill["op_id"],
+                        physical_order[: hit // 128],
+                        prefix_values,
                     )
                     lines.append(
                         f"mempool sr role=prefill rank={rank} event=fill rid={request['rid']} op_id={fill['op_id']}"
@@ -182,11 +232,22 @@ class TestPrefixEvidence(unittest.TestCase):
                     report("alive", 0, list(range(len(tokens) // 128)), source)
                 if command:
                     saved = {
-                        str(page): source[str(page)]
-                        for page in range(total - added, total)
+                        str(target): {
+                            region: source_value(writer, page)[region]
+                            for region, writer in writers[str(target)].items()
+                        }
+                        if shared
+                        else source[str(page)]
+                        for page, target in zip(command["source_pages"], targets)
                     }
                     retained[rank].update(saved)
-                    report("admit", command["op_id"], command["source_pages"], saved)
+                    report(
+                        "admit",
+                        command["op_id"],
+                        command["source_pages"],
+                        saved,
+                        **({"page_sources": writers} if shared else {}),
+                    )
                     lines.append(
                         f"mempool sr role=prefill rank={rank} event=admit rid={request['rid']} op_id={command['op_id']}"
                     )
@@ -200,6 +261,34 @@ class TestPrefixEvidence(unittest.TestCase):
                     f"mempool sr role=prefill rank={rank} event=free rid={request['rid']} op_id={free_op}"
                 )
         return snapshots, cases, lines
+
+    def test_shared_source_digests_follow_actual_writers_and_reject_corruption(self):
+        import verify_mempool_reuse
+
+        snapshots, cases, lines = self.evidence(
+            reuse=True, full=True, controls=True, shared=True
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            log = Path(folder) / "prefill.log"
+            log.write_text("\n".join(lines))
+            report = verify_mempool_reuse.check_reuse(log, snapshots, cases, full=True)
+            self.assertEqual(report["hit_lengths"], [0, 4096, 3968, 0, 0, 0])
+            for stage, field in (("admit", "page_sources"), ("load_back", "pages")):
+                bad = lines.copy()
+                for i, line in enumerate(bad):
+                    if "prefix_content" not in line:
+                        continue
+                    value = json.loads(line.split(" data=", 1)[1])
+                    if value["stage"] == stage:
+                        key = next(iter(value[field]))
+                        value[field][key]["main"] = (
+                            15 if field == "page_sources" else "f" * 64
+                        )
+                        bad[i] = "mempool prefix_content data=" + json.dumps(value)
+                        break
+                log.write_text("\n".join(bad))
+                with self.assertRaises(ValueError):
+                    verify_mempool_reuse.check_reuse(log, snapshots, cases, full=True)
 
     def test_full_evidence_and_corrupted_rank_page_content_or_order(self):
         snapshots, cases, lines = self.evidence()

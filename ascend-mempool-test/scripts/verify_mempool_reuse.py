@@ -91,7 +91,10 @@ def check_reuse(
                 raise ValueError("reuse changed a retained prefix location")
         free_op, published = saved.check_trace(done=done, added=added, total=total)
         saved.check_directory(
-            directory=directory, previous=previous, published=published
+            directory=directory,
+            previous=previous,
+            published=published,
+            replicas=saved.prefix_replicas(snapshot),
         )
         if hit:
             check_operations(done)
@@ -225,7 +228,7 @@ def check_restored_rank(
     snapshot: dict[str, Any],
     previous: dict[str, Any],
     base_hashes: list[str],
-    retained: dict[str, str],
+    retained: dict[str, Any],
     rank: int,
     prompt: int,
 ) -> None:
@@ -236,7 +239,10 @@ def check_restored_rank(
     alive_line, alive = reports.content(stage="alive", **identity)
     suffix_line, suffix = reports.content(stage="suffix", **identity)
     native_line = reports.native.get((rank, done["room"]), -1)
-    source_pages = [previous[h]["locations"][rank] for h in base_hashes[: hit // 128]]
+    replica = 0 if saved.prefix_replicas(snapshot) == 1 else rank
+    source_pages = [
+        previous[h]["locations"][replica] for h in base_hashes[: hit // 128]
+    ]
     expected = {
         str(i): retained[str(p["logical_page"])] for i, p in enumerate(source_pages)
     }

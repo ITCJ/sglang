@@ -114,7 +114,9 @@ class MainRouter:
             )
         if self.config.match_prefix:
             expected["match_prefix"] = True
-            expected["prefix_read_assignment"] = self.config.prefix_read_assignment
+            expected["prefix_read_assignment"] = self.config.read_assignment
+        if self.config.prefix_shared and role == "prefill":
+            expected["prefix_policy"] = self.config.prefix_policy()
         if (
             self.config.prefill_shared
             or self.config.decode_shared
@@ -124,6 +126,15 @@ class MainRouter:
             # only their private regions. Their physical sizes are not uniform.
             expected.pop("local_dram_bytes", None)
         for rank in ranks:
+            if (
+                self.config.prefix_shared
+                and role == "prefill"
+                and (
+                    not rank.get("prefix_region")
+                    or rank["prefix_region"] != ranks[0].get("prefix_region")
+                )
+            ):
+                raise ValueError("shared prefix requires one registered region")
             if any(rank.get(k) != v for k, v in expected.items()):
                 raise ValueError("SR registered incompatible ticket01 capabilities")
             if (
@@ -304,7 +315,7 @@ class MainRouter:
                 prefix = self.directory.get(value, {}).get("prefix")
                 if prefix is None or prefix["state"] != "ready":
                     break
-                if len(prefix["locations"]) != 16:
+                if len(prefix["locations"]) != self.config.replicas()["prefix_main"]:
                     raise RuntimeError("ready prefix lacks required replicas")
                 count += 1
         return count * self.config.page_size
@@ -331,7 +342,9 @@ class MainRouter:
                     rank=rank["rank"],
                     slot=rank["slot"],
                     pages=[
-                        self.directory[value]["prefix"]["locations"][rank["rank"]]
+                        self.directory[value]["prefix"]["locations"][
+                            0 if self.config.prefix_shared else rank["rank"]
+                        ]
                         for value in hashes
                     ],
                 )
@@ -712,12 +725,18 @@ class MainRouter:
         }
         if occupied.intersection(targets):
             raise ValueError("prefix ack aliases a retained page")
+        if self.config.prefix_shared and sorted(
+            page for receipt in ranks for page in receipt.get("written_pages", [])
+        ) != sorted(targets):
+            raise ValueError("prefix ack requires exactly one writer per target page")
         for rank, receipt in enumerate(ranks):
             expected_pages = [
                 dict(
                     pool="prefix",
-                    region=self.registrations["prefill"]["ranks"][rank]["session"],
-                    replica=rank,
+                    region=self.registrations["prefill"]["ranks"][rank][
+                        "prefix_region" if self.config.prefix_shared else "session"
+                    ],
+                    replica=0 if self.config.prefix_shared else rank,
                     logical_page=page,
                     page_size=self.config.page_size,
                 )
@@ -742,7 +761,11 @@ class MainRouter:
             ):
                 raise ValueError("prefix child cannot publish before parent")
             node["prefix"].update(
-                state="ready", locations=[rank["pages"][index] for rank in ranks]
+                state="ready",
+                locations=[
+                    rank["pages"][index]
+                    for rank in (ranks[:1] if self.config.prefix_shared else ranks)
+                ],
             )
             node["source_ops"].remove(command["op_id"])
             node["lock_ref"] -= 1

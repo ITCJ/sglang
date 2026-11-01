@@ -1,0 +1,32 @@
+{
+  "base": "fd1541b8d9",
+  "full_cpu": {
+    "tests": 532,
+    "seconds": 32.031,
+    "failures": 0,
+    "errors": 25,
+    "blocked_methods": 21,
+    "reason": "sandbox denied local sockets and ps"
+  },
+  "retry": {
+    "tests": 21,
+    "seconds": 22.617,
+    "failures": 0,
+    "errors": 0
+  },
+  "final_cpu": "532 tests covered successfully across full run and targeted sandbox retry",
+  "static": {
+    "python_files": 24,
+    "strict_mypy_modules": 18,
+    "python_syntax": "3.9"
+  },
+  "npu": "not run",
+  "review": {
+    "standards": 0,
+    "spec": 0,
+    "reviewed_commit": "c913f7764c",
+    "functional_changes_after_review": false
+  },
+  "planner_cli": "passed: 8 segments / 40 pages / P 96 GiB / zero followers",
+  "documentation": "links and embedded drafts checked"
+}

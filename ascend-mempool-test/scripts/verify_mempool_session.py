@@ -141,11 +141,18 @@ def accounting(root: Path, *, shared: bool = False) -> dict[str, Any]:
     )
 
 
-def summarize(root: Path, *, config: RouterConfig | None = None) -> dict[str, Any]:
+def summarize(
+    root: Path, *, config: RouterConfig | None = None, mode: str | None = None
+) -> dict[str, Any]:
     import verify_mempool_shared
 
     rounds = []
-    expected_requests = 9 if config and config.prefill_index_shared else 6
+    index_checks = (
+        mode == "index-sharing-acceptance"
+        if mode is not None
+        else bool(config and config.prefill_index_shared and not config.prefix_shared)
+    )
+    expected_requests = 9 if index_checks else 6
     for name in SERVICE_STAGES:
         stage = root / name
 
@@ -190,7 +197,7 @@ def summarize(root: Path, *, config: RouterConfig | None = None) -> dict[str, An
                 sharing=shared,
             )
         )
-        if config and config.prefill_index_shared:
+        if index_checks:
             from mempool_logical_cases import check_index_accuracy
 
             responses = read("responses.json")
@@ -216,7 +223,9 @@ def summarize(root: Path, *, config: RouterConfig | None = None) -> dict[str, An
         raise ValueError("P/D/mixed fetch smoke failed")
     return dict(
         status="passed",
-        coverage="K1-07 reduced functional acceptance"
+        coverage="K1-08 reduced functional acceptance"
+        if config is not None and config.prefix_shared
+        else "K1-07 reduced functional acceptance"
         if config is not None and config.prefill_index_shared
         else "shared decode functional regression (without ordering probes)"
         if config is not None and config.decode_shared

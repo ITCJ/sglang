@@ -4,7 +4,7 @@
 
 **Blocked by:** [05（K1-03a P alive 主 KV 共享）](05-k1-03a-p-alive-main-kv-sharing.md)、[03（K1-04 prefix split_read（16 份布局））](03-k1-04-prefix-split-read.md)、[07（K1-05a P alive Index K 单份）](07-k1-05a-p-alive-index-k-single-copy.md)
 
-**Status:** ready-for-agent
+**Status:** needs-info
 
 **State:** open
 
@@ -34,3 +34,27 @@
 
 用户确认07功能验收；03/05/07均closed，本票已解锁、尚未实施，State仍open。
 07的接受范围和未验证项见[确认记录](../verification/ticket07-cold-20261101/acceptance.md)。
+
+### 2026-11-01：按 syncfile 最新票据完成实施规划
+
+用户要求本轮回顾进度、预先规划，compact 后再由 xhigh 实施。
+已直接核对 syncfile 的 ticket08 及执行文本第12节，功能与验收正文和本地同步稿一致。
+[执行计划](../ticket08-implementation-plan.md)记录分段布局、交错分配、三条拷贝路径、
+单位置描述符、真实源校验、测试与分步完成条件；另有[总览](../ticket08-plan-overview.html)。
+
+计划复用07的32参与者会话，当前索引拷贝保留到11；功能源码预计仅涉及Ascend/NPU。
+用户既有的不新增BM直接读回、性能留测试分支和默认退出约定继续适用。
+本轮没有修改功能或运行新CPU/NPU验收；08保持open，11仍等待08自身验收。
+
+### 2026-11-01：实现与CPU验证完成，等待用户NPU验收
+
+已实现八段单份prefix、交错分配、owner/single_rank admit、按段load_back、直接fill及Main单位置发布。
+32参与者会话保持；P follower零贡献，源摘要按实际主KV/Index K写者关联。
+功能改动全部位于Ascend/NPU，未改变默认退出、未新增请求级BM读回或性能代码。
+
+完整CPU一次运行532项；21个方法受本机沙箱限制，单独补跑后全部覆盖通过。
+24文件静态检查、18模块strict mypy通过；Standards/Spec双轴评审均0项发现。
+[交付说明](../delivery-ticket08.md)列出最终源码阅读顺序、[验证记录](../verification/ticket08-cpu-20261101/README.md)与用户入口。
+
+NPU未运行，原验收清单保持未勾选，State=open；用户确认后才能关闭并解锁11。
+默认入口是两轮六例精简功能验收，NUMA物理驻留、性能、直接fill DRAM比较等缺项单列。

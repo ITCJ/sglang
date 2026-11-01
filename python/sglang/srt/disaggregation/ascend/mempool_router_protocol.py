@@ -43,7 +43,11 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     prefix_pages: int = 0
     verify_prefix: bool = False
     match_prefix: bool = False
-    prefix_read_assignment: str = "round_robin"
+    prefix_read_assignment: str = "auto"
+    prefix_shared: bool = False
+    prefix_start_segment: int | None = None
+    prefix_admit_mode: str = "owners"
+    prefix_admit_rank: int = 0
     prefill_shared: bool = False
     prefill_groups: tuple[tuple[int, ...], ...] = tuple(
         (r, r + 1) for r in range(0, 16, 2)
@@ -58,6 +62,15 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     decode_write_assignment: str = "features"
 
     def __post_init__(self) -> None:
+        if self.prefix_shared and not (
+            self.prefill_shared and self.prefill_index_shared
+        ):
+            raise ValueError("shared prefix requires shared P main and Index K")
+        if (
+            self.prefix_admit_mode not in ("owners", "single_rank")
+            or not 0 <= self.prefix_admit_rank < 16
+        ):
+            raise ValueError("invalid prefix admit executor")
         if self.prefill_index_shared and not self.prefix_pages:
             raise ValueError("shared Index K requires prefix storage")
         if self.prefill_index_writers not in ((0,), (0, 1)):
@@ -86,8 +99,22 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
             raise ValueError(
                 "prefill_groups must cover each TP rank exactly once; first member is owner"
             )
-        if self.prefix_read_assignment not in ("round_robin", "contiguous"):
-            raise ValueError("prefix_read_assignment must be round_robin or contiguous")
+        if self.prefix_shared and self.prefix_pages % len(self.prefill_groups):
+            raise ValueError("prefix pages must divide evenly across segments")
+        if (
+            self.prefix_start_segment is not None
+            and not 0 <= self.prefix_start_segment < len(self.prefill_groups)
+        ):
+            raise ValueError("prefix_start_segment must name a segment")
+        if self.prefix_read_assignment not in (
+            "auto",
+            "by_segment",
+            "round_robin",
+            "contiguous",
+        ):
+            raise ValueError("invalid prefix_read_assignment")
+        if self.prefix_read_assignment == "by_segment" and not self.prefix_shared:
+            raise ValueError("by_segment requires shared prefix")
         if type(self.match_prefix) is not bool or (
             self.match_prefix and not self.prefix_pages
         ):
@@ -157,8 +184,25 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
         return dict(
             alive_main=len(self.main_groups(role)),
             alive_index=1 if self.prefill_index_shared else enabled,
-            prefix_main=enabled,
-            prefix_index=enabled,
+            prefix_main=1 if self.prefix_shared else enabled,
+            prefix_index=1 if self.prefix_shared else enabled,
+        )
+
+    @property
+    def read_assignment(self) -> str:
+        if self.prefix_read_assignment == "auto":
+            return "by_segment" if self.prefix_shared else "round_robin"
+        return self.prefix_read_assignment
+
+    def prefix_policy(self) -> dict[str, Any]:
+        return dict(
+            admit_mode=self.prefix_admit_mode,
+            admit_rank=self.prefix_admit_rank,
+            start_segment=self.prefix_start_segment,
+            read_assignment=self.read_assignment,
+            main_write_assignment=self.prefill_write_assignment,
+            groups=[list(group) for group in self.prefill_groups],
+            index_writers=list(self.prefill_index_writers),
         )
 
     def main_groups(self, role: str) -> tuple[tuple[int, ...], ...]:

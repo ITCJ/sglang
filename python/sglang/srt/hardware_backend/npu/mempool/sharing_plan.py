@@ -14,6 +14,7 @@ from typing import Any
 import msgspec
 
 from .layout import KVLayout, PoolLayout, positive_int
+from .prefix_layout import PrefixLayout
 
 SHARE_ENV = "SGLANG_NPU_MEMPOOL_SHARE"
 NUMA_ENV = "SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE"
@@ -136,6 +137,15 @@ class PoolSession:
     decode_shared: bool = False
     prefill_index_shared: bool = False
     main_groups: tuple[tuple[int, ...], ...] = ()
+    prefix_shared: bool = False
+    prefix_nodes: tuple[int, ...] = ()
+
+    @property
+    def prefix_layout(self) -> PrefixLayout | None:
+        if not self.prefix_shared:
+            return None
+        assert self.layout.prefix_main is not None
+        return PrefixLayout(self.layout.prefix_main.slots, self.main_groups)
 
     @property
     def regional_sharing(self) -> bool:
@@ -175,7 +185,9 @@ class PoolSession:
             side == 0 and region == "alive_index" and self.prefill_index_shared
         ):
             return self.members
-        if region == "alive_main" and self.shares_main(side):
+        if (region == "alive_main" and self.shares_main(side)) or (
+            region.startswith("prefix_") and self.prefix_shared
+        ):
             return (
                 next(g for g in self.main_groups if rank in g)
                 if self.main_groups
@@ -183,8 +195,14 @@ class PoolSession:
             )
         return (rank,)
 
-    def region_owner(self, side: int, region: str = "alive_main") -> int:
-        owner = self.region_members(side, region)[0]
+    def region_owner(
+        self, side: int, region: str = "alive_main", segment: int | None = None
+    ) -> int:
+        owner = (
+            self.main_groups[segment][0]
+            if segment is not None
+            else self.region_members(side, region)[0]
+        )
         return side * len(self.members) + self.members.index(owner)
 
     def regions(self, participant: int) -> dict[str, tuple[int, KVLayout]]:
@@ -195,6 +213,11 @@ class PoolSession:
         result = {}
         offset = 0
         for name, (_, geometry) in regions.items():
+            if name.startswith("prefix_") and self.prefix_shared:
+                assert self.prefix_layout is not None
+                geometry = msgspec.structs.replace(
+                    geometry, slots=self.prefix_layout.segment_pages
+                )
             rank = self.members[member]
             if self.region_members(side, name, rank)[0] == rank:
                 result[name] = offset, geometry
@@ -207,11 +230,22 @@ class PoolSession:
         )
 
     def contribution_for(self, participant: int) -> int:
-        if participant >= len(self.members) and not self.regions(participant):
+        if (
+            participant >= len(self.members) or self.prefix_shared
+        ) and not self.regions(participant):
             return 0
         alignment = self.layout.alignment_bytes
         required = self.probe_offset(participant) + self.layout.probe_bytes
         return (required + alignment - 1) // alignment * alignment
+
+    def probe_location(self, side: int) -> tuple[int, int]:
+        """Reserve a different probe slot for every zero-contribution member."""
+        participant = side * len(self.members) + self.members.index(self.tp_rank)
+        offset = 0
+        if (side == 1 and self.decode_shared) or (side == 0 and self.prefix_shared):
+            participant = self.region_owner(side)
+            offset = 64 * self.region_members(side).index(self.tp_rank)
+        return participant, self.probe_offset(participant) + offset
 
 
 @dataclass(frozen=True)
@@ -232,6 +266,7 @@ class SharingPlan:
     prefill_shared: bool = False
     decode_shared: bool = False
     prefill_index_shared: bool = False
+    prefix_shared: bool = False
 
     def session(self, tp_rank: int) -> PoolSession:
         """Use the same group, ports and allocation contract for a live pool."""
@@ -260,6 +295,8 @@ class SharingPlan:
             self.decode_shared,
             self.prefill_index_shared,
             tuple(g.members for g in self.groups) if self.prefill_index_shared else (),
+            self.prefix_shared,
+            tuple(g.numa_node for g in self.groups),
         )
 
     def validate_peer(self, peer: SharingPlan) -> None:
@@ -273,6 +310,7 @@ class SharingPlan:
             "prefill_shared",
             "decode_shared",
             "prefill_index_shared",
+            "prefix_shared",
             "pool_id",
             "base_port",
         ):
@@ -338,6 +376,7 @@ class SharingPlan:
             "prefill_shared": self.prefill_shared,
             "decode_shared": self.decode_shared,
             "prefill_index_shared": self.prefill_index_shared,
+            "prefix_shared": self.prefix_shared,
             "members": tuple(a.rank for a in self.assignments)
             if self.prefill_index_shared
             else group.members,
@@ -393,14 +432,16 @@ class SharingPlan:
                 session = self.session(row["rank"])
                 row.update(
                     owner_tp_rank=session.region_members(side)[0]
-                    if side == 1 and self.decode_shared
+                    if (side == 1 and self.decode_shared)
+                    or (side == 0 and self.prefix_shared)
                     else session.tp_rank,
                     main_owner_tp_rank=session.region_members(side)[0]
                     if session.shares_main(side)
                     else session.tp_rank,
                     owner_participant=session.region_owner(side),
                     contribution_bytes=session.contribution,
-                    probe_offset=session.probe_offset(session.participant),
+                    probe_offset=session.probe_location(side)[1],
+                    probe_participant=session.probe_location(side)[0],
                     participant=session.participant,
                     world_size=session.world_size,
                     store_port=session.store_port,
@@ -424,6 +465,26 @@ class SharingPlan:
             "prefill_shared": self.prefill_shared,
             "decode_shared": self.decode_shared,
             "prefill_index_shared": self.prefill_index_shared,
+            "prefix_shared": self.prefix_shared,
+            "prefix_replica_count": 0
+            if self.layout.prefix_main is None
+            else 1
+            if self.prefix_shared
+            else len(self.assignments),
+            "prefix_segments": [
+                dict(
+                    segment=i,
+                    owner=g.owner_tp_rank,
+                    members=list(g.members),
+                    numa_node=g.numa_node,
+                    pages=self.layout.prefix_main.slots // len(self.groups),
+                )
+                for i, g in enumerate(self.groups)
+            ]
+            if self.role == "prefill"
+            and self.prefix_shared
+            and self.layout.prefix_main is not None
+            else [],
             "index_replica_count": 1
             if self.prefill_index_shared
             else len(self.assignments),
@@ -554,9 +615,12 @@ class MempoolNumaConfig:
         prefill_groups: Sequence[Sequence[int]] = (),
         decode_shared: bool = False,
         prefill_index_shared: bool = False,
+        prefix_shared: bool = False,
     ) -> SharingPlan:
         """Resolve NUMA first, then apply the sharing switch to that assignment."""
         positive_int("tp_size", tp_size)
+        if prefix_shared and not (prefill_shared and prefill_index_shared):
+            raise ValueError("shared prefix requires shared P main and Index K")
         if role not in ("prefill", "decode"):
             raise ValueError("role must be prefill or decode")
         for name, value in (("instance_id", instance_id), ("kv_identity", kv_identity)):
@@ -697,4 +761,5 @@ class MempoolNumaConfig:
             prefill_shared,
             decode_shared,
             prefill_index_shared,
+            prefix_shared,
         )

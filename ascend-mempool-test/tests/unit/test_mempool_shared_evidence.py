@@ -13,7 +13,9 @@ from ascend_mempool.sharing_plan import HostTopology, MempoolNumaConfig
 from ascend_mempool_pd.mempool_router_protocol import RouterConfig
 
 
-def shared_registration(testcase, decode_shared=False, index_shared=False):
+def shared_registration(
+    testcase, decode_shared=False, index_shared=False, prefix_shared=False
+):
     config = RouterConfig(
         "p",
         "d",
@@ -22,6 +24,7 @@ def shared_registration(testcase, decode_shared=False, index_shared=False):
         prefill_shared=True,
         decode_shared=decode_shared,
         prefill_index_shared=index_shared,
+        prefix_shared=prefix_shared,
     )
     layout = MempoolConfig(
         prefill_capacity=8192, decode_capacity=128, page_size=128
@@ -45,6 +48,7 @@ def shared_registration(testcase, decode_shared=False, index_shared=False):
             prefill_shared=True,
             decode_shared=decode_shared,
             prefill_index_shared=index_shared,
+            prefix_shared=prefix_shared,
             prefill_groups=config.prefill_groups,
         )
         for row in registrations[role]["ranks"]:
@@ -71,6 +75,10 @@ def shared_registration(testcase, decode_shared=False, index_shared=False):
                     bytes=2304,
                 ),
             )
+            if prefix_shared and side == 0:
+                row.update(
+                    prefix_region=session.identity, prefix_policy=config.prefix_policy()
+                )
             if decode_shared and side == 1:
                 row["shared_probe"]["decode_order"] = dict(
                     status="passed",
@@ -82,6 +90,21 @@ def shared_registration(testcase, decode_shared=False, index_shared=False):
 
 
 class TestSharedEvidence(unittest.TestCase):
+    def test_single_prefix_registration_checks_segments_and_zero_followers(self):
+        config, registrations = shared_registration(self, True, True, True)
+        result = verify_mempool_shared.check_registration(registrations, config)
+        self.assertEqual(result["prefix_replicas"], 1)
+        self.assertEqual(
+            sum(n["allocated_bytes"] for n in result["per_numa"].values()), 96 * 2**30
+        )
+        for field, value in (("owner", 3), ("bytes", 1), ("numa_node", 7)):
+            bad = copy.deepcopy(registrations)
+            bad["prefill"]["ranks"][1]["replica_locations"]["prefix_main"]["segments"][
+                1
+            ][field] = value
+            with self.assertRaisesRegex(ValueError, "segment"):
+                verify_mempool_shared.check_registration(bad, config)
+
     def test_single_index_registration_rejects_a_second_owner_or_wrong_numa(self):
         config, registrations = shared_registration(
             self, decode_shared=True, index_shared=True

@@ -53,6 +53,18 @@ class Reports(msgspec.Struct):
             raise ValueError("missing rank content stage: " + stage)
         self.consumed.add(key)
         line_no, value = self.contents[key]
+        pages = value["pages"]
+        if value.get("prefix_shared"):
+            if any(
+                not isinstance(digest, dict) or set(digest) != {"main", "index"}
+                for digest in pages.values()
+            ):
+                raise ValueError(
+                    "shared content requires separate main/Index K digests"
+                )
+            digests = [digest for pair in pages.values() for digest in pair.values()]
+        else:
+            digests = list(pages.values())
         if (
             value["slot"] != slot
             or value["content_source"]
@@ -63,8 +75,8 @@ class Reports(msgspec.Struct):
             or value["index_layers"] != 21
             or value["page_size"] != 128
             or any(
-                not re.fullmatch(r"[0-9a-f]{64}", digest)
-                for digest in value["pages"].values()
+                not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)
+                for digest in digests
             )
         ):
             raise ValueError("content receipt differs from actual source/geometry")
@@ -133,7 +145,12 @@ def check_prefix(
             if key not in directory or directory[key]["prefix"] != prefix:
                 raise ValueError("a retained directory location was overwritten")
         free_op, published = check_trace(done=done, added=added, total=total)
-        check_directory(directory=directory, previous=previous, published=published)
+        check_directory(
+            directory=directory,
+            previous=previous,
+            published=published,
+            replicas=prefix_replicas(snapshot),
+        )
         for rank in range(16):
             check_rank(
                 reports=reports,
@@ -236,6 +253,7 @@ def check_directory(
     directory: dict[str, Any],
     previous: dict[str, Any],
     published: list[dict[str, Any]],
+    replicas: int = 16,
 ) -> None:
     seen = set(previous)
     for item in published:
@@ -255,7 +273,7 @@ def check_directory(
             or node["locations"]
             or node["prefix"]["state"] != "ready"
             or node["prefix"]["lock_ops"]
-            or len(node["prefix"]["locations"]) != 16
+            or len(node["prefix"]["locations"]) != replicas
         ):
             raise ValueError("directory retains request ownership or an unready prefix")
     if any(node["child_count"] != children[key] for key, node in directory.items()):
@@ -272,7 +290,7 @@ def check_rank(
     rank: int,
     free_op: int,
     published: list[dict[str, Any]],
-    retained: dict[str, str],
+    retained: dict[str, Any],
     restored: bool = False,
 ) -> None:
     done = snapshot["completed"][-1]
@@ -327,16 +345,19 @@ def check_rank(
         ):
             raise ValueError("admit content differs from actual copy receipt")
         local_admit = reports.events.get((rid, rank, "admit"), [])
+        earliest_admit = native_line if prefix_replicas(snapshot) == 1 else admit_line
         if (
             not local_admit
             or not reports.native[rank, room] < admit_line < retained_line
             or any(
-                not admit_line < line < retained_line or int(fields["op_id"]) != op_id
+                not earliest_admit < line < retained_line
+                or int(fields["op_id"]) != op_id
                 for line, fields in local_admit
             )
         ):
             raise ValueError("admit acknowledged without completed content evidence")
         check_copied_pages(
+            reports=reports,
             operation=operation,
             done=done,
             rank=rank,
@@ -353,6 +374,7 @@ def check_rank(
 
 def check_copied_pages(
     *,
+    reports: Reports,
     operation: dict[str, Any],
     done: dict[str, Any],
     rank: int,
@@ -365,10 +387,39 @@ def check_copied_pages(
     source_pages = operation["command"]["source_pages"]
     receipt = operation["ack"]["ranks"][rank]
     directory = snapshot["directory"]
+    shared = prefix_replicas(snapshot) == 1
+    registration = snapshot["registrations"]["prefill"]["ranks"][rank]
     for logical, target, item, descriptor in zip(
         source_pages, receipt["target_pages"], published, receipt["pages"]
     ):
         source_descriptor = done["allocations"]["prefill"][rank]["pages"][logical]
+        expected = alive["pages"][str(logical)]
+        if shared:
+            writers = prefix_source_writers(
+                snapshot, logical, target, alive["prompt_tokens"]
+            )
+            expected = {}
+            for region, writer in writers.items():
+                _, origin = reports.content(
+                    stage="alive",
+                    rid=done["rid"],
+                    rank=writer,
+                    slot=done["allocations"]["prefill"][writer]["slot"],
+                    prompt_tokens=alive["prompt_tokens"],
+                )
+                expected[region] = origin["pages"][str(logical)][region]
+                source_digest = (
+                    operation["ack"]["ranks"][writer]
+                    .get("source_digests", {})
+                    .get(str(target), {})
+                    .get(region)
+                )
+                if source_digest != expected[region]:
+                    raise ValueError(
+                        "admit source digest differs from actual writer snapshot"
+                    )
+            if copied.get("page_sources", {}).get(str(target)) != writers:
+                raise ValueError("admit content uses the wrong source writer")
         if (
             operation["command"]["sources"][rank]
             != dict(
@@ -380,15 +431,51 @@ def check_copied_pages(
                 ],
             )
             or source_descriptor["logical_page"] != slot * 64 + logical
-            or copied["pages"][str(target)] != alive["pages"][str(logical)]
+            or copied["pages"][str(target)] != expected
             or descriptor
             != dict(
                 pool="prefix",
-                region=snapshot["registrations"]["prefill"]["ranks"][rank]["session"],
-                replica=rank,
+                region=registration["prefix_region" if shared else "session"],
+                replica=0 if shared else rank,
                 logical_page=target,
                 page_size=128,
             )
-            or directory[item["hash"]]["prefix"]["locations"][rank] != descriptor
+            or directory[item["hash"]]["prefix"]["locations"][0 if shared else rank]
+            != descriptor
         ):
             raise ValueError("copied values or published pages differ from allocation")
+
+
+def prefix_replicas(snapshot: dict[str, Any]) -> int:
+    return int(
+        snapshot["registrations"]["prefill"]["ranks"][0]["replicas"]["prefix_main"]
+    )
+
+
+def prefix_source_writers(
+    snapshot: dict[str, Any], page: int, target: int, tokens: int
+) -> dict[str, int]:
+    from ascend_mempool.page_write import PageWriter
+
+    policy = snapshot["registrations"]["prefill"]["ranks"][0]["prefix_policy"]
+    groups = policy["groups"]
+    group = (
+        groups[target // (40 // len(groups))]
+        if policy["admit_mode"] == "owners"
+        else next(g for g in groups if policy["admit_rank"] in g)
+    )
+    main = next(
+        rank
+        for member, rank in enumerate(group)
+        if page
+        in PageWriter(member, len(group), 128, policy["main_write_assignment"]).pages(
+            tokens
+        )
+    )
+    writers = policy["index_writers"]
+    index = next(
+        rank
+        for member, rank in enumerate(writers)
+        if page in PageWriter(member, len(writers), 128).pages(tokens)
+    )
+    return dict(main=main, index=index)

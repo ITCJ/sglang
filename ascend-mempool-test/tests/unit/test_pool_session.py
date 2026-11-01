@@ -12,6 +12,69 @@ from ascend_mempool.sharing_plan import HostTopology, MempoolNumaConfig
 
 
 class TestPoolSession(unittest.TestCase):
+    def test_shared_prefix_segments_have_one_owner_and_segment_layer_stride(self):
+        layout = PoolLayout(
+            KVLayout(2, 2, 128, 1, 8),
+            KVLayout(2, 2, 16, 1, 8),
+            alignment_bytes=64,
+            prompt_index=KVLayout(1, 2, 128, 1, 4),
+            prefix_main=KVLayout(2, 40, 128, 1, 8),
+            prefix_index=KVLayout(1, 40, 128, 1, 4),
+        )
+        plans, pools = [], []
+        for side, role in enumerate(("prefill", "decode")):
+            plan = MempoolNumaConfig(False, "0,1,2,3,4,5,6,7").plan(
+                hosts=(HostTopology(role, tuple(range(16)), "0-7"),),
+                tp_size=16,
+                role=role,
+                instance_id="single-prefix",
+                kv_identity="model",
+                layout=layout,
+                prefill_shared=True,
+                decode_shared=True,
+                prefill_index_shared=True,
+                prefix_shared=True,
+            )
+            plans.append(plan)
+            for rank in range(16):
+                session = plan.session(rank)
+                pool = MempoolKVManager.create(
+                    session.layout,
+                    side,
+                    session=session,
+                    bm_module=GroupSDK(session.participant),
+                )
+                self.addCleanup(pool.close, drain=lambda: None)
+                pool.join(0.1)
+                pools.append(pool)
+                if rank % 2:
+                    self.assertEqual(pool.contribution, 0)
+        plans[0].validate_peer(plans[1])
+        for side in (0, 1):
+            self.assertEqual(len({p.probe_gva(side) for p in pools}), 16)
+            self.assertEqual(len({p.view(side, 0).gva_base for p in pools}), 8)
+        session = pools[0].session
+        for region, total in (("prefix_main", 163840), ("prefix_index", 40960)):
+            physical = [
+                g
+                for i in range(32)
+                for n, (_, g) in session.regions(i).items()
+                if n == region
+            ]
+            self.assertEqual(len(physical), 8)
+            self.assertEqual(sum(g.total_bytes for g in physical), total)
+            for segment in range(8):
+                views = [p.view(0, 0, region=region, segment=segment) for p in pools]
+                self.assertEqual(len({v.gva_base for v in views}), 1)
+                self.assertEqual(views[0].layout.slots, 5)
+                if region == "prefix_main":
+                    next_layer = pools[0].view(0, 1, region=region, segment=segment)
+                    self.assertEqual(next_layer.gva_base - views[0].gva_base, 10240)
+            registration = pools[1].replica_registration()[region]
+            self.assertEqual(registration["replica"], 0)
+            self.assertEqual(len(registration["segments"]), 8)
+            self.assertEqual(registration["mapping_members"], list(range(16)))
+
     def test_single_index_spans_prefill_ranks_without_merging_main_replicas(self):
         layout = PoolLayout(
             KVLayout(2, 2, 128, 1, 8),

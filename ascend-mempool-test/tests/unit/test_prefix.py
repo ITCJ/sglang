@@ -20,11 +20,19 @@ class MappedCopy:
     def __init__(self, manager):
         self.buffers = {}
         for region, (_, layout) in manager.layout.regions(0).items():
-            for layer in range(layout.layers):
-                view = manager.view(0, layer, region=region)
-                self.buffers[view.device_base] = torch.full(
-                    layout.shape, -99, dtype=torch.bfloat16
-                )
+            segments = (
+                range(len(manager.session.main_groups))
+                if manager.session
+                and manager.session.prefix_shared
+                and region.startswith("prefix_")
+                else (None,)
+            )
+            for segment in segments:
+                for layer in range(layout.layers):
+                    view = manager.view(0, layer, region=region, segment=segment)
+                    self.buffers[view.device_base] = torch.full(
+                        view.layout.shape, -99, dtype=torch.bfloat16
+                    )
         # The real pool is only NPU-readable; never dereference its VA on CPU.
         manager._bm.BmMemType.LOCAL_HOST = "local_host"
         translate = manager._handle.gva_to_va

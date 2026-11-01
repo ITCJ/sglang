@@ -90,6 +90,21 @@ class RouterShard:
             raise ValueError("SR native and DRAM page_size differ")
         self.page_size = page_size
 
+    @property
+    def prefix_region(self) -> str:
+        if self.prefix is not None and self.prefix.prefix_layout is not None:
+            assert self.prefix.manager.session is not None
+            return self.prefix.manager.session.identity
+        return str(self.control.local.session)
+
+    @property
+    def prefix_replica(self) -> int:
+        return (
+            0
+            if self.prefix is not None and self.prefix.prefix_layout is not None
+            else self.control.local.tp_rank
+        )
+
     def track(self, req: Any) -> None:
         """Reject direct-backend bypass, fake warmups and dispatch mismatches."""
         request = self.request
@@ -346,8 +361,8 @@ class RouterShard:
         for page in pages:
             if page != dict(
                 pool="prefix",
-                region=self.control.local.session,
-                replica=rank,
+                region=self.prefix_region,
+                replica=self.prefix_replica,
                 logical_page=page["logical_page"],
                 page_size=self.page_size,
             ):
@@ -426,8 +441,8 @@ class RouterShard:
         result["pages"] = [
             dict(
                 pool="prefix",
-                region=self.control.local.session,
-                replica=rank,
+                region=self.prefix_region,
+                replica=self.prefix_replica,
                 logical_page=page,
                 page_size=self.page_size,
             )
@@ -685,7 +700,8 @@ class MempoolSubrouter:
                 ):
                     if command["kind"] == "admit" and self._admit_pages is None:
                         count = len(command["source_pages"])
-                        self._admit_pages = observations[0]["prefix_free"][:count]
+                        assert self.shard.prefix is not None
+                        self._admit_pages = tuple(self.shard.prefix.select_pages(count))
                         if len(self._admit_pages) != count:
                             raise RuntimeError(
                                 "prefix page reservation exceeds local capacity"
@@ -706,6 +722,20 @@ class MempoolSubrouter:
             results["error"] = str(exc) or type(exc).__name__
         committed = self.gather(results)
         errors = [r["error"] for r in committed if r["error"]]
+        if (
+            not errors
+            and command is not None
+            and command["kind"] == "admit"
+            and command["op_id"] not in self.completed
+            and all(r["ack"] is not None for r in committed)
+        ):
+            try:
+                assert self.shard.prefix is not None
+                self.shard.prefix.complete_admit(
+                    command["op_id"], [r["ack"] for r in committed]
+                )
+            except Exception as exc:
+                errors.append(str(exc))
         if errors:
             self.fault = errors[0]
             control.fail_protocol(self.fault)
