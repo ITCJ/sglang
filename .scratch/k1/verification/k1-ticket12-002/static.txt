@@ -1,0 +1,9 @@
+/private/tmp/k1-ticket05-fix-venv/bin/ruff check --config ascend-mempool-test/pyproject.toml ascend-mempool-test/scripts/run_mempool_min.py ascend-mempool-test/scripts/verify_mempool_session.py ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py
+All checks passed!
+
+/private/tmp/k1-ticket05-fix-venv/bin/ruff format --check --config ascend-mempool-test/pyproject.toml ascend-mempool-test/scripts/run_mempool_min.py ascend-mempool-test/scripts/verify_mempool_session.py ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py
+3 files already formatted
+
+/private/tmp/k1-ticket05-fix-venv/bin/isort --check-only ascend-mempool-test/scripts/run_mempool_min.py ascend-mempool-test/scripts/verify_mempool_session.py ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py
+
+Python3.9 AST: 3 passed

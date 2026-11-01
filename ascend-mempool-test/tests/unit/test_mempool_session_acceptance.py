@@ -211,6 +211,55 @@ class TestSessionAcceptance(unittest.TestCase):
             self.assertEqual(value["service_rounds"], 2)
             self.assertEqual(value["memory_budget"]["bm_bytes"], 120 * 2**30)
 
+    def test_cleanup_checks_actual_session_ports_not_reserved_range(self):
+        config = RouterConfig(
+            "p",
+            "d",
+            "/model",
+            prefix_pages=40,
+            prefill_shared=True,
+            decode_shared=True,
+            prefill_index_shared=True,
+            prefix_shared=True,
+        )
+        # NPU002: 26088 belongs to an unrelated established connection to :443.
+        decode = run_mempool_min.service_ports(config, "decode")
+        self.assertNotIn(26088, decode)
+        self.assertEqual(decode, {8001, *(25686 + 33 * rank for rank in range(16))})
+        prefill = run_mempool_min.service_ports(config, "prefill")
+        self.assertEqual(
+            prefill,
+            {
+                8000,
+                6699,
+                16700,
+                19000,
+                *(25670 + 33 * rank for rank in range(16)),
+            },
+        )
+
+    def test_service_ports_preserves_pair_and_shared_group_endpoints(self):
+        for options in ({}, {"prefill_shared": True}, {"decode_shared": True}):
+            config = RouterConfig("p", "d", "/model", **options)
+            for side, role in enumerate(("prefill", "decode")):
+                with self.subTest(options=options, role=role):
+                    if options:
+                        nic = {
+                            25670 + 8 * group + 5 * member + 2 * side
+                            for group in range(8)
+                            for member in range(2)
+                        }
+                        stores = {19000 + 2 * group for group in range(8)}
+                    else:
+                        nic = {25670 + 2 * rank + side for rank in range(16)}
+                        stores = set(range(19000, 19016))
+                    expected = nic | (
+                        {8000, 6699, 16700} | stores if role == "prefill" else {8001}
+                    )
+                    self.assertEqual(
+                        run_mempool_min.service_ports(config, role), expected
+                    )
+
     def test_post_shutdown_port_probe_allows_time_wait_but_rejects_a_listener(self):
         with socket.socket() as server:
             server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

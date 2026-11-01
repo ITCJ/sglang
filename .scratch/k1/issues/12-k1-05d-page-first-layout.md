@@ -44,3 +44,15 @@ State=open，未关闭或解锁11；工作区既有文档改动保留，评审�
 旧worker注册方法两轮均因夹具适配失败，最后改为重建不可变PoolLayout，经只读评审确认但按两轮上限未再次运行，不计为通过。
 37文件静态、21模块strict mypy通过；[Standards/Spec](../verification/ticket12-cpu-20261102/review.md)均0项需修改问题。
 NPU未运行，验收项暂不勾选，State=open；用户确认本票NPU验收后才能关闭12并解锁11。
+
+### 2026-11-02：NPU002在首轮清理后失败
+
+用户回传95cac11ee3的32报告：page-first-copy/fetch通过，已执行超时注入及双端进程清理；随后端口复用检查报EADDRINUSE，具体端口待定位。退出日志另有memfabric析构崩溃。
+[反馈与边界](../verification/k1-ticket12-002/README.md)保留证据来源；未通过端到端及restart，State=open，11仍阻塞。未修改实现或安排重跑。
+
+### 2026-11-02：修复002端口检查误报
+
+用户定位26088为到4.190.51.35:443的ESTABLISHED连接；该端口不属于D的16个实际BM端点。
+旧脚本扫描整个512端口预留区，已改为复用SharingPlan实际NIC/store清单，启动前/清理后共用；绑定失败包含地址。
+仅改验收脚本，生产源码与默认清理不变。新增回归先失败后通过，定向12项通过，静态通过。
+Standards为0硬违规/1非阻塞建议，Spec为0问题。修复后NPU未运行，原始002失败及memfabric析构异常保留，12仍open。

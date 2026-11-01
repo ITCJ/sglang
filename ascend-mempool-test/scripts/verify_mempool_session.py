@@ -22,8 +22,13 @@ def released_port(host: str, port: int) -> None:
     """Permit closed connections in TIME_WAIT while detecting live listeners."""
     with socket.socket() as probe:
         probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        probe.bind((host, port))
-        probe.listen(1)
+        try:
+            probe.bind((host, port))
+            probe.listen(1)
+        except OSError as exc:
+            raise OSError(
+                exc.errno, f"service port {host}:{port} not released: {exc}"
+            ) from exc
 
 
 def capacity_check(

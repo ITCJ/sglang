@@ -55,10 +55,14 @@ if TYPE_CHECKING:
         RouterConfig,
     )
     from sglang.srt.hardware_backend.npu.mempool.config import MempoolConfig
-    from sglang.srt.hardware_backend.npu.mempool.sharing_plan import PoolSession
+    from sglang.srt.hardware_backend.npu.mempool.sharing_plan import (
+        HostTopology,
+        MempoolNumaConfig,
+        PoolSession,
+    )
 else:
     from ascend_mempool.config import MempoolConfig
-    from ascend_mempool.sharing_plan import PoolSession
+    from ascend_mempool.sharing_plan import HostTopology, MempoolNumaConfig, PoolSession
     from ascend_mempool_pd.mempool_router_protocol import (
         CONFIG_ENV,
         RUN_ENV,
@@ -188,6 +192,44 @@ def service_environment(
             env["MEMPOOL_RANK_NUMA_MAP"] = str(args.rank_numa_map)
             env.pop("SGLANG_NPU_MEMPOOL_LOCAL_NUMA_NODE", None)
     return env
+
+
+def service_ports(config: RouterConfig, role: str) -> set[int]:
+    """Check the endpoints this service owns, excluding gaps in NIC reservations."""
+    host = config.prefill_host if role == "prefill" else config.decode_host
+    layout = MempoolConfig(
+        prefill_capacity=config.prompt_capacity,
+        decode_capacity=config.decode_capacity,
+        page_size=config.page_size,
+    ).make_mla_layout(
+        num_layers=78,
+        kv_lora_rank=512,
+        qk_rope_head_dim=64,
+        prefix_pages=config.prefix_pages,
+        indexer_layers=21 if config.prefix_pages else 0,
+        index_head_dim=128 if config.prefix_pages else 0,
+    )
+    nodes = ",".join(map(str, config.numa_nodes))
+    plan = MempoolNumaConfig(False, nodes).plan(
+        hosts=(HostTopology(host, tuple(range(16)), nodes),),
+        tp_size=16,
+        role=role,
+        instance_id="port-check",
+        kv_identity=config.model_path,
+        layout=layout,
+        prefill_shared=config.prefill_shared,
+        decode_shared=config.decode_shared,
+        prefill_index_shared=config.prefill_index_shared,
+        prefix_shared=config.prefix_shared,
+        prefill_groups=config.session_groups,
+    )
+    sessions = [plan.session(rank) for rank in range(16)]
+    ports = {session.nic_base_port + session.participant for session in sessions}
+    ports.add(config.prefill_port if role == "prefill" else config.decode_port)
+    if role == "prefill":
+        ports.update(session.store_port for session in sessions)
+        ports.update((config.main_port, config.control_port))
+    return ports
 
 
 def memory_budget(config: RouterConfig, role: str) -> dict[str, int]:
@@ -389,21 +431,9 @@ class Runner:
                 stderr=subprocess.STDOUT,
                 check=True,
             )
-        ports = {
-            self.config.prefill_port if self.is_p else self.config.decode_port,
-            10000,
-            *range(25670, 25702),
-        }
+        ports = service_ports(self.config, self.args.role) | {10000}
         if self.is_p:
-            ports.update(
-                {
-                    self.config.main_port,
-                    self.config.control_port,
-                    self.config.bootstrap_port,
-                    24670,
-                    *range(19000, 19016),
-                }
-            )
+            ports.update((self.config.bootstrap_port, 24670))
         for port in ports:
             available_port(self.host, port)
         self.peer.barrier("preflight")
@@ -950,30 +980,7 @@ class Runner:
         if inject_fault:
             self.final_timeout_evidence(root)
         if self.session_acceptance or self.args.mode == "index-cold-diagnosis":
-            ports = {
-                self.config.prefill_port if self.is_p else self.config.decode_port,
-                *range(
-                    25670,
-                    25670
-                    + (
-                        2 * 16**2
-                        if self.config.prefill_index_shared
-                        else sum(2 * len(g) ** 2 for g in self.config.session_groups)
-                        if self.config.prefill_shared
-                        or self.config.decode_shared
-                        or self.config.prefill_index_shared
-                        else 32
-                    ),
-                ),
-            }
-            if self.is_p:
-                ports.update(
-                    {
-                        self.config.main_port,
-                        self.config.control_port,
-                        *range(19000, 19016),
-                    }
-                )
+            ports = service_ports(self.config, self.args.role)
             for port in ports:
                 verify_mempool_session.released_port(self.host, port)
             self.peer.barrier(name + "-ports-released")
