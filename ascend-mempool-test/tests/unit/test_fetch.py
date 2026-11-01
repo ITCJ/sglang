@@ -55,7 +55,7 @@ class TestKVFetch(unittest.TestCase):
             fetch_enabled=True,
             fetch_kernel=copy,
             event_factory=event,
-            kernels=[CPUWriteKernel(self.d, manager.view(1, 0).device_base)],
+            kernels=[CPUWriteKernel(self.d, manager.view(1, 0))],
         )
 
     def start(self, rows=(1, 0), offset=0):

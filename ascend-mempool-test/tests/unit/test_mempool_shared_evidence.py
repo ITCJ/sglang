@@ -62,6 +62,8 @@ def shared_registration(
             testcase.addCleanup(manager.close, drain=lambda: None)
             manager.join(0.1)
             row.update(
+                storage_order="page_first",
+                layout_signature=layout.signature(),
                 replicas=config.replicas(role),
                 replica_locations=manager.replica_registration(),
                 local_dram_bytes=manager.contribution,
@@ -90,6 +92,26 @@ def shared_registration(
 
 
 class TestSharedEvidence(unittest.TestCase):
+    def test_page_first_registration_rejects_layout_signature_and_segment_drift(self):
+        config, registrations = shared_registration(self, True, True, True)
+        result = verify_mempool_shared.check_page_first_registration(
+            registrations, config
+        )
+        self.assertEqual(result["page_bytes"]["prefill/alive_main"], 11501568)
+        self.assertEqual(result["page_bytes"]["prefill/prefix_index"], 688128)
+        bad = copy.deepcopy(registrations)
+        bad["decode"]["ranks"][3]["layout_signature"]["layout"]["prompt"][
+            "storage_order"
+        ] = "layer_first"
+        with self.assertRaisesRegex(ValueError, "signature"):
+            verify_mempool_shared.check_page_first_registration(bad, config)
+        bad = copy.deepcopy(registrations)
+        bad["prefill"]["ranks"][1]["replica_locations"]["prefix_main"][
+            "physical_layout"
+        ]["slots"] = 40
+        with self.assertRaisesRegex(ValueError, "dimensions"):
+            verify_mempool_shared.check_page_first_registration(bad, config)
+
     def test_single_prefix_registration_checks_segments_and_zero_followers(self):
         config, registrations = shared_registration(self, True, True, True)
         result = verify_mempool_shared.check_registration(registrations, config)

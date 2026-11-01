@@ -197,6 +197,8 @@ def attach_subrouter(
         layers=runtime.layout.layers,
         dim=runtime.layout.dim,
         dtype=runtime.layout.dtype,
+        storage_order=runtime.layout.storage_order,
+        layout_signature=runtime.manager.layout.signature(),
         indexer_layers=list(pool.indexer_layer_ids),
         index_dim=pool.index_head_dim,
         tp_size=control.local.tp_size,

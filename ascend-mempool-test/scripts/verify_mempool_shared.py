@@ -14,6 +14,69 @@ else:
     from ascend_mempool_pd.mempool_router_protocol import RouterConfig
 
 
+def check_page_first_registration(
+    registrations: dict[str, Any], config: RouterConfig
+) -> dict[str, Any]:
+    """Require actual per-region geometry and the peer startup signature."""
+    pages = {}
+    for role in ("prefill", "decode"):
+        for row in registrations[role]["ranks"]:
+            if row.get("storage_order") != "page_first":
+                raise ValueError("registration is not page_first")
+            signature = row["layout_signature"]["layout"]
+            for geometry in (
+                signature[name]
+                for name in (
+                    "prompt",
+                    "decode",
+                    "prompt_index",
+                    "prefix_main",
+                    "prefix_index",
+                )
+            ):
+                if (
+                    geometry["storage_order"] != "page_first"
+                    or geometry["page_size"] != config.page_size
+                ):
+                    raise ValueError(
+                        "startup layout signature differs from page_first geometry"
+                    )
+            for name, region in row["replica_locations"].items():
+                index = name.endswith("index")
+                prefix = name.startswith("prefix_")
+                layers = len(row["indexer_layers"]) if index else row["layers"]
+                dim = row["index_dim"] if index else row["dim"]
+                expected = dict(
+                    layers=layers,
+                    slots=config.prefix_pages // len(config.prefill_groups)
+                    if prefix
+                    else row["slots"],
+                    tokens=config.page_size
+                    if prefix
+                    else config.prompt_capacity
+                    if role == "prefill"
+                    else config.decode_capacity,
+                    heads=1,
+                    dim=dim,
+                    dtype=row["dtype"],
+                    page_size=config.page_size,
+                    storage_order="page_first",
+                )
+                if region.get("physical_layout") != expected:
+                    raise ValueError("physical page-first region dimensions differ")
+                page_bytes = layers * config.page_size * dim * 2
+                if region.get("page_bytes") != page_bytes:
+                    raise ValueError("page block byte count differs")
+                pages[role + "/" + name] = page_bytes
+    return dict(
+        status="passed",
+        storage_order="page_first",
+        page_size=config.page_size,
+        page_bytes=pages,
+        startup_signature="present and matches regions",
+    )
+
+
 def check_registration(
     registrations: dict[str, Any], config: RouterConfig
 ) -> dict[str, Any]:

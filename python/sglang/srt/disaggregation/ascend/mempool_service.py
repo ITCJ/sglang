@@ -146,6 +146,7 @@ class MempoolPDService:
                 layout.contribution_bytes(0),
                 layout.contribution_bytes(1),
                 layout.rank_stride_bytes,
+                storage_layout=json.dumps(layout.signature(), sort_keys=True),
             ),
             transfer_kind="index_k_only" if transfer_layout is not None else "full",
             transport_session=manager.get_session_id(),

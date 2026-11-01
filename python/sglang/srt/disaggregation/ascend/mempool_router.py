@@ -95,6 +95,7 @@ class MainRouter:
             indexer_layers=list(PRODUCERS),
             index_dim=128,
             dtype="bfloat16",
+            storage_order="page_first",
             tp_size=16,
             dp_size=1,
             pp_size=1,
@@ -158,8 +159,9 @@ class MainRouter:
             if (
                 rank["model"] != ranks[0]["model"]
                 or rank["vocab_size"] != ranks[0]["vocab_size"]
+                or rank["layout_signature"] != ranks[0]["layout_signature"]
             ):
-                raise ValueError("TP model identity differs")
+                raise ValueError("TP model identity or storage layout differs")
         other_role = "decode" if role == "prefill" else "prefill"
         if other_role in self.registrations:
             for rank, other in zip(ranks, self.registrations[other_role]["ranks"]):
@@ -168,6 +170,7 @@ class MainRouter:
                     or rank["peer_session"] != other["session"]
                     or rank["model"] != other["model"]
                     or rank["vocab_size"] != other["vocab_size"]
+                    or rank["layout_signature"] != other["layout_signature"]
                 ):
                     raise ValueError("P/D model or paired startup sessions differ")
         self.registrations[role] = copy.deepcopy(registration)

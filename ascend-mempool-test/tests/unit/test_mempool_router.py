@@ -26,6 +26,8 @@ def registration(role):
                 indexer_layers=[0, 1, 2] + list(range(6, 75, 4)),
                 index_dim=128,
                 dtype="bfloat16",
+                storage_order="page_first",
+                layout_signature={"storage_order": "page_first", "page_size": 128},
                 tp_size=16,
                 dp_size=1,
                 pp_size=1,
@@ -60,6 +62,20 @@ def payload(tokens=4096, new_tokens=128):
 
 
 class TestMainRouter(unittest.TestCase):
+    def test_registration_rejects_tp_and_pd_layout_signature_differences(self):
+        main = MainRouter(RouterConfig("p", "d", "/model"), "cpu")
+        p = registration("prefill")
+        p["ranks"][5]["layout_signature"]["page_size"] = 64
+        with self.assertRaisesRegex(ValueError, "storage layout"):
+            main.register(p)
+        main.register(registration("prefill"))
+        d = registration("decode")
+        for rank in d["ranks"]:
+            rank["layout_signature"]["page_size"] = 64
+        with self.assertRaisesRegex(ValueError, "startup sessions"):
+            main.register(d)
+        self.assertFalse(main.ready)
+
     def test_prefill_shared_registration_keeps_decode_private(self):
         config = RouterConfig("host-p", "host-d", "/model", prefill_shared=True)
         router = MainRouter(config, "cpu")

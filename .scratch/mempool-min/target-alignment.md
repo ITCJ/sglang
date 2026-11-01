@@ -4,13 +4,13 @@ subtitle: 以 syncfile 现行文字为依据，区分阶段 0 与后续目标
 template: doc
 theme: blueprint
 lang: zh
-date: 2026-11-01
-status: K1-08经用户确认关闭；11已解锁，后续11→09
+date: 2026-11-02
+status: K1-12实现与评审完成；CPU 540项通过、1项修正后未复跑；等待用户NPU验收
 ---
 
 **当前四票与 sparse 阶段 0 一致，但没有覆盖后续全部目标。**
 alive 整槽分配和私有副本都有阶段 0 的明确依据。
-K1 共享、真正的 alive 页分配及 dense 集成仍须承接。
+K1共享已达到8/8/1/1/1；page first由新增12承接，真正的alive页分配及dense集成仍待后续。
 此前说明没有充分区分阶段终点与整体目标。
 
 ## A 核对依据与结论
@@ -18,10 +18,10 @@ K1 共享、真正的 alive 页分配及 dense 集成仍须承接。
 用户本轮指定 syncfile 内的 mempool-min-demo 为最终实现目标。
 现行依据是 [walkthrough.md](/Users/hibikid/Documents/syncfile/sglang-kv-explainer/mempool-min-demo/walkthrough.md)。
 第 0–10 节定义 sparse 流程及后续阶段，第 11 节定义 dense 轨道。
-[discussion.md](/Users/hibikid/Documents/syncfile/sglang-kv-explainer/mempool-min-demo/discussion.md) 用于追溯 M1–M56。
+[discussion.md](/Users/hibikid/Documents/syncfile/sglang-kv-explainer/mempool-min-demo/discussion.md) 用于追溯 M1–M58。
 
 统一页大小沿用2026-10-24用户决定，syncfile现记为M56。
-K1按M55及[十票定稿](../k1/k1-tickets.md)执行；split_read与NUMA interleave见C100、C101。
+K1按M55/M57/M58及[十二票执行文本](../k1/k1-tickets.md)执行；split_read与NUMA interleave见C100、C101。
 历史候选及历史图解快照不覆盖现行文字。
 
 | 核对项 | 现行设计 | 本地规格与方案 | 判断 |
@@ -32,7 +32,7 @@ K1按M55及[十票定稿](../k1/k1-tickets.md)执行；split_read与NUMA interle
 | 四类副本数 | 阶段 0 为 16 / 16 / 16 / 16 | 相同；ticket01 尚未启用的区域如实注册 | 阶段 0 一致 |
 | 就绪与释放 | 三条件启动 D；finished 与 free_ack 分开 | 相同；接管旧分配、绑定与自动释放 | 阶段 0 一致 |
 | prefix 与验收 | 保存、恢复、后缀；A/B/C/E、V1–V10 | 分布在 02、03、04 | 阶段 0 一致 |
-| K1 与后续阶段 | 阶段 0 / L0 → K1 → 阶段 1 | [syncfile 十一票已同步](../k1/spec.md)；性能基线已验收 | K1-01/02/03/05/06/07已关闭；08实现和CPU验证完成，等待NPU验收；后续11→09 |
+| K1 与后续阶段 | 阶段 0 / L0 → K1 → 阶段 1 | [syncfile 十二票已同步](../k1/spec.md)；page first提前到K1 | 01/02/03/05/06/07/08已关闭；12已实现待用户NPU验收，后续11→09；04/10不阻塞 |
 | dense 轨道 | 单独的共享 prefix 与状态交接流程 | 保留目标，尚未拆本仓库集成票 | 后续覆盖缺口 |
 
 这是文档范围核对，不代表这些设计已经实现。
@@ -112,7 +112,61 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 
 ## D 名称、验收与实施票怎样对应
 
-**2026-11-01 K1-08：用户确认验收并关闭，11已解锁。**
+**2026-11-02 K1-12第3步：实现、精简验证和双轴评审交付。**
+
+五类主存page first、页块接口和签名已完成；通用主线功能源码净改动0。
+完整CPU一次539项，定向补跑37项，新增签名用例第二轮通过。
+合并541项中540项验证通过；1项旧注册用例夹具已修正，按两轮上限未第三次运行，不计为通过。
+
+37文件静态、21模块strict mypy通过；Standards/Spec各0项需修改问题。
+[交付说明](../k1/delivery-ticket12.md)包含源码顺序、[覆盖限制](../k1/verification/ticket12-cpu-20261102/README.md)与双机自运行入口。
+NPU未运行；12保持open，11等待本票用户确认NPU验收关闭。
+
+**2026-11-02 K1-12第2步：布局、读写、注册及验收入口已接通。**
+
+五类区域使用page first；页块接口区分GVA与设备地址，逐层copy保留。
+P/D写回、稀疏读取和prefix三操作已接入设备行变换；原生HBM与事件完成路径沿用。
+注册及P/D启动签名携带实际布局，Main核对各rank一致性。
+
+独立CPU oracle已接入fake copy；完整套件一次539项，发现旧夹具/行计数与大槽限制。
+已补大槽按完整页分段，正在定向验证和双轴评审；未重复完整套件。
+
+[双机入口](../../ascend-mempool-test/K1_TICKET12.md)复用两轮六例，增加模型启动前的设备内存宽地址/Graph检查。
+NPU未运行，12保持open，11未解锁；源码阅读顺序见[交付说明](../k1/delivery-ticket12.md)。
+
+**2026-11-02 K1-12第1步：接口证据已归档，开始布局与读写适配。**
+
+用户授权implement；已核对UniDexCopy的64位基址、32位偏移及32 KiB行宽限制。
+独立小几何和真实P几何通过CPU寻址核对；采用固定槽/段调用与设备mask，保留原内核。
+[第一份证据](../k1/verification/ticket12-copy-contract/README.md)明确NPU未运行。
+
+布局/页块与读写适配代码正在实施；新几何测试已验证旧接口失败，集中回归尚未运行。
+后续接注册、独立oracle与自运行验收入口；12保持open，11仍等待12用户NPU验收关闭。
+
+**2026-11-02 K1改序：新增12，先完成page first，再实施11。**
+
+syncfile定稿与本地票据已同步：07→08→12→11→09，共12票、7 closed、5 open。
+12依赖08，11改依赖12，09经11传递依赖12；04、10仍不阻塞。
+08已由用户确认NPU验收；12仅设计就绪，代码、宽地址实验及自身NPU验收尚未开始。
+
+| 当前事项 | 已完成 | 待完成与验证状态 |
+|---|---|---|
+| 07/08共享布局 | 用户已按记录边界验收，副本8/8/1/1/1 | 保留NUMA驻留、性能和直接主存比较等未验证范围 |
+| 12布局转换 | 第16节规格、票据、M17/M58与项目记忆已同步 | 先归档拷贝接口宽地址证据，再改五类区域、读写与签名；NPU未运行 |
+| 11池间搬运 | 第15节改为按页块计数及库完成桥接 | 等待12用户验收关闭，尚未实现 |
+| 09最终验收 | 纳入page first与布局签名，直接依赖06/08/11 | 等待11；真实并发仍属阶段3a |
+
+12只改主存排列为页→层→token，HBM原生布局、页归属、分片、整槽分配与控制完成语义沿用。
+先验证按槽/段基址能否满足现有拷贝接口；不能满足时才最小扩展64位偏移。
+
+12保留逐层索引拷贝，提供页块接口；11再接执行器与批量异步接口。
+admit每页2块、fill每页9块；32页为64/288块。fill进入prompt ready汇总，admit完成后才publish。
+
+本次仅同步文档与[恢复记忆](../k1/memory.md)，未修改功能源码或运行新CPU/NPU功能验证。
+设计侧负责架构逻辑，Ascend/NPU具体实现由实施侧核对实际代码与实验决定。
+下方按日期保留历史；旧“11已解锁”以本条新增12的决定更新。
+
+**2026-11-01 K1-08：用户确认验收并关闭；当时的下一票为11。**
 
 用户明确回复“可以”，接受4441eb9015的001两轮精简NPU验收和已说明的边界。
 08已closed，11为ready-for-agent/open，尚未实施；后续11→09。
@@ -1472,7 +1526,7 @@ K1 是原文的共享接入标记，不代表“阶段 1”。
 
 ```flow LR
 基础请求流程并验收 -> 共享存储接入: 功能验收后接入共享
-共享存储接入 -> 远端prefix与布局调整: 继续扩展
+共享存储接入 -> 远端prefix: page first已提前到K1票12
 ```
 
 上述三项分别对应原阶段 0（含 L0 验收）、K1、阶段 1。
@@ -1481,8 +1535,8 @@ K1 是原文的共享接入标记，不代表“阶段 1”。
 | 功能名称（原文标记） | 当前本地承接 | 状态与边界 |
 |---|---|---|
 | 基础请求流程（阶段 0） | mempool-min 01 → 02 → 03 → 04 | 01 已关闭；02 待关闭确认；03 按已知限制关闭；04 完整NPU验收通过并已关闭 |
-| 共享存储接入（K1） | [syncfile 十票定稿](../k1/k1-tickets.md)与[本地票据索引](../k1/spec.md) | 基线实现留在测试分支；01功能保留待NPU验收，其他九票待实施 |
-| 远端 prefix 与布局调整（阶段 1） | 本 feature 尚未拆票 | 包含 page-first |
+| 共享存储接入及page first（K1） | [syncfile 十二票定稿](../k1/k1-tickets.md)与[本地票据索引](../k1/spec.md) | 7 closed、5 open；12已实现待用户NPU验收，主线12→11→09；性能工具留测试分支 |
+| 远端 prefix（阶段 1） | 本 feature 尚未拆票 | page first已提前到K1票12，远端部分仍待后续 |
 | 分块与流水（阶段 2） | 本 feature 尚未拆票 | 包含逐 chunk 推进、提前首 token |
 | 并发与动态容量（阶段 3） | 本 feature 尚未拆票 | 含 alive 页分配；并发与动态容量分步推进 |
 | 生成缓存复用等扩展（阶段 4） | 本 feature 尚未拆票 | 包含 decode admit、混合页及副本重配 |
@@ -1524,13 +1578,14 @@ ticket03按2026-10-27用户授权的功能范围和已知数值限制关闭；04
 旧票是 [ascend-mempool-numa-sharing/02：MLA 共享 KV 与写入并行](../ascend-mempool-numa-sharing/issues/02-mla-shared-kv-overlap.md)。
 它与 mempool-min/02 的 prefix 保存是不同的票。
 旧共享票覆盖共享主 KV、写入并行和真实服务证据。
-其中 02-1 已实现配置规划，真实共享服务部分仍为 open。
-生产 [启动检查](../../python/sglang/srt/hardware_backend/npu/mempool/sharing_plan.py:255) 仍拒绝 share=1。
-共享建池组件通过不代表模型服务已接通共享。
+
+旧共享票状态不代替K1的实施与验收记录。
+当前K1已接通真实服务共享，07/08验收后副本数为8/8/1/1/1。
+早期“生产启动拒绝share=1”的描述不再适用于当前代码；物理NUMA驻留仍未验证。
 
 旧票保留 rank-pair 控制；新阶段 0 改由 Main/SR 接管。
-后续 K1 必须适配新的分配和释放合同。
-还须补齐 P alive Index K单份、prefix单份与NUMA interleave，以及split_read和all_gather。
+K1已适配新的分配和释放合同，并完成P alive Index K单份、prefix单份、NUMA interleave、split_read和all_gather。
+待办为12布局转换、11池间搬运及09最终验收。
 因此，不能把旧共享 02 的范围直接等同于整个 K1。
 其性能票 03 也不能替代这些功能接入工作。
 

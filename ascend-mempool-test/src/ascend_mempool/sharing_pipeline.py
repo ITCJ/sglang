@@ -7,6 +7,8 @@ from typing import Any
 
 from ascend_sparse.fixture import allocate_cache
 
+from .indexed_copy import copy_rows
+
 
 class Materialization:
     """Read-only fixture at the production cache manager's materialization seam."""
@@ -321,19 +323,16 @@ class Pipeline:
             # claim about service hooks. Read back BEFORE any host rendezvous.
             torch.distributed.all_reduce(self.collective_value)
             local = work.pool.layout.layout_for_rank(work.pool.rank)
-            work.kernel(
+            copy_rows(
+                work.kernel,
                 work.dtype_placeholder,
                 self.published,
                 self.publish_src,
                 self.publish_dst,
                 self.publish_valid,
-                local.slots * local.tokens,
-                work.batch,
-                local.row_bytes,
-                work.batch,
-                work.block_dim,
-                work.pool.view(work.pool.rank, work.layer).device_base,
-                None,
+                row_bytes=local.row_bytes,
+                block_dim=work.block_dim,
+                source_view=work.pool.view(work.pool.rank, work.layer),
             )
 
     def submit_writer(self) -> None:

@@ -451,11 +451,11 @@ class MempoolKVManager:
             )
             offsets = {size - 1}
             for offset, geometry in regions.values():
-                for layer in range(geometry.layers):
+                for slot in range(geometry.slots):
                     offsets.update(
                         (
-                            offset + layer * geometry.layer_bytes,
-                            offset + (layer + 1) * geometry.layer_bytes - 1,
+                            offset + slot * geometry.slot_bytes,
+                            offset + (slot + 1) * geometry.slot_bytes - 1,
                         )
                     )
             for offset in offsets:
@@ -494,6 +494,10 @@ class MempoolKVManager:
                 store_port=session.store_port,
                 nic_port=session.nic_base_port + session.participant,
                 bytes=geometry.total_bytes,
+                physical_layout=msgspec.to_builtins(
+                    self.view(self.rank, 0, region=name).layout
+                ),
+                page_bytes=geometry.page_bytes,
             )
             if session.prefix_shared and name.startswith("prefix_"):
                 result[name].update(
@@ -701,20 +705,20 @@ class MempoolKVView(msgspec.Struct, frozen=True):
 
     @property
     def gva_base(self) -> int:
-        """Return the layer's GVA for SDK operations."""
+        """Return the first row of this layer; later pages have a page stride."""
         return (
             self.owner.view_bases(self.rank, self.participant)[0]
             + self.region_offset
-            + self.layer * self.layout.layer_bytes
+            + self.layer * self.layout.page_size * self.layout.row_bytes
         )
 
     @property
     def device_base(self) -> int:
-        """Return the stable layer address used by this process's NPU kernels."""
+        """Return the stable first-row address, not a contiguous layer plane."""
         return (
             self.owner.view_bases(self.rank, self.participant)[1]
             + self.region_offset
-            + self.layer * self.layout.layer_bytes
+            + self.layer * self.layout.page_size * self.layout.row_bytes
         )
 
     def element_gva(self, slot: int, token: int, head: int = 0, column: int = 0) -> int:
@@ -737,6 +741,12 @@ class MempoolKVView(msgspec.Struct, frozen=True):
             + offset
         )
 
+    def page_block(self, physical_page: int) -> tuple[int, int, int]:
+        """Return (SDK GVA, device address, bytes) for one page of this region."""
+        offset = self.region_offset + self.layout.page_offset(physical_page)
+        gva, device = self.owner.view_bases(self.rank, self.participant)
+        return gva + offset, device + offset, self.layout.page_bytes
+
     def write_rows(self, slot: int, token: int, values: Any) -> None:
         """Synchronously stage contiguous local KV rows outside Graph capture."""
         import torch
@@ -753,4 +763,14 @@ class MempoolKVView(msgspec.Struct, frozen=True):
         count = values.shape[0]
         if count <= 0 or token + count > self.layout.tokens:
             raise ValueError("KV write exceeds the view's token capacity")
-        self.owner._copy_tensor_to_gva(values, self.element_gva(slot, token))
+        # Each page's chosen layer is contiguous; a page boundary skips layers.
+        start = 0
+        while start < count:
+            length = min(
+                count - start,
+                self.layout.page_size - (token + start) % self.layout.page_size,
+            )
+            self.owner._copy_tensor_to_gva(
+                values[start : start + length], self.element_gva(slot, token + start)
+            )
+            start += length

@@ -5,6 +5,7 @@ import unittest
 from types import SimpleNamespace
 
 import torch
+from page_first_oracle import read_rows, write_rows
 from test_mempool_native_prefix import native_methods
 from test_pool import FakeBM
 from test_runtime import ManualEvent
@@ -19,6 +20,7 @@ class MappedCopy:
 
     def __init__(self, manager):
         self.buffers = {}
+        self.views = {}
         for region, (_, layout) in manager.layout.regions(0).items():
             segments = (
                 range(len(manager.session.main_groups))
@@ -30,6 +32,7 @@ class MappedCopy:
             for segment in segments:
                 for layer in range(layout.layers):
                     view = manager.view(0, layer, region=region, segment=segment)
+                    self.views[view.device_base] = view
                     self.buffers[view.device_base] = torch.full(
                         view.layout.shape, -99, dtype=torch.bfloat16
                     )
@@ -59,13 +62,19 @@ class MappedCopy:
         src_ptr,
         dst_ptr,
     ):
-        source = self.buffers[src_ptr] if src_ptr is not None else src
-        target = self.buffers[dst_ptr] if dst_ptr is not None else dst
-        source = source.reshape(src_rows, row_bytes // 2)
-        target = target.reshape(dst_rows, row_bytes // 2)
-        target[dst_indices[:count][valid[:count]]] = source[
-            src_indices[:count][valid[:count]]
-        ]
+        si, di = src_indices[:count][valid[:count]], dst_indices[:count][valid[:count]]
+        if src_ptr is None:
+            values = src.reshape(src_rows, row_bytes // 2)[si]
+        else:
+            values = read_rows(
+                self.views[src_ptr], self.buffers[src_ptr], si, row_bytes
+            )
+        if dst_ptr is None:
+            dst.reshape(dst_rows, row_bytes // 2)[di] = values
+        else:
+            write_rows(
+                self.views[dst_ptr], self.buffers[dst_ptr], di, row_bytes, values
+            )
 
 
 def cpu_scatter_rows(source, table, key, rope, key_dim, rope_dim, page_size, nz):

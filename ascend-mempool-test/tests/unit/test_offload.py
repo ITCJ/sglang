@@ -3,6 +3,7 @@
 import unittest
 
 import torch
+from page_first_oracle import write_rows
 from test_pool import FakeBM
 
 from ascend_mempool.layout import KVLayout, PoolLayout
@@ -13,10 +14,11 @@ from ascend_mempool.pool import MempoolKVManager
 class CPUWriteKernel:
     """Emulate the external raw-destination kernel with real CPU tensor contents."""
 
-    def __init__(self, destination, pointer):
+    def __init__(self, destination, view):
         """Associate a process-local address with its simulated DRAM tensor."""
         self.destination = destination
-        self.pointer = pointer
+        self.view = view
+        self.pointer = view.device_base
 
     def __call__(
         self,
@@ -38,11 +40,20 @@ class CPUWriteKernel:
             raise ValueError("unexpected copy address")
         if src_rows * row_bytes != src.numel() * src.element_size():
             raise ValueError("source extent mismatch")
-        if dst_rows * row_bytes != self.destination.numel() * 2:
+        span = (
+            self.view.layout.total_bytes
+            - self.view.layer * self.view.layout.page_size * self.view.layout.row_bytes
+        )
+        if dst_rows * row_bytes != span:
             raise ValueError("destination extent mismatch")
         source = src.reshape(src_rows, row_bytes // 2)
-        target = self.destination.reshape(dst_rows, row_bytes // 2)
-        target[dst_index[valid]] = source[src_index[valid]]
+        write_rows(
+            self.view,
+            self.destination,
+            dst_index[valid],
+            row_bytes,
+            source[src_index[valid]],
+        )
 
 
 class TestMempoolKVOffload(unittest.TestCase):
@@ -57,7 +68,7 @@ class TestMempoolKVOffload(unittest.TestCase):
         self.manager.join(timeout=0.1)
         self.view = self.manager.view(1, 0)
         self.target = torch.full(self.view.shape, -1, dtype=torch.bfloat16)
-        self.kernel = CPUWriteKernel(self.target, self.view.device_base)
+        self.kernel = CPUWriteKernel(self.target, self.view)
 
     def tearDown(self):
         """Drain the fake device before releasing its pool."""

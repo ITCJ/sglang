@@ -36,6 +36,7 @@ SESSION_MODES = (
     "p-sharing-acceptance",
     "index-sharing-acceptance",
     "prefix-sharing-acceptance",
+    "page-first-acceptance",
 )
 from run_ticket10 import (
     available_port,
@@ -114,6 +115,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "p-sharing-acceptance",
             "index-sharing-acceptance",
             "prefix-sharing-acceptance",
+            "page-first-acceptance",
             "index-cold-diagnosis",
         ),
         required=True,
@@ -273,6 +275,8 @@ class Runner:
             mode=args.mode,
             coverage="one saved Index K input without prefix reuse; diagnosis only"
             if args.mode == "index-cold-diagnosis"
+            else "K1-12 page-first reduced functional acceptance"
+            if args.mode == "page-first-acceptance"
             else "K1-08 reduced functional acceptance"
             if config.prefix_shared and self.session_acceptance
             else "K1-07 reduced functional acceptance"
@@ -405,6 +409,8 @@ class Runner:
         self.peer.barrier("preflight")
 
     def components(self) -> None:
+        if self.args.mode == "page-first-acceptance":
+            self.page_first_probe()
         root = self.root / "fetch"
         env = service_environment(self.config, self.args, root, target=False)
         command = [
@@ -469,6 +475,37 @@ class Runner:
             send_log(self.peer, root / "report.json")
         self.peer.barrier("fetch-done")
         self.report["stages"].append("fetch")
+
+    def page_first_probe(self) -> None:
+        root = self.root / "page-first-copy"
+        env = service_environment(self.config, self.args, root, target=False)
+        self.peer.barrier("page-first-copy-start")
+        with Processes(root, env) as jobs:
+            child = jobs.start(
+                "copy",
+                [
+                    sys.executable,
+                    "-u",
+                    str(SCRIPTS / "verify_page_first_copy.py"),
+                    "--report",
+                    str(root / "report.json"),
+                ],
+            )
+            jobs.wait(
+                "copy",
+                child,
+                timeout=self.config.operation_timeout,
+                check=self.peer.check,
+            )
+        result = json.loads((root / "report.json").read_text())
+        if result["status"] != "passed":
+            raise ValueError("page-first wide copy/graph check did not pass")
+        if self.is_p:
+            receive_log(self.peer, root / "decode-report.json")
+        else:
+            send_log(self.peer, root / "report.json")
+        self.peer.barrier("page-first-copy-done")
+        self.report["stages"].append("page-first-copy")
 
     def rejected_inputs(self, base: str) -> dict[str, Any]:
         before = request_json(base + "/status")
@@ -1071,13 +1108,27 @@ class Runner:
                 else None,
                 mode=self.args.mode,
             )
+            if self.args.mode == "page-first-acceptance":
+                from verify_mempool_shared import check_page_first_registration
+
+                acceptance["page_first"] = {
+                    phase: check_page_first_registration(
+                        json.loads(
+                            (self.root / phase / "registrations.json").read_text()
+                        ),
+                        self.config,
+                    )
+                    for phase in verify_mempool_session.SERVICE_STAGES
+                }
             self.peer.send("session-result", acceptance=acceptance)
         else:
             acceptance = self.peer.expect("session-result")["acceptance"]
         write_json(
             self.root
             / (
-                "prefix-sharing-acceptance.json"
+                "page-first-acceptance.json"
+                if self.args.mode == "page-first-acceptance"
+                else "prefix-sharing-acceptance.json"
                 if self.config.prefix_shared
                 else "index-sharing-acceptance.json"
                 if self.index_acceptance
@@ -1177,6 +1228,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "p-sharing-acceptance",
         "index-sharing-acceptance",
         "prefix-sharing-acceptance",
+        "page-first-acceptance",
         "index-cold-diagnosis",
     ):
         config = msgspec.structs.replace(
@@ -1192,6 +1244,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "p-sharing-acceptance",
                 "index-sharing-acceptance",
                 "prefix-sharing-acceptance",
+                "page-first-acceptance",
             ),
         )
     elif args.mode == "acceptance" and config.prefix_pages:
@@ -1204,13 +1257,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         "index-sharing-acceptance",
         "index-cold-diagnosis",
         "prefix-sharing-acceptance",
+        "page-first-acceptance",
     ):
         config = msgspec.structs.replace(
             config,
             prefill_shared=True,
             decode_shared=True,
             prefill_index_shared=True,
-            prefix_shared=args.mode == "prefix-sharing-acceptance"
+            prefix_shared=args.mode
+            in ("prefix-sharing-acceptance", "page-first-acceptance")
             or config.prefix_shared,
         )
     args.config = root / "effective-config.json"
@@ -1223,6 +1278,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                     config=msgspec.to_builtins(config),
                     logs=str(root),
                     memory_budget=memory_budget(config, args.role),
+                    storage_order="page_first",
+                    copy_probe="small + 11.78 GB device arena, last slot and graph replay; before model startup"
+                    if args.mode == "page-first-acceptance"
+                    else None,
                     output_policy="strict saved fixture answer; old/cold output IDs diagnostic"
                     if args.mode == "index-cold-diagnosis"
                     else mempool_logical_cases.POLICY

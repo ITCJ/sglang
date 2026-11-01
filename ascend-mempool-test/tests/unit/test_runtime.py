@@ -141,14 +141,12 @@ class TestMempoolRuntime(unittest.TestCase):
             start_layer=5,
             device="cpu",
             kernels=[
-                CPUWriteKernel(target, manager.view(0, i).device_base)
+                CPUWriteKernel(target, manager.view(0, i))
                 for i, target in enumerate(main)
             ],
             index_pool=pool,
             index_kernels=[
-                CPUWriteKernel(
-                    index, manager.view(0, 0, region="alive_index").device_base
-                )
+                CPUWriteKernel(index, manager.view(0, 0, region="alive_index"))
             ],
             event_factory=event_factory,
         )
@@ -203,7 +201,7 @@ class TestMempoolRuntime(unittest.TestCase):
             torch.full(layout.shape, -1, dtype=torch.bfloat16) for _ in range(layers)
         ]
         kernels = [
-            CPUWriteKernel(target, manager.view(rank, i).device_base)
+            CPUWriteKernel(target, manager.view(rank, i))
             for i, target in enumerate(targets)
         ]
         events = []

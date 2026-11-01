@@ -38,10 +38,10 @@ class TestKVLayout(unittest.TestCase):
         self.assertEqual(layout.row_bytes, 1152)
         self.assertEqual(layout.layer_bytes, 301989888)
         self.assertEqual(layout.total_bytes, 603979776)
-        self.assertEqual(layout.row_index(slot=2, token=3), 32771)
+        self.assertEqual(layout.row_index(slot=2, token=3), 65542)
         self.assertEqual(
             layout.byte_offset(layer=1, slot=0, token=1, head=0, column=7),
-            301991054,
+            3470,
         )
 
     def test_out_of_bounds_coordinates_cannot_produce_addresses(self):
@@ -71,7 +71,7 @@ class TestKVLayout(unittest.TestCase):
             {"dim": True},
             {"dtype": "float32"},
             {"dim": 16385},
-            {"tokens": 1 << 31},
+            {"layers": 1 << 31},
         ):
             with self.subTest(override=override):
                 values = dict(layers=1, slots=1, tokens=1, heads=1, dim=1)
@@ -83,7 +83,7 @@ class TestKVLayout(unittest.TestCase):
             6039797760,
         )
         self.assertEqual(
-            KVLayout(layers=2, slots=1, tokens=2147483647, heads=1, dim=1).layer_bytes,
+            KVLayout(layers=1, slots=1, tokens=2147483647, heads=1, dim=1).layer_bytes,
             4294967294,
         )
 
@@ -109,6 +109,8 @@ class TestKVLayout(unittest.TestCase):
                         "heads": 1,
                         "dim": 576,
                         "dtype": "bfloat16",
+                        "page_size": 1,
+                        "storage_order": "page_first",
                     },
                     "decode": {
                         "layers": 2,
@@ -117,6 +119,8 @@ class TestKVLayout(unittest.TestCase):
                         "heads": 1,
                         "dim": 576,
                         "dtype": "bfloat16",
+                        "page_size": 1,
+                        "storage_order": "page_first",
                     },
                     "alignment_bytes": 1073741824,
                     "probe_bytes": 64,

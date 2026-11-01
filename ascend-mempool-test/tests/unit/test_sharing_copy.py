@@ -3,6 +3,7 @@
 import unittest
 
 import torch
+from page_first_oracle import read_rows, write_rows
 from test_pool import FakeBM
 
 from ascend_mempool.layout import KVLayout, PoolLayout
@@ -22,6 +23,7 @@ class TestSharedCopies(unittest.TestCase):
         )
         self.pools = []
         self.memory = {}
+        self.views = {}
         for member in range(self.tp_size):
             pool = MempoolKVManager.create(self.layout, 1, bm_module=FakeBM(1))
             pool.join(timeout=0.1)
@@ -31,7 +33,9 @@ class TestSharedCopies(unittest.TestCase):
         for side in (0, 1):
             layout = self.layout.layout_for_rank(side)
             for layer in range(self.tp_size):
-                self.memory[self.pools[0].view(side, layer).device_base] = torch.stack(
+                view = self.pools[0].view(side, layer)
+                self.views[view.device_base] = view
+                self.memory[view.device_base] = torch.stack(
                     [
                         kv_pattern(side, layer, slot, 0, layout.tokens, 1, layout.dim)
                         for slot in range(layout.slots)
@@ -39,9 +43,15 @@ class TestSharedCopies(unittest.TestCase):
                 )
 
     def kernel(self, src, dst, si, di, valid, sr, dr, size, count, blocks, sp, dp):
-        source = (self.memory[sp] if sp is not None else src).reshape(sr, size // 2)
-        target = (self.memory[dp] if dp is not None else dst).reshape(dr, size // 2)
-        target[di[valid]] = source[si[valid]]
+        values = (
+            src.reshape(sr, size // 2)[si[valid]]
+            if sp is None
+            else read_rows(self.views[sp], self.memory[sp], si[valid], size)
+        )
+        if dp is None:
+            dst.reshape(dr, size // 2)[di[valid]] = values
+        else:
+            write_rows(self.views[dp], self.memory[dp], di[valid], size, values)
 
     def work(self, case, member):
         return CopyWorkload(

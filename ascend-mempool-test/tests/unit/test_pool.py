@@ -124,11 +124,11 @@ class TestMempoolKVManager(unittest.TestCase):
         self.assertEqual(prompt.shape, (16, 16384, 1, 576))
         self.assertEqual(prompt.dtype, "bfloat16")
         self.assertEqual(
-            prompt.element_gva(slot=2, token=3, column=7), 0x1000000000 + 339742094
+            prompt.element_gva(slot=2, token=3, column=7), 0x1000000000 + 75505550
         )
         self.assertEqual(
             prompt.element_device_ptr(slot=2, token=3, column=7),
-            0x5000000000 + 339742094,
+            0x5000000000 + 75505550,
         )
         self.assertEqual(decode.gva_base, 0x1080000000)
         self.assertEqual(decode.device_base, 0x7000000000)

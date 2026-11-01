@@ -1,0 +1,6 @@
+test_registration_rejects_tp_and_pd_layout_signature_differences (test_mempool_router.TestMainRouter.test_registration_rejects_tp_and_pd_layout_signature_differences) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK

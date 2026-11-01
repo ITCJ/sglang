@@ -493,6 +493,40 @@ class TestMinRunner(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "per-step"):
                 verifier.check_step_counts(samples, 2)
 
+    def test_page_first_entry_reuses_two_service_rounds_and_enables_shared_geometry(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "config.json"
+            config.write_text(
+                json.dumps(dict(prefill_host="p", decode_host="d", model_path="/model"))
+            )
+            for role in ("prefill", "decode"):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    self.assertEqual(
+                        runner.main(
+                            [
+                                "--role",
+                                role,
+                                "--mode",
+                                "page-first-acceptance",
+                                "--config",
+                                str(config),
+                                "--run-id",
+                                "page-first-cpu",
+                                "--describe",
+                            ]
+                        ),
+                        0,
+                    )
+                description = json.loads(output.getvalue())
+                self.assertEqual(description["service_rounds"], 2)
+                self.assertEqual(description["storage_order"], "page_first")
+                self.assertTrue(description["config"]["prefix_shared"])
+                self.assertEqual(description["config"]["prefix_pages"], 40)
+                self.assertIn("11.78 GB", description["copy_probe"])
+
     def test_describe_is_cpu_only_and_reference_does_not_load_subrouter(self):
         config_path = (
             Path(__file__).resolve().parents[2] / "configs/mempool-min.example.json"
@@ -582,6 +616,7 @@ class TestMinRunner(unittest.TestCase):
             slots=16,
             prompt_tokens=8192,
             decode_tokens=128,
+            storage_order="page_first",
         )
         control = SimpleNamespace(
             local=SimpleNamespace(
@@ -613,9 +648,10 @@ class TestMinRunner(unittest.TestCase):
                     replica_registration=lambda: {
                         "alive_main": dict(owner=1, members=[1])
                     },
-                    layout=SimpleNamespace(
-                        prompt=SimpleNamespace(tokens=8192),
-                        decode=SimpleNamespace(tokens=128),
+                    layout=runner.MempoolConfig(
+                        prefill_capacity=8192, decode_capacity=128
+                    ).make_mla_layout(
+                        num_layers=78, kv_lora_rank=512, qk_rope_head_dim=64
                     ),
                 ),
             ),
@@ -661,12 +697,16 @@ class TestMinRunner(unittest.TestCase):
                 )
             )
             service.runtime.manager.rank = 1
-            service.runtime.manager.layout.prefix_main = SimpleNamespace(
-                slots=40, tokens=128
+            service.runtime.manager.layout = runner.MempoolConfig(
+                prefill_capacity=8192, decode_capacity=128
+            ).make_mla_layout(
+                num_layers=78,
+                kv_lora_rank=512,
+                qk_rope_head_dim=64,
+                prefix_pages=40,
+                indexer_layers=21,
+                index_head_dim=128,
             )
-            service.runtime.manager.layout.prefix_index = object()
-            service.runtime.manager.layout.prompt_index = object()
-            service.runtime.manager.layout.contribution_bytes = lambda rank: 2**30
             full_config = RouterConfig(
                 "p",
                 "d",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 from typing import Any
 
+from .indexed_copy import copy_rows
 from .manager import MempoolKVManager
 from .page_write import PageWriter
 
@@ -61,19 +62,15 @@ class SharedPromptProbe:
         )
         destination = torch.arange(count, dtype=torch.int64, device=self.device)
         valid = torch.ones(count, dtype=torch.bool, device=self.device)
-        torch.ops.npu.unidex_copy(
+        copy_rows(
+            torch.ops.npu.unidex_copy,
             torch.empty(1, dtype=torch.bfloat16, device="cpu"),
             values,
             source,
             destination,
             valid,
-            layout.slots * layout.tokens,
-            count,
-            layout.row_bytes,
-            count,
-            48,
-            self.view.device_base,
-            None,
+            row_bytes=layout.row_bytes,
+            source_view=self.view,
         )
         actual = values.cpu()
         for member, writer in enumerate(self.members):

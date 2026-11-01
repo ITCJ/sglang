@@ -1,0 +1,25 @@
+test_physical_order_and_page_blocks_match_independent_enumeration (test_page_first.TestPageFirstLayout.test_physical_order_and_page_blocks_match_independent_enumeration) ... ERROR
+test_real_prompt_geometry_keeps_last_slot_addresses_above_uint32 (test_page_first.TestPageFirstLayout.test_real_prompt_geometry_keeps_last_slot_addresses_above_uint32) ... ERROR
+
+======================================================================
+ERROR: test_physical_order_and_page_blocks_match_independent_enumeration (test_page_first.TestPageFirstLayout.test_physical_order_and_page_blocks_match_independent_enumeration)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_page_first.py", line 10, in test_physical_order_and_page_blocks_match_independent_enumeration
+    layout = KVLayout(3, 2, 4, 2, 3, page_size=2)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: Unexpected keyword argument 'page_size'
+
+======================================================================
+ERROR: test_real_prompt_geometry_keeps_last_slot_addresses_above_uint32 (test_page_first.TestPageFirstLayout.test_real_prompt_geometry_keeps_last_slot_addresses_above_uint32)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_page_first.py", line 28, in test_real_prompt_geometry_keeps_last_slot_addresses_above_uint32
+    layout = KVLayout(78, 16, 8192, 1, 576, page_size=128)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: Unexpected keyword argument 'page_size'
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+FAILED (errors=2)

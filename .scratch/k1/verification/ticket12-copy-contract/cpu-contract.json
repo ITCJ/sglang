@@ -1,0 +1,48 @@
+{
+  "kind": "CPU geometry + local kernel source inspection",
+  "npu_executed": false,
+  "strategy": "fixed slot/segment bases, device masks; no kernel change",
+  "cases": [
+    {
+      "region": "P alive main",
+      "total_bytes": 11777605632,
+      "slot_bytes": 736100352,
+      "last_slot_region_offset": 11041505280,
+      "max_relative_byte": 724746239
+    },
+    {
+      "region": "D alive main",
+      "total_bytes": 184025088,
+      "slot_bytes": 11501568,
+      "last_slot_region_offset": 172523520,
+      "max_relative_byte": 147455
+    },
+    {
+      "region": "P alive Index K",
+      "total_bytes": 704643072,
+      "slot_bytes": 44040192,
+      "last_slot_region_offset": 660602880,
+      "max_relative_byte": 43384831
+    },
+    {
+      "region": "prefix main segment",
+      "total_bytes": 57507840,
+      "slot_bytes": 11501568,
+      "last_slot_region_offset": 46006272,
+      "max_relative_byte": 147455
+    },
+    {
+      "region": "prefix Index K segment",
+      "total_bytes": 3440640,
+      "slot_bytes": 688128,
+      "last_slot_region_offset": 2752512,
+      "max_relative_byte": 32767
+    }
+  ],
+  "small_oracle_elements": 144,
+  "kernel_repo_head": "5a1ad5723b4d88f2079493e177f0d31ff47aa971",
+  "source_sha256": {
+    "host": "d5307c39894559281ce1d78522440a434c9332a46533baa4824ecd8167577336",
+    "device": "2a7e0423874a047f2091313971b8352111cd1830b19891d133255bc7ca1fd052"
+  }
+}

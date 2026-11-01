@@ -4,6 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 import torch
+from page_first_oracle import read_rows
 from test_offload import CPUWriteKernel
 from test_pool import FakeBM
 from test_runtime import ManualEvent, prefill_batch
@@ -42,6 +43,12 @@ class TestSharedDecode(unittest.TestCase):
                     }
                 )
 
+                views = {
+                    manager.view(side, layer).device_base: manager.view(side, layer)
+                    for side in (0, 1)
+                    for layer in range(2)
+                }
+
                 def read(
                     src,
                     dst,
@@ -56,11 +63,14 @@ class TestSharedDecode(unittest.TestCase):
                     sp,
                     dp,
                     sources=sources,
+                    views=views,
                 ):
                     source = sources[sp] if sp is not None else src
-                    dst.reshape(dr, rb // 2)[di[valid]] = source.reshape(sr, rb // 2)[
-                        si[valid]
-                    ]
+                    dst.reshape(dr, rb // 2)[di[valid]] = (
+                        source.reshape(sr, rb // 2)[si[valid]]
+                        if sp is None
+                        else read_rows(views[sp], source, si[valid], rb)
+                    )
 
                 def event():
                     value = ManualEvent()
@@ -76,9 +86,7 @@ class TestSharedDecode(unittest.TestCase):
                     fetch_enabled=True,
                     fetch_kernel=read,
                     kernels=[
-                        CPUWriteKernel(
-                            memory[layer], manager.view(1, layer).device_base
-                        )
+                        CPUWriteKernel(memory[layer], manager.view(1, layer))
                         for layer in range(2)
                     ],
                     event_factory=event,

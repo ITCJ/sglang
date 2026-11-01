@@ -112,9 +112,7 @@ class TestSharedIndex(unittest.TestCase):
                 start_layer=0,
                 device="cpu",
                 kernels=[
-                    CPUWriteKernel(
-                        memory[pool.view(0, i).device_base], pool.view(0, i).device_base
-                    )
+                    CPUWriteKernel(memory[pool.view(0, i).device_base], pool.view(0, i))
                     for i in range(2)
                 ],
                 index_pool=SimpleNamespace(
@@ -126,7 +124,7 @@ class TestSharedIndex(unittest.TestCase):
                 index_kernels=[
                     CPUWriteKernel(
                         memory[pool.view(0, 0, region="alive_index").device_base],
-                        pool.view(0, 0, region="alive_index").device_base,
+                        pool.view(0, 0, region="alive_index"),
                     )
                 ],
                 event_factory=event_factory,

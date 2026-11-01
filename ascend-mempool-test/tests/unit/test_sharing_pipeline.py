@@ -6,6 +6,9 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import torch as tensorlib
+
+from ascend_mempool.layout import KVLayout
 from ascend_mempool.sharing_pipeline import Pipeline
 
 
@@ -110,6 +113,14 @@ class TestPipelineSubmission(unittest.TestCase):
             "publish_valid",
         ):
             setattr(pipeline, name, Mock())
+        geometry = KVLayout(1, 16, 8192, 1, 288)
+        work.pool.view.return_value = SimpleNamespace(
+            layout=geometry, layer=0, device_base=1234
+        )
+        pipeline.published = tensorlib.zeros((1, 1, 288), dtype=tensorlib.bfloat16)
+        pipeline.publish_src = tensorlib.zeros(1, dtype=tensorlib.int64)
+        pipeline.publish_dst = tensorlib.zeros(1, dtype=tensorlib.int64)
+        pipeline.publish_valid = tensorlib.ones(1, dtype=tensorlib.bool)
         pipeline.launch()
         self.assertGreater(
             stamps[pipeline.writer_done] - stamps[pipeline.selected_ready], 0

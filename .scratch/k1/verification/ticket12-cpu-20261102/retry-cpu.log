@@ -1,0 +1,64 @@
+test_actual_sdk_arguments_and_large_owner_addresses (test_bm_shared_startup.TestSharedStartup.test_actual_sdk_arguments_and_large_owner_addresses) ... ok
+test_all_nodes_share_one_96g_owner_per_side_and_disjoint_ports (test_bm_shared_startup.TestSharedStartup.test_all_nodes_share_one_96g_owner_per_side_and_disjoint_ports) ... ok
+test_missing_duplicate_independent_or_unfinished_runs_fail (test_bm_shared_startup.TestSharedStartup.test_missing_duplicate_independent_or_unfinished_runs_fail) ... ok
+test_reports_preserve_unobservable_numa_as_unverified (test_bm_shared_startup.TestSharedStartup.test_reports_preserve_unobservable_numa_as_unverified) ... ok
+test_single_node_keeps_contiguous_device_pair (test_bm_shared_startup.TestSharedStartup.test_single_node_keeps_contiguous_device_pair) ... ok
+test_startup_worker_never_stages_96g_or_runs_compute_benchmarks (test_bm_shared_startup.TestSharedStartup.test_startup_worker_never_stages_96g_or_runs_compute_benchmarks) ... ok
+test_worker_checks_actual_pool_allocator_transfer_and_dram_before_register (test_mempool_min_entry.TestMinRunner.test_worker_checks_actual_pool_allocator_transfer_and_dram_before_register) ... ERROR
+test_formal_handshake_checks_native_transfer_contract (test_pd_protocol.TestMempoolProtocol.test_formal_handshake_checks_native_transfer_contract) ... ok
+test_shared_prefix_segments_have_one_owner_and_segment_layer_stride (test_pool_session.TestPoolSession.test_shared_prefix_segments_have_one_owner_and_segment_layer_stride) ... ok
+test_each_page_read_once_and_every_rank_restores_both_regions (test_prefix_split_read.TestSplitRead.test_each_page_read_once_and_every_rank_restores_both_regions) ... ok
+test_split_writers_supply_current_locally_and_read_complete_previous_rows (test_shared_decode.TestSharedDecode.test_split_writers_supply_current_locally_and_read_complete_previous_rows) ... ok
+test_delayed_writer_does_not_hold_back_selected_host_submission (test_sharing_pipeline.TestPipelineSubmission.test_delayed_writer_does_not_hold_back_selected_host_submission) ... ok
+test_delayed_writer_does_not_hold_back_selected_host_submission (test_sharing_pipeline.TestTP4PipelineSubmission.test_delayed_writer_does_not_hold_back_selected_host_submission) ... ok
+test_unsupported_copy_layouts_fail_before_allocation (test_layout.TestKVLayout.test_unsupported_copy_layouts_fail_before_allocation) ... ok
+test_large_component_slot_is_split_only_at_page_boundaries (test_page_first.TestPageFirstLayout.test_large_component_slot_is_split_only_at_page_boundaries) ... ok
+test_last_slot_write_keeps_kernel_offsets_small_and_updates_device_bindings (test_page_first.TestPageFirstLayout.test_last_slot_write_keeps_kernel_offsets_small_and_updates_device_bindings) ... ok
+test_write_and_fetch_use_real_physical_storage_with_feature_parts (test_page_first.TestPageFirstLayout.test_write_and_fetch_use_real_physical_storage_with_feature_parts) ... ok
+test_5120_prompt_uses_40_hashes_and_41_native_pages (test_mempool_router.TestMainRouter.test_5120_prompt_uses_40_hashes_and_41_native_pages) ... ok
+test_backend_support_is_explicit_and_registration_requires_equality (test_mempool_router.TestMainRouter.test_backend_support_is_explicit_and_registration_requires_equality) ... ok
+test_capacity_reject_does_not_publish_or_change_ledger (test_mempool_router.TestMainRouter.test_capacity_reject_does_not_publish_or_change_ledger) ... ok
+test_hash_boundary_is_passed_to_storage_and_partial_pages_are_rejected (test_mempool_router.TestMainRouter.test_hash_boundary_is_passed_to_storage_and_partial_pages_are_rejected) ... ok
+test_incomplete_registration_never_becomes_ready (test_mempool_router.TestMainRouter.test_incomplete_registration_never_becomes_ready) ... ok
+test_mismatched_allocation_page_size_retains_reservation (test_mempool_router.TestMainRouter.test_mismatched_allocation_page_size_retains_reservation) ... ok
+test_native_finish_does_not_return_alive_until_both_free_acks (test_mempool_router.TestMainRouter.test_native_finish_does_not_return_alive_until_both_free_acks) ... ok
+test_operation_timeout_retains_all_resources (test_mempool_router.TestMainRouter.test_operation_timeout_retains_all_resources) ... ok
+test_partial_rank_ack_fail_stops_without_returning_reserved_quota (test_mempool_router.TestMainRouter.test_partial_rank_ack_fail_stops_without_returning_reserved_quota) ... ok
+test_prefill_shared_registration_keeps_decode_private (test_mempool_router.TestMainRouter.test_prefill_shared_registration_keeps_decode_private) ... ok
+test_registration_rejects_tp_and_pd_layout_signature_differences (test_mempool_router.TestMainRouter.test_registration_rejects_tp_and_pd_layout_signature_differences) ... FAIL
+test_reject_is_atomic_and_accept_reserves_whole_slots (test_mempool_router.TestMainRouter.test_reject_is_atomic_and_accept_reserves_whole_slots) ... ok
+test_cold_abce_preserves_directory_and_skips_existing_or_full_pages (test_mempool_router.TestPrefixMainRouter.test_cold_abce_preserves_directory_and_skips_existing_or_full_pages) ... ok
+test_cold_save_publishes_after_all_ranks_then_retains_prefix_after_free (test_mempool_router.TestPrefixMainRouter.test_cold_save_publishes_after_all_ranks_then_retains_prefix_after_free) ... ok
+test_invalid_admit_receipt_fails_without_freeing_protected_source (test_mempool_router.TestPrefixMainRouter.test_invalid_admit_receipt_fails_without_freeing_protected_source) ... ok
+test_invalid_restore_and_early_ready_fail_stop_without_unlocking_sources (test_mempool_router.TestPrefixMainRouter.test_invalid_restore_and_early_ready_fail_stop_without_unlocking_sources) ... ok
+test_match_restores_then_fills_with_separate_locks_and_full_budget (test_mempool_router.TestPrefixMainRouter.test_match_restores_then_fills_with_separate_locks_and_full_budget) ... ok
+test_partial_capacity_saves_only_the_publishable_front (test_mempool_router.TestPrefixMainRouter.test_partial_capacity_saves_only_the_publishable_front) ... ok
+test_shared_abce_publishes_one_location_and_reads_interleaved_pages (test_mempool_router.TestPrefixMainRouter.test_shared_abce_publishes_one_location_and_reads_interleaved_pages) ... ok
+test_timeout_retains_writing_targets_and_parent_protection (test_mempool_router.TestPrefixMainRouter.test_timeout_retains_writing_targets_and_parent_protection) ... ok
+
+======================================================================
+ERROR: test_worker_checks_actual_pool_allocator_transfer_and_dram_before_register (test_mempool_min_entry.TestMinRunner.test_worker_checks_actual_pool_allocator_transfer_and_dram_before_register)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 700, in test_worker_checks_actual_pool_allocator_transfer_and_dram_before_register
+    service.runtime.manager.layout.prefix_main = SimpleNamespace(
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: immutable type: 'PoolLayout'
+
+======================================================================
+FAIL: test_registration_rejects_tp_and_pd_layout_signature_differences (test_mempool_router.TestMainRouter.test_registration_rejects_tp_and_pd_layout_signature_differences)
+----------------------------------------------------------------------
+ValueError: wrong Router run or role
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_router.py", line 69, in test_registration_rejects_tp_and_pd_layout_signature_differences
+    with self.assertRaisesRegex(ValueError, "storage layout"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: "storage layout" does not match "wrong Router run or role"
+
+----------------------------------------------------------------------
+Ran 37 tests in 2.066s
+
+FAILED (failures=1, errors=1)

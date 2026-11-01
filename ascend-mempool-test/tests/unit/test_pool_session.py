@@ -14,12 +14,12 @@ from ascend_mempool.sharing_plan import HostTopology, MempoolNumaConfig
 class TestPoolSession(unittest.TestCase):
     def test_shared_prefix_segments_have_one_owner_and_segment_layer_stride(self):
         layout = PoolLayout(
-            KVLayout(2, 2, 128, 1, 8),
-            KVLayout(2, 2, 16, 1, 8),
+            KVLayout(2, 2, 128, 1, 8, page_size=128),
+            KVLayout(2, 2, 128, 1, 8, page_size=128),
             alignment_bytes=64,
-            prompt_index=KVLayout(1, 2, 128, 1, 4),
-            prefix_main=KVLayout(2, 40, 128, 1, 8),
-            prefix_index=KVLayout(1, 40, 128, 1, 4),
+            prompt_index=KVLayout(1, 2, 128, 1, 4, page_size=128),
+            prefix_main=KVLayout(2, 40, 128, 1, 8, page_size=128),
+            prefix_index=KVLayout(1, 40, 128, 1, 4, page_size=128),
         )
         plans, pools = [], []
         for side, role in enumerate(("prefill", "decode")):
@@ -69,7 +69,7 @@ class TestPoolSession(unittest.TestCase):
                 self.assertEqual(views[0].layout.slots, 5)
                 if region == "prefix_main":
                     next_layer = pools[0].view(0, 1, region=region, segment=segment)
-                    self.assertEqual(next_layer.gva_base - views[0].gva_base, 10240)
+                    self.assertEqual(next_layer.gva_base - views[0].gva_base, 2048)
             registration = pools[1].replica_registration()[region]
             self.assertEqual(registration["replica"], 0)
             self.assertEqual(len(registration["segments"]), 8)

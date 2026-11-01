@@ -85,12 +85,12 @@ class TestMempoolProtocol(unittest.TestCase):
             transfer_layout=layout,
         )
         hello = MempoolMessage(MessageType.POOL_HELLO, peer=d, reply_to="tcp://d:4351")
-        # Canonical v2 frame from before the container migration.
+        # Canonical v2 frame now includes the physical layout signature.
         expected = (
             b'{"kind":"POOL_HELLO","peer":{"layout":{"decode_bytes":2147483648,'
             b'"decode_tokens":16384,"dim":576,"dtype":"bfloat16","heads":1,"layers":2,'
             b'"prompt_bytes":1073741824,"prompt_tokens":8192,"slots":16,'
-            b'"stride_bytes":2147483648},"pool_id":7,"pp_size":1,"role":"decode",'
+            b'"storage_layout":"","stride_bytes":2147483648},"pool_id":7,"pp_size":1,"role":"decode",'
             b'"session":"d-boot","tp_rank":3,"tp_size":16,"transfer_kind":"index_k_only",'
             b'"transfer_layout":{"aux_item_lens":[8,4],'
             b'"dtypes":["bfloat16","bfloat16","bfloat16"],"item_lens":[16,16,16],'
@@ -127,6 +127,50 @@ class TestMempoolProtocol(unittest.TestCase):
         for pool_id in (-1, True, 256):
             with self.subTest(pool_id=pool_id), self.assertRaises(ValueError):
                 PoolPeer(**{**asdict(self.p), "pool_id": pool_id})
+
+    def test_startup_rejects_different_physical_storage_order(self):
+        import copy
+
+        from ascend_mempool.config import MempoolConfig
+
+        signature = (
+            MempoolConfig(prefill_capacity=8192, decode_capacity=128)
+            .make_mla_layout(
+                num_layers=78,
+                kv_lora_rank=512,
+                qk_rope_head_dim=64,
+                prefix_pages=40,
+                indexer_layers=21,
+                index_head_dim=128,
+            )
+            .signature()
+        )
+        p = replace(
+            self.p,
+            layout=replace(
+                self.p.layout, storage_layout=json.dumps(signature, sort_keys=True)
+            ),
+        )
+        d = replace(self.d, layout=p.layout)
+        validate_peer(p, d)
+        for field, value in [
+            ("storage_order", "layer_first"),
+            ("page_size", 64),
+            ("layers", 77),
+        ]:
+            different = copy.deepcopy(signature)
+            different["layout"]["prompt"][field] = value
+            with self.assertRaises(ValueError):
+                validate_peer(
+                    p,
+                    replace(
+                        d,
+                        layout=replace(
+                            d.layout,
+                            storage_layout=json.dumps(different, sort_keys=True),
+                        ),
+                    ),
+                )
 
     def test_rejects_mismatched_peer_and_malformed_wire(self):
         """Reject incompatible layouts and unknown or truncated control frames."""

@@ -1,6 +1,6 @@
 """Logical BF16 KV layout; importing this module needs no NPU libraries."""
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import msgspec
 
@@ -23,7 +23,7 @@ def check_index(name: str, value: int, limit: int) -> None:
 
 
 class KVLayout(msgspec.Struct, frozen=True):
-    """Describe contiguous BF16 layer slabs with [slot, token, head, dim] axes."""
+    """Describe BF16 [physical page, layer, token, head, dim] storage."""
 
     layers: int
     slots: int
@@ -31,17 +31,21 @@ class KVLayout(msgspec.Struct, frozen=True):
     heads: int
     dim: int
     dtype: str = "bfloat16"
+    page_size: int = 1
+    storage_order: Literal["page_first"] = "page_first"
 
     def __post_init__(self) -> None:
-        """Validate dimensions and the current UniDexCopy per-layer limits."""
-        for name in ("layers", "slots", "tokens", "heads", "dim"):
+        """Validate page geometry and the UniDexCopy per-page address limit."""
+        for name in ("layers", "slots", "tokens", "heads", "dim", "page_size"):
             positive_int(name, getattr(self, name))
         if self.dtype not in _ELEMENT_BYTES_BY_DTYPE:
             raise ValueError("this demo supports only bfloat16 KV")
         if self.row_bytes > MAX_ROW_BYTES:
             raise ValueError("KV row exceeds UniDexCopy's 32 KiB limit")
-        if self.layer_bytes > UINT32_MAX:
-            raise ValueError("KV layer span exceeds UniDexCopy's UINT32_MAX limit")
+        if self.tokens % self.page_size:
+            raise ValueError("KV token capacity must contain whole pages")
+        if self.page_bytes > UINT32_MAX:
+            raise ValueError("KV page span exceeds UniDexCopy's UINT32_MAX limit")
 
     @property
     def shape(self) -> tuple[int, int, int, int]:
@@ -60,7 +64,7 @@ class KVLayout(msgspec.Struct, frozen=True):
 
     @property
     def layer_bytes(self) -> int:
-        """Return one layer's addressable span across all slots and tokens."""
+        """Return one layer's logical byte count, not a contiguous memory span."""
         return self.slots * self.tokens * self.row_bytes
 
     @property
@@ -68,11 +72,39 @@ class KVLayout(msgspec.Struct, frozen=True):
         """Return the KV payload size before probe space and allocation alignment."""
         return self.layers * self.layer_bytes
 
+    @property
+    def page_bytes(self) -> int:
+        return self.layers * self.page_size * self.row_bytes
+
+    @property
+    def slot_bytes(self) -> int:
+        return self.layers * self.tokens * self.row_bytes
+
+    @property
+    def physical_pages(self) -> int:
+        return self.slots * (self.tokens // self.page_size)
+
+    def page_offset(self, physical_page: int) -> int:
+        """Return a whole page's byte offset in its region."""
+        check_index("physical page", physical_page, self.physical_pages)
+        return physical_page * self.page_bytes
+
+    def physical_rows(self, logical_rows: Any) -> Any:
+        """Map logical token rows relative to the first row of a layer.
+
+        Tensor inputs stay on device; the elementwise operations enter capture.
+        Bounds and validity belong to the caller's existing row mask.
+        """
+        return (
+            logical_rows // self.page_size * (self.layers * self.page_size)
+            + logical_rows % self.page_size
+        )
+
     def row_index(self, slot: int, token: int) -> int:
-        """Map a slot/token pair to its UniDexCopy row within one layer."""
+        """Return a physical row relative to the first row of the chosen layer."""
         check_index("slot", slot, self.slots)
         check_index("token", token, self.tokens)
-        return slot * self.tokens + token
+        return int(self.physical_rows(slot * self.tokens + token))
 
     def byte_offset(
         self, layer: int, slot: int, token: int, head: int = 0, column: int = 0
@@ -82,7 +114,7 @@ class KVLayout(msgspec.Struct, frozen=True):
         check_index("head", head, self.heads)
         check_index("column", column, self.dim)
         return (
-            layer * self.layer_bytes
+            layer * self.page_size * self.row_bytes
             + self.row_index(slot, token) * self.row_bytes
             + (head * self.dim + column) * self.element_bytes
         )
@@ -107,7 +139,7 @@ class PoolLayout(msgspec.Struct, frozen=True):
         positive_int("probe_bytes", self.probe_bytes)
         if self.alignment_bytes & (self.alignment_bytes - 1):
             raise ValueError("allocation alignment must be a power of two")
-        for name in ("layers", "slots", "heads", "dim", "dtype"):
+        for name in ("layers", "slots", "heads", "dim", "dtype", "page_size"):
             if getattr(self.prompt, name) != getattr(self.decode, name):
                 raise ValueError(f"P/D KV {name} must match")
         extra = (self.prompt_index, self.prefix_main, self.prefix_index)
@@ -116,10 +148,10 @@ class PoolLayout(msgspec.Struct, frozen=True):
                 raise ValueError("prefix requires all three P storage regions")
             index, main, prefix_index = extra
             assert index is not None and main is not None and prefix_index is not None
-            for name in ("slots", "tokens", "heads", "dtype"):
+            for name in ("slots", "tokens", "heads", "dtype", "page_size"):
                 if getattr(index, name) != getattr(self.prompt, name):
                     raise ValueError(f"alive Index K {name} differs from prompt")
-            for name in ("layers", "heads", "dim", "dtype"):
+            for name in ("layers", "heads", "dim", "dtype", "page_size"):
                 if getattr(main, name) != getattr(self.prompt, name):
                     raise ValueError(f"prefix main {name} differs from prompt")
                 if getattr(prefix_index, name) != getattr(index, name):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from .indexed_copy import copy_rows
 from .sharing import writer_rows
 from .sharing_cases import Case
 from .verification import kv_pattern
@@ -279,52 +280,43 @@ class CopyWorkload:
     def write(self) -> None:
         local = self.pool.layout.layout_for_rank(self.pool.rank)
         if self.feature_split:
-            self.kernel(
+            copy_rows(
+                self.kernel,
                 self.values,
                 self.dtype_placeholder,
                 self.feature_src,
                 self.feature_dst,
                 self.write_valid,
-                self.write_count * self.tp_size,
-                local.slots * local.tokens * self.tp_size,
-                local.row_bytes // self.tp_size,
-                self.write_count,
-                self.block_dim,
-                None,
-                self.pool.view(self.pool.rank, self.layer).device_base,
+                row_bytes=local.row_bytes // self.tp_size,
+                block_dim=self.block_dim,
+                target_view=self.pool.view(self.pool.rank, self.layer),
             )
         else:
-            self.kernel(
+            copy_rows(
+                self.kernel,
                 self.values,
                 self.dtype_placeholder,
                 self.write_src,
                 self.write_dst,
                 self.write_valid,
-                self.write_count,
-                local.slots * local.tokens,
-                local.row_bytes,
-                self.write_count,
-                self.block_dim,
-                None,
-                self.pool.view(self.pool.rank, self.layer).device_base,
+                row_bytes=local.row_bytes,
+                block_dim=self.block_dim,
+                target_view=self.pool.view(self.pool.rank, self.layer),
             )
 
     def history(self) -> None:
         for side, route in enumerate(self.routes):
             source = self.pool.view(side, self.layer)
-            self.kernel(
+            copy_rows(
+                self.kernel,
                 self.dtype_placeholder,
                 self.output,
                 route.src_index,
                 route.dst_index,
                 route.valid,
-                source.layout.slots * source.layout.tokens,
-                self.batch * self.topk,
-                source.layout.row_bytes,
-                self.batch * self.topk,
-                self.block_dim,
-                source.device_base,
-                None,
+                row_bytes=source.layout.row_bytes,
+                block_dim=self.block_dim,
+                source_view=source,
             )
 
     def current(self) -> None:
@@ -386,19 +378,16 @@ class CopyWorkload:
         indices = torch.arange(count, dtype=torch.int64, device=self.device)
         valid = torch.ones(count, dtype=torch.bool, device=self.device)
         for slot in range(layout.slots):
-            self.kernel(
+            copy_rows(
+                self.kernel,
                 self.dtype_placeholder,
                 dst,
                 indices + slot * layout.tokens + self.first_write - 1,
                 indices,
                 valid,
-                layout.slots * layout.tokens,
-                count,
-                layout.row_bytes,
-                count,
-                self.block_dim,
-                source.device_base,
-                None,
+                row_bytes=layout.row_bytes,
+                block_dim=self.block_dim,
+                source_view=source,
             )
             actual = dst.cpu()
             expected = kv_pattern(

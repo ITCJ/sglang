@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import msgspec
 
+from .indexed_copy import copy_rows
 from .layout import UINT32_MAX, positive_int
 from .manager import MempoolKVManager, MempoolKVView
 
@@ -144,19 +145,16 @@ class SparseKVCopy:
             self._kernel = torch.ops.npu.unidex_copy
         routes = self.routes()
         for source, indices in zip((self.prompt, self.decode), routes):
-            self._kernel(
+            copy_rows(
+                self._kernel,
                 self._source_dtype,
                 self.output,
                 indices.src_index,
                 indices.dst_index,
                 indices.valid,
-                source.layout.slots * source.layout.tokens,
-                self.inputs.batch_rows * self.inputs.topk,
-                source.layout.row_bytes,
-                indices.src_index.numel(),
-                self.block_dim,
-                source.device_base,
-                None,
+                row_bytes=source.layout.row_bytes,
+                block_dim=self.block_dim,
+                source_view=source,
             )
         return self.output
 

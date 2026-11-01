@@ -60,6 +60,7 @@ class PoolDescriptor(msgspec.Struct, frozen=True):
     prompt_bytes: int
     decode_bytes: int
     stride_bytes: int
+    storage_layout: str = ""
 
     def __post_init__(self) -> None:
         """Check schema and physical bounds before peer comparison."""

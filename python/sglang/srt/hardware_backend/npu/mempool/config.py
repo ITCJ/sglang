@@ -152,7 +152,7 @@ class MempoolConfig(msgspec.Struct, frozen=True):
         indexer_layers: int = 0,
         index_head_dim: int = 0,
     ) -> PoolLayout:
-        """Derive layer slabs from actual local layers and latent-plus-RoPE KV."""
+        """Derive page-first regions from model geometry and the native page size."""
         positive_int("kv_lora_rank", kv_lora_rank)
         positive_int("qk_rope_head_dim", qk_rope_head_dim)
         # Construct both sides so each capacity runs the layout bounds checks.
@@ -164,6 +164,7 @@ class MempoolConfig(msgspec.Struct, frozen=True):
                 heads=1,
                 dim=kv_lora_rank + qk_rope_head_dim,
                 dtype=dtype,
+                page_size=self.page_size,
             )
             for capacity in (self.prefill_capacity, self.decode_capacity)
         )
@@ -180,6 +181,7 @@ class MempoolConfig(msgspec.Struct, frozen=True):
                 tokens=self.prefill_capacity,
                 heads=1,
                 dim=index_head_dim,
+                page_size=self.page_size,
             ),
             prefix_main=KVLayout(
                 layers=num_layers,
@@ -187,6 +189,7 @@ class MempoolConfig(msgspec.Struct, frozen=True):
                 tokens=self.page_size,
                 heads=1,
                 dim=prompt.dim,
+                page_size=self.page_size,
             ),
             prefix_index=KVLayout(
                 layers=indexer_layers,
@@ -194,5 +197,6 @@ class MempoolConfig(msgspec.Struct, frozen=True):
                 tokens=self.page_size,
                 heads=1,
                 dim=index_head_dim,
+                page_size=self.page_size,
             ),
         )

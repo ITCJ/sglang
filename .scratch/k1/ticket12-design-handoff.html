@@ -1,0 +1,1470 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="blueprint" data-mode="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Answer me with HTML 0.4.3">
+<title>K1 Ticket12 设计交接：当前实现与 page-first 改造</title>
+<style>
+html[data-theme="blueprint"], html[data-theme="blueprint"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 0px;
+  --shadow: none;
+  --bw: 1.5px;
+  --head-font: var(--font-sans);
+  --bg: #f6f6f3;
+  --paper: #ffffff;
+  --ink: #16181d;
+  --ink-2: #4b5260;
+  --ink-3: #8b929e;
+  --line: #1d2026;
+  --line-2: #d6dae1;
+  --fill: #f3f5f8;
+  --accent: #1d5fbf;
+  --accent-bg: #e4ecf8;
+  --ok: #1d5fbf;
+  --ok-bg: #e4ecf8;
+  --err: #c62828;
+  --err-bg: #fbeaea;
+  --warn: #a8620a;
+  --warn-bg: #fdf3e2;
+  --head-bg: #16181d;
+  --head-fg: #ffffff;
+}
+html[data-theme="blueprint"][data-mode="dark"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="blueprint"][data-mode="auto"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+}
+
+html[data-theme="shadcn"], html[data-theme="shadcn"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 8px;
+  --shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --bw: 1px;
+  --head-font: var(--font-sans);
+  --bg: #fafafa;
+  --paper: #ffffff;
+  --ink: #09090b;
+  --ink-2: #71717a;
+  --ink-3: #a1a1aa;
+  --line: #e4e4e7;
+  --line-2: #f0f0f2;
+  --fill: #f4f4f5;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --ok: #16a34a;
+  --ok-bg: #f0fdf4;
+  --err: #dc2626;
+  --err-bg: #fef2f2;
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --head-bg: #18181b;
+  --head-fg: #fafafa;
+}
+html[data-theme="shadcn"][data-mode="dark"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="shadcn"][data-mode="auto"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+}
+
+/* Answer me with HTML base — 只引用主题变量，禁止写死颜色（主题 token 见 themes/index.js） */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd { font-family: var(--font-mono); }
+
+/* ── 工具栏 ─────────────────────────────── */
+.am-toolbar {
+  position: fixed; top: 12px; right: 12px; z-index: 10; display: flex; gap: 6px;
+}
+.am-btn {
+  font: 12px/1 var(--font-sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding: 7px 10px; cursor: pointer;
+}
+.am-btn:hover { border-color: var(--ink-3); }
+.am-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── 页头 ───────────────────────────────── */
+.am-head { margin: 0 0 20px; padding-right: 260px; }
+.am-head h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; }
+.am-sub { margin: 4px 0 0; color: var(--ink-2); }
+.am-head-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 12px; color: var(--ink-2); }
+.am-head-meta b { font-family: var(--font-mono); font-weight: 400; color: var(--ink-3); margin-right: 6px; }
+.am-intro { margin-top: 12px; max-width: 80ch; }
+
+/* ── sheet 图纸板 ────────────────────────── */
+.am-sheet { max-width: 1680px; margin: 0 auto; padding: 32px 28px 40px; }
+.am-frame { position: relative; }
+.am-grid {
+  display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 20px; align-items: start;
+}
+.am-ruler { display: none; }
+html[data-theme="blueprint"] .am-frame { border: 1px solid var(--line); padding: 30px; }
+html[data-theme="blueprint"] .am-frame::before {
+  content: ""; position: absolute; inset: 18px; border: 1px solid var(--line); pointer-events: none;
+}
+html[data-theme="blueprint"] .am-ruler {
+  display: flex; position: absolute; font: 10px/1 var(--font-mono); color: var(--ink-3);
+}
+.am-ruler span { flex: 1; display: flex; align-items: center; justify-content: center; }
+.am-ruler--top, .am-ruler--bottom { left: 18px; right: 18px; height: 18px; }
+.am-ruler--top { top: 0; }
+.am-ruler--bottom { bottom: 0; }
+.am-ruler--left, .am-ruler--right { top: 18px; bottom: 18px; width: 18px; flex-direction: column; }
+.am-ruler--left { left: 0; }
+.am-ruler--right { right: 0; }
+.am-ruler--top span + span, .am-ruler--bottom span + span { border-left: 1px solid var(--line); }
+.am-ruler--left span + span, .am-ruler--right span + span { border-top: 1px solid var(--line); }
+
+/* ── 面板 ───────────────────────────────── */
+.am-panel {
+  background: var(--paper); border: var(--bw) solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); min-width: 0; overflow: hidden;
+}
+.am-panel-head {
+  display: flex; align-items: stretch; gap: 0; border-bottom: var(--bw) solid var(--line); min-height: 34px;
+}
+.am-panel-id {
+  display: flex; align-items: center; justify-content: center; min-width: 34px; padding: 0 8px;
+  background: var(--head-bg); color: var(--head-fg); font-weight: 600; font-size: 14px;
+}
+html[data-theme="shadcn"] .am-panel-id { border-radius: 6px; min-width: 24px; height: 24px; margin: 9px 0 9px 14px; font-size: 12px; }
+html[data-theme="shadcn"] .am-panel-head { border-bottom-width: 1px; }
+.am-panel-head h2 { margin: 0; padding: 7px 12px; font-size: 15px; font-weight: 600; flex: 1; display: flex; align-items: center; }
+.am-panel-meta { align-self: center; padding: 0 12px; font: 11px/1.3 var(--font-mono); color: var(--ink-2); text-align: right; }
+.am-panel-body { padding: 14px 16px 16px; }
+.am-panel-body > * + * { margin-top: 12px; }
+
+/* ── Markdown 正文 ───────────────────────── */
+.am-md > :first-child { margin-top: 0; }
+.am-md > :last-child { margin-bottom: 0; }
+.am-md p { margin: 0 0 8px; }
+.am-md ul, .am-md ol { margin: 0 0 8px; padding-left: 20px; }
+.am-md li + li { margin-top: 3px; }
+.am-md h3, .am-md h4 { margin: 14px 0 6px; font-size: 13px; }
+.am-md a { color: var(--accent); }
+.am-md blockquote { margin: 0 0 8px; padding: 2px 12px; border-left: 3px solid var(--line-2); color: var(--ink-2); }
+.am-md :not(pre) > code { font-size: 0.9em; background: var(--fill); padding: 1px 5px; border-radius: 4px; }
+.am-md hr { border: 0; border-top: 1px solid var(--line-2); margin: 12px 0; }
+.am-md table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.am-md th {
+  text-align: left; font: 11px/1.3 var(--font-mono); color: var(--ink-2); font-weight: 400;
+  padding: 6px 10px; border-bottom: 1px solid var(--line-2);
+}
+.am-md td { padding: 7px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.am-md tbody tr:nth-child(even) td { background: var(--fill); }
+.am-table-wrap { overflow-x: auto; }
+.am-code {
+  margin: 0; padding: 12px 14px; background: var(--fill); border: 1px solid var(--line-2);
+  border-radius: var(--radius); overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+}
+
+/* ── 状态徽章 ok / no / warn ──────────────── */
+.am-status { white-space: nowrap; font-weight: 500; }
+.am-status--ok { color: var(--ok); }
+.am-status--no { color: var(--err); }
+.am-status--warn { color: var(--warn); }
+.am-status-icon { display: inline-block; width: 1.1em; font-weight: 700; }
+
+/* ── callout ─────────────────────────────── */
+.am-callout {
+  border: 1px solid var(--line-2); border-left: 3px solid var(--accent); background: var(--accent-bg);
+  padding: 10px 14px; border-radius: var(--radius);
+}
+.am-callout--ok { border-left-color: var(--ok); background: var(--ok-bg); }
+.am-callout--warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.am-callout--err { border-left-color: var(--err); background: var(--err-bg); }
+.am-callout-title { font-weight: 600; margin-bottom: 4px; }
+
+/* ── kv 标题栏格 ─────────────────────────── */
+.am-kv {
+  display: grid; grid-template-columns: repeat(var(--kv-cols, 2), minmax(0, 1fr)); margin: 0;
+  border-top: var(--bw) solid var(--line); border-left: var(--bw) solid var(--line);
+}
+.am-kv-cell { border-right: var(--bw) solid var(--line); border-bottom: var(--bw) solid var(--line); padding: 6px 10px 8px; min-width: 0; }
+.am-kv-cell--wide { grid-column: 1 / -1; }
+.am-kv dt { font: 11px/1.4 var(--font-mono); color: var(--ink-2); }
+.am-kv dd { margin: 2px 0 0; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.am-kv-cell--wide dd { font-size: 17px; font-weight: 600; }
+html[data-theme="shadcn"] .am-kv { border-color: var(--line); border-radius: var(--radius); overflow: hidden; }
+
+/* ── timeline ────────────────────────────── */
+.am-timeline { list-style: none; margin: 0; padding: 0; }
+.am-timeline--h { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); padding-top: 4px; }
+.am-timeline--h li { position: relative; text-align: center; padding: 0 6px; }
+.am-timeline--h li::before {
+  content: ""; position: absolute; top: 31px; left: 0; right: 0; border-top: var(--bw) solid var(--line);
+}
+.am-timeline--h li:first-child::before { left: 50%; }
+.am-timeline--h li:last-child::before { right: 50%; }
+.am-tl-when { display: block; font-size: 15px; font-weight: 500; height: 24px; }
+.am-tl-dot {
+  position: relative; display: block; width: 11px; height: 11px; margin: 2px auto 8px;
+  border: var(--bw) solid var(--line); border-radius: 50%; background: var(--paper);
+}
+.am-tl-item--hi .am-tl-dot { background: var(--accent); border-color: var(--accent); }
+.am-tl-title { display: block; font-size: 12.5px; font-weight: 500; }
+.am-tl-text { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.45; }
+.am-timeline--v li { position: relative; padding: 0 0 14px 22px; }
+.am-timeline--v li::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: -6px; border-left: var(--bw) solid var(--line-2); }
+.am-timeline--v li:last-child::before { display: none; }
+.am-timeline--v .am-tl-dot { position: absolute; left: 0; top: 4px; margin: 0; }
+.am-timeline--v .am-tl-when { display: inline; height: auto; font: 12px var(--font-mono); color: var(--ink-2); margin-right: 8px; }
+.am-timeline--v .am-tl-title { display: inline; font-size: 14px; }
+.am-timeline--v .am-tl-text { margin-top: 2px; }
+
+/* ── annot 句子标注 ──────────────────────── */
+.am-annot + .am-annot { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.am-annot-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.am-annot-meta { font: 11px var(--font-mono); font-weight: 400; color: var(--ink-2); }
+.am-annot-scroll { overflow-x: auto; }
+.am-annot-line {
+  position: relative; display: inline-block; white-space: pre; font: 14px/1.6 var(--font-mono);
+  padding-bottom: calc(var(--rows, 0) * 17px + 14px);
+}
+.am-annot-line--wrap { display: block; white-space: normal; padding-bottom: 10px; }
+.am-annot-line--wrap .am-seg { white-space: nowrap; }
+.am-seg { position: relative; }
+.am-seg::after {
+  content: ""; position: absolute; left: 1px; right: 1px; top: calc(100% + 1px); height: 5px;
+  border: 1px solid var(--accent); border-top: 0;
+}
+.am-seg-n {
+  position: absolute; left: 0; top: calc(100% + 8px + var(--row, 0) * 17px);
+  font: 11px/16px var(--font-sans); color: var(--accent); white-space: nowrap;
+}
+.am-seg--err { color: var(--err); }
+.am-seg--err::after { border-color: var(--err); }
+.am-seg--err .am-seg-n { color: var(--err); }
+.am-annot-caption { font-size: 12px; color: var(--ink-2); }
+
+/* ── limits 限值条 ───────────────────────── */
+.am-lim + .am-lim { margin-top: 14px; }
+.am-lim-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; margin-bottom: 4px; }
+.am-lim-val { font: 12px var(--font-mono); color: var(--accent); white-space: nowrap; }
+.am-lim-track { position: relative; height: 12px; border: 1px solid var(--line-2); background: var(--fill); border-radius: calc(var(--radius) / 2); }
+.am-lim-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-bg); border-right: 1px solid var(--accent); }
+.am-lim-mark { position: absolute; top: -4px; bottom: -4px; border-left: 2px solid var(--accent); }
+.am-lim.is-over .am-lim-fill { background: var(--err-bg); border-right-color: var(--err); }
+.am-lim.is-over .am-lim-val { color: var(--err); }
+.am-lim-ticks { position: relative; height: 16px; font: 10px/16px var(--font-mono); color: var(--ink-3); }
+.am-lim-ticks span { position: absolute; transform: translateX(-50%); }
+.am-lim-ticks span:first-child { transform: none; }
+.am-lim-note { font-size: 11px; color: var(--ink-2); margin-left: 6px; }
+
+/* ── tree 结构树 ─────────────────────────── */
+.am-tree { font-size: 13px; }
+.am-tree-root { display: flex; justify-content: center; position: relative; padding-bottom: 18px; }
+.am-tree-root::after { content: ""; position: absolute; bottom: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-root--solo { padding-bottom: 12px; }
+.am-tree-root--solo::after { display: none; }
+.am-tree-box {
+  border: var(--bw) solid var(--line); background: var(--paper); padding: 6px 14px; text-align: center;
+  border-radius: var(--radius); font-weight: 600;
+}
+.am-tree-box small { display: block; font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.am-tree-box--root { background: var(--accent-bg); font-size: 15px; padding: 8px 28px; }
+.am-tree-cols { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
+.am-tree-col { position: relative; padding: 18px 8px 0; min-width: 0; }
+.am-tree-col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; border-top: var(--bw) solid var(--line); }
+.am-tree-col:first-child::before { left: 50%; }
+.am-tree-col:last-child::before { right: 50%; }
+.am-tree-col::after { content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-list, .am-tree-list ul { list-style: none; margin: 0; padding: 0; }
+.am-tree-col > .am-tree-list { margin: 8px 0 0 14px; }
+.am-tree-list ul { margin-left: 16px; }
+.am-tree-list li { position: relative; padding: 3px 0 3px 18px; }
+.am-tree-list li::before { content: ""; position: absolute; left: 0; top: 0.95em; width: 12px; border-top: 1px solid var(--ink-3); }
+.am-tree-list li::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--ink-3); }
+.am-tree-list li:last-child::after { bottom: auto; height: 0.95em; }
+.am-tree-tag { font: 11px var(--font-mono); color: var(--ink-3); margin-right: 4px; }
+.am-tree code { font: 12px var(--font-mono); }
+.am-tree-sub { display: block; font-size: 11.5px; color: var(--ink-2); }
+.am-tree-hi > .am-tree-label { color: var(--accent); font-weight: 600; }
+
+/* ── 图（flow / sequence）───────────────── */
+.am-diagram { margin: 0; overflow-x: auto; text-align: center; }
+.am-diagram svg { max-width: 100%; height: auto; font-family: var(--font-sans); }
+.am-diagram text { fill: var(--ink); font-size: 13px; }
+.am-node-shape { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-node--hi .am-node-shape { fill: var(--accent-bg); stroke: var(--accent); }
+.am-node--hi text { fill: var(--accent); font-weight: 600; }
+.am-edge { fill: none; stroke: var(--ink-2); stroke-width: 1.3; }
+.am-edge--dashed { stroke-dasharray: 5 4; }
+.am-arrow { fill: var(--ink-2); }
+.am-edge-label rect { fill: var(--paper); }
+.am-diagram .am-edge-label text { fill: var(--accent); font-size: 11.5px; }
+.am-cluster { fill: var(--fill); stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 4 3; }
+.am-diagram .am-cluster-label { fill: var(--ink-2); font: 11px var(--font-mono); }
+.am-lifeline { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 4 4; }
+.am-actor { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-note { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 1; }
+.am-diagram .am-step { fill: var(--ink-3); font: 10px var(--font-mono); }
+
+/* ── doc 线性讲解 ────────────────────────── */
+.am-doc { max-width: 1120px; margin: 0 auto; padding: 40px 28px 64px; }
+.am-doc-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
+.am-doc-layout--notoc { grid-template-columns: minmax(0, 1fr); max-width: 860px; }
+.am-toc { position: sticky; top: 24px; font-size: 13px; }
+.am-toc a { display: block; color: var(--ink-2); text-decoration: none; padding: 4px 0 4px 10px; border-left: 2px solid var(--line-2); }
+.am-toc a:hover { color: var(--ink); border-left-color: var(--accent); }
+.am-doc-body > .am-panel + .am-panel { margin-top: 20px; }
+
+/* ── 响应式与打印 ─────────────────────────── */
+@media (max-width: 1100px) {
+  .am-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .am-grid > .am-panel { grid-column: auto !important; }
+  .am-grid > .am-panel.am-span-wide { grid-column: 1 / -1 !important; }
+}
+@media (max-width: 760px) {
+  .am-sheet, .am-doc { padding: 56px 12px 24px; }
+  .am-head { padding-right: 0; }
+  .am-grid { grid-template-columns: minmax(0, 1fr); }
+  .am-grid > .am-panel.am-span-wide { grid-column: auto !important; }
+  html[data-theme="blueprint"] .am-frame { padding: 0; border: 0; }
+  html[data-theme="blueprint"] .am-frame::before, html[data-theme="blueprint"] .am-ruler { display: none; }
+  .am-doc-layout { grid-template-columns: minmax(0, 1fr); }
+  .am-toc { position: static; }
+  .am-timeline--h { grid-template-columns: minmax(0, 1fr); }
+  .am-tree-cols { grid-template-columns: minmax(0, 1fr); }
+}
+.am-colophon { text-align: center; padding: 0 0 28px; font: 11px var(--font-mono); color: var(--ink-3); }
+
+@media print {
+  .am-toolbar { display: none; }
+  body { background: var(--paper); }
+  .am-panel { break-inside: avoid; box-shadow: none; }
+}
+.am-panel--bare { border: 0; background: transparent; box-shadow: none; }
+.am-panel--bare > .am-panel-body { padding: 0; }
+.am-panel--bare .am-kv { background: var(--paper); }
+
+</style>
+</head>
+<body>
+<div class="am-toolbar">
+<button class="am-btn" type="button" data-am="theme" data-labels="{&quot;blueprint&quot;:&quot;主题：图纸&quot;,&quot;shadcn&quot;:&quot;主题：卡片&quot;}">主题：图纸</button>
+<button class="am-btn" type="button" data-am="mode" data-labels="{&quot;auto&quot;:&quot;明暗：跟随系统&quot;,&quot;light&quot;:&quot;明暗：亮&quot;,&quot;dark&quot;:&quot;明暗：暗&quot;}">明暗：跟随系统</button>
+<button class="am-btn" type="button" data-am="copy" data-done="已复制 ✓">复制源稿</button>
+</div>
+<main class="am-doc">
+<header class="am-head"><h1>K1 Ticket12 设计交接：当前实现与 page-first 改造</h1><p class="am-sub">已验收 08 → 新增 12 → 11 → 09</p></header>
+<div class="am-doc-layout">
+<nav class="am-toc" aria-label="目录"><a href="#panel-A">A · 给设计 agent 的任务与事实基线</a><a href="#panel-B">B · 当前存储、分配与映射</a><a href="#panel-C">C · 现在的读写调用链与完成语义</a><a href="#panel-D">D · page-first 的建议范围与具体改造点</a><a href="#panel-E">E · 12 与 11 的分界及新清单公式</a><a href="#panel-F">F · 验收基线、保留边界与 12 的验证建议</a><a href="#panel-G">G · 需要你在 ticket12 中明确的决策</a><a href="#panel-H">H · 请同步修订的设计文字</a></nav><div class="am-doc-body">
+<section class="am-panel" id="panel-A">
+<header class="am-panel-head"><span class="am-panel-id">A</span><h2>给设计 agent 的任务与事实基线</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>用户已决定：新增 ticket12，在 ticket11 之前完成 layer-first 到 page-first 的转换。
+请基于下面的实际代码状态设计 12，并同步调整 11、09 和后续阶段的边界。</p>
+<p>本稿补充你已掌握的 syncfile；不是已实施的 ticket12，也不是其最终规格。
+文中“现状”来自源码与既有验收记录；“建议”需要你纳入设计并明确取舍。
+采用通用的设备、主机内存、设备内存、共享池和拷贝接口术语。
+模块仅列文件名与符号，省略平台路径、库品牌及专有算子名。</p>
+<p><strong>设计依据：</strong> <code>mempool-min-demo/walkthrough.md</code>、<code>discussion.md</code>、
+<code>k1/k1-tickets.md</code>、十一张独立票，以及实施侧当前源码与验收归档。
+读取时 syncfile 仍采用 M57 和 <code>07 → 08 → 11 → 09</code>，没有独立 12 票。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>范围</th>
+<th>当前进度</th>
+<th>你需要更新的认识</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>阶段 0 / L0</td>
+<td>请求、保存、命中恢复、后缀、释放流程已交付并验收</td>
+<td>旧 02 文件仍 open，仅待单独关闭确认，不阻塞 K1</td>
+</tr>
+<tr>
+<td>K1 01、02、03</td>
+<td>已按用户接受的范围关闭</td>
+<td>映射、共享会话、记账、split_read 已可复用</td>
+</tr>
+<tr>
+<td>K1 05、06</td>
+<td>已关闭</td>
+<td>P 与 D 的 alive 主 KV 均已共享为 8 份</td>
+</tr>
+<tr>
+<td>K1 07</td>
+<td>已关闭</td>
+<td>P alive Index K 已为单份，实际访问者已建立设备映射</td>
+</tr>
+<tr>
+<td>K1 08</td>
+<td>已关闭</td>
+<td>单份八段 prefix 已实现且通过用户确认的实机验收</td>
+</tr>
+<tr>
+<td>K1 11、09</td>
+<td>均未实施</td>
+<td>原先 11 已解锁；新决定要求先完成并验收 12</td>
+</tr>
+<tr>
+<td>K1 04、10</td>
+<td>未完成，均不阻塞主线</td>
+<td>读带宽微测和基线异常定位仍是旁路工作</td>
+</tr>
+</tbody></table></div>
+<p>新增 12 前，K1 是 11 张票、7 closed、4 open。
+正式发布 12 后应为 12 张票、7 closed、5 open。</p>
+<p>建议依赖：12 依赖 08；11 改依赖 12；09 保留 06、08、11。
+这样 09 通过 11 传递依赖 12；09 的验收正文也应明确 page-first。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-B">
+<header class="am-panel-head"><span class="am-panel-id">B</span><h2>当前存储、分配与映射</h2></header>
+<div class="am-panel-body"><div class="am-md"><h3>B1 已经实现的共享布局</h3>
+<p>配置为 P/D 各一台主机、每侧 TP16、attention TP16、DP1。
+当前模型主 KV 有 78 层、每 token 576 个 BF16 元素。
+Index K 有 21 个生产层、每 token 128 个 BF16 元素。
+这些是当前模型实例值，布局计算应从模型几何推导。
+Index K 的 21 个局部层编号与模型层编号通过 producer 列表映射。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>主机内存区域</th>
+<th align="right">物理副本数</th>
+<th>owner 与分工</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>P alive 主 KV</td>
+<td align="right">8</td>
+<td>组 <code>{2k, 2k+1}</code> 共享；owner 为 <code>2k</code>；组内按整页分写</td>
+</tr>
+<tr>
+<td>D alive 主 KV</td>
+<td align="right">8</td>
+<td>同样分组；默认按特征维分写每步新行，也支持按层分工</td>
+</tr>
+<tr>
+<td>P alive Index K</td>
+<td align="right">1</td>
+<td>NUMA0、owner rank0；默认只有 rank0 写，已有多写者配置</td>
+</tr>
+<tr>
+<td>prefix 主 KV</td>
+<td align="right">1</td>
+<td>一份完整数据分成 8 个 NUMA 段，各段 owner 为 <code>2k</code></td>
+</tr>
+<tr>
+<td>prefix Index K</td>
+<td align="right">1</td>
+<td>与 prefix 主 KV 共享逻辑页归属、段和页描述符</td>
+</tr>
+</tbody></table></div>
+<p>五项副本数为 <code>8 / 8 / 1 / 1 / 1</code>。
+D 生成的 Index K 仍留在设备内存，没有新增 D alive Index K 主存池。
+底层共享池会话覆盖 P/D 共 32 个参与者。
+物理副本、映射者、实际写者、会话参与者是四个不同概念。</p>
+<p>所有执行 fill 的 P 分片需要访问全部 prefix 段。
+admit owner 需要访问本组 alive 主 KV 和 NUMA0 的 alive Index K。
+当前访问由设备侧索引拷贝完成，映射范围覆盖实际访问范围。
+增加映射没有增加物理副本；不能沿用“只有 owner 有设备映射”的假设。</p>
+<h3>B2 页管理已经存在，存储排列仍是 layer-first</h3>
+<p>统一 token 页为 <code>B=128</code>，主机内存与原生设备页使用相同 B。
+验收配置的 P/D alive 每份各有 16 个槽，<code>S_P=8192</code>、<code>S_D=128</code>。
+alive 仍按整槽预留和归还；prefix 已有真正的按页空闲表。
+当前只有一个真实请求在运行，16 个槽和图的补齐行不代表并发 16。</p>
+<p>prefix 总容量为 40 页，8 段各 5 页。
+物理页编号编码为 <code>segment × 5 + local_page</code>，Main 只转发描述符。
+每个请求记录一次起始段，分配按段轮转；段满时选剩余页最多的段。</p>
+<p>A 保存 32 页后，各段有 4 页；B 再保存 8 页后，各段有 5 页。
+这些分配规则与 page-first 是独立的，12 可以原样保留。</p>
+<p>当前主存区域的紧凑布局为：</p>
+</div>
+<pre class="am-code"><code data-lang="text">alive:      [layer, slot, token_in_slot, head, feature]
+prefix段:   [layer, local_page, token_in_page, head, feature]</code></pre>
+<div class="am-md"><p>区域内部目前先放完整的第 0 层，再放完整的第 1 层。
+单页跨层数据不连续；跨 NUMA 的交错选页也没有改变这个事实。
+段内 prefix 每层 stride 按 5 页计算，不是按总容量 40 页计算。</p>
+<p>对于区域基址 R、每 token 行宽 r、每层大小 layer_bytes：</p>
+</div>
+<pre class="am-code"><code data-lang="text">alive地址 = R + layer × layer_bytes + (slot × S + token) × r
+prefix地址 = 段内区域基址 + layer × 段内layer_bytes
+             + (local_page × B + token_in_page) × r</code></pre>
+<div class="am-md"><p>区域数据量由各维度乘积决定，主 KV 与 Index K 是两个独立区域。
+池的实际贡献还包括探针区和库要求的对齐，不能只看有效数据字节。
+08 报告的库分配贡献为 P 合计 96 GiB、D 合计 8 GiB。
+这不等于物理 NUMA 驻留已经验证；验收源快照的内存另计。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-C">
+<header class="am-panel-head"><span class="am-panel-id">C</span><h2>现在的读写调用链与完成语义</h2></header>
+<div class="am-panel-body"><div class="am-md"><h3>C1 P 写回与 D 读取</h3>
+<p>P 每层得到主 KV 后，拼成 576 维连续行，写入该请求的 alive 槽。
+共享组成员按完整 prompt 的页范围分工；命中长度不改变写者归属。
+有 prefix 命中时，模型只计算后缀，命中段由 fill 写入 alive。
+Index K 在生产层从原生设备缓冲取值，按其独立写者配置写回。</p>
+<p>D 的稀疏 miss 读取按 token 位置选择源：</p>
+<ul>
+<li>小于 prompt 长度：读取绑定的 P alive 槽。</li>
+<li>属于已物化生成段：读取绑定的 D alive 槽。</li>
+<li>当前步的新 token：先由本 rank 的设备缓冲供给。</li>
+</ul>
+<p>P 槽和 D 槽可不同。D 主存中的位置是生成段相对位置。
+padding、无效请求行和未写位置继续由既有 mask 排除。
+这些逻辑选择应保留，只把最终物理寻址适配为 page-first。</p>
+<p>D 默认按特征维分写新行，写回在计算流上执行。
+现有实现利用后续全员 TP 通信保障后一步可读，不新增跨进程握手。
+当前 token 的本地供给解决本步还未合齐的问题。
+12 必须保留该顺序与特征切分，不能把部分 token 更新变成整页覆盖。</p>
+<h3>C2 三种 prefix 操作</h3>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>当前数据路径与分工</th>
+<th>完成依据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>op2 load_back</td>
+<td>每个读者只读取分到的页；逐层读入本 rank 的汇总缓冲切片，all_gather 后恢复原生设备页</td>
+<td>读取、集合通信和原生 scatter 全部完成</td>
+</tr>
+<tr>
+<td>op1 fill</td>
+<td>每组从全部 prefix 段直接填自己的 alive 主 KV；组内按页分工；Index K 只填单份</td>
+<td>本分片的设备完成事件，再由 SR 汇总</td>
+</tr>
+<tr>
+<td>op3 admit</td>
+<td>8 个 owner 各保存本段页；主 KV 源为本组 alive，Index K 源为单份区域</td>
+<td>设备事件完成、SR 核对单写者覆盖并汇总，然后发布</td>
+</tr>
+</tbody></table></div>
+<p>load_back 的读者按页的实际 NUMA 段分配。
+组 k 的两个 rank 平分段 k 的命中页；零页读者仍参加集合通信。
+主 KV 和 Index K 各复用一块汇总缓冲，逐层复用。</p>
+<p>每次恢复只建一张“汇总槽位 → 原生设备行”的表，两类数据共用。
+主 KV 恢复时拆回 512 维与 64 维两个原生缓冲。
+Index K 按 producer 层映射恢复到各自原生缓冲。</p>
+<p>原生目标页可以不连续；通信 padding 不产生额外主存读取。
+31 页命中时各段真实读取量不相等，这不是错误。
+page-first 不会自动把 load_back 变成对原生缓冲的一次整页 memcpy。</p>
+<p>当前 fill/load_back 由 <code>PrefixStore._read_context()</code> 使用独立设备流。
+它们仍由 worker 的有序执行路径提交，<strong>没有 11 要求的独立主机执行器线程</strong>。
+admit 在其调用流上提交；三类操作均使用事件查询完成。
+池间 copy 目前仍逐层调用按 token 行索引的拷贝接口。
+它是批量行索引，不是 Python 每 token 调用一次。</p>
+<h3>C3 控制流与所有权</h3>
+<p>Main 负责匹配、逻辑分配、源保护、发布、额度和串行准入。
+SR 仍嵌在 worker 内，rank0 协调、各 rank 执行分片任务。
+网络线程只入队，集合通信仍在有序调度 tick 中发起。
+Main 持有不透明页描述符，具体地址由持有映射的分片解析。</p>
+<p>“提交成功”不是“目标可读”。
+操作按 op_id 提交一次，后续 tick 轮询同一操作。
+对 admit，完成汇总后才能发布，再释放源，收到 free_ack 后恢复额度。
+fill 的完成进入 prompt ready 汇总，不应给它套用 admit 的 publish 阶段。
+零工作分片可以不搬数据，但仍须遵守原有全 rank 汇总次序。</p>
+<p>D 启动仍等待 prompt ready、Index K 到达和 handoff 三条件。
+finished、原生资源释放、共享源释放和 free_ack 继续分开处理。
+fail-stop 时保留未确认资源；最终进程清理由原有父进程路径完成。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-D">
+<header class="am-panel-head"><span class="am-panel-id">D</span><h2>page-first 的建议范围与具体改造点</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>以下是交给你定稿的代码方案，尚未实施。</p>
+<h3>D1 建议一次转换全部五类主存区域</h3>
+<p>建议 12 同时转换 P/D alive 主 KV、P alive Index K、两类 prefix。
+只改 prefix 会让 fill/admit 继续承担布局转换，11 仍不能直接搬整页。
+设备端原生 KV、Index K 和 attention 缓冲继续沿用原生格式。</p>
+<p>建议页内采用 <code>[layer, token_in_page, head, feature]</code>。
+alive 暂时用 <code>[slot, page_in_slot, layer, token_in_page, head, feature]</code>。
+prefix 每段使用 <code>[local_page, layer, token_in_page, head, feature]</code>。
+两类数据继续分区保存，同一个逻辑页分别对应两个连续块。</p>
+<p>令 L 为该区域层数、r 为该区域 token 行宽：</p>
+</div>
+<pre class="am-code"><code data-lang="text">alive_physical_page = slot × (S / B) + floor(token / B)
+prefix_physical_page = local_page
+in_page = token % B
+page_bytes = L × B × r
+
+地址 = 对应区域基址 + physical_page × page_bytes
+       + layer × B × r + in_page × r + 行内字节偏移</code></pre>
+<div class="am-md"><p>这是建议公式，不是当前 <code>byte_offset()</code> 的实现。
+该方案改变物理排列，不要求引入 alive 散页分配器。
+alive 的页归属仍由槽位换算；真正的动态页分配保留在后续阶段。
+建议以服务重启重建临时池，不在本票加入在线旧数据迁移。</p>
+<h3>D2 最小接口接缝</h3>
+<p>建议在现有布局和 view 层集中提供三类能力：</p>
+<ol>
+<li>给定层、槽/页、token 位置，得到设备拷贝需要的行位置或地址。</li>
+<li>给定物理页，得到供池库使用的整页字节地址与长度。</li>
+<li>序列化布局类型、B 和各维度，复用已有启动一致性检查。</li>
+</ol>
+<p>以上是接口职责，不预先指定新类层级。
+当前 <code>KVLayout</code> 没有布局类型或 page_size 字段，B 来自上层配置。
+设计时应明确 B 由谁持有，避免多个调用点各写一套页内公式。
+当前 <code>MempoolKVView</code> 的“单层连续平面”假设需要改变。
+page-first 的同一层跨页有间隙，不能只替换 <code>device_base</code> 而保留线性行号。</p>
+<p><code>gva_base</code> 对应池库地址；<code>device_base</code> 对应设备可访问地址。
+这两类地址已有区分，应保留，不能当作同一种裸指针。
+共享映射的地址也不应直接当普通 CPU 指针读取。
+现有实机排查已经否定过这种直接读法。</p>
+<h3>D3 逐模块影响图</h3>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>模块与关键符号</th>
+<th>当前职责</th>
+<th>12 的建议改动</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>layout.py</code>：<code>KVLayout</code>、<code>PoolLayout</code></td>
+<td>行宽、层跨度、区域大小、地址、signature</td>
+<td>明确 page-first 地址与页跨度；保留区域容量和探针隔离</td>
+</tr>
+<tr>
+<td><code>config.py</code>：<code>make_mla_layout</code></td>
+<td>从模型与容量构造各区域</td>
+<td>传入统一 B 和布局选择；不改变副本数或容量</td>
+</tr>
+<tr>
+<td><code>sharing_plan.py</code>：<code>PoolSession.regions</code></td>
+<td>每个 owner 的真实区域和 prefix 段几何</td>
+<td>page-first 按实际 5 页段构造；保留 32 参与者与零贡献成员</td>
+</tr>
+<tr>
+<td><code>manager.py</code>：<code>view</code>、<code>MempoolKVView</code></td>
+<td>层视图、池库地址、设备地址</td>
+<td>支持页/层定位，区分逻辑层形状与物理连续范围</td>
+</tr>
+<tr>
+<td><code>offload.py</code>：<code>MempoolKVOffload.write</code></td>
+<td>P 写回、D 写回、Index K 写回共用的索引拷贝</td>
+<td>转换目标物理行/地址；保留 mask 和 D 特征分写</td>
+</tr>
+<tr>
+<td><code>copy.py</code>：<code>SparseKVCopy</code>、<code>KVFetch</code></td>
+<td>prompt/decode 两源稀疏读取</td>
+<td>转换各源的页内地址；保留两源选择和稳定输入缓冲</td>
+</tr>
+<tr>
+<td><code>runtime.py</code>：<code>write_layer</code>、<code>fetch_selected_kv</code></td>
+<td>请求绑定、写入计数、Index K 层映射、D 当前行供给</td>
+<td>接入新几何；逻辑位置和 ready 计数不改</td>
+</tr>
+<tr>
+<td><code>decode_write.py</code>：<code>DecodeKV</code>、<code>DecodeWriter</code></td>
+<td>当前行本地供给、D 分写策略</td>
+<td>校验新地址路径不破坏逐步顺序，尽量复用现有逻辑</td>
+</tr>
+<tr>
+<td><code>prefix.py</code>：<code>_submit</code>、<code>_submit_fill</code>、<code>_copy_region</code></td>
+<td>admit/fill 的选页、分片和逐层拷贝</td>
+<td>页归属复用；更新源/目标寻址，留下 11 的整页接口</td>
+</tr>
+<tr>
+<td><code>prefix.py</code>：<code>_submit_load_back</code></td>
+<td>分读、汇总、恢复原生页</td>
+<td>主存源适配新布局；先保留逐层读取与两个汇总缓冲</td>
+</tr>
+<tr>
+<td><code>restore_kernel.py</code>：<code>scatter_rows</code></td>
+<td>汇总行恢复到原生设备格式</td>
+<td>建议复用；输入仍为原有逐层汇总行</td>
+</tr>
+<tr>
+<td><code>prefix_layout.py</code>、<code>split_read.py</code>、<code>page_write.py</code></td>
+<td>段页编码、读者/写者分配</td>
+<td>逻辑布局与存储排列独立，预计只需回归</td>
+</tr>
+<tr>
+<td><code>mempool_subrouter.py</code> 及注册入口</td>
+<td>命令执行、完成汇总、注册</td>
+<td>传递布局事实；控制协议和完成语义优先不变</td>
+</tr>
+<tr>
+<td><code>mempool_router.py</code>、<code>mempool_accounting.py</code></td>
+<td>Main 逻辑页、目录、额度、所有权</td>
+<td>原则上复用；用回归证明与物理排列解耦</td>
+</tr>
+<tr>
+<td>模型 attention 适配入口</td>
+<td>在既有位置调用写回和稀疏读取</td>
+<td>保持 hook 时序；必要改动集中在专用适配层</td>
+</tr>
+</tbody></table></div>
+<p>这份列表是影响分析，不代表每个文件都必须改。
+若发现必须改通用主线，应先说明文件、原因及行为影响。</p>
+<h3>D4 需要先解决的真实接口限制</h3>
+<p>当前索引拷贝的布局检查限定：单行最多 32 KiB，单层跨度不超过 UINT32_MAX。
+现在 P 每层只有 144 MiB，而完整 P 主 KV 区域约为 10.96875 GiB。
+旧接口通过层基址隔离跨度；page-first 的跨页索引可能跨过 4 GiB。
+仅修改 Python 索引公式，不足以证明底层访问安全。</p>
+<p>建议先在小范围验证以下方案之一，再选最小可行实现：</p>
+<ul>
+<li>现有拷贝接口能安全接受新物理跨度，就复用并补齐边界证据。</li>
+<li>若不能，就采用明确的分段基址，或最小扩展为支持页表/宽地址的读取写入路径。</li>
+</ul>
+<p>当前尚未验证哪种方案可用；不能预先承诺“完全不改底层拷贝”。
+此适配属于 12 的布局正确性，不等于提前实施 11 的线程与批量执行器。
+也不能把约 11 MiB 的整页伪装成现有接口的一条 token 行。</p>
+<p>图捕获/重放同样必须覆盖新地址计算。
+动态绑定与 token 位置继续用稳定的设备缓冲，不能引入每步主机读回。
+零有效行、补齐行和换槽后的重放仍须保留正确的访问路径。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-E">
+<header class="am-panel-head"><span class="am-panel-id">E</span><h2>12 与 11 的分界及新清单公式</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>建议 12 的完成点是：全部主存区域已为 page-first，现有服务路径能正确运行。
+12 可以继续使用现有逐层索引拷贝，只把物理寻址改正确。
+12 同时给出可核对的整页连续块接口，供 11 接入。
+这样 12 单独验证布局，11 单独验证异步执行与完成回报。</p>
+<p>11 再把 op1/op3 接入池库批量接口和每分片执行器。
+每次提交包含两类数据；等待或查询真实完成后，再回报目标可读。
+旧设备事件不能直接证明库内部传输队列已完成，11 必须定义对应完成桥接。</p>
+<p>本地库源码已有连续块批量提交、异步标记和释放 GIL 的包装。
+这只是源码依据；实际可用性和完成语义仍需在 11 的实机路径验证。</p>
+<p>12 不承诺性能收益，11 也不能把段数减少当作性能已经改善。
+load_back、写回、稀疏读取均因 12 适配新布局；11 仍只更换 op1/op3。</p>
+<h3>E1 每页有效字节</h3>
+<p>按当前模型、B=128、紧凑无额外页内 padding：</p>
+</div>
+<pre class="am-code"><code data-lang="text">M = 78 × 128 × 576 × 2 = 11,501,568 bytes  // 主 KV 一页
+I = 21 × 128 × 128 × 2 =    688,128 bytes  // Index K 一页
+M + I = 12,189,696 bytes</code></pre>
+<div class="am-md"><p>page-first 让主 KV 的 78 个层片段变为一个整页块。
+Index K 的 21 个层片段也变为一个整页块。
+但<strong>全系统清单条目数还取决于物理目标副本数量</strong>。</p>
+<h3>E2 必须分别核算 admit 与 fill</h3>
+<p>下表按所有实际搬运分片求和，统计合并连续条目前的页块条目。
+N 在 admit 中是新保存页数，在 fill 中是命中页数。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>操作</th>
+<th>物理目标</th>
+<th align="right">layer-first 规范化片段数</th>
+<th align="right">page-first 规范化片段数</th>
+<th align="right">实际载荷字节</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>admit</td>
+<td>1 份主 KV + 1 份 Index K</td>
+<td align="right"><code>N × (78+21)</code></td>
+<td align="right"><code>2N</code></td>
+<td align="right"><code>N × (M+I)</code></td>
+</tr>
+<tr>
+<td>fill</td>
+<td>8 份主 KV + 1 份 Index K</td>
+<td align="right"><code>N × (8×78+21)</code></td>
+<td align="right"><code>9N</code></td>
+<td align="right"><code>N × (8M+I)</code></td>
+</tr>
+</tbody></table></div>
+<p>这是数据范围的规范化计数，不是当前逐层算子的调用次数。
+批量接口还可能合并源、目标都连续的相邻页，实际提交条目可以更少。
+应分别记录页块清单条数、合并后条数、总字节和覆盖范围。</p>
+<p>32 页 admit：3168 个层片段可变为 64 个页块。
+32 页 fill：20640 个层片段可变为 288 个页块。
+不能把旧票的“全分片 N×99”统一替换成“全分片 N×2”。</p>
+<p>load_back 从主存读取的总载荷仍为 <code>N×(M+I)</code>。
+all_gather 的通信 padding 和传输量不属于主存实际读取字节。
+它的逐层恢复粒度建议在 12 保留，不强制变成两次整页读。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-F">
+<header class="am-panel-head"><span class="am-panel-id">F</span><h2>验收基线、保留边界与 12 的验证建议</h2></header>
+<div class="am-panel-body"><div class="am-md"><h3>F1 08 已接受的实机证据</h3>
+<p>08 的两轮验收各 6 请求通过。
+用户已接受覆盖边界并关闭 08。
+五项副本数均按最终布局注册 applied，读者计数归零，账本恢复。</p>
+<ul>
+<li>A 保存 32 页，从段 0 开始；B 从段 1 增补 8 页。</li>
+<li>A/B/C/E 的命中长度为 <code>0/4096/3968/0</code>。</li>
+<li>B 的主 KV load_back 为 368,050,176 字节。</li>
+<li>B 的主 KV fill 为 2,944,401,408 字节，是上项 8 倍。</li>
+<li>B 的 Index K load_back 和 fill 均为 22,020,096 字节。</li>
+<li>C 为 31 页，段内真实行数不均匀，padding 没有触发多读。</li>
+<li>长生成、提前结束、超时 fail-stop、同端口重启及双端进程清理通过。</li>
+</ul>
+<p>本机检查记录为 532 项 CPU 合并覆盖、24 文件静态检查、18 模块类型检查通过。
+这些结果属于 08；12 改地址后必须有自己的证据。</p>
+<h3>F2 已批准的证据边界</h3>
+<p>物理 NUMA 驻留、当前共享组合性能、直接主存内容比较仍未验证。
+验收采用计算时保存的源快照、正常 load_back 后的设备数据及写读记录。
+用户要求沿用此方法，不能未经讨论新增直接主存读回。</p>
+<p>08 为精简功能验收；V3 使用独立逻辑答案，V8 用真实注册做 CPU 重放。
+single_rank admit、多 Index K 写者配置不在该次默认实机运行中。
+07 的严格答案报告仍 failed；同输入冷、热 26 token 一致，用户接受该边界。
+这些事实不能被改写为旧版完整 V1–V10 已全部通过。</p>
+<p>性能工具保留在专门测试分支，当前工程分支不恢复性能埋点。
+已有基线不等于存在可与 12 直接比较的 08 性能表。
+03/06 完成代码清理后未单独重跑实机，已有证据范围仍保留。</p>
+<h3>F3 12 建议保留的关键检查</h3>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>层次</th>
+<th>最小关键覆盖</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>几何与寻址</td>
+<td>跨层、跨页 127/128、跨槽、最后槽、跨段；两类数据；区域与探针不重叠</td>
+</tr>
+<tr>
+<td>宽地址</td>
+<td>用当前 P 完整几何检查超过 4 GiB 的访问范围；明确实际拷贝接口如何支持</td>
+</tr>
+<tr>
+<td>独立 CPU oracle</td>
+<td>用可辨认的 region/slot/page/layer/token/feature 值验证；写读双方不能共用同一个待测地址公式来证明自己</td>
+</tr>
+<tr>
+<td>写回与稀疏读</td>
+<td>P 分写、Index K 单写、D 特征分写；prompt/decode 边界；当前 token 本地供给；未写行与 padding</td>
+</tr>
+<tr>
+<td>prefix</td>
+<td>31/32 页、跨段、零页读者、每页单写者；不连续原生目标页；fill 的 8/1 副本展开</td>
+</tr>
+<tr>
+<td>图重放</td>
+<td>稳定输入地址、换槽、零有效行、逐步写读顺序；设备端无新增主机同步</td>
+</tr>
+<tr>
+<td>端到端</td>
+<td>复用两轮六例入口，检查内容、答案、ready/free、复用、超时、重启和清理</td>
+</tr>
+<tr>
+<td>布局证据</td>
+<td>注册/describe 体现实际布局，启动签名纳入布局；精确公式与端到端结果同时成立</td>
+</tr>
+</tbody></table></div>
+<p>现有 CPU 文件可复用：<code>test_layout.py</code>、<code>test_offload.py</code>、<code>test_copy.py</code>、
+<code>test_runtime.py</code>、<code>test_shared_decode.py</code>、<code>test_prefix_shared.py</code>、
+<code>test_prefix_split_read.py</code>、<code>test_sharing_pool.py</code>。
+已有 fake copy 将源当成连续单层平面，需随新契约修改，不能只改预期数字。
+建议先做独立小几何和地址边界验证，再运行一次集中回归。</p>
+<p>测试最多两轮；复用服务启动，不因每个验证点重复加载模型。
+实机验收由用户运行，每台机器一条自运行命令，报告保存在统一日志目录。</p>
+<p>失败返回非零；CPU 通过不代替实机通过。
+用户确认 12 自身实机验收后再关闭 12、解锁 11。
+每张票独立交付实现、验收入口、交付说明和双轴评审。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-G">
+<header class="am-panel-head"><span class="am-panel-id">G</span><h2>需要你在 ticket12 中明确的决策</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>请给出一份可执行的 12 票，而不是只写“改成 page-first”。
+需要明确以下问题，并把必要的代码验证作为实施步骤：</p>
+<ol>
+<li>转换区域：是否采用本稿建议，同时转换全部五类主存区域？</li>
+<li>页内排列：是否采用 <code>[page, layer, token, head, feature]</code>，两类数据分区？</li>
+<li>接口兼容：旧格式是否只保留为测试对照，还是需要生产配置开关？</li>
+<li>索引能力：如何处理宽地址和跨页 stride；是否需要最小拷贝接口扩展？</li>
+<li>12/11 接缝：12 是否只保证新布局正确，并提供整页块地址供 11 使用？</li>
+<li>验收口径：沿用哪些已批准证据边界，新增哪些布局特有的证据？</li>
+</ol>
+<p>建议采用最小实现：重启建新池、保留现有逻辑页和生命周期、复用原生设备布局。
+不在 12 同时加入远端 prefix、动态分配、真实并发或按层流水。
+这些能力并不因 page-first 提前完成。</p>
+<p>预期交付：12 的目标、依赖、实现边界、模块影响、验收条件和风险。
+同时给出 11 的新前置条件、页块清单公式和完成桥接要求。
+本稿中尚未实测的底层接口问题，必须保留为待验证项。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-H">
+<header class="am-panel-head"><span class="am-panel-id">H</span><h2>请同步修订的设计文字</h2></header>
+<div class="am-panel-body"><div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>设计位置</th>
+<th>必须调整的内容</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>k1/issues/12-...md</code></td>
+<td>新票，建议依赖 08；独立实现与验收</td>
+</tr>
+<tr>
+<td><code>k1/issues/11-...md</code></td>
+<td>依赖改为 12；基于 page-first；区分 admit/fill 清单计数</td>
+</tr>
+<tr>
+<td><code>k1/issues/09-...md</code></td>
+<td>最终验收组合包含 12 新布局与 11 新执行器</td>
+</tr>
+<tr>
+<td><code>k1/k1-tickets.md</code></td>
+<td>增至十二票；当前进度、目标、不变项、依赖表、票 11 分段与风险</td>
+</tr>
+<tr>
+<td><code>walkthrough.md</code></td>
+<td>阶段 0 历史保持 layer-first；当前 K1 加 12；阶段 1 不再重复承担这次布局转换</td>
+</tr>
+<tr>
+<td><code>discussion.md</code></td>
+<td>追加本次提前 page-first 的决定；保留 M17 的历史理由</td>
+</tr>
+<tr>
+<td>07/08 的旧表述</td>
+<td>纠正 owner-only 设备注册、16 人会话等与当前实现不符的文字</td>
+</tr>
+<tr>
+<td>08/11 的字节与顺序描述</td>
+<td>padding 不算主存读取；fill 是 8 份主 KV 加 1 份 Index K；publish 链属于 admit</td>
+</tr>
+<tr>
+<td>进度与验收汇总</td>
+<td>写明 07/08 已关闭及各自范围；性能、物理驻留仍单独标记</td>
+</tr>
+</tbody></table></div>
+<p>真实多请求并发仍属于阶段 3a，不放进 09。
+alive 整槽后端仍保留；12 完成不代表已经支持任意散页或动态 grant。
+04 的 dense 读带宽微测也不等于 dense 模型集成。</p>
+<p>本交接稿不直接修改上述设计文件，由设计侧据此定稿并与用户确认。</p>
+</div></div>
+</section>
+</div>
+</div>
+</main>
+<footer class="am-colophon">Generated by Answer me with HTML 0.4.3</footer>
+<textarea id="am-source" hidden readonly aria-hidden="true">---
+title: K1 Ticket12 设计交接：当前实现与 page-first 改造
+subtitle: 已验收 08 → 新增 12 → 11 → 09
+lang: zh
+template: doc
+theme: blueprint
+---
+
+## A 给设计 agent 的任务与事实基线
+
+用户已决定：新增 ticket12，在 ticket11 之前完成 layer-first 到 page-first 的转换。
+请基于下面的实际代码状态设计 12，并同步调整 11、09 和后续阶段的边界。
+
+本稿补充你已掌握的 syncfile；不是已实施的 ticket12，也不是其最终规格。
+文中“现状”来自源码与既有验收记录；“建议”需要你纳入设计并明确取舍。
+采用通用的设备、主机内存、设备内存、共享池和拷贝接口术语。
+模块仅列文件名与符号，省略平台路径、库品牌及专有算子名。
+
+**设计依据：** `mempool-min-demo/walkthrough.md`、`discussion.md`、
+`k1/k1-tickets.md`、十一张独立票，以及实施侧当前源码与验收归档。
+读取时 syncfile 仍采用 M57 和 `07 → 08 → 11 → 09`，没有独立 12 票。
+
+| 范围 | 当前进度 | 你需要更新的认识 |
+|---|---|---|
+| 阶段 0 / L0 | 请求、保存、命中恢复、后缀、释放流程已交付并验收 | 旧 02 文件仍 open，仅待单独关闭确认，不阻塞 K1 |
+| K1 01、02、03 | 已按用户接受的范围关闭 | 映射、共享会话、记账、split_read 已可复用 |
+| K1 05、06 | 已关闭 | P 与 D 的 alive 主 KV 均已共享为 8 份 |
+| K1 07 | 已关闭 | P alive Index K 已为单份，实际访问者已建立设备映射 |
+| K1 08 | 已关闭 | 单份八段 prefix 已实现且通过用户确认的实机验收 |
+| K1 11、09 | 均未实施 | 原先 11 已解锁；新决定要求先完成并验收 12 |
+| K1 04、10 | 未完成，均不阻塞主线 | 读带宽微测和基线异常定位仍是旁路工作 |
+
+新增 12 前，K1 是 11 张票、7 closed、4 open。
+正式发布 12 后应为 12 张票、7 closed、5 open。
+
+建议依赖：12 依赖 08；11 改依赖 12；09 保留 06、08、11。
+这样 09 通过 11 传递依赖 12；09 的验收正文也应明确 page-first。
+
+## B 当前存储、分配与映射
+
+### B1 已经实现的共享布局
+
+配置为 P/D 各一台主机、每侧 TP16、attention TP16、DP1。
+当前模型主 KV 有 78 层、每 token 576 个 BF16 元素。
+Index K 有 21 个生产层、每 token 128 个 BF16 元素。
+这些是当前模型实例值，布局计算应从模型几何推导。
+Index K 的 21 个局部层编号与模型层编号通过 producer 列表映射。
+
+| 主机内存区域 | 物理副本数 | owner 与分工 |
+|---|---:|---|
+| P alive 主 KV | 8 | 组 `{2k, 2k+1}` 共享；owner 为 `2k`；组内按整页分写 |
+| D alive 主 KV | 8 | 同样分组；默认按特征维分写每步新行，也支持按层分工 |
+| P alive Index K | 1 | NUMA0、owner rank0；默认只有 rank0 写，已有多写者配置 |
+| prefix 主 KV | 1 | 一份完整数据分成 8 个 NUMA 段，各段 owner 为 `2k` |
+| prefix Index K | 1 | 与 prefix 主 KV 共享逻辑页归属、段和页描述符 |
+
+五项副本数为 `8 / 8 / 1 / 1 / 1`。
+D 生成的 Index K 仍留在设备内存，没有新增 D alive Index K 主存池。
+底层共享池会话覆盖 P/D 共 32 个参与者。
+物理副本、映射者、实际写者、会话参与者是四个不同概念。
+
+所有执行 fill 的 P 分片需要访问全部 prefix 段。
+admit owner 需要访问本组 alive 主 KV 和 NUMA0 的 alive Index K。
+当前访问由设备侧索引拷贝完成，映射范围覆盖实际访问范围。
+增加映射没有增加物理副本；不能沿用“只有 owner 有设备映射”的假设。
+
+### B2 页管理已经存在，存储排列仍是 layer-first
+
+统一 token 页为 `B=128`，主机内存与原生设备页使用相同 B。
+验收配置的 P/D alive 每份各有 16 个槽，`S_P=8192`、`S_D=128`。
+alive 仍按整槽预留和归还；prefix 已有真正的按页空闲表。
+当前只有一个真实请求在运行，16 个槽和图的补齐行不代表并发 16。
+
+prefix 总容量为 40 页，8 段各 5 页。
+物理页编号编码为 `segment × 5 + local_page`，Main 只转发描述符。
+每个请求记录一次起始段，分配按段轮转；段满时选剩余页最多的段。
+
+A 保存 32 页后，各段有 4 页；B 再保存 8 页后，各段有 5 页。
+这些分配规则与 page-first 是独立的，12 可以原样保留。
+
+当前主存区域的紧凑布局为：
+
+```text
+alive:      [layer, slot, token_in_slot, head, feature]
+prefix段:   [layer, local_page, token_in_page, head, feature]
+```
+
+区域内部目前先放完整的第 0 层，再放完整的第 1 层。
+单页跨层数据不连续；跨 NUMA 的交错选页也没有改变这个事实。
+段内 prefix 每层 stride 按 5 页计算，不是按总容量 40 页计算。
+
+对于区域基址 R、每 token 行宽 r、每层大小 layer_bytes：
+
+```text
+alive地址 = R + layer × layer_bytes + (slot × S + token) × r
+prefix地址 = 段内区域基址 + layer × 段内layer_bytes
+             + (local_page × B + token_in_page) × r
+```
+
+区域数据量由各维度乘积决定，主 KV 与 Index K 是两个独立区域。
+池的实际贡献还包括探针区和库要求的对齐，不能只看有效数据字节。
+08 报告的库分配贡献为 P 合计 96 GiB、D 合计 8 GiB。
+这不等于物理 NUMA 驻留已经验证；验收源快照的内存另计。
+
+## C 现在的读写调用链与完成语义
+
+### C1 P 写回与 D 读取
+
+P 每层得到主 KV 后，拼成 576 维连续行，写入该请求的 alive 槽。
+共享组成员按完整 prompt 的页范围分工；命中长度不改变写者归属。
+有 prefix 命中时，模型只计算后缀，命中段由 fill 写入 alive。
+Index K 在生产层从原生设备缓冲取值，按其独立写者配置写回。
+
+D 的稀疏 miss 读取按 token 位置选择源：
+
+- 小于 prompt 长度：读取绑定的 P alive 槽。
+- 属于已物化生成段：读取绑定的 D alive 槽。
+- 当前步的新 token：先由本 rank 的设备缓冲供给。
+
+P 槽和 D 槽可不同。D 主存中的位置是生成段相对位置。
+padding、无效请求行和未写位置继续由既有 mask 排除。
+这些逻辑选择应保留，只把最终物理寻址适配为 page-first。
+
+D 默认按特征维分写新行，写回在计算流上执行。
+现有实现利用后续全员 TP 通信保障后一步可读，不新增跨进程握手。
+当前 token 的本地供给解决本步还未合齐的问题。
+12 必须保留该顺序与特征切分，不能把部分 token 更新变成整页覆盖。
+
+### C2 三种 prefix 操作
+
+| 操作 | 当前数据路径与分工 | 完成依据 |
+|---|---|---|
+| op2 load_back | 每个读者只读取分到的页；逐层读入本 rank 的汇总缓冲切片，all_gather 后恢复原生设备页 | 读取、集合通信和原生 scatter 全部完成 |
+| op1 fill | 每组从全部 prefix 段直接填自己的 alive 主 KV；组内按页分工；Index K 只填单份 | 本分片的设备完成事件，再由 SR 汇总 |
+| op3 admit | 8 个 owner 各保存本段页；主 KV 源为本组 alive，Index K 源为单份区域 | 设备事件完成、SR 核对单写者覆盖并汇总，然后发布 |
+
+load_back 的读者按页的实际 NUMA 段分配。
+组 k 的两个 rank 平分段 k 的命中页；零页读者仍参加集合通信。
+主 KV 和 Index K 各复用一块汇总缓冲，逐层复用。
+
+每次恢复只建一张“汇总槽位 → 原生设备行”的表，两类数据共用。
+主 KV 恢复时拆回 512 维与 64 维两个原生缓冲。
+Index K 按 producer 层映射恢复到各自原生缓冲。
+
+原生目标页可以不连续；通信 padding 不产生额外主存读取。
+31 页命中时各段真实读取量不相等，这不是错误。
+page-first 不会自动把 load_back 变成对原生缓冲的一次整页 memcpy。
+
+当前 fill/load_back 由 `PrefixStore._read_context()` 使用独立设备流。
+它们仍由 worker 的有序执行路径提交，**没有 11 要求的独立主机执行器线程**。
+admit 在其调用流上提交；三类操作均使用事件查询完成。
+池间 copy 目前仍逐层调用按 token 行索引的拷贝接口。
+它是批量行索引，不是 Python 每 token 调用一次。
+
+### C3 控制流与所有权
+
+Main 负责匹配、逻辑分配、源保护、发布、额度和串行准入。
+SR 仍嵌在 worker 内，rank0 协调、各 rank 执行分片任务。
+网络线程只入队，集合通信仍在有序调度 tick 中发起。
+Main 持有不透明页描述符，具体地址由持有映射的分片解析。
+
+“提交成功”不是“目标可读”。
+操作按 op_id 提交一次，后续 tick 轮询同一操作。
+对 admit，完成汇总后才能发布，再释放源，收到 free_ack 后恢复额度。
+fill 的完成进入 prompt ready 汇总，不应给它套用 admit 的 publish 阶段。
+零工作分片可以不搬数据，但仍须遵守原有全 rank 汇总次序。
+
+D 启动仍等待 prompt ready、Index K 到达和 handoff 三条件。
+finished、原生资源释放、共享源释放和 free_ack 继续分开处理。
+fail-stop 时保留未确认资源；最终进程清理由原有父进程路径完成。
+
+## D page-first 的建议范围与具体改造点
+
+以下是交给你定稿的代码方案，尚未实施。
+
+### D1 建议一次转换全部五类主存区域
+
+建议 12 同时转换 P/D alive 主 KV、P alive Index K、两类 prefix。
+只改 prefix 会让 fill/admit 继续承担布局转换，11 仍不能直接搬整页。
+设备端原生 KV、Index K 和 attention 缓冲继续沿用原生格式。
+
+建议页内采用 `[layer, token_in_page, head, feature]`。
+alive 暂时用 `[slot, page_in_slot, layer, token_in_page, head, feature]`。
+prefix 每段使用 `[local_page, layer, token_in_page, head, feature]`。
+两类数据继续分区保存，同一个逻辑页分别对应两个连续块。
+
+令 L 为该区域层数、r 为该区域 token 行宽：
+
+```text
+alive_physical_page = slot × (S / B) + floor(token / B)
+prefix_physical_page = local_page
+in_page = token % B
+page_bytes = L × B × r
+
+地址 = 对应区域基址 + physical_page × page_bytes
+       + layer × B × r + in_page × r + 行内字节偏移
+```
+
+这是建议公式，不是当前 `byte_offset()` 的实现。
+该方案改变物理排列，不要求引入 alive 散页分配器。
+alive 的页归属仍由槽位换算；真正的动态页分配保留在后续阶段。
+建议以服务重启重建临时池，不在本票加入在线旧数据迁移。
+
+### D2 最小接口接缝
+
+建议在现有布局和 view 层集中提供三类能力：
+
+1. 给定层、槽/页、token 位置，得到设备拷贝需要的行位置或地址。
+2. 给定物理页，得到供池库使用的整页字节地址与长度。
+3. 序列化布局类型、B 和各维度，复用已有启动一致性检查。
+
+以上是接口职责，不预先指定新类层级。
+当前 `KVLayout` 没有布局类型或 page_size 字段，B 来自上层配置。
+设计时应明确 B 由谁持有，避免多个调用点各写一套页内公式。
+当前 `MempoolKVView` 的“单层连续平面”假设需要改变。
+page-first 的同一层跨页有间隙，不能只替换 `device_base` 而保留线性行号。
+
+`gva_base` 对应池库地址；`device_base` 对应设备可访问地址。
+这两类地址已有区分，应保留，不能当作同一种裸指针。
+共享映射的地址也不应直接当普通 CPU 指针读取。
+现有实机排查已经否定过这种直接读法。
+
+### D3 逐模块影响图
+
+| 模块与关键符号 | 当前职责 | 12 的建议改动 |
+|---|---|---|
+| `layout.py`：`KVLayout`、`PoolLayout` | 行宽、层跨度、区域大小、地址、signature | 明确 page-first 地址与页跨度；保留区域容量和探针隔离 |
+| `config.py`：`make_mla_layout` | 从模型与容量构造各区域 | 传入统一 B 和布局选择；不改变副本数或容量 |
+| `sharing_plan.py`：`PoolSession.regions` | 每个 owner 的真实区域和 prefix 段几何 | page-first 按实际 5 页段构造；保留 32 参与者与零贡献成员 |
+| `manager.py`：`view`、`MempoolKVView` | 层视图、池库地址、设备地址 | 支持页/层定位，区分逻辑层形状与物理连续范围 |
+| `offload.py`：`MempoolKVOffload.write` | P 写回、D 写回、Index K 写回共用的索引拷贝 | 转换目标物理行/地址；保留 mask 和 D 特征分写 |
+| `copy.py`：`SparseKVCopy`、`KVFetch` | prompt/decode 两源稀疏读取 | 转换各源的页内地址；保留两源选择和稳定输入缓冲 |
+| `runtime.py`：`write_layer`、`fetch_selected_kv` | 请求绑定、写入计数、Index K 层映射、D 当前行供给 | 接入新几何；逻辑位置和 ready 计数不改 |
+| `decode_write.py`：`DecodeKV`、`DecodeWriter` | 当前行本地供给、D 分写策略 | 校验新地址路径不破坏逐步顺序，尽量复用现有逻辑 |
+| `prefix.py`：`_submit`、`_submit_fill`、`_copy_region` | admit/fill 的选页、分片和逐层拷贝 | 页归属复用；更新源/目标寻址，留下 11 的整页接口 |
+| `prefix.py`：`_submit_load_back` | 分读、汇总、恢复原生页 | 主存源适配新布局；先保留逐层读取与两个汇总缓冲 |
+| `restore_kernel.py`：`scatter_rows` | 汇总行恢复到原生设备格式 | 建议复用；输入仍为原有逐层汇总行 |
+| `prefix_layout.py`、`split_read.py`、`page_write.py` | 段页编码、读者/写者分配 | 逻辑布局与存储排列独立，预计只需回归 |
+| `mempool_subrouter.py` 及注册入口 | 命令执行、完成汇总、注册 | 传递布局事实；控制协议和完成语义优先不变 |
+| `mempool_router.py`、`mempool_accounting.py` | Main 逻辑页、目录、额度、所有权 | 原则上复用；用回归证明与物理排列解耦 |
+| 模型 attention 适配入口 | 在既有位置调用写回和稀疏读取 | 保持 hook 时序；必要改动集中在专用适配层 |
+
+这份列表是影响分析，不代表每个文件都必须改。
+若发现必须改通用主线，应先说明文件、原因及行为影响。
+
+### D4 需要先解决的真实接口限制
+
+当前索引拷贝的布局检查限定：单行最多 32 KiB，单层跨度不超过 UINT32_MAX。
+现在 P 每层只有 144 MiB，而完整 P 主 KV 区域约为 10.96875 GiB。
+旧接口通过层基址隔离跨度；page-first 的跨页索引可能跨过 4 GiB。
+仅修改 Python 索引公式，不足以证明底层访问安全。
+
+建议先在小范围验证以下方案之一，再选最小可行实现：
+
+- 现有拷贝接口能安全接受新物理跨度，就复用并补齐边界证据。
+- 若不能，就采用明确的分段基址，或最小扩展为支持页表/宽地址的读取写入路径。
+
+当前尚未验证哪种方案可用；不能预先承诺“完全不改底层拷贝”。
+此适配属于 12 的布局正确性，不等于提前实施 11 的线程与批量执行器。
+也不能把约 11 MiB 的整页伪装成现有接口的一条 token 行。
+
+图捕获/重放同样必须覆盖新地址计算。
+动态绑定与 token 位置继续用稳定的设备缓冲，不能引入每步主机读回。
+零有效行、补齐行和换槽后的重放仍须保留正确的访问路径。
+
+## E 12 与 11 的分界及新清单公式
+
+建议 12 的完成点是：全部主存区域已为 page-first，现有服务路径能正确运行。
+12 可以继续使用现有逐层索引拷贝，只把物理寻址改正确。
+12 同时给出可核对的整页连续块接口，供 11 接入。
+这样 12 单独验证布局，11 单独验证异步执行与完成回报。
+
+11 再把 op1/op3 接入池库批量接口和每分片执行器。
+每次提交包含两类数据；等待或查询真实完成后，再回报目标可读。
+旧设备事件不能直接证明库内部传输队列已完成，11 必须定义对应完成桥接。
+
+本地库源码已有连续块批量提交、异步标记和释放 GIL 的包装。
+这只是源码依据；实际可用性和完成语义仍需在 11 的实机路径验证。
+
+12 不承诺性能收益，11 也不能把段数减少当作性能已经改善。
+load_back、写回、稀疏读取均因 12 适配新布局；11 仍只更换 op1/op3。
+
+### E1 每页有效字节
+
+按当前模型、B=128、紧凑无额外页内 padding：
+
+```text
+M = 78 × 128 × 576 × 2 = 11,501,568 bytes  // 主 KV 一页
+I = 21 × 128 × 128 × 2 =    688,128 bytes  // Index K 一页
+M + I = 12,189,696 bytes
+```
+
+page-first 让主 KV 的 78 个层片段变为一个整页块。
+Index K 的 21 个层片段也变为一个整页块。
+但**全系统清单条目数还取决于物理目标副本数量**。
+
+### E2 必须分别核算 admit 与 fill
+
+下表按所有实际搬运分片求和，统计合并连续条目前的页块条目。
+N 在 admit 中是新保存页数，在 fill 中是命中页数。
+
+| 操作 | 物理目标 | layer-first 规范化片段数 | page-first 规范化片段数 | 实际载荷字节 |
+|---|---|---:|---:|---:|
+| admit | 1 份主 KV + 1 份 Index K | `N × (78+21)` | `2N` | `N × (M+I)` |
+| fill | 8 份主 KV + 1 份 Index K | `N × (8×78+21)` | `9N` | `N × (8M+I)` |
+
+这是数据范围的规范化计数，不是当前逐层算子的调用次数。
+批量接口还可能合并源、目标都连续的相邻页，实际提交条目可以更少。
+应分别记录页块清单条数、合并后条数、总字节和覆盖范围。
+
+32 页 admit：3168 个层片段可变为 64 个页块。
+32 页 fill：20640 个层片段可变为 288 个页块。
+不能把旧票的“全分片 N×99”统一替换成“全分片 N×2”。
+
+load_back 从主存读取的总载荷仍为 `N×(M+I)`。
+all_gather 的通信 padding 和传输量不属于主存实际读取字节。
+它的逐层恢复粒度建议在 12 保留，不强制变成两次整页读。
+
+## F 验收基线、保留边界与 12 的验证建议
+
+### F1 08 已接受的实机证据
+
+08 的两轮验收各 6 请求通过。
+用户已接受覆盖边界并关闭 08。
+五项副本数均按最终布局注册 applied，读者计数归零，账本恢复。
+
+- A 保存 32 页，从段 0 开始；B 从段 1 增补 8 页。
+- A/B/C/E 的命中长度为 `0/4096/3968/0`。
+- B 的主 KV load_back 为 368,050,176 字节。
+- B 的主 KV fill 为 2,944,401,408 字节，是上项 8 倍。
+- B 的 Index K load_back 和 fill 均为 22,020,096 字节。
+- C 为 31 页，段内真实行数不均匀，padding 没有触发多读。
+- 长生成、提前结束、超时 fail-stop、同端口重启及双端进程清理通过。
+
+本机检查记录为 532 项 CPU 合并覆盖、24 文件静态检查、18 模块类型检查通过。
+这些结果属于 08；12 改地址后必须有自己的证据。
+
+### F2 已批准的证据边界
+
+物理 NUMA 驻留、当前共享组合性能、直接主存内容比较仍未验证。
+验收采用计算时保存的源快照、正常 load_back 后的设备数据及写读记录。
+用户要求沿用此方法，不能未经讨论新增直接主存读回。
+
+08 为精简功能验收；V3 使用独立逻辑答案，V8 用真实注册做 CPU 重放。
+single_rank admit、多 Index K 写者配置不在该次默认实机运行中。
+07 的严格答案报告仍 failed；同输入冷、热 26 token 一致，用户接受该边界。
+这些事实不能被改写为旧版完整 V1–V10 已全部通过。
+
+性能工具保留在专门测试分支，当前工程分支不恢复性能埋点。
+已有基线不等于存在可与 12 直接比较的 08 性能表。
+03/06 完成代码清理后未单独重跑实机，已有证据范围仍保留。
+
+### F3 12 建议保留的关键检查
+
+| 层次 | 最小关键覆盖 |
+|---|---|
+| 几何与寻址 | 跨层、跨页 127/128、跨槽、最后槽、跨段；两类数据；区域与探针不重叠 |
+| 宽地址 | 用当前 P 完整几何检查超过 4 GiB 的访问范围；明确实际拷贝接口如何支持 |
+| 独立 CPU oracle | 用可辨认的 region/slot/page/layer/token/feature 值验证；写读双方不能共用同一个待测地址公式来证明自己 |
+| 写回与稀疏读 | P 分写、Index K 单写、D 特征分写；prompt/decode 边界；当前 token 本地供给；未写行与 padding |
+| prefix | 31/32 页、跨段、零页读者、每页单写者；不连续原生目标页；fill 的 8/1 副本展开 |
+| 图重放 | 稳定输入地址、换槽、零有效行、逐步写读顺序；设备端无新增主机同步 |
+| 端到端 | 复用两轮六例入口，检查内容、答案、ready/free、复用、超时、重启和清理 |
+| 布局证据 | 注册/describe 体现实际布局，启动签名纳入布局；精确公式与端到端结果同时成立 |
+
+现有 CPU 文件可复用：`test_layout.py`、`test_offload.py`、`test_copy.py`、
+`test_runtime.py`、`test_shared_decode.py`、`test_prefix_shared.py`、
+`test_prefix_split_read.py`、`test_sharing_pool.py`。
+已有 fake copy 将源当成连续单层平面，需随新契约修改，不能只改预期数字。
+建议先做独立小几何和地址边界验证，再运行一次集中回归。
+
+测试最多两轮；复用服务启动，不因每个验证点重复加载模型。
+实机验收由用户运行，每台机器一条自运行命令，报告保存在统一日志目录。
+
+失败返回非零；CPU 通过不代替实机通过。
+用户确认 12 自身实机验收后再关闭 12、解锁 11。
+每张票独立交付实现、验收入口、交付说明和双轴评审。
+
+## G 需要你在 ticket12 中明确的决策
+
+请给出一份可执行的 12 票，而不是只写“改成 page-first”。
+需要明确以下问题，并把必要的代码验证作为实施步骤：
+
+1. 转换区域：是否采用本稿建议，同时转换全部五类主存区域？
+2. 页内排列：是否采用 `[page, layer, token, head, feature]`，两类数据分区？
+3. 接口兼容：旧格式是否只保留为测试对照，还是需要生产配置开关？
+4. 索引能力：如何处理宽地址和跨页 stride；是否需要最小拷贝接口扩展？
+5. 12/11 接缝：12 是否只保证新布局正确，并提供整页块地址供 11 使用？
+6. 验收口径：沿用哪些已批准证据边界，新增哪些布局特有的证据？
+
+建议采用最小实现：重启建新池、保留现有逻辑页和生命周期、复用原生设备布局。
+不在 12 同时加入远端 prefix、动态分配、真实并发或按层流水。
+这些能力并不因 page-first 提前完成。
+
+预期交付：12 的目标、依赖、实现边界、模块影响、验收条件和风险。
+同时给出 11 的新前置条件、页块清单公式和完成桥接要求。
+本稿中尚未实测的底层接口问题，必须保留为待验证项。
+
+## H 请同步修订的设计文字
+
+| 设计位置 | 必须调整的内容 |
+|---|---|
+| `k1/issues/12-...md` | 新票，建议依赖 08；独立实现与验收 |
+| `k1/issues/11-...md` | 依赖改为 12；基于 page-first；区分 admit/fill 清单计数 |
+| `k1/issues/09-...md` | 最终验收组合包含 12 新布局与 11 新执行器 |
+| `k1/k1-tickets.md` | 增至十二票；当前进度、目标、不变项、依赖表、票 11 分段与风险 |
+| `walkthrough.md` | 阶段 0 历史保持 layer-first；当前 K1 加 12；阶段 1 不再重复承担这次布局转换 |
+| `discussion.md` | 追加本次提前 page-first 的决定；保留 M17 的历史理由 |
+| 07/08 的旧表述 | 纠正 owner-only 设备注册、16 人会话等与当前实现不符的文字 |
+| 08/11 的字节与顺序描述 | padding 不算主存读取；fill 是 8 份主 KV 加 1 份 Index K；publish 链属于 admit |
+| 进度与验收汇总 | 写明 07/08 已关闭及各自范围；性能、物理驻留仍单独标记 |
+
+真实多请求并发仍属于阶段 3a，不放进 09。
+alive 整槽后端仍保留；12 完成不代表已经支持任意散页或动态 grant。
+04 的 dense 读带宽微测也不等于 dense 模型集成。
+
+本交接稿不直接修改上述设计文件，由设计侧据此定稿并与用户确认。
+</textarea>
+<script>
+(() => {
+  const root = document.documentElement;
+  const cycle = (list, cur) => list[(list.indexOf(cur) + 1) % list.length];
+  const label = (btn, value) => {
+    const map = JSON.parse(btn.dataset.labels || '{}');
+    btn.textContent = map[value] || value;
+  };
+  const bind = (name, attr, values) => {
+    const btn = document.querySelector(`[data-am="${name}"]`);
+    if (!btn) return;
+    label(btn, root.getAttribute(attr));
+    btn.addEventListener('click', () => {
+      const next = cycle(values, root.getAttribute(attr));
+      root.setAttribute(attr, next);
+      label(btn, next);
+    });
+  };
+  bind('theme', 'data-theme', ['blueprint', 'shadcn']);
+  bind('mode', 'data-mode', ['auto', 'light', 'dark']);
+
+  const copyBtn = document.querySelector('[data-am="copy"]');
+  copyBtn?.addEventListener('click', async () => {
+    const text = document.getElementById('am-source').value;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = Object.assign(document.createElement('textarea'), { value: text });
+      document.body.append(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    const original = copyBtn.textContent;
+    copyBtn.textContent = copyBtn.dataset.done;
+    setTimeout(() => { copyBtn.textContent = original; }, 1400);
+  });
+})();
+</script>
+</body>
+</html>

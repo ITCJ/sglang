@@ -80,7 +80,7 @@ class TestSharedPrefill(unittest.TestCase):
                         kernels=[
                             CPUWriteKernel(
                                 memory[pool.view(0, i).device_base],
-                                pool.view(0, i).device_base,
+                                pool.view(0, i),
                             )
                             for i in range(2)
                         ],
@@ -95,7 +95,7 @@ class TestSharedPrefill(unittest.TestCase):
                                 memory[
                                     pool.view(0, 0, region="alive_index").device_base
                                 ],
-                                pool.view(0, 0, region="alive_index").device_base,
+                                pool.view(0, 0, region="alive_index"),
                             )
                         ],
                         event_factory=event_factory,

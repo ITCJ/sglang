@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING, Any
 
+from .indexed_copy import copy_rows
 from .layout import UINT32_MAX, positive_int
 from .manager import MempoolKVView
 
@@ -111,17 +112,14 @@ class MempoolKVOffload:
             valid = valid[:, None].expand(-1, layout.heads).flatten()
         chunks = layout.heads * self.parts if self.parts > 1 else 1
         # Always launch: a zero-valid capture must still contain the write path.
-        self._kernel(
+        copy_rows(
+            self._kernel,
             values,
             self._target_dtype,
             source,
             destination,
             valid,
-            rows * chunks,
-            layout.slots * layout.tokens * chunks,
-            layout.row_bytes // chunks,
-            source.numel(),
-            self.block_dim,
-            None,
-            self.target.device_base,
+            row_bytes=layout.row_bytes // chunks,
+            block_dim=self.block_dim,
+            target_view=self.target,
         )

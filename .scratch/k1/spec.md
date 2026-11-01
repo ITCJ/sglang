@@ -9,10 +9,16 @@ K1功能实现与NUMA验收继续推进；下文性能复测、基线并列和�
 
 **State:** open
 
-本地规格采用 [K1 拆票定稿](k1-tickets.md)及下列十一张票。
+本地规格采用 [K1 拆票定稿](k1-tickets.md)及下列十二张票。
 用户指定 [syncfile K1 目录](/Users/hibikid/Documents/syncfile/sglang-kv-explainer/mempool-min-demo/k1/)为依据。
-执行文本和[基线目标](k1-01-baseline-prompt.md)按原文同步；各票仅补充本地状态、依赖链接和 Comments。
+执行文本和[基线目标](k1-01-baseline-prompt.md)按原文同步；各票保留本地状态、依赖链接、验收勾选与 Comments。
 设计决策回查 [mempool-min 讨论](/Users/hibikid/Documents/syncfile/sglang-kv-explainer/mempool-min-demo/discussion.md)及[完整设计讨论](/Users/hibikid/Documents/syncfile/sglang-kv-explainer/mempool-design/discussion.md)。
+
+**当前结论（2026-11-02交付）：** 01、02、03、05、06、07、08已closed，共7 closed、5 open。
+用户在11之前新增[12：page first](issues/12-k1-05d-page-first-layout.md)，主线为07→08→12→11→09。
+12实现和双轴评审已完成，等待用户NPU验收；11等待12经用户确认NPU验收关闭。04、10不阻塞。
+会话恢复读[项目记忆](memory.md)；本地[M17/M58摘录](../mempool-min/discussion.md)保留此次决定。
+设计agent负责架构逻辑，Ascend/NPU具体实现以本仓库实际接口与验证为准。
 
 ## 票据索引
 
@@ -28,7 +34,8 @@ K1功能实现与NUMA验收继续推进；下文性能复测、基线并列和�
 | 08 | [K1-05b prefix 单份与 NUMA interleave](issues/08-k1-05b-prefix-single-copy-numa-interleave.md) | 05、03、07 |
 | 09 | [K1-06 完整验收](issues/09-k1-06-full-acceptance.md) | 06、08、11 |
 | 10 | [X 旁路定位](issues/10-x-baseline-anomaly-triage.md) | 无；不阻塞其他票 |
-| 11 | [池间搬运与分片执行器](issues/11-k1-02c-pool-copy-executor.md) | 08 |
+| 11 | [池间搬运与分片执行器](issues/11-k1-02c-pool-copy-executor.md) | 12 |
+| 12 | [K1-05d 主存五类区域改 page first](issues/12-k1-05d-page-first-layout.md) | 08 |
 
 ## Comments
 
@@ -131,3 +138,25 @@ K1-01 NUMA功能保留，双映射功能验收不再运行perf。
 用户接受4441eb9015在31/32的k1-ticket08-001两轮精简功能验收，明确确认关闭08、解锁11。
 8/8/1/1/1、交错分配、恢复/fill、账本、fail-stop、重启和清理通过；物理NUMA、性能等未验证项保留。
 [确认记录](verification/k1-ticket08-001/README.md)。后续11→09，本轮未实施11。
+
+### 2026-11-02：同步page first定稿与项目记忆
+
+按用户交接同步syncfile执行文本，新增12，更新09/11及07/08订正；本地已接受的验收范围与Comments保留。
+12采用第16节定稿，11改依赖12，09经11传递依赖12；旧“08关闭即解锁11”不再是当前依赖。
+先验证拷贝接口对page first行集与宽地址的支持，再依次改布局、视图、读写、prefix和注册。
+12只改布局与提供页块接口，11负责执行器、批量异步提交及库完成桥接；设计侧不承担Ascend/NPU能力判断。
+
+已把M17/M58原文摘录加入本地实施讨论，并建立[memory.md](memory.md)及AGENTS恢复入口。
+本次仅同步文档；未修改功能源码、未运行CPU功能测试或NPU验收，未关闭新票。
+
+文档核对：执行文本与syncfile逐字节一致；09/11/12正文在本地元数据之外与源稿一致；
+07/08原验收勾选和07/08/09/11的Comments完整保留。12票状态、直接依赖及128个本地链接目标已核对通过。
+进度页Markdown/HTML同步检查与`git diff --check`通过。
+
+### 2026-11-02：12实现交付，等待用户NPU验收
+
+五类主存page first、页块接口、分段行拷贝、实际注册与启动签名已实现。
+沿用UniDexCopy、原生HBM、分工和完成语义；通用主线功能源码净改动0，11执行器未提前接入。
+[交付说明](delivery-ticket12.md)与[双机入口](../../ascend-mempool-test/K1_TICKET12.md)已提供。
+CPU合并541项中540项已验证；1项旧注册测试的夹具已修正，遵守两轮限制未第三次运行，未计为通过。
+37文件静态与21模块strict mypy通过，Standards/Spec均0项发现；NPU未运行，12仍open，11不解锁。

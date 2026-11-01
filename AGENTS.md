@@ -7,6 +7,9 @@
 Issues and specs live as local Markdown under `.scratch/<feature>/`.
 See `docs/agents/issue-tracker.md`.
 
+For K1 work, read `.scratch/k1/memory.md` to recover current decisions and
+dependencies. Update its current status after delivery or acceptance.
+
 ### Triage labels
 
 Use the default five triage labels as local `Status` values.

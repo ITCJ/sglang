@@ -14,6 +14,7 @@ import msgspec
 import torch
 from torch import Tensor
 
+from .indexed_copy import copy_rows
 from .layout import check_index, positive_int
 from .manager import MempoolKVManager
 from .page_write import PageWriter
@@ -691,19 +692,15 @@ class PrefixStore:
                     view = self.manager.view(
                         0, layer, region="prefix_" + region, segment=segment
                     )
-                    self._copy(
+                    copy_rows(
+                        self._copy,
                         self._dtype,
                         gathered,
                         source,
                         target,
                         valid,
-                        view.layout.slots * view.layout.tokens,
-                        total_rows,
-                        layout.row_bytes,
-                        source.numel(),
-                        48,
-                        view.device_base,
-                        None,
+                        row_bytes=layout.row_bytes,
+                        source_view=view,
                     )
                 if self.readers > 1:
                     assert self.all_gather is not None
@@ -839,19 +836,16 @@ class PrefixStore:
             dst = self.manager.view(
                 0, layer, region=target_region, segment=target_segment
             )
-            self._copy(
+            copy_rows(
+                self._copy,
                 self._dtype,
                 self._dtype,
                 source,
                 target,
                 valid,
-                src.layout.slots * src.layout.tokens,
-                dst.layout.slots * dst.layout.tokens,
-                src.layout.row_bytes,
-                source.numel(),
-                48,
-                src.device_base,
-                dst.device_base,
+                row_bytes=src.layout.row_bytes,
+                source_view=src,
+                target_view=dst,
             )
 
     def _submit(self, operation: _Admit) -> None:

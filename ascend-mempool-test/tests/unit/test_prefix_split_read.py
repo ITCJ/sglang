@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import test_prefix
 import torch
+from page_first_oracle import logical_rows
 from test_mempool_native_prefix import native_methods
 from test_pd_tick import CPUCollective
 
@@ -178,7 +179,13 @@ class TestSplitRead(unittest.TestCase):
             copied = []
 
             def copy(*args, original=kernel, reads=copied):
-                reads.extend(args[2][: args[8]][args[4][: args[8]]].tolist())
+                reads.extend(
+                    logical_rows(
+                        original.views[args[10]],
+                        args[2][: args[8]][args[4][: args[8]]],
+                        args[7],
+                    ).tolist()
+                )
                 original(*args)
 
             store._kernel = copy  # Observe actual traffic at the NPU primitive.
