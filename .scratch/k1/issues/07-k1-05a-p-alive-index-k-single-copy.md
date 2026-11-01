@@ -60,3 +60,16 @@
 24文件静态、17模块strict mypy通过；Standards/Spec最终均0项未解决问题。
 [交付与源码顺序](../delivery-ticket07.html)、[本机证据](../verification/ticket07-cpu-20261101/README.md)。
 未运行硬件，未直接读回BM，NUMA驻留及性能未验收。State保持open，08不解锁。
+
+### 2026-11-01：用户实机002及定向冷对照
+
+2026-11-01 K1-07定向诊断：用户运行k1-ticket07-002，原6例及新增cold/full-hit通过，
+index-update命中4096正确，但输出代码围栏及pencils=12（预期17），未截断。
+用户离线复核check_reuse通过：16 ranks、78层main/21层Index K的源快照与正常恢复内容一致；
+这不等于直接验证alive/prefix/fill DRAM，BM读回仍未新增。
+
+已补index-cold-diagnosis：保持共享布局，关闭前缀匹配，重放保存的原始input_ids和采样参数，
+只启动一轮、请求一次并自动清理；严格答案失败仍返回非零。31项定向CPU回归通过，
+双轴评审无阻断项。冷对照尚待用户运行，07仍open，08未解锁。
+
+[诊断命令](../../../ascend-mempool-test/K1_TICKET07.md)；[检查记录](../verification/ticket07-cold-20261101/README.md)。

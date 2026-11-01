@@ -88,3 +88,36 @@ P 的 rank 0 必须落在 NUMA 0；增加映射不会增加物理副本。
 各轮还包含 `index-accuracy.json`、`responses.json`、`answers.json`、`registrations.json`、
 `snapshots.json`、`evidence.json` 和清理结果；失败日志一并保留。
 自动报告保留 `user_accepted: false`，用户确认后才关闭 07 并解锁 08。
+# 002失败后的定向冷对照
+
+本次只诊断保存的 `index-update`：共享布局仍为8/8/1/16/16，关闭前缀匹配，
+原样发送保存的 `input_ids` 与采样参数。每台1轮服务、1条请求，自动检查就绪并清理。
+不重跑fetch/九例/故障注入，不新增BM读回，不修改提示词或答案标准。
+这是同一mempool布局的无命中对照，不是无mempool正式服务基线或完整验收。
+
+两台更新到包含 `index-cold-diagnosis` 的相同版本，在仓库根目录先31后32运行。
+31保留002的原始responses文件；32不需要复制该文件。
+
+31：
+
+```bash
+bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role prefill --mode index-cold-diagnosis \
+  --config /home/cryang/mempool-min-ticket01-3132.json \
+  --run-id k1-ticket07-cold-001 \
+  --replay-responses /home/cryang/log/mempool-min/k1-ticket07-002/prefill/target/responses.json
+```
+
+32：
+
+```bash
+bash ascend-mempool-test/scripts/run_mempool_min.sh \
+  --role decode --mode index-cold-diagnosis \
+  --config /home/cryang/mempool-min-ticket01-3132.json \
+  --run-id k1-ticket07-cold-001
+```
+
+返回31的 `/home/cryang/log/mempool-min/k1-ticket07-cold-001/prefill/target/index-cold-diagnosis.json`
+和两台终端结果。若仍答错，双机清理后返回非零属诊断结果，不代表服务崩溃。
+原始响应、正常解码文本、状态快照及D日志均保留在target目录。
+结果相同说明问题不依赖本次前缀命中，但仍不能排除共享路径本身；结果不同则继续定位复用差异。

@@ -19,6 +19,41 @@ from ascend_mempool_pd.mempool_router_protocol import RouterConfig
 
 
 class TestSessionAcceptance(unittest.TestCase):
+    def test_index_cold_diagnosis_keeps_layout_but_disables_reuse(self):
+        with tempfile.TemporaryDirectory() as folder:
+            config = Path(folder) / "config.json"
+            config.write_text(
+                json.dumps(dict(prefill_host="p", decode_host="d", model_path="/model"))
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = run_mempool_min.main(
+                    [
+                        "--role",
+                        "prefill",
+                        "--mode",
+                        "index-cold-diagnosis",
+                        "--config",
+                        str(config),
+                        "--run-id",
+                        "k1-07-cold",
+                        "--replay-responses",
+                        "/saved/responses.json",
+                        "--describe",
+                    ]
+                )
+            value = json.loads(output.getvalue())
+            actual = msgspec.convert(value["config"], type=RouterConfig)
+            self.assertEqual(result, 0)
+            self.assertEqual(
+                actual.replicas(),
+                dict(alive_main=8, alive_index=1, prefix_main=16, prefix_index=16),
+            )
+            self.assertTrue(actual.decode_shared)
+            self.assertFalse(actual.match_prefix)
+            self.assertTrue(actual.verify_prefix)
+            self.assertEqual(value["service_rounds"], 1)
+
     def test_index_experiment_preserves_the_full_acceptance_six_request_contract(self):
         from test_mempool_full import CharacterTokenizer
 

@@ -112,6 +112,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "session-acceptance",
             "p-sharing-acceptance",
             "index-sharing-acceptance",
+            "index-cold-diagnosis",
         ),
         required=True,
     )
@@ -121,7 +122,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--log-root", type=Path, default=Path("/home/cryang/log/mempool-min")
     )
     parser.add_argument("--describe", action="store_true")
+    parser.add_argument("--replay-responses", type=Path)
     args = parser.parse_args(argv)
+    if (
+        args.mode == "index-cold-diagnosis"
+        and args.role == "prefill"
+        and args.replay_responses is None
+    ):
+        parser.error("prefill index-cold-diagnosis requires --replay-responses")
+    if args.replay_responses is not None:
+        args.replay_responses = args.replay_responses.resolve()
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", args.run_id):
         parser.error("run-id must be a simple new directory name")
     if not args.log_root.resolve().is_relative_to(Path("/home/cryang/log").resolve()):
@@ -257,7 +267,9 @@ class Runner:
             status="running",
             role=args.role,
             mode=args.mode,
-            coverage="K1-07 reduced functional acceptance"
+            coverage="one saved Index K input without prefix reuse; diagnosis only"
+            if args.mode == "index-cold-diagnosis"
+            else "K1-07 reduced functional acceptance"
             if config.prefill_index_shared and self.session_acceptance
             else "shared decode functional regression (without ordering probes)"
             if config.decode_shared and self.session_acceptance
@@ -621,8 +633,12 @@ class Runner:
             if target
             else "reference"
         )
-        inject_fault = target and (
-            not self.full or fault_only or (self.session_acceptance and not restart)
+        inject_fault = (
+            target
+            and (
+                not self.full or fault_only or (self.session_acceptance and not restart)
+            )
+            and self.args.mode != "index-cold-diagnosis"
         )
         root = self.root / name
         env = service_environment(self.config, self.args, root, target=target)
@@ -725,7 +741,11 @@ class Runner:
                         if status["fault"]:
                             raise RuntimeError(status["fault"])
                     time.sleep(1)
-            if not fault_only:
+            if self.args.mode == "index-cold-diagnosis":
+                from mempool_index_diagnosis import run_stage
+
+                run_stage(self, root, base, watch)
+            elif not fault_only:
                 if self.is_p:
                     snapshots, results, answers = [], [], []
                     if target and not self.full:
@@ -890,7 +910,7 @@ class Runner:
         self.peer.barrier(name + "-stopped")
         if inject_fault:
             self.final_timeout_evidence(root)
-        if self.session_acceptance:
+        if self.session_acceptance or self.args.mode == "index-cold-diagnosis":
             ports = {
                 self.config.prefill_port if self.is_p else self.config.decode_port,
                 *range(
@@ -1095,6 +1115,11 @@ class Runner:
 
     def run(self) -> None:
         self.preflight()
+        if self.args.mode == "index-cold-diagnosis":
+            from mempool_index_diagnosis import run
+
+            run(self)
+            return
         if self.args.mode == "numa-acceptance":
             from mempool_numa_runner import run
 
@@ -1146,6 +1171,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "session-acceptance",
         "p-sharing-acceptance",
         "index-sharing-acceptance",
+        "index-cold-diagnosis",
     ):
         config = msgspec.structs.replace(
             config,
@@ -1167,7 +1193,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if args.mode == "p-sharing-acceptance":
         config = msgspec.structs.replace(config, prefill_shared=True)
-    if args.mode == "index-sharing-acceptance":
+    if args.mode in ("index-sharing-acceptance", "index-cold-diagnosis"):
         config = msgspec.structs.replace(
             config, prefill_shared=True, decode_shared=True, prefill_index_shared=True
         )
@@ -1181,7 +1207,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     config=msgspec.to_builtins(config),
                     logs=str(root),
                     memory_budget=memory_budget(config, args.role),
-                    output_policy=mempool_logical_cases.POLICY
+                    output_policy="strict saved fixture answer; old/cold output IDs diagnostic"
+                    if args.mode == "index-cold-diagnosis"
+                    else mempool_logical_cases.POLICY
                     if args.mode
                     in ("full-acceptance", "numa-acceptance", *SESSION_MODES)
                     else "strict full output IDs",
@@ -1190,7 +1218,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                         if config.match_prefix and config.verify_prefix
                         else "none"
                     ),
-                    service_rounds=len(verify_mempool_session.SERVICE_STAGES)
+                    service_rounds=1
+                    if args.mode == "index-cold-diagnosis"
+                    else len(verify_mempool_session.SERVICE_STAGES)
                     if args.mode in SESSION_MODES
                     else None,
                     stages=[
@@ -1200,6 +1230,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "independent answers; capacity rejection CPU replay; paired port cleanup",
                     ]
                     if args.mode in SESSION_MODES
+                    else [
+                        "paired preflight; same sharing layout, prefix matching disabled",
+                        "one saved index-update request; original input IDs and sampling",
+                        "strict answer and old/cold comparison; paired process cleanup",
+                        "diagnosis only; no automatic BM readback or ticket acceptance",
+                    ]
+                    if args.mode == "index-cold-diagnosis"
                     else [
                         "local startup rejection codes: offline node / duplicate rank / missing rank",
                         "default and swapped explicit maps: A/B/C/E and V1-V10",
