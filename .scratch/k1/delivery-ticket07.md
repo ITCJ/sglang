@@ -5,7 +5,7 @@ template: doc
 theme: blueprint
 lang: zh
 date: 2026-11-01
-status: 519项CPU覆盖与双轴复审通过；等待用户硬件验收
+status: 用户已确认功能验收，07关闭；完整验证边界保留
 ---
 
 P alive Index K 从16份变1份，默认由rank0在NUMA 0写入。
@@ -76,7 +76,7 @@ fill由配置的Index K写者写共享区域；admit由全部P分片读取共享
 | [test_mempool_prefix_evidence.py](../../ascend-mempool-test/tests/unit/test_mempool_prefix_evidence.py) | 复用真实Main状态机生成九请求检查素材 |
 
 执行文本和07/08/09/11已同步本地票序07→08→11→09。
-07保持open，08仍等待07验收；11尚未实现。
+07已按用户确认范围closed，08前置全部满足、尚未实施；11尚未实现。
 
 ## E 验证与精度边界
 
@@ -95,5 +95,11 @@ fill由配置的Index K写者写共享区域；admit由全部P分片读取共享
 用户重申不新增直接读BM验证。
 内容证据继续使用计算源快照、正常load_back后的native HBM和实际写入计数。
 CPU检查验证各份prefix的Index K内容；不冒充实机逐份BM读回。
-硬件未运行，32参与者会话、物理NUMA、模型精度和真实释放仍待用户验收。
+
+用户在31/32完成002第1轮及cold-001定向对照：源快照与正常恢复内容一致；
+歧义题面冷、热26 tokens完全相同，冷对照无命中且正常清理。
+用户接受该答案行为不作为系统缺陷，确认本票功能验收。
+[确认记录](verification/ticket07-cold-20261101/acceptance.md)保留严格报告失败、
+002未执行的故障注入/重启、NUMA驻留及其他未完成验证；不宣称完整V1–V10通过。
+
 性能工具留测试分支，本票不声称已有性能结果。

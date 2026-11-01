@@ -17,3 +17,5 @@ mempool_index_diagnosis.py读取已保存失败例，提交原始input_ids与sam
 CLI配置检查先失败后通过；完整定向31项回归一次通过（cpu.log），覆盖原验收合同。
 4文件ruff/isort/Python3.9 AST通过，新增模块strict mypy通过。
 Standards与Spec独立评审各0项需修复；硬件诊断未运行，07仍open。
+
+后续用户已运行冷对照并确认07验收，见[关闭记录](acceptance.md)。上文为诊断补丁交付时状态。

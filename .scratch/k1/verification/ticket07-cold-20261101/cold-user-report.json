@@ -1,0 +1,30 @@
+{
+  "status": "failed",
+  "coverage": "one saved input; not ticket acceptance or a formal-service baseline",
+  "case": "index-update",
+  "expected": {
+    "place": "harbor",
+    "pencils": 17,
+    "route": "north"
+  },
+  "original": {
+    "status": "failed",
+    "category": "answer",
+    "error": "Expecting value: line 1 column 1 (char 0)"
+  },
+  "cold": {
+    "status": "failed",
+    "category": "answer",
+    "error": "Expecting value: line 1 column 1 (char 0)"
+  },
+  "original_text": "```json\n{\"place\": \"harbor\", \"pencils\": 12, \"route\": \"north\"}\n```",
+  "cold_text": "```json\n{\"place\": \"harbor\", \"pencils\": 12, \"route\": \"north\"}\n```",
+  "ids": {
+    "equal": true,
+    "reference_length": 26,
+    "target_length": 26,
+    "first_difference": null
+  },
+  "hit_len": 0,
+  "bm_readback": false
+}
