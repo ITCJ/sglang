@@ -1,0 +1,14 @@
+{
+  "prefill": [
+    {"rank": 0, "device": 0, "node": 0},
+    {"rank": 1, "device": 1, "node": 0},
+    {"rank": 2, "device": 2, "node": 1},
+    {"rank": 3, "device": 3, "node": 1}
+  ],
+  "decode": [
+    {"rank": 0, "device": 0, "node": 0},
+    {"rank": 1, "device": 1, "node": 0},
+    {"rank": 2, "device": 2, "node": 1},
+    {"rank": 3, "device": 3, "node": 1}
+  ]
+}

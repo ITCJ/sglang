@@ -35,3 +35,20 @@
 ### 2026-11-02：12用户验收关闭，本票解锁
 
 用户确认c2ed808092的k1-ticket12-004精简功能验收并关闭12。本票ready-for-agent/open，尚未实施；后续对照基线为12已接受的page-first状态，09继续等待本票。
+
+### 2026-11-02：仅规划，建议先验证SDMA再定稿工程路径
+
+用户要求规划agent只写方案，后续交high实施；提出先做独立demo，再核对各op的源、目标与执行NPU，最后开始工程代码。
+已编写[demo交接](../ticket11-demo-handoff.md)、[工程接入草案](../ticket11-implementation-plan.md)与[路径核对页](../ticket11-path-review.md)。
+按用户指定，SDK依据是本地GitCode 1.3.0/29fbd1ae14e7；已核对普通SDMA、线程stream、GIL及batch子提交错误传播缺口。
+建议路线、固定一线程及服务验收目标读回仍待核对；没有修改正式验收范围，没有实现demo/工程或运行NPU。
+State保持open，09仍阻塞；必须带回demo证据并经用户确认路径后才能进入工程实施。
+
+### 2026-11-02：demo实施交付，服务尚未接入
+
+按用户implement授权完成共用平台适配层及两组P/D demo。执行器submit/poll、同线程BM batch/wait、UNKNOWN锁存与父进程清理已接线。
+设备索引读回覆盖admit prefix和D读取fill后的P alive；8页真实几何，接口事实与functional smoke分开报告。
+完整CPU一次547项，21个沙箱受限方法补跑通过；1项旧test_config UINT32_MAX预期失败保留，未改无关代码。
+新测试、静态与pool_copy strict mypy通过；Standards/Spec复核均无剩余阻断。
+[运行说明](../../../ascend-mempool-test/K1_TICKET11_DEMO.md)和[验证记录](../verification/ticket11-demo-cpu/README.md)已交付。
+NPU未运行，不修改SDK、不接服务fill/admit；11保持open、09仍阻塞。路径不重复确认，demo后核对库接口事实与证据。

@@ -112,6 +112,17 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 
 ## D 名称、验收与实施票怎样对应
 
+**2026-11-02 K1-11 demo：共用适配层与两组P/D入口已交付。**
+
+用户授权implement demo；生产fill/admit尚未切换。
+共用SDMA batch/wait、tick poll与UNKNOWN处理已实现。
+两组8参与者，真实8页，设备索引校验prefix与D读取P alive。
+CPU完整一次547项，沙箱受限21方法补跑通过；旧配置用例1项失败保留。
+新增测试、静态与类型检查通过；双轴复核无阻断。
+[运行说明](../../ascend-mempool-test/K1_TICKET11_DEMO.md)已交付，NPU未运行。
+接口事实未确认，11仍open、09阻塞；不另做八组demo，服务不新增读回。
+
+
 **2026-11-02 K1-12：用户确认004验收，关闭12、解锁11。**
 
 用户明确回复“关闭”，接受c2ed808092的两轮精简功能范围；[确认与限制](../k1/verification/k1-ticket12-004/README.md)已归档。

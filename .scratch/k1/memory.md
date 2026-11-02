@@ -1,8 +1,20 @@
 # K1 项目记忆
 
 更新：2026-11-02；设计决定日期：2026-11-01。12已由用户确认004验收关闭；11已解锁、尚未实施。
+11本轮仅完成方案草案：建议先由high实施独立SDMA demo，用户运行后再定稿逐op路径并核对，之后才授权工程代码。
+先读[demo交接](ticket11-demo-handoff.md)；[工程草案](ticket11-implementation-plan.md)仍待结果和用户确认。
+SDK按用户指定使用本地GitCode `../gitcode/memfabric_hybrid`（1.3.0，29fbd1ae14e7），不以较旧GitHub版本判断实现。
+本地batch子提交错误传播存在待核对缺口；demo未编写、NPU未运行，11仍open、09仍阻塞。
 最新硬件反馈：31/32的c2ed808092、k1-ticket12-004自动验收均passed，page-first-copy/fetch及两轮六例完成，五类布局/签名和字节核对通过。见[004核对记录与边界](verification/k1-ticket12-004/README.md)。用户已明确回复“关闭”；12已closed，11已解锁但未实施。
 这是会话恢复摘要；逐票事实以最新 Comments 和用户验收记录为准，实施细节以执行文本为准。
+
+## 11 demo 最新交付（2026-11-02）
+
+用户已授权implement demo；共用pool_copy适配层、manager装配口、两组P/D设备校验及自运行入口已实现。
+路径已定，demo后仅核对接口事实；不做八组demo，服务不新增目标读回。
+CPU完整一次547项；21个沙箱受限方法补跑通过；1项既有test_config的旧UINT32_MAX预期失败保留。
+本次新增测试、静态及适配层strict mypy通过，双轴复核无阻断；NPU未运行。
+命令和证据边界见[demo交付](../../ascend-mempool-test/K1_TICKET11_DEMO.md)。11仍open，09阻塞。
 
 ## 恢复顺序与依据
 

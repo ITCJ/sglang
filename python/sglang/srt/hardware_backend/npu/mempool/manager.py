@@ -662,6 +662,12 @@ class MempoolKVManager:
         if ret != 0:
             raise RuntimeError(f"BM write to {gva:#x} failed: {ret}")
 
+    def pool_transfer(self) -> Any:
+        """Share the BM submit/wait adapter with standalone and service callers."""
+        from .pool_copy import BMTransfer
+
+        return BMTransfer(self._handle, self._bm)
+
     def close(self, drain: Callable[[], None]) -> None:
         """Drain before destroying the pool and any BM context started here."""
         if self._closed:
