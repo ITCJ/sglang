@@ -349,9 +349,12 @@ def check_output_steps(
     case: dict[str, Any], result: dict[str, Any], forwards: int
 ) -> None:
     if case.get("kind") == "load-only" and (
-        len(result["output_ids"]) != 128 or not 127 <= forwards <= 128
+        len(result["output_ids"]) != case["sampling_params"]["max_new_tokens"]
+        or not case["sampling_params"]["max_new_tokens"] - 1
+        <= forwards
+        <= case["sampling_params"]["max_new_tokens"]
     ):
-        raise ValueError("long output lacks 127-128 actual decode forwards")
+        raise ValueError("long output lacks the requested actual decode forwards")
 
 
 def check_timeout(

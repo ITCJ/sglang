@@ -41,6 +41,63 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     return args
 
 
+def boundary_checks(manager, args, torch):
+    """Force mixed-source page edges through the production sparse gather."""
+    from ascend_mempool.copy import SparseCopyInputs, SparseKVCopy
+
+    b = manager.layout.decode.page_size
+    if b == 1:
+        return []
+    tokens = sorted(
+        {0, args.s_d - 2, args.s_d - 1}
+        | {
+            k + delta
+            for k in range(b, args.s_d, b)
+            for delta in (-1, 0, 1)
+            if 0 <= k + delta < args.s_d
+        }
+    )
+    selected = [0, args.s_p - 1] + [args.s_p + t for t in tokens]
+    inputs = SparseCopyInputs(1, len(selected), "npu")
+    inputs.prompt_lengths.fill_(args.s_p)
+    inputs.decode_lengths.fill_(args.s_d)
+    inputs.positions.copy_(torch.tensor([selected], device="npu"))
+    inputs.active.fill_(True)
+    inputs.valid.fill_(True)
+    checks = []
+    for layer in range(args.layers):
+        gather = SparseKVCopy(manager.view(0, layer), manager.view(1, layer), inputs)
+        graph = torch.npu.NPUGraph()
+        with torch.npu.graph(graph, auto_dispatch_capture=True):
+            gather.gather()
+        for slot in (args.slots - 1, 0):
+            inputs.p_slots.fill_(slot)
+            inputs.d_slots.fill_(slot)
+            graph.replay()
+            torch.npu.synchronize()
+            expected = torch.stack(
+                [
+                    kv_pattern(side, layer, slot, token, 1, args.heads, args.kv_dim)[0]
+                    for side, token in [(0, 0), (0, args.s_p - 1)]
+                    + [(1, t) for t in tokens]
+                ]
+            )
+            if not torch.equal(gather.output[0].cpu(), expected):
+                raise AssertionError("cross-page sparse gather mismatch")
+        checks.append(dict(layer=layer, slots=[args.slots - 1, 0]))
+    return [
+        dict(
+            case="page_boundaries",
+            status="passed",
+            page_size=b,
+            decode_capacity=args.s_d,
+            decode_positions=tokens,
+            layers=checks,
+            coverage="controlled BM source, mixed P/D gather and changed-slot graph replay",
+        )
+    ]
+
+
 def fetch_checks(
     manager: MempoolKVManager,
     args: argparse.Namespace,
@@ -50,7 +107,7 @@ def fetch_checks(
     """P retains its staged prompt data until D has drained all reads."""
     if manager.rank == 0:
         return []
-    results = []
+    results = boundary_checks(manager, args, torch)
     stream = torch.npu.Stream()
     context = args.s_p + args.s_d
     layers = args.layers

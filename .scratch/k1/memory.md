@@ -1,6 +1,11 @@
 # K1 项目记忆
 
 更新：2026-11-02。用户确认31/32的11工程002验收并明确关闭；11已closed，09已解锁、尚未实施。
+用户随后要求09保持完整验收并覆盖B=128/64、S_D=128/512四组。
+[09实施计划](ticket09-implementation-plan.md)已写；prefix维持5120 tokens，四组均not-run。
+生产RouterConfig目前也限制B=128与S_D=128；D哨兵已清理，计划按验收开关恢复。
+09现已按计划接通四组入口与D验收证据，CPU关键回归通过，既有UINT32_MAX旧预期失败保留。
+运行说明见../../ascend-mempool-test/K1_TICKET09.md；四组NPU待用户运行，09保持open。
 用户回传demo-001的31/32 launcher：两侧exit_code=0、children_reaped=true，实际端口均passed。
 8rank摘要已核实746ec2d54c：admit16块/97,517,568B，fill24块/189,530,112B；设备内容通过，实际wait期间P控制循环均推进。
 用户确认双方memfabric_hybrid=1.1.4、memfabric_zbal=1.1.2；原unknown只是模块版本属性未取得。

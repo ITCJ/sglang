@@ -81,8 +81,8 @@ def padded_messages(
 
 
 def make_cases(tokenizer: Any, page_size: int) -> list[dict[str, Any]]:
-    if page_size != 128:
-        raise ValueError("full acceptance requires page_size=128")
+    if page_size not in (64, 128):
+        raise ValueError("full acceptance requires page_size=64 or 128")
     sampling = dict(
         temperature=0, top_k=1, top_p=1, max_new_tokens=128, ignore_eos=False
     )
@@ -155,7 +155,7 @@ def make_cases(tokenizer: Any, page_size: int) -> list[dict[str, Any]]:
         4096,
         dict(place="meadow", pencils=27, route="south"),
     )
-    if e["input_ids"][:128] == a["input_ids"][:128]:
+    if e["input_ids"][:page_size] == a["input_ids"][:page_size]:
         raise ValueError("E must differ within its first page")
     return [a, b, c, e]
 
@@ -267,7 +267,9 @@ def check_index_accuracy(
     )
 
 
-def make_controls(tokenizer: Any, page_size: int) -> list[dict[str, Any]]:
+def make_controls(
+    tokenizer: Any, page_size: int, decode_capacity: int = 128
+) -> list[dict[str, Any]]:
     cases = []
     for name, text, length, ignore_eos, expected in (
         (
@@ -280,7 +282,7 @@ def make_controls(tokenizer: Any, page_size: int) -> list[dict[str, Any]]:
         (
             "early-eos",
             'Compute 2 + 3. Reply only with a JSON object with key "sum".\n',
-            page_size,
+            128,
             False,
             dict(sum=5),
         ),
@@ -298,7 +300,7 @@ def make_controls(tokenizer: Any, page_size: int) -> list[dict[str, Any]]:
                     temperature=0,
                     top_k=1,
                     top_p=1,
-                    max_new_tokens=128,
+                    max_new_tokens=decode_capacity if ignore_eos else 128,
                     ignore_eos=ignore_eos,
                 ),
                 kind="load-only" if ignore_eos else "logical",
@@ -318,7 +320,7 @@ def answer(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
     if case.get("kind") == "load-only":
         return dict(
             status="passed",
-            coverage="128 output tokens; load only, no answer acceptance",
+            coverage=f"{case['sampling_params']['max_new_tokens']} output tokens; load only, no answer acceptance",
         )
     try:
         parsed = json.loads(result["text"], object_pairs_hook=unique_fields)

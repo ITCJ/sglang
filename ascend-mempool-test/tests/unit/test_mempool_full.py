@@ -47,6 +47,17 @@ class CharacterTokenizer:
 
 
 class TestLogicalFixtures(unittest.TestCase):
+    def test_ticket09_controls_reach_configured_decode_capacity(self):
+        for b in (64, 128):
+            cases = logical.make_cases(CharacterTokenizer(), b)
+            self.assertEqual(
+                [len(c["input_ids"]) for c in cases], [4096, 5120, 4096, 4096]
+            )
+            long, early = logical.make_controls(CharacterTokenizer(), b, 512)
+            self.assertEqual(long["sampling_params"]["max_new_tokens"], 512)
+            self.assertTrue(long["sampling_params"]["ignore_eos"])
+            self.assertEqual(len(early["input_ids"]), 128)
+
     def test_index_experiment_has_new_cold_and_changed_suffix_answers(self):
         tokenizer = CharacterTokenizer()
         base = logical.make_cases(tokenizer, 128)
@@ -410,7 +421,12 @@ class TestFullEntry(unittest.TestCase):
                 "target/input-rejections.json": dict(
                     status="passed",
                     ledger_unchanged=True,
-                    names=["unaligned", "too-long", "generation-limit"],
+                    names=[
+                        "unaligned",
+                        "too-long",
+                        "generation-limit",
+                        "unsupported-text",
+                    ],
                 ),
                 "capacity/evidence.json": dict(
                     status="passed", ledger_unchanged=True, worker_exit=1

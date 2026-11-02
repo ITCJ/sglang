@@ -12,6 +12,22 @@ from ascend_mempool.offload import MempoolKVOffload
 
 
 class TestPageFirstLayout(unittest.TestCase):
+    def test_four_decode_geometries_match_physical_tensor_oracle(self):
+        for b, sd in ((128, 128), (128, 512), (64, 128), (64, 512)):
+            layout = KVLayout(3, 2, sd, 1, 4, page_size=b)
+            # Independent row-major tensor enumeration is the address oracle.
+            physical = torch.arange(layout.total_bytes // 2).reshape(
+                2, sd // b, 3, b, 1, 4
+            )
+            for slot in (0, 1):
+                for page in range(sd // b):
+                    for token in (0, 1, b - 1):
+                        for layer in range(3):
+                            self.assertEqual(
+                                layout.byte_offset(layer, slot, page * b + token),
+                                int(physical[slot, page, layer, token, 0, 0]) * 2,
+                            )
+
     def test_physical_order_and_page_blocks_match_independent_enumeration(self):
         layout = KVLayout(3, 2, 4, 2, 3, page_size=2)
         # Enumerate storage order, rather than repeating byte_offset's formula.

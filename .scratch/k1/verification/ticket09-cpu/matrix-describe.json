@@ -1,0 +1,474 @@
+{
+  "b128-sd128": {
+    "prefill_host": "<P_HOST>",
+    "decode_host": "<D_HOST>",
+    "model_path": "/data_lib/data/models/GLM-5.2-w4a8",
+    "interface": "bond4",
+    "numa_nodes": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "main_port": 6699,
+    "control_port": 16700,
+    "runner_port": 18891,
+    "prefill_port": 8000,
+    "decode_port": 8001,
+    "bootstrap_port": 8995,
+    "prompt_capacity": 8192,
+    "decode_capacity": 128,
+    "page_size": 128,
+    "context_length": 8448,
+    "max_total_tokens": 16384,
+    "operation_timeout": 600.0,
+    "startup_timeout": 7200.0,
+    "prefix_pages": 40,
+    "verify_prefix": true,
+    "verify_decode": true,
+    "match_prefix": true,
+    "prefix_read_assignment": "by_segment",
+    "prefix_shared": true,
+    "prefix_start_segment": null,
+    "prefix_admit_mode": "owners",
+    "prefix_admit_rank": 0,
+    "pool_copy": true,
+    "pool_copy_sdk_build_id": "mf114-c01f3ad-ticket11-batchfix",
+    "pool_copy_bind_cpu": true,
+    "pool_copy_delay_seconds": 0.05,
+    "prefill_shared": true,
+    "prefill_groups": [
+      [
+        0,
+        1
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        6,
+        7
+      ],
+      [
+        8,
+        9
+      ],
+      [
+        10,
+        11
+      ],
+      [
+        12,
+        13
+      ],
+      [
+        14,
+        15
+      ]
+    ],
+    "prefill_write_assignment": "contiguous",
+    "prefill_index_shared": true,
+    "prefill_index_writers": [
+      0
+    ],
+    "decode_shared": true,
+    "decode_groups": [
+      [
+        0,
+        1
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        6,
+        7
+      ],
+      [
+        8,
+        9
+      ],
+      [
+        10,
+        11
+      ],
+      [
+        12,
+        13
+      ],
+      [
+        14,
+        15
+      ]
+    ],
+    "decode_write_assignment": "features"
+  },
+  "b128-sd512": {
+    "prefill_host": "<P_HOST>",
+    "decode_host": "<D_HOST>",
+    "model_path": "/data_lib/data/models/GLM-5.2-w4a8",
+    "interface": "bond4",
+    "numa_nodes": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "main_port": 6699,
+    "control_port": 16700,
+    "runner_port": 18891,
+    "prefill_port": 8000,
+    "decode_port": 8001,
+    "bootstrap_port": 8995,
+    "prompt_capacity": 8192,
+    "decode_capacity": 512,
+    "page_size": 128,
+    "context_length": 8832,
+    "max_total_tokens": 16384,
+    "operation_timeout": 600.0,
+    "startup_timeout": 7200.0,
+    "prefix_pages": 40,
+    "verify_prefix": true,
+    "verify_decode": true,
+    "match_prefix": true,
+    "prefix_read_assignment": "by_segment",
+    "prefix_shared": true,
+    "prefix_start_segment": null,
+    "prefix_admit_mode": "owners",
+    "prefix_admit_rank": 0,
+    "pool_copy": true,
+    "pool_copy_sdk_build_id": "mf114-c01f3ad-ticket11-batchfix",
+    "pool_copy_bind_cpu": true,
+    "pool_copy_delay_seconds": 0.05,
+    "prefill_shared": true,
+    "prefill_groups": [
+      [
+        0,
+        1
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        6,
+        7
+      ],
+      [
+        8,
+        9
+      ],
+      [
+        10,
+        11
+      ],
+      [
+        12,
+        13
+      ],
+      [
+        14,
+        15
+      ]
+    ],
+    "prefill_write_assignment": "contiguous",
+    "prefill_index_shared": true,
+    "prefill_index_writers": [
+      0
+    ],
+    "decode_shared": true,
+    "decode_groups": [
+      [
+        0,
+        1
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        6,
+        7
+      ],
+      [
+        8,
+        9
+      ],
+      [
+        10,
+        11
+      ],
+      [
+        12,
+        13
+      ],
+      [
+        14,
+        15
+      ]
+    ],
+    "decode_write_assignment": "features"
+  },
+  "b64-sd128": {
+    "prefill_host": "<P_HOST>",
+    "decode_host": "<D_HOST>",
+    "model_path": "/data_lib/data/models/GLM-5.2-w4a8",
+    "interface": "bond4",
+    "numa_nodes": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "main_port": 6699,
+    "control_port": 16700,
+    "runner_port": 18891,
+    "prefill_port": 8000,
+    "decode_port": 8001,
+    "bootstrap_port": 8995,
+    "prompt_capacity": 8192,
+    "decode_capacity": 128,
+    "page_size": 64,
+    "context_length": 8448,
+    "max_total_tokens": 16384,
+    "operation_timeout": 600.0,
+    "startup_timeout": 7200.0,
+    "prefix_pages": 80,
+    "verify_prefix": true,
+    "verify_decode": true,
+    "match_prefix": true,
+    "prefix_read_assignment": "by_segment",
+    "prefix_shared": true,
+    "prefix_start_segment": null,
+    "prefix_admit_mode": "owners",
+    "prefix_admit_rank": 0,
+    "pool_copy": true,
+    "pool_copy_sdk_build_id": "mf114-c01f3ad-ticket11-batchfix",
+    "pool_copy_bind_cpu": true,
+    "pool_copy_delay_seconds": 0.05,
+    "prefill_shared": true,
+    "prefill_groups": [
+      [
+        0,
+        1
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        6,
+        7
+      ],
+      [
+        8,
+        9
+      ],
+      [
+        10,
+        11
+      ],
+      [
+        12,
+        13
+      ],
+      [
+        14,
+        15
+      ]
+    ],
+    "prefill_write_assignment": "contiguous",
+    "prefill_index_shared": true,
+    "prefill_index_writers": [
+      0
+    ],
+    "decode_shared": true,
+    "decode_groups": [
+      [
+        0,
+        1
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        6,
+        7
+      ],
+      [
+        8,
+        9
+      ],
+      [
+        10,
+        11
+      ],
+      [
+        12,
+        13
+      ],
+      [
+        14,
+        15
+      ]
+    ],
+    "decode_write_assignment": "features"
+  },
+  "b64-sd512": {
+    "prefill_host": "<P_HOST>",
+    "decode_host": "<D_HOST>",
+    "model_path": "/data_lib/data/models/GLM-5.2-w4a8",
+    "interface": "bond4",
+    "numa_nodes": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "main_port": 6699,
+    "control_port": 16700,
+    "runner_port": 18891,
+    "prefill_port": 8000,
+    "decode_port": 8001,
+    "bootstrap_port": 8995,
+    "prompt_capacity": 8192,
+    "decode_capacity": 512,
+    "page_size": 64,
+    "context_length": 8832,
+    "max_total_tokens": 16384,
+    "operation_timeout": 600.0,
+    "startup_timeout": 7200.0,
+    "prefix_pages": 80,
+    "verify_prefix": true,
+    "verify_decode": true,
+    "match_prefix": true,
+    "prefix_read_assignment": "by_segment",
+    "prefix_shared": true,
+    "prefix_start_segment": null,
+    "prefix_admit_mode": "owners",
+    "prefix_admit_rank": 0,
+    "pool_copy": true,
+    "pool_copy_sdk_build_id": "mf114-c01f3ad-ticket11-batchfix",
+    "pool_copy_bind_cpu": true,
+    "pool_copy_delay_seconds": 0.05,
+    "prefill_shared": true,
+    "prefill_groups": [
+      [
+        0,
+        1
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        6,
+        7
+      ],
+      [
+        8,
+        9
+      ],
+      [
+        10,
+        11
+      ],
+      [
+        12,
+        13
+      ],
+      [
+        14,
+        15
+      ]
+    ],
+    "prefill_write_assignment": "contiguous",
+    "prefill_index_shared": true,
+    "prefill_index_writers": [
+      0
+    ],
+    "decode_shared": true,
+    "decode_groups": [
+      [
+        0,
+        1
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        6,
+        7
+      ],
+      [
+        8,
+        9
+      ],
+      [
+        10,
+        11
+      ],
+      [
+        12,
+        13
+      ],
+      [
+        14,
+        15
+      ]
+    ],
+    "decode_write_assignment": "features"
+  }
+}

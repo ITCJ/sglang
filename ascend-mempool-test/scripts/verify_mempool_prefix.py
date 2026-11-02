@@ -12,6 +12,7 @@ import verify_mempool_min
 
 
 class Reports(msgspec.Struct):
+    page_size: int = 128
     contents: dict[tuple[str, int, str], tuple[int, dict[str, Any]]] = msgspec.field(
         default_factory=dict
     )
@@ -22,8 +23,8 @@ class Reports(msgspec.Struct):
     consumed: set[tuple[str, int, str]] = msgspec.field(default_factory=set)
 
     @classmethod
-    def read(cls, prefill: Path) -> Reports:
-        report = cls()
+    def read(cls, prefill: Path, page_size: int = 128) -> Reports:
+        report = cls(page_size=page_size)
         for line_no, line in enumerate(
             prefill.read_text(errors="replace").splitlines()
         ):
@@ -73,7 +74,7 @@ class Reports(msgspec.Struct):
             or value["prompt_tokens"] != prompt_tokens
             or value["main_layers"] != 78
             or value["index_layers"] != 21
-            or value["page_size"] != 128
+            or value["page_size"] != self.page_size
             or any(
                 not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)
                 for digest in digests
@@ -86,7 +87,7 @@ class Reports(msgspec.Struct):
 def make_cases(model_path: str, page_size: int) -> list[dict[str, Any]]:
     from transformers import AutoTokenizer
 
-    if page_size != 128:
+    if page_size not in (64, 128):
         raise ValueError("prefix acceptance requires B=128")
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     base = verify_mempool_min.make_cases(model_path, page_size)[0]
@@ -126,7 +127,8 @@ def check_prefix(
         or e[:128] == a[:128]
     ):
         raise ValueError("prefix fixtures do not exercise A/B/C/E")
-    reports = Reports.read(prefill)
+    page_size = snapshots[0]["registrations"]["prefill"]["ranks"][0]["page_size"]
+    reports = Reports.read(prefill, page_size)
     retained: dict[int, dict[str, str]] = {rank: {} for rank in range(16)}
     previous: dict[str, Any] = {}
     for snapshot, case, added, total in zip(
@@ -302,7 +304,7 @@ def check_rank(
     identity = dict(rid=rid, rank=rank, slot=slot, prompt_tokens=prompt_tokens)
     alive_line, alive = reports.content(stage="alive", **identity)
     retained_line, saved = reports.content(stage="retained", **identity)
-    expected_sources = list(range(prompt_tokens // 128))
+    expected_sources = list(range(prompt_tokens // reports.page_size))
     free = reports.events.get((rid, rank, "free"), [])
     native_line = reports.native.get((rank, room), -1)
     alive_native_order = (
@@ -338,7 +340,11 @@ def check_rank(
             or len(targets) != added
             or len(receipt["pages"]) != added
             or len(set(targets)) != added
-            or any(type(page) is not int or not 0 <= page < 40 for page in targets)
+            or any(
+                type(page) is not int
+                or not 0 <= page < snapshot["ledger"]["p_prefix"]["total"]
+                for page in targets
+            )
             or targets != operation["ack"]["ranks"][0]["target_pages"]
             or set(copied["pages"]) != set(map(str, targets))
             or set(copied["pages"]).intersection(retained)
@@ -430,7 +436,8 @@ def check_copied_pages(
                     for p in source_pages
                 ],
             )
-            or source_descriptor["logical_page"] != slot * 64 + logical
+            or source_descriptor["logical_page"]
+            != slot * (registration["prompt_capacity"] // reports.page_size) + logical
             or copied["pages"][str(target)] != expected
             or descriptor
             != dict(
@@ -438,7 +445,7 @@ def check_copied_pages(
                 region=registration["prefix_region" if shared else "session"],
                 replica=0 if shared else rank,
                 logical_page=target,
-                page_size=128,
+                page_size=reports.page_size,
             )
             or directory[item["hash"]]["prefix"]["locations"][0 if shared else rank]
             != descriptor
@@ -458,9 +465,10 @@ def prefix_source_writers(
     from ascend_mempool.page_write import PageWriter
 
     policy = snapshot["registrations"]["prefill"]["ranks"][0]["prefix_policy"]
+    page_size = snapshot["registrations"]["prefill"]["ranks"][0]["page_size"]
     groups = policy["groups"]
     group = (
-        groups[target // (40 // len(groups))]
+        groups[target // (snapshot["ledger"]["p_prefix"]["total"] // len(groups))]
         if policy["admit_mode"] == "owners"
         else next(g for g in groups if policy["admit_rank"] in g)
     )
@@ -468,14 +476,14 @@ def prefix_source_writers(
         rank
         for member, rank in enumerate(group)
         if page
-        in PageWriter(member, len(group), 128, policy["main_write_assignment"]).pages(
-            tokens
-        )
+        in PageWriter(
+            member, len(group), page_size, policy["main_write_assignment"]
+        ).pages(tokens)
     )
     writers = policy["index_writers"]
     index = next(
         rank
         for member, rank in enumerate(writers)
-        if page in PageWriter(member, len(writers), 128).pages(tokens)
+        if page in PageWriter(member, len(writers), page_size).pages(tokens)
     )
     return dict(main=main, index=index)

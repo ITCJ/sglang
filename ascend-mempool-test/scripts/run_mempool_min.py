@@ -436,6 +436,21 @@ class Runner:
             ports.update((self.config.bootstrap_port, 24670))
         for port in ports:
             available_port(self.host, port)
+        if self.config.verify_decode:
+            from mempool_numa_runner import topology
+
+            topology(self.root, self.config.interface)
+            versions = {}
+            for name, path in (
+                ("driver", Path("/usr/local/Ascend/driver/version.info")),
+                ("cann", Path("/usr/local/Ascend/ascend-toolkit/latest/version.cfg")),
+            ):
+                versions[name] = dict(
+                    path=str(path),
+                    status="recorded" if path.exists() else "unavailable",
+                    contents=path.read_text() if path.exists() else None,
+                )
+            write_json(self.root / "platform-versions.json", versions)
         self.peer.barrier("preflight")
 
     def components(self) -> None:
@@ -464,9 +479,11 @@ class Runner:
             "--layers",
             "78",
             "--s-p",
-            "8",
+            str(self.config.page_size if self.config.verify_decode else 8),
             "--s-d",
-            "16",
+            str(self.config.decode_capacity if self.config.verify_decode else 16),
+            "--page-size",
+            str(self.config.page_size if self.config.verify_decode else 1),
             "--heads",
             "1",
             "--kv-dim",
@@ -550,7 +567,9 @@ class Runner:
             ),
             dict(
                 input_ids=[7] * self.config.page_size,
-                sampling_params=dict(temperature=0, max_new_tokens=129),
+                sampling_params=dict(
+                    temperature=0, max_new_tokens=self.config.decode_capacity + 1
+                ),
             ),
             dict(text="unsupported"),
         ]
@@ -790,7 +809,10 @@ class Runner:
                 from mempool_numa_runner import archive_registration
 
                 archive_registration(self, root, request_json(base + "/status"))
-            if self.session_acceptance and self.is_p:
+            if (
+                self.session_acceptance
+                or (self.full and target and self.config.prefix_shared)
+            ) and self.is_p:
                 registrations = request_json(base + "/status")["registrations"]
                 write_json(root / "registrations.json", registrations)
                 verify_mempool_session.check_registration(
@@ -979,7 +1001,11 @@ class Runner:
         self.peer.barrier(name + "-stopped")
         if inject_fault:
             self.final_timeout_evidence(root)
-        if self.session_acceptance or self.args.mode == "index-cold-diagnosis":
+        if (
+            self.session_acceptance
+            or self.args.mode == "index-cold-diagnosis"
+            or (self.full and self.config.prefix_shared)
+        ):
             ports = service_ports(self.config, self.args.role)
             deadline = time.monotonic() + self.config.operation_timeout
             for port in sorted(ports):
@@ -1074,11 +1100,26 @@ class Runner:
                 run_id=self.args.run_id,
                 http_status=http_status,
                 worker_exit=worker_exit,
+                required_pages=(
+                    self.config.prompt_capacity + self.config.decode_capacity
+                )
+                // self.config.page_size,
             )
             self.peer.send("capacity-verified", evidence=evidence)
         else:
             send_log(self.peer, root / "decode.log")
             evidence = self.peer.expect("capacity-verified")["evidence"]
+        if self.config.prefix_shared:
+            deadline = time.monotonic() + self.config.operation_timeout
+            for port in sorted(service_ports(self.config, self.args.role)):
+                verify_mempool_session.released_port(
+                    self.host,
+                    port,
+                    timeout=max(0, deadline - time.monotonic()),
+                    evidence_path=root / f"port-release-{port}.json",
+                    check=self.peer.check,
+                )
+            self.peer.barrier("capacity-ports-released")
         write_json(root / "evidence.json", evidence)
         write_json(root / "process-cleanup.json", dict(status="passed", paired=True))
         self.report["stages"].append("capacity")
@@ -1094,7 +1135,7 @@ class Runner:
                 self.tokenizer, self.config.page_size
             )
             self.cases += mempool_logical_cases.make_controls(
-                self.tokenizer, self.config.page_size
+                self.tokenizer, self.config.page_size, self.config.decode_capacity
             )
             if self.index_acceptance:
                 self.cases += mempool_logical_cases.make_index_cases(
@@ -1166,7 +1207,62 @@ class Runner:
         self.capacity_stage()
         self.stage(target=True, fault_only=True)
         if self.is_p:
-            acceptance = verify_mempool_full.summarize(self.root)
+            acceptance = verify_mempool_full.summarize(
+                self.root,
+                page_size=self.config.page_size,
+                decode_capacity=self.config.decode_capacity,
+            )
+            if self.config.prefix_shared:
+                import verify_mempool_shared
+                import verify_mempool_decode
+                from run_pool_copy_acceptance import verify as verify_copies
+
+                target = self.root / "target"
+                registrations = json.loads((target / "registrations.json").read_text())
+                acceptance["k1"] = dict(
+                    shared=verify_mempool_shared.check_stage(target, self.config),
+                    layout=verify_mempool_shared.check_page_first_registration(
+                        registrations, self.config
+                    ),
+                    decode=verify_mempool_decode.check_stage(target, self.config),
+                    copies=verify_copies(
+                        self.root, phases=("target",), page_size=self.config.page_size
+                    ),
+                )
+                fetch = json.loads(
+                    (self.root / "fetch" / "decode-report.json").read_text()
+                )
+                boundaries = [
+                    c for c in fetch["checks"] if c.get("case") == "page_boundaries"
+                ]
+                expected_positions = sorted(
+                    {
+                        0,
+                        self.config.decode_capacity - 2,
+                        self.config.decode_capacity - 1,
+                    }
+                    | {
+                        k + delta
+                        for k in range(
+                            self.config.page_size,
+                            self.config.decode_capacity,
+                            self.config.page_size,
+                        )
+                        for delta in (-1, 0, 1)
+                        if 0 <= k + delta < self.config.decode_capacity
+                    }
+                )
+                if (
+                    len(boundaries) != 1
+                    or boundaries[0].get("decode_positions") != expected_positions
+                    or boundaries[0].get("page_size") != self.config.page_size
+                    or len(boundaries[0].get("layers", [])) != 78
+                ):
+                    raise ValueError(
+                        "missing actual-geometry cross-page gather evidence"
+                    )
+                acceptance["k1"]["boundaries"] = boundaries[0]
+                acceptance["coverage"] = "K1 complete functional acceptance"
             self.peer.send("full-result", acceptance=acceptance)
         else:
             acceptance = self.peer.expect("full-result")["acceptance"]
@@ -1247,7 +1343,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     ):
         config = msgspec.structs.replace(
             config,
-            prefix_pages=40,
+            prefix_pages=5120 // config.page_size,
             verify_prefix=True,
             match_prefix=args.mode
             in (
@@ -1421,7 +1517,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     finally:
         if args.mode == "full-acceptance" and args.role == "prefill":
-            report["acceptance"] = verify_mempool_full.summarize(root)
+            if "acceptance" not in report:
+                report["acceptance"] = verify_mempool_full.summarize(
+                    root,
+                    page_size=config.page_size,
+                    decode_capacity=config.decode_capacity,
+                )
+            if report.get("status") != "passed":
+                report["acceptance"]["status"] = "failed"
             write_json(root / "v1-v10.json", report["acceptance"])
             print(
                 "FULL_ACCEPTANCE "

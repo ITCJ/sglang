@@ -19,6 +19,7 @@ def check_capacity_rejection(
     run_id: str,
     http_status: int,
     worker_exit: int,
+    required_pages: int = 65,
 ) -> dict[str, Any]:
     if (
         after["ready"]
@@ -43,9 +44,9 @@ def check_capacity_rejection(
     if not proofs or any(
         p.get("run_id") != run_id
         or p.get("rank") != 15
-        or p.get("required_hbm_pages") != 65
-        or p.get("advertised_hbm_pages") != 64
-        or p.get("actual_hbm_pages", 0) < 65
+        or p.get("required_hbm_pages") != required_pages
+        or p.get("advertised_hbm_pages") != required_pages - 1
+        or p.get("actual_hbm_pages", 0) < required_pages
         for p in proofs
     ):
         raise ValueError("missing actual/injected rank15 capacity evidence")
@@ -59,7 +60,9 @@ def check_capacity_rejection(
     )
 
 
-def summarize(root: Path) -> dict[str, Any]:
+def summarize(
+    root: Path, *, page_size: int = 128, decode_capacity: int = 128
+) -> dict[str, Any]:
     """Index only final-version receipts produced by the strict per-stage checkers."""
     errors: list[str] = []
 
@@ -143,7 +146,9 @@ def summarize(root: Path) -> dict[str, Any]:
         "V1",
         target_path,
         [target],
-        base and restored and prefix.get("hit_lengths") == [0, 4096, 3968, 0, 0, 0],
+        base
+        and restored
+        and prefix.get("hit_lengths") == [0, 4096, 4096 - page_size, 0, 0, 0],
         "ABCE hit lengths 0/4096/3968/0, followed by two cold controls",
     )
     record(
@@ -198,7 +203,8 @@ def summarize(root: Path) -> dict[str, Any]:
         [target],
         base
         and restored
-        and prefix.get("pages_per_request") == [32, 40, 40, 40, 40, 40],
+        and prefix.get("pages_per_request")
+        == [4096 // page_size] + [5120 // page_size] * 5,
         "whole-slot alive/native resources returned; prefix retained at 32/40/40/40 pages",
     )
     early = requests[-1] if base else {}
@@ -213,7 +219,7 @@ def summarize(root: Path) -> dict[str, Any]:
         isinstance(rejections, dict)
         and rejections.get("status") == "passed"
         and rejections.get("ledger_unchanged") is True
-        and {"unaligned", "too-long", "generation-limit"}
+        and {"unaligned", "too-long", "generation-limit", "unsupported-text"}
         <= set(rejections.get("names", []))
     )
     record(
@@ -244,8 +250,11 @@ def summarize(root: Path) -> dict[str, Any]:
     load = requests[4] if base else {}
     load_ok = (
         base
-        and load.get("output_tokens") == 128
-        and all(d.get("forwards", 0) >= 127 for d in load.get("decode", []))
+        and load.get("output_tokens") == decode_capacity
+        and all(
+            decode_capacity - 1 <= d.get("forwards", 0) <= decode_capacity
+            for d in load.get("decode", [])
+        )
     )
     timeout_ok = (
         isinstance(timeout, dict)

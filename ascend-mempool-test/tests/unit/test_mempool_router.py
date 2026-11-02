@@ -130,8 +130,48 @@ class TestMainRouter(unittest.TestCase):
         self.assertEqual(rejected.exception.status, 429)
         self.assertEqual(self.main.status(), status)
 
+    def test_ticket09_four_geometries_reserve_whole_decode_slots(self):
+        for page_size, capacity, pages in (
+            (128, 128, 1),
+            (128, 512, 4),
+            (64, 128, 2),
+            (64, 512, 8),
+        ):
+            with self.subTest(page_size=page_size, capacity=capacity):
+                config = RouterConfig(
+                    "p",
+                    "d",
+                    "/model",
+                    page_size=page_size,
+                    decode_capacity=capacity,
+                    context_length=8832,
+                )
+                main = MainRouter(
+                    config,
+                    "cpu",
+                    hasher=lambda ids, size: [str(i) for i in range(len(ids) // size)],
+                )
+                for role in ("prefill", "decode"):
+                    data = registration(role)
+                    for row in data["ranks"]:
+                        row.update(
+                            page_size=page_size,
+                            hbm_page_size=page_size,
+                            decode_capacity=capacity,
+                            hbm_pages=256,
+                            layout_signature={
+                                "storage_order": "page_first",
+                                "page_size": page_size,
+                            },
+                        )
+                    main.register(data)
+                main.submit(payload(new_tokens=capacity))
+                self.assertEqual(
+                    main.status()["ledger"]["d_alive"]["outstanding"], pages
+                )
+
     def test_backend_support_is_explicit_and_registration_requires_equality(self):
-        for size in (0, -1, 1, 64, 127, 129, 256, True, 128.0):
+        for size in (0, -1, 1, 127, 129, 256, True, 128.0):
             with (
                 self.subTest(size=size),
                 self.assertRaisesRegex(ValueError, "page_size"),

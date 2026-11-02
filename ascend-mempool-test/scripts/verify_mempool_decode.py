@@ -1,7 +1,4 @@
-"""Validate archived K1-06 reports from acceptance commit 9b760a1add.
-
-Current workers no longer emit these probes or per-step evidence.
-"""
+"""Validate shared D ordering, coverage and optional ticket09 final-row evidence."""
 
 from __future__ import annotations
 
@@ -49,6 +46,10 @@ def check_completion(
         or proof["ordering"] != "compute_stream_before_post_attention_tp_collective"
         or proof["checked_rows"] != max(0, steps - 1) * layers
         or proof["written_bytes"] != steps * owned_bytes
+        or (
+            config.verify_decode
+            and proof.get("final_checked_rows") != (layers if steps else 0)
+        )
     ):
         raise ValueError(
             "shared decode write coverage or previous-row checks incomplete"

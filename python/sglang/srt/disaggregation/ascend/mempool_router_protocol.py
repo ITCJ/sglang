@@ -18,7 +18,7 @@ CONFIG_ENV = "SGLANG_NPU_MEMPOOL_ROUTER_CONFIG"
 RUN_ENV = "SGLANG_NPU_MEMPOOL_ROUTER_RUN_ID"
 # Supported by this GLM-5.2 mempool-min integration, not a claim about every
 # Ascend attention backend. Extend only with matching pool/kernel acceptance.
-SUPPORTED_PAGE_SIZES = (128,)
+SUPPORTED_PAGE_SIZES = (64, 128)
 
 
 class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
@@ -42,6 +42,7 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     startup_timeout: float = 7200.0
     prefix_pages: int = 0
     verify_prefix: bool = False
+    verify_decode: bool = False
     match_prefix: bool = False
     prefix_read_assignment: str = "auto"
     prefix_shared: bool = False
@@ -128,8 +129,11 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
             self.match_prefix and not self.prefix_pages
         ):
             raise ValueError("match_prefix requires enabled prefix storage")
-        if type(self.prefix_pages) is not int or self.prefix_pages not in (0, 40):
-            raise ValueError("prefix_pages must be 0 or 40")
+        if type(self.prefix_pages) is not int or self.prefix_pages not in (
+            0,
+            40 if self.page_size == 128 else 80,
+        ):
+            raise ValueError("prefix_pages must be 0 or hold 5120 tokens")
         if type(self.verify_prefix) is not bool or (
             self.verify_prefix and not self.prefix_pages
         ):
@@ -154,11 +158,8 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
             raise ValueError(
                 f"GLM-5.2 mempool-min supports page_size in {SUPPORTED_PAGE_SIZES}"
             )
-        if (self.prompt_capacity, self.decode_capacity) != (
-            8192,
-            128,
-        ):
-            raise ValueError("ticket01 requires S_P=8192 and S_D=128")
+        if self.prompt_capacity != 8192 or self.decode_capacity not in (128, 512):
+            raise ValueError("mempool-min requires S_P=8192 and S_D in (128, 512)")
         if any(
             n % self.page_size for n in (self.prompt_capacity, self.decode_capacity)
         ):

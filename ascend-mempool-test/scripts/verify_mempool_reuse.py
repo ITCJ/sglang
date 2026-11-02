@@ -32,11 +32,14 @@ def check_reuse(
         raise ValueError(
             "reuse acceptance requires exactly A/B/C" + ("/E" if full else "")
         )
+    page_size = snapshots[0]["registrations"]["prefill"]["ranks"][0]["page_size"]
+    capacity = 5120 // page_size
     a, b, c = [case["input_ids"] for case in cases[:3]]
     if list(map(len, (a, b, c))) != [4096, 5120, 4096] or a != b[:4096] or a != c:
         raise ValueError("reuse fixtures do not exercise A/B/C")
     if full and (
-        len(cases[3]["input_ids"]) != 4096 or cases[3]["input_ids"][:128] == a[:128]
+        len(cases[3]["input_ids"]) != 4096
+        or cases[3]["input_ids"][:page_size] == a[:page_size]
     ):
         raise ValueError("E must be an independent 4096-token cold request")
     if count >= 6 and (
@@ -48,14 +51,14 @@ def check_reuse(
         [case["name"] for case in cases[6:]]
         != ["index-cold", "index-update", "index-full-hit"]
         or [len(case["input_ids"]) for case in cases[6:]] != [4096, 5120, 4096]
-        or cases[6]["input_ids"][:128] == a[:128]
+        or cases[6]["input_ids"][:page_size] == a[:page_size]
         or cases[7]["input_ids"][:4096] != a
         or cases[8]["input_ids"] != a
     ):
         raise ValueError("invalid Index K logical accuracy fixtures")
-    hits = [0, 4096, 3968, 0, 0, 0, 0, 4096, 3968][:count]
-    totals = [32] + [40] * (count - 1)
-    reports = saved.Reports.read(prefill)
+    hits = [0, 4096, 4096 - page_size, 0, 0, 0, 0, 4096, 4096 - page_size][:count]
+    totals = [4096 // page_size] + [capacity] * (count - 1)
+    reports = saved.Reports.read(prefill, page_size)
     progress: dict[tuple[str, int], list[tuple[int, dict[str, Any]]]] = {}
     for line_no, line in enumerate(prefill.read_text(errors="replace").splitlines()):
         if "mempool prefix_progress data=" in line:
@@ -67,7 +70,11 @@ def check_reuse(
     previous: dict[str, Any] = {}
     base_hashes: list[str] = []
     for snapshot, case, hit, added, total in zip(
-        snapshots, cases, hits, [32, 8] + [0] * (count - 2), totals
+        snapshots,
+        cases,
+        hits,
+        [4096 // page_size, 1024 // page_size] + [0] * (count - 2),
+        totals,
     ):
         done, directory = snapshot["completed"][-1], snapshot["directory"]
         if (
@@ -80,7 +87,7 @@ def check_reuse(
             )
         if (
             snapshot["ledger"]["p_prefix"]
-            != dict(total=40, free=40 - total, outstanding=total)
+            != dict(total=capacity, free=capacity - total, outstanding=total)
             or len(directory) != total
         ):
             raise ValueError(
@@ -232,6 +239,7 @@ def check_restored_rank(
     rank: int,
     prompt: int,
 ) -> None:
+    page_size = reports.page_size
     done = snapshot["completed"][-1]
     hit, rid = done["hit_len"], done["rid"]
     slot = done["allocations"]["prefill"][rank]["slot"]
@@ -241,7 +249,7 @@ def check_restored_rank(
     native_line = reports.native.get((rank, done["room"]), -1)
     replica = 0 if saved.prefix_replicas(snapshot) == 1 else rank
     source_pages = [
-        previous[h]["locations"][replica] for h in base_hashes[: hit // 128]
+        previous[h]["locations"][replica] for h in base_hashes[: hit // page_size]
     ]
     expected = {
         str(i): retained[str(p["logical_page"])] for i, p in enumerate(source_pages)
@@ -280,13 +288,15 @@ def check_restored_rank(
                 or indices != receipt["prefix_indices"]
                 or len(indices) != hit
                 or len(set(indices)) != hit
-                or any(type(i) is not int or i < 128 for i in indices)
-                or any(indices[i] % 128 for i in range(0, hit, 128))
+                or any(type(i) is not int or i < page_size for i in indices)
+                or any(indices[i] % page_size for i in range(0, hit, page_size))
                 or any(
-                    indices[i] != indices[i // 128 * 128] + i % 128 for i in range(hit)
+                    indices[i] != indices[i // page_size * page_size] + i % page_size
+                    for i in range(hit)
                 )
                 or all(
-                    indices[i] == indices[i - 128] + 128 for i in range(128, hit, 128)
+                    indices[i] == indices[i - page_size] + page_size
+                    for i in range(page_size, hit, page_size)
                 )
             ):
                 raise ValueError(
@@ -294,7 +304,7 @@ def check_restored_rank(
                 )
     if not lines["load_back"] < suffix_line < native_line < lines["fill"] < alive_line:
         raise ValueError("suffix/native free/fill order was not demonstrated")
-    suffix_pages = list(range(hit // 128, prompt // 128))
+    suffix_pages = list(range(hit // page_size, prompt // page_size))
     if (
         suffix["op_id"] != 0
         or suffix["source_pages"] != suffix_pages

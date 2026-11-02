@@ -19,7 +19,7 @@ class TestSharedDecode(unittest.TestCase):
         from ascend_mempool.decode_write import DecodeWriter
 
         for assignment in ("features", "layers"):
-            layout = KVLayout(2, 2, 4, 1, 4)
+            layout = KVLayout(2, 2, 4, 1, 4, page_size=2)
             memory = [
                 torch.full(layout.shape, -1, dtype=torch.bfloat16) for _ in range(2)
             ]
@@ -91,10 +91,11 @@ class TestSharedDecode(unittest.TestCase):
                     ],
                     event_factory=event,
                     decode_writer=DecodeWriter(member, 2, assignment),
+                    verify_decode=True,
                 )
                 runtimes.append(runtime)
                 bindings.append(runtime.bind(1, slot=0, prompt_tokens=2, prompt_slot=1))
-            for step in range(2):
+            for step in range(4):
                 for member, runtime in enumerate(runtimes):
                     batch = prefill_batch((1, 1), (0, 0), (1, 0))
                     batch.forward_mode = SimpleNamespace(is_decode=lambda: True)
@@ -144,7 +145,11 @@ class TestSharedDecode(unittest.TestCase):
                         ],
                     )
             for runtime, binding in zip(runtimes, bindings):
-                self.assertEqual(runtime.completion_report(binding)["written_kv"], 2)
+                self.assertEqual(runtime.completion_report(binding)["written_kv"], 4)
+                self.assertEqual(
+                    runtime.completion_report(binding)["shared_decode"]["checked_rows"],
+                    6,
+                )
 
 
 if __name__ == "__main__":

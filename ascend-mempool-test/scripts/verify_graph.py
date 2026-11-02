@@ -55,6 +55,7 @@ def parse_args(
     parser.add_argument("--pool-id", type=int, default=0)
     parser.add_argument("--layers", type=int, default=2)
     parser.add_argument("--slots", type=int, default=16)
+    parser.add_argument("--page-size", type=int, default=1)
     parser.add_argument("--s-p", type=int, default=16384)
     parser.add_argument("--s-d", type=int, default=16384)
     parser.add_argument("--heads", type=int, default=1)
@@ -114,7 +115,11 @@ def parse_args(
 
 def make_layout(args: argparse.Namespace) -> PoolLayout:
     common = dict(
-        layers=args.layers, slots=args.slots, heads=args.heads, dim=args.kv_dim
+        layers=args.layers,
+        slots=args.slots,
+        heads=args.heads,
+        dim=args.kv_dim,
+        page_size=getattr(args, "page_size", 1),
     )
     layout = PoolLayout(
         KVLayout(tokens=args.s_p, **common), KVLayout(tokens=args.s_d, **common)

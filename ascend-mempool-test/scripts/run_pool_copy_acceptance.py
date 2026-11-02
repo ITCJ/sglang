@@ -9,9 +9,9 @@ import subprocess
 import sys
 
 
-def verify(root):
+def verify(root, phases=("target", "restart"), page_size=128):
     reports = []
-    for phase in ("target", "restart"):
+    for phase in phases:
         submitted, completed, receipts = {}, {}, {}
         order = {}
         path = root / phase / "prefill-normal.log"
@@ -84,7 +84,7 @@ def verify(root):
                     command = done["reads"]["fill"]["command"]
                     expected_ops[done["rid"], command["op_id"]] = (
                         "fill",
-                        done["hit_len"] // 128,
+                        done["hit_len"] // page_size,
                     )
         if set(groups) != set(expected_ops):
             raise ValueError("copy operations differ from Main request history")
@@ -97,7 +97,9 @@ def verify(root):
             factor = 2 if kind == "admit" else 9
             pages, extra = divmod(blocks, factor)
             expected = pages * (
-                (11501568 + 688128) if kind == "admit" else (8 * 11501568 + 688128)
+                (78 * page_size * 1152 + 21 * page_size * 256)
+                if kind == "admit"
+                else (8 * 78 * page_size * 1152 + 21 * page_size * 256)
             )
             if (
                 (kind, pages) != expected_ops[key]
