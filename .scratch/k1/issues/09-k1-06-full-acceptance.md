@@ -2,7 +2,7 @@
 
 **What to build:** 在最终版本（8 / 8 / 1 / 1 / 1，split_read 按段，interleave 开，票 12 的 page first 布局，票 11 的搬运路径）上重跑阶段 0 全部验收项和补充用例（长生成到 G_max、提前结束、入口拒绝四例、超时、双端清理），把四类新证据合在一起核对，基线表与票 01 并列并逐段解释变差，重报三项基线遗留，归档拓扑与版本快照。用户在真实环境核对后关闭，K1 结束。细节见 k1-tickets.md 第 13 节。
 
-**Blocked by:** [06（K1-03b D alive 主 KV 共享与每步顺序）](06-k1-03b-d-alive-main-kv-sharing-step-order.md)、[08（K1-05b prefix 单份：8 段、numa interleave、按段读者、并行 admit、直接 fill）](08-k1-05b-prefix-single-copy-numa-interleave.md)、[11（K1-02c admit 与 fill 的池间搬运路径与分片执行器（行为不变））](11-k1-02c-pool-copy-executor.md)（经11传递依赖12）
+**Blocked by:** [06（K1-03b D alive 主 KV 共享与每步顺序）](06-k1-03b-d-alive-main-kv-sharing-step-order.md)、[08（K1-05b prefix 单份：8 段、numa interleave、按段读者、并行 admit、直接 fill）](08-k1-05b-prefix-single-copy-numa-interleave.md)、[11（K1-02c admit 与 fill 的池间搬运路径与分片执行器（行为不变））](11-k1-02c-pool-copy-executor.md)（06、08、11均已closed，经11传递依赖的12也已closed；前置全部满足）
 
 **Status:** ready-for-agent
 
@@ -30,3 +30,9 @@
 ### 2026-11-02：同步page first改序定稿
 
 同步 page first 最终布局、布局签名验收与调整后的 V1–V10 范围。直接依赖仍为06、08、11，经11传递依赖12；真实多请求并发属于阶段3a。本票未实施，State=open。性能条款仍受本地spec开头的测试分支约定约束。
+
+### 2026-11-02：11用户确认关闭，本票解锁
+
+用户接受11的31/32工程002验收并明确关闭11；06、08、11直接依赖与12传递依赖全部满足。
+本票Status=ready-for-agent、State=open，已解锁但尚未实施。
+继承11的[确认范围与证据边界](../verification/k1-ticket11-002/README.md)，不将未测性能/真实SDK在途故障/生产目标独立全量读回写成已通过。

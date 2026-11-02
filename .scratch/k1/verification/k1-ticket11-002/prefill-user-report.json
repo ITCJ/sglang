@@ -1,0 +1,17 @@
+{
+  "status": "passed",
+  "sdk_build_id": "mf114-c01f3ad-ticket11-batchfix",
+  "user_accepted": false,
+  "pool_copy": [
+    {
+      "phase": "target",
+      "operations": 4,
+      "shards": 64
+    },
+    {
+      "phase": "restart",
+      "operations": 4,
+      "shards": 64
+    }
+  ]
+}

@@ -14,9 +14,9 @@ K1功能实现与NUMA验收继续推进；下文性能复测、基线并列和�
 执行文本和[基线目标](k1-01-baseline-prompt.md)按原文同步；各票保留本地状态、依赖链接、验收勾选与 Comments。
 设计决策回查 [mempool-min 讨论](/Users/hibikid/Documents/syncfile/sglang-kv-explainer/mempool-min-demo/discussion.md)及[完整设计讨论](/Users/hibikid/Documents/syncfile/sglang-kv-explainer/mempool-design/discussion.md)。
 
-**当前结论（2026-11-02交付）：** 01、02、03、05、06、07、08、12已closed，共8 closed、4 open。
+**当前结论（2026-11-02用户验收）：** 01、02、03、05、06、07、08、11、12已closed，共9 closed、3 open。
 用户在11之前新增[12：page first](issues/12-k1-05d-page-first-layout.md)，主线为07→08→12→11→09。
-12的004双机验收已由用户确认，12已关闭；11已解锁、尚未实施。04、10不阻塞。
+12的004与11的002双机验收均已由用户确认关闭；09前置全部满足，已解锁但尚未实施。04、10不阻塞。
 会话恢复读[项目记忆](memory.md)；本地[M17/M58摘录](../mempool-min/discussion.md)保留此次决定。
 设计agent负责架构逻辑，Ascend/NPU具体实现以本仓库实际接口与验证为准。
 
@@ -169,3 +169,9 @@ CPU合并541项中540项已验证；1项旧注册测试的夹具已修正，遵�
 ### 2026-11-02：用户确认12验收关闭
 
 用户回复“关闭”，接受c2ed808092的004精简功能范围；12已closed，11解锁但未实施，09仍等待11。共8 closed、4 open。[确认与边界](verification/k1-ticket12-004/README.md)。
+
+### 2026-11-02：用户确认11验收关闭，解锁09
+
+用户接受31/32的k1-ticket11-002双侧通过结果及既定证据边界，明确回复“关闭”。
+11已closed，09直接依赖06/08/11及传递依赖12均满足；09保持open、尚未实施。
+K1当前9 closed、3 open（04、09、10）。[002确认与边界](verification/k1-ticket11-002/README.md)。

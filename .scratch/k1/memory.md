@@ -1,15 +1,24 @@
 # K1 项目记忆
 
-更新：2026-11-02。12已关闭；11工程001实机失败，执行线程setup报OSError22；绑核缺陷已本地复现并修复，待002。
+更新：2026-11-02。用户确认31/32的11工程002验收并明确关闭；11已closed，09已解锁、尚未实施。
 用户回传demo-001的31/32 launcher：两侧exit_code=0、children_reaped=true，实际端口均passed。
 8rank摘要已核实746ec2d54c：admit16块/97,517,568B，fill24块/189,530,112B；设备内容通过，实际wait期间P控制循环均推进。
 用户确认双方memfabric_hybrid=1.1.4、memfabric_zbal=1.1.2；原unknown只是模块版本属性未取得。
 本地GitCode v1.1.4/c01f3ad842b9也有普通batch子提交错误丢失缺口；partial_succeed涉及其它线程流，不可直接替换。
 部署二进制与tag一致性仍有限制；demo功能结论保留，不重跑、不自动升级SDK。
 [001反馈](verification/k1-ticket11-demo-001/README.md)保留证据边界；interface_ready=false不是本次测试失败判据。
-11仍open、09阻塞。工程部署依据为GitCode v1.1.4/c01f3ad842b9加最小错误传播补丁；硬件可见性证据边界保留。
+11已closed、09已解锁。工程部署依据为GitCode v1.1.4/c01f3ad842b9加最小错误传播补丁；硬件可见性证据边界保留。
 
-## 11 工程001失败与修复（2026-11-02）
+## 11 工程002：用户确认关闭（2026-11-02）
+
+用户回传status=passed，target/restart每轮4操作、64分片记录。
+P基础验收与额外搬运检查通过；001的setup OSError22在本次未再出现。
+指导修复版本bad113345e，摘要无commit字段；SDK标签mf114-c01f3ad-ticket11-batchfix。
+[002记录](verification/k1-ticket11-002/README.md)保留原始JSON和证据边界。
+32/D最终报告也passed，SDK标签与P一致，双侧结果已收齐。
+用户明确回复“关闭”；11已closed，09已解锁。保留未验证项，不重跑。
+
+## 11 工程001失败与修复（2026-11-02历史记录）
 
 用户确认31/32 Docker已安装SDK补丁。001首请求D finished后，P执行器setup异常导致fail-stop/HTTP500。
 旧CPU绑核将目标NUMA与继承scheduler mask求交，可空集EINVAL；公共Executor回归准确复现同形错误。
@@ -18,7 +27,7 @@
 现场原始mask/栈未取得，仍需002确认是否仅此原因；沿用已安装SDK，不重编。
 [失败与修复记录](verification/ticket11-affinity-fix/README.md)。11仍open、09阻塞。
 
-## 11 工程最新交付（2026-11-02）
+## 11 工程交付时记录（2026-11-02，后续已由002验收关闭）
 
 用户明确授权按此前计划实现工程部分。P各分片fill/admit已接共用池库执行器，tick submit/poll；
 空清单仍汇总、完整prompt分工、正常释放后retire；load_back与原有父进程清理不变。
@@ -30,7 +39,7 @@ CPU合并549项中548通过、1项既有UINT32_MAX用例失败；Standards/Spec�
 [工程运行说明](../../ascend-mempool-test/K1_TICKET11.md)、[CPU证据](verification/ticket11-service-cpu/README.md)。
 11仍open、09阻塞，等待用户NPU验收。
 
-## 11 demo 最新交付（2026-11-02）
+## 11 demo 交付时记录（2026-11-02历史记录）
 
 用户已授权implement demo；共用pool_copy适配层、manager装配口、两组P/D设备校验及自运行入口已实现。
 路径已定，demo后仅核对接口事实；不做八组demo，服务不新增目标读回。
@@ -51,9 +60,9 @@ stream/event与图捕获由实施侧核对本仓库源码及实验后决定；�
 
 ## 当前进度与依赖
 
-- K1共12票：01、02、03、05、06、07、08、12已closed；04、10、11、09为open（8 closed、4 open）。
+- K1共12票：01、02、03、05、06、07、08、11、12已closed；04、10、09为open（9 closed、3 open）。
 - 主线为07 → 08 → **12 → 11 → 09**；04和10不阻塞。12直接依赖08，11直接依赖12，09直接依赖06、08、11并传递依赖12。
-- 08已由用户验收；12代码与验收入口已交付，CPU合并541项中540项通过；1项旧注册夹具修正后按两轮限制未第三次运行，不计为通过。自身NPU004已由用户确认验收，详见[交付说明](delivery-ticket12.md)。12已关闭，11工程已实现、待自身NPU验收。
+- 08已由用户验收；12代码与验收入口已交付，CPU合并541项中540项通过；1项旧注册夹具修正后按两轮限制未第三次运行，不计为通过。自身NPU004已由用户确认验收，详见[交付说明](delivery-ticket12.md)。12已关闭，11工程002也已由用户确认关闭；下一票09已解锁。
 - 旧“08关闭后11已解锁”是历史状态。旧阶段0的02只待单独关闭确认，不是K1票、不阻塞本链。
 - 功能基线为08实现提交`4441eb9015`；关闭记录提交`b4a925a3a3`。后续读实际git状态，保留用户未提交修改。
 

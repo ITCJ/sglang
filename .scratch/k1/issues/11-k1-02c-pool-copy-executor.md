@@ -2,20 +2,27 @@
 
 **What to build:** 在票 08 定稿的 8 / 8 / 1 / 1 / 1 副本布局与票 12 的 page first 排列上（2026-11-01），把 op1 fill 与 op3 admit 这两条 DRAM 到 DRAM 的池间搬运（主 KV 与 Index K；所有主存池间的连续块）统一改成按搬运清单（每页每类一块：主 KV 11,501,568 B、Index K 688,128 B，用票 12 的页块接口取地址，两类同一张清单）走内存池库的批量异步接口；执行器等待或查询库的真实完成后才回报“目标可读”，设备事件不算（完成桥接）；fill 的完成进 prompt ready 汇总，admit 的完成才 publish；每个 SR 分片一个独立执行器线程与队列（绑本 NUMA、整张清单一次提交、拷贝期间释放 GIL），fill 现有的独立队列并入它；协调者在有序调度 tick 里下发任务、保护源、分配目标页，汇总完成、收齐该 op 全部参与分片的“目标可读”再向 main router ack；worker 只报源写完。调度线程与 SR 控制循环不等搬运。07、08 已把选页、地址解析、拷贝提交分开，本票只换底层的提交与完成回报。不碰 op2、P 的 write_through、D 的逐步写回、P 到 D 的 Index K 传输（模型工作内存与池之间的写回、恢复及动态索引回填继续独立处理）。副本数（8 / 8 / 1 / 1 / 1）、页归属、分片分工、串行、ack 语义、保护 / 发布 / 释放语义、main router 消息都不变。细节见 k1-tickets.md 第 15 节。
 
-**Blocked by:** [12（K1-05d 主存五类区域改 page first（布局正确性，行为不变））](12-k1-05d-page-first-layout.md)（12已由用户确认004验收并关闭，前置满足）；阻塞09。
+**Blocked by:** [12（K1-05d 主存五类区域改 page first（布局正确性，行为不变））](12-k1-05d-page-first-layout.md)（12已由用户确认004验收并关闭，前置满足）；本票已关闭，09已解锁。
 
 **Status:** ready-for-agent
 
-**State:** open
+**State:** closed
 
-- [ ] A / B / C / E 与 V1–V10 全过；V2 加 op1 后 alive、op3 后 prefix 与源逐页一致（主 KV 与 Index K 都比）
-- [ ] op1 / op3 期间计算侧拷贝算子零调用；清单按物理目标分别核：admit 全部分片页块条数之和 = 2N、字节 = N × (M + I)；fill = 9N（8 份主 KV + 1 份 Index K）、字节 = N × (8M + I)；合并后条数与覆盖范围另记
-- [ ] 搬运期间调度 tick 间隔与空闲时一致，SR 仍处理消息
-- [ ] admit：提交 < 库完成（目标可读） < ack < publish < 释放源 < 归还额度；fill：提交 < 目标可读 < 进入 prompt ready 汇总（结构化日志；设备事件与库完成分开记）
-- [ ] 负测试：注入延迟后 ack、publish、释放同步推迟不提前；fail-stop 下执行器线程与共享会话关闭干净
-- [ ] 票 08 的证据项（读字节计数、admit 每页单写者、写全部落本段）在新路径上复核不变
-- [ ] 与票 12 验收后的状态对照（不重跑 08、12；没有可并列的性能表时只记两段时间与 n），最多 2 轮，重点 op1、op3（提交到完成两段）、T_tail、T_free
-- [ ] 单 commit；Standards / Spec 两轴评审
+验收按用户2026-11-02明确确认的范围关闭，详见[002确认记录](../verification/k1-ticket11-002/README.md)。
+
+- [x] 服务target/restart两轮基础验收通过；内容证据采用demo独立设备读回与服务B/C答案、既有V2，不新增服务目标读回
+- [x] op1/op3接池库整页batch；16分片（含空清单）、admit 2N / fill 9N及有效字节核对通过
+- [x] 库真实完成后才回报目标可读；submit→库完成→SR receipt和既有ack/publish/free链检查通过
+- [x] 50ms提交前延迟期间tick至少poll两次，回执不提前；默认服务fail-stop/清理与重启检查通过
+- [x] 票08沿用的写者、页覆盖、读字节证据在基础服务验收复核通过
+- [x] Standards/Spec双轴评审完成；按用户授权分demo、工程及验收修复提交（746ec2d54c、d80ec2b2e1、bad113345e），不改写已推送历史
+- [x] 用户确认31/32的002结果并明确要求关闭；解锁09
+
+以下原始范围未验证，用户接受当前边界关闭，不将其勾选为通过：
+
+- [ ] 生产服务op1/op3目标全量独立逐页读回（改用上述已接受内容证据）
+- [ ] 搬运/空闲tick间隔性能等价及与12的性能并列表（性能另在测试分支安排）
+- [ ] 真实SDK DMA在途故障/超时注入（当前为提交前延迟、CPU错误传播与既有服务故障证据）
 
 ## Comments
 
@@ -98,3 +105,24 @@ RuntimeError("OSError(22, 'Invalid argument')")触发fail-stop，外层HTTP500�
 新增回归第一轮红、第二轮适配层3项全绿，ruff/strict mypy通过；双轴复核无阻断。
 [记录](../verification/ticket11-affinity-fix/README.md)区分本地mock复现与现场未取得的原始mask证据。
 待用户用002第二轮服务尝试确认；不重编SDK、不计NPU通过，11保持open、09仍阻塞。
+
+### 2026-11-02：工程002的31/P两轮验收通过
+
+用户回传P最终status=passed，target/restart各4操作、64分片记录；基础验收与额外搬运检查均通过。
+001的setup OSError22在此次未再出现；不据此宣称已取得001原始CPU mask证据。
+SDK标签mf114-c01f3ad-ticket11-batchfix；此前用户确认两侧Docker已装补丁。
+指导运行版本bad113345e，摘要未含commit字段；[002记录](../verification/k1-ticket11-002/README.md)保留事实边界。
+待32最终报告与用户验收确认，不重跑；user_accepted=false为人工确认标记，11仍open、09阻塞。
+
+### 2026-11-02：工程002双侧自动验收结果收齐
+
+用户回传32/D最终status=passed，SDK标签mf114-c01f3ad-ticket11-batchfix与P一致。
+D基础验收通过，传输额外证据由已通过的P报告承担；双侧结果见[002记录](../verification/k1-ticket11-002/README.md)。
+等待用户明确最终验收确认；user_accepted=false为人工确认标记，不重跑、不改代码，11仍open、09阻塞。
+
+### 2026-11-02：用户确认002验收，关闭11并解锁09
+
+收齐31/32最终passed报告后，用户明确回复“关闭”，接受当前证据边界。
+本票State=closed；09的06/08/11直接依赖均满足，12传递依赖也已关闭。
+[002确认记录](../verification/k1-ticket11-002/README.md)保存环境、命令、版本证据限制、双侧原始JSON及未验证项。
+本次仅更新状态与归档，不重跑NPU、不修改功能代码、不实施09。

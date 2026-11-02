@@ -1,7 +1,7 @@
 # K1 ticket11：服务池间异步页块搬运
 
 工程实现以 demo 提交 `746ec2d54c` 为基线。新路径通过配置 `pool_copy=true` 开启；
-默认 false 保留既有路径，必须先部署下述 SDK 修复再开启。ticket11 尚待用户 NPU 验收，09 仍阻塞。
+默认 false 保留既有路径，必须先部署下述 SDK 修复再开启。用户已确认31/32的002验收并关闭ticket11，09已解锁；[确认与边界](../.scratch/k1/verification/k1-ticket11-002/README.md)。
 
 ## 行为与阅读顺序
 
@@ -99,7 +99,7 @@ admit 2N、fill 9N 及对应字节数；每分片 submit < 库完成 < SR receip
 - 服务记录实际 batch submit/wait 两段时间及 poll 最大间隔，供实机分析；
   延迟测试不作为性能结果，也不自动证明忙/闲 tick 间隔相同。
 - SDK 子失败传播、真实 wait 超时/在途 fail-stop 的硬件证据仍待验证；CPU UNKNOWN 测试和已有服务故障测试不能替代。
-- 正常使用配置 `pool_copy_delay_seconds=0`；尚未完成服务 NPU 验收，不关闭 ticket11 或解锁09。
+- 正常使用配置 `pool_copy_delay_seconds=0`；用户已接受002服务验收并关闭11，以上未验证项仍保留。
 
 CPU 与双轴复核详见 [检查记录](../.scratch/k1/verification/ticket11-service-cpu/README.md)。
 
