@@ -46,3 +46,12 @@ run_mempool_min.py传入阶段共用期限、peer检查及证据路径；verify_
 [静态检查](static-wait.txt)：4文件ruff/format/isort/Python3.9 AST通过；轻量入口--help通过。
 Standards与Spec独立只读评审各0项问题，未运行测试。
 真实Linux等待仍待用户用轻量入口验证；此步骤不安排新一轮模型运行。
+
+## 用户回传轻量等待验证通过
+
+用户按c2ed808092交付的轻量入口回传终端JSON，归档为[linux-port-release.json](linux-port-release.json)。
+来源为会话粘贴，未另回传主机SHA。回环端口36663首次/末次阻塞均为TIME_WAIT、inode=0；
+等待60.40704846207518秒后真实bind/listen成功，status=passed。证明Linux轻量等待路径有效。
+此结果不替代完整NPU验收，不把原003改为通过，也不证明memfabric析构异常已解决。
+下一次完整入口使用新run-id k1-ticket12-004，两机统一c2ed808092；12仍open、11阻塞。
+本次仅归档用户反馈，未执行新的本机测试或NPU运行。

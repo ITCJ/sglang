@@ -2,7 +2,7 @@
 
 五类主存区域已改为`[物理页, 层, 页内token, head, feature]`。
 副本仍为8/8/1/1/1，HBM原生布局、prefix分配、描述符、分工、控制操作及完成语义沿用。
-本票实现和双轴评审已完成，NPU尚未运行，State保持open；11仍等待本票用户验收关闭。
+本票实现和双轴评审已完成；[004双机自动验收](verification/k1-ticket12-004/README.md)通过并经用户确认。12已closed，11已解锁但未实施。
 
 主KV和Index K分别形成连续页块，当前GLM-5.2每页为11,501,568 B和688,128 B。
 布局集中处理逻辑token行到物理行的变换，view提供`page_block(physical_page)`，

@@ -1,0 +1,85 @@
+{
+  "evidence_kind": "assistant-extracted facts from user-pasted reports; not raw JSON files",
+  "run_id": "k1-ticket12-004",
+  "git_sha": "c2ed808092704689f22d676f20dc254836db8fe5",
+  "reported_roles": {
+    "prefill": "passed",
+    "decode": "passed"
+  },
+  "identity_check": "passed; differences empty on both sides",
+  "tracked_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "untracked_sha256": {},
+  "stages": [
+    "page-first-copy",
+    "fetch",
+    "target",
+    "restart"
+  ],
+  "rounds": [
+    {
+      "stage": "target",
+      "status": "passed",
+      "requests": 6,
+      "ready_events": 15,
+      "reader_counts_zero": true
+    },
+    {
+      "stage": "restart",
+      "status": "passed",
+      "requests": 6,
+      "ready_events": 14,
+      "reader_counts_zero": true
+    }
+  ],
+  "storage_order": "page_first",
+  "page_size": 128,
+  "page_bytes": {
+    "prefill/alive_main": 11501568,
+    "prefill/alive_index": 688128,
+    "prefill/prefix_main": 11501568,
+    "prefill/prefix_index": 688128,
+    "decode/alive_main": 11501568
+  },
+  "startup_signature": "present and matches regions in both rounds",
+  "replicas": [
+    8,
+    8,
+    1,
+    1,
+    1
+  ],
+  "hit_tokens": [
+    0,
+    4096,
+    3968,
+    0,
+    0,
+    0
+  ],
+  "traffic_in_both_rounds": {
+    "32": {
+      "load_back_main": 368050176,
+      "fill_main": 2944401408,
+      "load_back_index": 22020096,
+      "fill_index": 22020096
+    },
+    "31": {
+      "load_back_main": 356548608,
+      "fill_main": 2852388864,
+      "load_back_index": 21331968,
+      "fill_index": 21331968
+    }
+  },
+  "independent_byte_arithmetic": "passed; main=pages*78*128*576*2; index=pages*21*128*128*2; fill main=8*load_back main",
+  "timeout_fail_stop": {
+    "status": "passed",
+    "reason": "SR heartbeat timeout",
+    "retained_native_ranks": 16,
+    "retained_all_quotas": true,
+    "automatic_free": false,
+    "worker_exit": 137
+  },
+  "paired_process_cleanup": "passed; both owned groups stopped",
+  "physical_placement_verified": false,
+  "user_accepted": false
+}

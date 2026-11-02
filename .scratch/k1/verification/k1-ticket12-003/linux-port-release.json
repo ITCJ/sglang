@@ -1,0 +1,22 @@
+{
+  "host": "127.0.0.1",
+  "port": 36663,
+  "status": "passed",
+  "first_blocked": [
+    {
+      "local": "0100007F:8F37",
+      "remote": "0100007F:19FA",
+      "inode": "0",
+      "state": "TIME_WAIT"
+    }
+  ],
+  "last_blocked": [
+    {
+      "local": "0100007F:8F37",
+      "remote": "0100007F:19FA",
+      "inode": "0",
+      "state": "TIME_WAIT"
+    }
+  ],
+  "waited_seconds": 60.40704846207518
+}

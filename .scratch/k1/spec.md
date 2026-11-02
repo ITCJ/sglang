@@ -14,9 +14,9 @@ K1功能实现与NUMA验收继续推进；下文性能复测、基线并列和�
 执行文本和[基线目标](k1-01-baseline-prompt.md)按原文同步；各票保留本地状态、依赖链接、验收勾选与 Comments。
 设计决策回查 [mempool-min 讨论](/Users/hibikid/Documents/syncfile/sglang-kv-explainer/mempool-min-demo/discussion.md)及[完整设计讨论](/Users/hibikid/Documents/syncfile/sglang-kv-explainer/mempool-design/discussion.md)。
 
-**当前结论（2026-11-02交付）：** 01、02、03、05、06、07、08已closed，共7 closed、5 open。
+**当前结论（2026-11-02交付）：** 01、02、03、05、06、07、08、12已closed，共8 closed、4 open。
 用户在11之前新增[12：page first](issues/12-k1-05d-page-first-layout.md)，主线为07→08→12→11→09。
-12实现和双轴评审已完成，等待用户NPU验收；11等待12经用户确认NPU验收关闭。04、10不阻塞。
+12的004双机验收已由用户确认，12已关闭；11已解锁、尚未实施。04、10不阻塞。
 会话恢复读[项目记忆](memory.md)；本地[M17/M58摘录](../mempool-min/discussion.md)保留此次决定。
 设计agent负责架构逻辑，Ascend/NPU具体实现以本仓库实际接口与验证为准。
 
@@ -160,3 +160,12 @@ K1-01 NUMA功能保留，双映射功能验收不再运行perf。
 [交付说明](delivery-ticket12.md)与[双机入口](../../ascend-mempool-test/K1_TICKET12.md)已提供。
 CPU合并541项中540项已验证；1项旧注册测试的夹具已修正，遵守两轮限制未第三次运行，未计为通过。
 37文件静态与21模块strict mypy通过，Standards/Spec均0项发现；NPU未运行，12仍open，11不解锁。
+
+### 2026-11-02：12的004自动验收通过，待用户确认
+
+31/32同版本c2ed808092，page-first-copy/fetch与两轮六例均通过；五类区域布局、页块字节和签名通过。
+[004核对记录](verification/k1-ticket12-004/README.md)保留08证据边界及未验证项；12仍open，11等待用户确认关闭12后解锁。
+
+### 2026-11-02：用户确认12验收关闭
+
+用户回复“关闭”，接受c2ed808092的004精简功能范围；12已closed，11解锁但未实施，09仍等待11。共8 closed、4 open。[确认与边界](verification/k1-ticket12-004/README.md)。
