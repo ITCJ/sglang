@@ -56,3 +56,19 @@ NPU未运行，验收项暂不勾选，State=open；用户确认本票NPU验收�
 旧脚本扫描整个512端口预留区，已改为复用SharingPlan实际NIC/store清单，启动前/清理后共用；绑定失败包含地址。
 仅改验收脚本，生产源码与默认清理不变。新增回归先失败后通过，定向12项通过，静态通过。
 Standards为0硬违规/1非阻塞建议，Spec为0问题。修复后NPU未运行，原始002失败及memfabric析构异常保留，12仍open。
+
+### 2026-11-02：003实际端口检查失败，待纯TCP复现
+
+用户回传bf4a493281的003：copy/fetch与首轮超时清理通过，随后D实际端口26082报EADDRINUSE；事后/proc记录已消失。不能判为TIME_WAIT或沿用002误扫结论。
+[003记录](../verification/k1-ticket12-003/README.md)保留Mac实验未复现、Linux证据不足的限制。未改代码或安排模型重跑；12仍open，11阻塞。
+
+### 2026-11-02：Linux纯TCP实验确认TIME_WAIT检查缺口
+
+用户在32复现：原socket未启用SO_REUSEADDR时，关闭后仅TIME_WAIT也会令released_port报EADDRINUSE；原socket启用时通过。实验不证明003失败时具体状态。
+已提出仅TIME_WAIT时有界等待、其他占用仍失败并保存快照的方案；按用户额外防御逻辑规则先确认，尚未改检查器或重跑模型。
+
+### 2026-11-02：用户批准TIME_WAIT有界等待，修复交付
+
+用户选择采用有界等待。仅TIME_WAIT状态允许等待至实际bind/listen成功，整个阶段共用operation_timeout；其他状态和超时仍失败，保存端口状态证据。
+14项定向CPU及4文件静态通过，Standards/Spec各0问题。生产代码与默认清理不变。
+新增Linux纯TCP入口，先验证真实关闭态与重绑，不安排模型重跑；003仍failed，12仍open、11阻塞。

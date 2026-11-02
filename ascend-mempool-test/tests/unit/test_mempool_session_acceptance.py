@@ -1,6 +1,7 @@
 """K1 session acceptance keeps distinct checks with two service starts."""
 
 import contextlib
+import errno
 import io
 import json
 import socket
@@ -259,6 +260,80 @@ class TestSessionAcceptance(unittest.TestCase):
                     self.assertEqual(
                         run_mempool_min.service_ports(config, role), expected
                     )
+
+    def test_time_wait_release_requires_successful_rebind_and_saves_evidence(self):
+        clock = [0.0]
+        with tempfile.TemporaryDirectory() as folder:
+            report = Path(folder) / "port.json"
+            with (
+                patch("verify_mempool_session.socket.socket") as socket_type,
+                patch("verify_mempool_session.Path.read_text", autospec=True) as read,
+                patch(
+                    "verify_mempool_session.time.monotonic",
+                    side_effect=lambda: clock[0],
+                ),
+                patch(
+                    "verify_mempool_session.time.sleep",
+                    side_effect=lambda delay: clock.__setitem__(0, clock[0] + delay),
+                ),
+            ):
+                read.side_effect = lambda path, **kw: (
+                    "header\n0: 2048780A:65E2 00000000:0000 06 0:0 0:0 0 0 0 0\n"
+                    if path.name == "tcp"
+                    else "header\n"
+                )
+                probe = socket_type.return_value.__enter__.return_value
+                probe.bind.side_effect = [OSError(errno.EADDRINUSE, "busy"), None]
+                verify_mempool_session.released_port(
+                    "10.120.72.32", 26082, timeout=5, evidence_path=report
+                )
+                self.assertEqual(probe.bind.call_count, 2)
+                probe.listen.assert_called_once()
+            evidence = json.loads(report.read_text())
+            self.assertEqual(evidence["status"], "passed")
+            self.assertEqual(evidence["first_blocked"][0]["state"], "TIME_WAIT")
+            self.assertEqual(evidence["waited_seconds"], 1.0)
+
+    def test_time_wait_policy_rejects_live_unknown_and_timed_out_ports(self):
+        for states in (("0A",), ("01",), ("08",), ("06", "0A"), (), ("06",)):
+            with self.subTest(states=states), tempfile.TemporaryDirectory() as folder:
+                clock = [0.0]
+                report = Path(folder) / "port.json"
+                snapshot = "header\n" + "".join(
+                    f"0: 2048780A:65E2 00000000:0000 {state} 0:0 0:0 0 0 0 0\n"
+                    for state in states
+                )
+                with (
+                    patch("verify_mempool_session.socket.socket") as socket_type,
+                    patch(
+                        "verify_mempool_session.Path.read_text",
+                        autospec=True,
+                        side_effect=lambda path, **kw: (
+                            snapshot if path.name == "tcp" else "header\n"
+                        ),
+                    ),
+                    patch(
+                        "verify_mempool_session.time.monotonic",
+                        side_effect=lambda: clock[0],
+                    ),
+                    patch(
+                        "verify_mempool_session.time.sleep",
+                        side_effect=lambda delay: clock.__setitem__(
+                            0, clock[0] + delay
+                        ),
+                    ),
+                ):
+                    probe = socket_type.return_value.__enter__.return_value
+                    probe.bind.side_effect = OSError(errno.EADDRINUSE, "busy")
+                    with self.assertRaises(
+                        TimeoutError if states == ("06",) else OSError
+                    ):
+                        verify_mempool_session.released_port(
+                            "10.120.72.32", 26082, timeout=2, evidence_path=report
+                        )
+                    self.assertEqual(clock[0], 2 if states == ("06",) else 0)
+                    probe.listen.assert_not_called()
+                self.assertEqual(json.loads(report.read_text())["status"], "failed")
 
     def test_post_shutdown_port_probe_allows_time_wait_but_rejects_a_listener(self):
         with socket.socket() as server:

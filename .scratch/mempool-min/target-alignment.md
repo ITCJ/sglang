@@ -5,7 +5,7 @@ template: doc
 theme: blueprint
 lang: zh
 date: 2026-11-02
-status: K1-12 NPU002端口误报已修复，待用户验证；12保持open
+status: K1-12 TIME_WAIT等待修复已交付，待Linux轻量验证；12保持open
 ---
 
 **当前四票与 sparse 阶段 0 一致，但没有覆盖后续全部目标。**
@@ -111,6 +111,27 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 共享后分片解析组映射；Router 仍只处理逻辑位置和不透明描述符。
 
 ## D 名称、验收与实施票怎样对应
+
+**2026-11-02 K1-12：用户批准TIME_WAIT有界等待，修复已交付。**
+
+仅在绑定失败且匹配socket全为TIME_WAIT时等待，必须真正可绑定才通过；其他状态、未知快照和超时仍失败。
+整个阶段共用operation_timeout，保存每端口首末状态与结果；生产代码、默认退出行为不变。
+14项定向CPU、4文件静态与两轴复核通过；[003记录](../k1/verification/k1-ticket12-003/README.md)保留原始失败。
+
+先由32运行[Linux纯TCP入口](../../ascend-mempool-test/K1_TICKET12.md)，不启动模型；真实等待及完整NPU验收仍未验证。
+003原现场原因未认定，memfabric析构异常仍未解决；12保持open，11阻塞。
+
+**2026-11-02 K1-12：Linux纯TCP确认TIME_WAIT检查缺口。**
+
+32容器实验表明：原socket未启用SO_REUSEADDR时，关闭后仅TIME_WAIT也会使当前检查失败；启用时通过。
+这不证明003原现场一定为TIME_WAIT。已提出仅对此状态有界等待、其他占用仍失败并保存快照的方案。
+按用户编码规则等待确认，尚未添加等待逻辑或安排模型重跑；12保持open，11阻塞。
+
+**2026-11-02 K1-12 NPU003：实际D端口26082检查失败。**
+
+bf4a493281的copy/fetch与首轮超时清理记录通过；随后rank12实际BM端口报EADDRINUSE。
+事后/proc记录已消失，尚不能认定TIME_WAIT或进程残留；Mac纯TCP实验未复现，待Linux小实验。
+[003记录](../k1/verification/k1-ticket12-003/README.md)保留证据边界；未修改实现或安排模型重跑，12仍open、11阻塞。
 
 **2026-11-02 K1-12 NPU002：端口清单误报已修复。**
 

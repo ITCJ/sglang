@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import copy
+import errno
 import json
 import socket
+import sys
+import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     from sglang.srt.disaggregation.ascend.mempool_router import MainRouter
@@ -18,17 +21,99 @@ else:
 SERVICE_STAGES = ("target", "restart")
 
 
-def released_port(host: str, port: int) -> None:
-    """Permit closed connections in TIME_WAIT while detecting live listeners."""
-    with socket.socket() as probe:
-        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+def _tcp_port_state(host: str, port: int) -> list[dict[str, str]]:
+    """Snapshot matching Linux sockets, including wildcard and mapped IPv4 binds."""
+    rows = []
+    host = socket.gethostbyname(host)
+    for name, family in (("tcp", socket.AF_INET), ("tcp6", socket.AF_INET6)):
+        path = Path("/proc/net") / name
         try:
-            probe.bind((host, port))
-            probe.listen(1)
-        except OSError as exc:
-            raise OSError(
-                exc.errno, f"service port {host}:{port} not released: {exc}"
-            ) from exc
+            lines = path.read_text().splitlines()[1:]
+        except FileNotFoundError:
+            if name == "tcp6":
+                continue
+            raise
+        for line in lines:
+            fields = line.split()
+            address, number = fields[1].split(":")
+            if int(number, 16) != port:
+                continue
+            raw = b"".join(
+                int(address[i : i + 8], 16).to_bytes(4, sys.byteorder)
+                for i in range(0, len(address), 8)
+            )
+            local = socket.inet_ntop(family, raw)
+            if local not in (host, "0.0.0.0", "::", "::ffff:" + host):
+                continue
+            rows.append(
+                dict(
+                    local=fields[1],
+                    remote=fields[2],
+                    inode=fields[9],
+                    state={"06": "TIME_WAIT", "0A": "LISTEN", "01": "ESTABLISHED"}.get(
+                        fields[3], fields[3]
+                    ),
+                )
+            )
+    return rows
+
+
+def released_port(
+    host: str,
+    port: int,
+    *,
+    timeout: float = 0,
+    evidence_path: Path | None = None,
+    check: Callable[[], None] = lambda: None,
+) -> dict[str, Any]:
+    """Require successful bind/listen; wait only for observed Linux TIME_WAIT."""
+    started = time.monotonic()
+    deadline = started + max(0, timeout)
+    evidence: dict[str, Any] = dict(host=host, port=port, status="checking")
+
+    def save() -> None:
+        evidence["waited_seconds"] = time.monotonic() - started
+        if evidence_path is not None:
+            evidence_path.write_text(json.dumps(evidence, indent=2) + "\n")
+
+    try:
+        while True:
+            check()
+            try:
+                with socket.socket() as probe:
+                    probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    probe.bind((host, port))
+                    probe.listen(1)
+                break
+            except OSError as exc:
+                error = OSError(
+                    exc.errno, f"service port {host}:{port} not released: {exc}"
+                )
+                if exc.errno != errno.EADDRINUSE:
+                    raise error from exc
+                try:
+                    states = _tcp_port_state(host, port)
+                except OSError as snapshot_error:
+                    evidence["snapshot_error"] = str(snapshot_error)
+                    raise error from exc
+                evidence.setdefault("first_blocked", states)
+                evidence["last_blocked"] = states
+                save()
+                if not states or any(row["state"] != "TIME_WAIT" for row in states):
+                    raise error from exc
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError(
+                        f"service port {host}:{port} still in TIME_WAIT after timeout"
+                    ) from exc
+                time.sleep(min(1, remaining))
+        evidence["status"] = "passed"
+        return evidence
+    except BaseException as exc:
+        evidence.update(status="failed", error=f"{type(exc).__name__}: {exc}")
+        raise
+    finally:
+        save()
 
 
 def capacity_check(

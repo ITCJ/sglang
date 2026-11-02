@@ -981,8 +981,15 @@ class Runner:
             self.final_timeout_evidence(root)
         if self.session_acceptance or self.args.mode == "index-cold-diagnosis":
             ports = service_ports(self.config, self.args.role)
-            for port in ports:
-                verify_mempool_session.released_port(self.host, port)
+            deadline = time.monotonic() + self.config.operation_timeout
+            for port in sorted(ports):
+                verify_mempool_session.released_port(
+                    self.host,
+                    port,
+                    timeout=max(0, deadline - time.monotonic()),
+                    evidence_path=root / f"port-release-{port}.json",
+                    check=self.peer.check,
+                )
             self.peer.barrier(name + "-ports-released")
             write_json(
                 root / "ports-released.json",

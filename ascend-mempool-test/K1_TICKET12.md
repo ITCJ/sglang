@@ -62,3 +62,22 @@ BM预算沿用08：P合计96 GiB、D合计8 GiB，P验收源快照另预留32 Gi
 回传两侧终端结果、`summary.json`、`page-first-acceptance.json`及`page-first-copy/report.json`。
 每轮保留`registrations.json`、请求/答案/内容/字节证据、超时、清理和端口释放记录；失败时同时回传对应P/D日志。
 库分配、映射范围与物理驻留继续分别记录。用户确认本票NPU验收后才关闭12、解锁11。
+
+## 003后的端口等待修复与轻量验证
+
+用户已批准：只有绑定报EADDRINUSE且该地址的TCP记录非空、全部为TIME_WAIT时，才等待真正可绑定。
+同一阶段所有端口共享operation_timeout（现有配置600秒）；监听、已建立连接、未知状态或超时仍失败。
+每个端口的首末快照、耗时及最终状态保存在对应阶段的`port-release-<port>.json`。
+该修复不证明003原现场一定是TIME_WAIT，也不修复memfabric退出析构异常。
+
+先只在32容器仓库根目录运行Linux TCP验证，不启动NPU或模型：
+
+```bash
+python3 ascend-mempool-test/scripts/verify_port_release.py \
+  --timeout 90 \
+  --report /home/cryang/log/mempool-min/k1-ticket12-port-release/report.json
+```
+
+入口创建未开启SO_REUSEADDR的回环连接并主动关闭，要求观察到TIME_WAIT阻塞后真正重绑成功，
+否则返回非零；常见等待约一分钟，最大90秒。回传终端输出及report.json。
+本机Mac只验证了控制流程与状态策略；此Linux真实等待验证尚待用户执行。
