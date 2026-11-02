@@ -70,18 +70,18 @@ zbal 保持当前 1.1.2。`--sdk-build-id` 是双方一致的审计标签，例�
 31 / P（仓库根目录）：
 
 ```bash
-python3 ascend-mempool-test/scripts/run_pool_copy_acceptance.py --role prefill --config /home/cryang/mempool-min-ticket01-3132.json --run-id k1-ticket11-001 --sdk-build-id mf114-c01f3ad-ticket11-batchfix
+python3 ascend-mempool-test/scripts/run_pool_copy_acceptance.py --role prefill --config /home/cryang/mempool-min-ticket01-3132.json --run-id k1-ticket11-002 --sdk-build-id mf114-c01f3ad-ticket11-batchfix
 ```
 
 32 / D（仓库根目录）：
 
 ```bash
-python3 ascend-mempool-test/scripts/run_pool_copy_acceptance.py --role decode --config /home/cryang/mempool-min-ticket01-3132.json --run-id k1-ticket11-001 --sdk-build-id mf114-c01f3ad-ticket11-batchfix
+python3 ascend-mempool-test/scripts/run_pool_copy_acceptance.py --role decode --config /home/cryang/mempool-min-ticket01-3132.json --run-id k1-ticket11-002 --sdk-build-id mf114-c01f3ad-ticket11-batchfix
 ```
 
 沿用 `prefix-sharing-acceptance` 的两轮六用例、就绪检查、请求/报告、故障用例、父进程回收和端口重绑。
 不重跑 08/12，不另做八组 demo。报告目录：
-`/home/cryang/log/mempool-min/k1-ticket11-001/{prefill,decode}/`。
+`/home/cryang/log/mempool-min/k1-ticket11-002/{prefill,decode}/`。
 回传双方 `pool-copy-acceptance.json` 及完整目录，包含 target/restart 日志、快照和既有验收报告。
 脚本结束打印报告。两侧退出 0、基础验收通过且 P 搬运报告通过才算本轮通过；D 单侧通过不能代替 P 检查。
 
@@ -102,3 +102,11 @@ admit 2N、fill 9N 及对应字节数；每分片 submit < 库完成 < SR receip
 - 正常使用配置 `pool_copy_delay_seconds=0`；尚未完成服务 NPU 验收，不关闭 ticket11 或解锁09。
 
 CPU 与双轴复核详见 [检查记录](../.scratch/k1/verification/ticket11-service-cpu/README.md)。
+
+## 001失败后的002重测
+
+用户已确认两侧Docker装过SDK补丁。001在执行线程setup遇到OSError22，HTTP500为fail-stop的外层结果。
+本次Python修复移除“目标NUMA CPU与继承线程mask求交”；Linux自行按容器cpuset限制绑定。
+不需重编SDK，两侧更新工程代码后使用上方002命令。若再失败，回传`pool copy executor setup failed`
+后的原始traceback和`pool_copy_complete`，先分析，不自动再启动第三轮。
+[本地回归与证据边界](../.scratch/k1/verification/ticket11-affinity-fix/README.md)。

@@ -1,6 +1,6 @@
 # K1 项目记忆
 
-更新：2026-11-02。12已关闭；11 demo已交付746ec2d54c并收到实机结果；工程fill/admit接入已实现，尚未部署/验收。
+更新：2026-11-02。12已关闭；11工程001实机失败，执行线程setup报OSError22；绑核缺陷已本地复现并修复，待002。
 用户回传demo-001的31/32 launcher：两侧exit_code=0、children_reaped=true，实际端口均passed。
 8rank摘要已核实746ec2d54c：admit16块/97,517,568B，fill24块/189,530,112B；设备内容通过，实际wait期间P控制循环均推进。
 用户确认双方memfabric_hybrid=1.1.4、memfabric_zbal=1.1.2；原unknown只是模块版本属性未取得。
@@ -8,6 +8,15 @@
 部署二进制与tag一致性仍有限制；demo功能结论保留，不重跑、不自动升级SDK。
 [001反馈](verification/k1-ticket11-demo-001/README.md)保留证据边界；interface_ready=false不是本次测试失败判据。
 11仍open、09阻塞。工程部署依据为GitCode v1.1.4/c01f3ad842b9加最小错误传播补丁；硬件可见性证据边界保留。
+
+## 11 工程001失败与修复（2026-11-02）
+
+用户确认31/32 Docker已安装SDK补丁。001首请求D finished后，P执行器setup异常导致fail-stop/HTTP500。
+旧CPU绑核将目标NUMA与继承scheduler mask求交，可空集EINVAL；公共Executor回归准确复现同形错误。
+修复直接请求目标NUMA CPU，由Linux cpuset过滤；setup日志保留原始栈，不静默关闭绑核。
+本地新增回归先红后绿，适配层3项通过，ruff/strict mypy通过；未运行NPU。
+现场原始mask/栈未取得，仍需002确认是否仅此原因；沿用已安装SDK，不重编。
+[失败与修复记录](verification/ticket11-affinity-fix/README.md)。11仍open、09阻塞。
 
 ## 11 工程最新交付（2026-11-02）
 

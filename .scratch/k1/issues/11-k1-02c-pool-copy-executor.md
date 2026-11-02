@@ -88,3 +88,13 @@ partial_succeed大块走库线程池，调用线程wait不自动覆盖子线程�
 Standards无阻断；Spec提出的检查器覆盖和顺序/延迟缺口已修复。
 SDK函数原文提取体补丁红绿验证通过；完整SDK构建、真实在途失败/超时及服务NPU验收仍未执行。
 不把提交前延迟当作硬件在途注入或性能验证；11保持open，09仍阻塞。
+
+### 2026-11-02：工程001失败，修复执行线程继承affinity误用
+
+用户确认两侧Docker已安装SDK补丁；001 ready成功，首请求D finished后，P setup异常
+RuntimeError("OSError(22, 'Invalid argument')")触发fail-stop，外层HTTP500。
+公共Executor CPU回归复现：目标NUMA和继承scheduler mask不交，旧setaffinity收到空集。
+最小修复直接请求目标NUMA CPU，由内核cpuset过滤；初始化异常保留原始栈，无回退，无通用主线改动。
+新增回归第一轮红、第二轮适配层3项全绿，ruff/strict mypy通过；双轴复核无阻断。
+[记录](../verification/ticket11-affinity-fix/README.md)区分本地mock复现与现场未取得的原始mask证据。
+待用户用002第二轮服务尝试确认；不重编SDK、不计NPU通过，11保持open、09仍阻塞。

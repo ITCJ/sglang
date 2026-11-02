@@ -112,6 +112,13 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 
 ## D 名称、验收与实施票怎样对应
 
+**2026-11-02 K1-11工程001：setup失败，绑核修复待002验收。**
+
+用户确认双侧Docker已安装SDK补丁；首请求D完成后P fail-stop，HTTP500。
+继承scheduler affinity与目标NUMA求交可变空集，本地复现同形OSError22并修复。
+直接请求目标节点CPU，由内核cpuset过滤；初始化失败保留原始栈。适配层3项通过，未运行NPU。
+[001失败与修复](../k1/verification/ticket11-affinity-fix/README.md)保留现场根因待确认边界；11仍open、09阻塞。
+
 **2026-11-02 K1-11工程：fill/admit服务接入已实现，待NPU验收。**
 
 P分片共用demo执行器，tick提交/轮询，按完整prompt分工；空清单汇总、源释放门、UNKNOWN保留。

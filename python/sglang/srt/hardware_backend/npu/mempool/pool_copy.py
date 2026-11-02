@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import queue
 import threading
@@ -9,6 +10,8 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -155,6 +158,7 @@ class PoolCopyExecutor:
         try:
             setup()
         except Exception as exc:  # noqa: BLE001 - deliver thread failures to poll
+            logger.exception("pool copy executor setup failed")
             setup_error = repr(exc)
         while True:
             task = self._tasks.get()
@@ -228,4 +232,6 @@ def device_thread_setup(device: str, numa_node: int, bind_cpu: bool = True) -> N
         for part in text.split(","):
             limits = [int(value) for value in part.split("-")]
             cpus.update(range(limits[0], limits[-1] + 1))
-        os.sched_setaffinity(0, cpus & os.sched_getaffinity(0))
+        # The inherited scheduler mask is not the container's allowed cpuset.
+        # Let Linux filter the target NUMA CPUs through the actual cpuset.
+        os.sched_setaffinity(0, cpus)

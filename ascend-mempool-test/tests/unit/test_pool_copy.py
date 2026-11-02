@@ -1,6 +1,7 @@
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 from ascend_mempool.pool_copy import (
     CopyBlock,
@@ -8,6 +9,7 @@ from ascend_mempool.pool_copy import (
     PoolCopyExecutor,
     CompletionUnknown,
     BMTransfer,
+    device_thread_setup,
 )
 
 
@@ -28,6 +30,41 @@ class Backend:
 
 
 class TestPoolCopy(unittest.TestCase):
+    def test_setup_rebinds_inherited_affinity_to_pool_numa(self):
+        # Scheduler affinity is narrower than the container's allowed CPUs.
+        # Linux intersects the requested mask with cpuset itself; the old
+        # thread mask must not constrain a new binding to a different node.
+        allowed = {0, 1, 4, 5}
+        bound = []
+
+        def set_affinity(tid, requested):
+            effective = requested & allowed
+            if not effective:
+                raise OSError(22, "Invalid argument")
+            self.assertEqual(tid, 0)
+            bound.append(effective)
+
+        backend = Backend()
+        backend.release.set()
+        with (
+            patch("torch.npu", create=True) as npu,
+            patch("pathlib.Path.read_text", return_value="4-7\n"),
+            patch("os.sched_getaffinity", return_value={0, 1}, create=True),
+            patch("os.sched_setaffinity", side_effect=set_affinity, create=True),
+        ):
+            executor = PoolCopyExecutor(
+                backend,
+                timeout=2,
+                setup=lambda: device_thread_setup("npu:2", 1),
+            )
+            executor.submit(CopyTask("request", 1, "admit", (CopyBlock(8, 16, 4),)))
+            executor.close()
+            result = executor.poll(1)
+            self.assertEqual(result.state, "READY", result.error)
+            npu.set_device.assert_called_once_with("npu:2")
+        self.assertEqual(bound, [{4, 5}])
+        self.assertEqual(len(backend.calls), 1)
+
     def test_completion_timeout_failure_and_empty(self):
         for mode in ("ready", "timeout", "failure", "empty"):
             with self.subTest(mode=mode):
