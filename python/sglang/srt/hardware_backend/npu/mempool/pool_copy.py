@@ -90,16 +90,21 @@ class PoolCopyExecutor:
         transfer: Transfer,
         *,
         timeout: float,
+        delay_seconds: float = 0,
         setup: Callable[[], None] = lambda: None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("copy timeout must be positive and finite")
+        if not math.isfinite(delay_seconds) or delay_seconds < 0:
+            raise ValueError("copy delay must be nonnegative and finite")
+        self.delay_seconds = delay_seconds
         self.transfer, self.timeout, self.clock = transfer, timeout, clock
         self._tasks: queue.Queue[CopyTask | None] = queue.Queue()
         self._results: queue.Queue[CopyResult] = queue.Queue()
         self._pending: dict[int, tuple[CopyTask, float]] = {}
         self._completed: dict[int, CopyResult] = {}
+        self._polls: dict[int, list[float]] = {}
         self._closed = False
         self._failed = threading.Event()
         self._thread = threading.Thread(target=self._run, args=(setup,), daemon=True)
@@ -112,6 +117,11 @@ class PoolCopyExecutor:
         self._tasks.put(task)
 
     def poll(self, op_id: int) -> CopyResult:
+        now = self.clock()
+        stats = self._polls.setdefault(op_id, [0.0, now, 0.0])
+        stats[0] += 1
+        stats[2] = max(stats[2], now - stats[1])
+        stats[1] = now
         while True:
             try:
                 result = self._results.get_nowait()
@@ -134,6 +144,10 @@ class PoolCopyExecutor:
         result = self._completed.get(op_id, CopyResult(task, "PENDING"))
         if result.state in ("FAILED", "UNKNOWN"):
             self._failed.set()
+        if result.state != "PENDING":
+            result.evidence.update(
+                poll_count=int(stats[0]), max_poll_gap_seconds=stats[2]
+            )
         return result
 
     def _run(self, setup: Callable[[], None]) -> None:
@@ -154,7 +168,19 @@ class PoolCopyExecutor:
                     raise CompletionUnknown("executor stopped or task expired")
                 if setup_error:
                     raise RuntimeError(setup_error)
+                delay_started = self.clock()
+                if task.blocks and self.delay_seconds:
+                    time.sleep(self.delay_seconds)
+                if (
+                    self._failed.is_set()
+                    or self.clock() >= self._pending[task.op_id][1]
+                ):
+                    raise CompletionUnknown("copy expired before device submission")
                 evidence = self.transfer.transfer(task.blocks) if task.blocks else {}
+                evidence.update(
+                    delay_started=delay_started,
+                    delay_seconds=self.delay_seconds if task.blocks else 0,
+                )
                 result = CopyResult(task, "READY", self.clock(), evidence=evidence)
             except Exception as exc:  # noqa: BLE001 - deliver thread failures to poll
                 result = CopyResult(
@@ -166,6 +192,14 @@ class PoolCopyExecutor:
                 self._failed.set()
             self._results.put(result)
 
+    def retire(self, op_id: int) -> None:
+        """Drop completed request records after the caller's source-release gate."""
+        if self._completed[op_id].state != "READY":
+            raise RuntimeError("cannot retire an incomplete or failed copy")
+        del self._completed[op_id]
+        del self._pending[op_id]
+        self._polls.pop(op_id, None)
+
     def close(self) -> None:
         """Test/owner drain only; never called by scheduler tick on fail-stop."""
         self._closed = True
@@ -175,3 +209,23 @@ class PoolCopyExecutor:
             raise TimeoutError(
                 "SDMA thread still active; retain pool until process exit"
             )
+
+
+def device_thread_setup(device: str, numa_node: int, bind_cpu: bool = True) -> None:
+    """Bind only the copy thread, preserving scheduler affinity."""
+    import os
+    from pathlib import Path
+    import torch
+
+    torch.npu.set_device(device)
+    if bind_cpu:
+        text = (
+            Path(f"/sys/devices/system/node/node{numa_node}/cpulist")
+            .read_text()
+            .strip()
+        )
+        cpus: set[int] = set()
+        for part in text.split(","):
+            limits = [int(value) for value in part.split("-")]
+            cpus.update(range(limits[0], limits[-1] + 1))
+        os.sched_setaffinity(0, cpus & os.sched_getaffinity(0))

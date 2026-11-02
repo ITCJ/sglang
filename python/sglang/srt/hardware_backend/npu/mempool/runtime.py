@@ -1137,6 +1137,22 @@ def initialize_for_model_runner(model_runner: Any) -> None:
             from sglang.srt.distributed import get_tp_group
 
             prefix_group = get_tp_group()
+        copy_executor = None
+        if prefix_pages and manager.rank == 0 and router and router.pool_copy:
+            from functools import partial
+            from .pool_copy import PoolCopyExecutor, device_thread_setup
+
+            copy_executor = PoolCopyExecutor(
+                manager.pool_transfer(),
+                timeout=router.operation_timeout,
+                delay_seconds=router.pool_copy_delay_seconds,
+                setup=partial(
+                    device_thread_setup,
+                    device,
+                    manager.numa_node,
+                    router.pool_copy_bind_cpu,
+                ),
+            )
         prefix_store = (
             PrefixStore(
                 manager,
@@ -1154,6 +1170,7 @@ def initialize_for_model_runner(model_runner: Any) -> None:
                 admit_mode=router.prefix_admit_mode if router else "owners",
                 admit_rank=router.prefix_admit_rank if router else 0,
                 start_segment=router.prefix_start_segment if router else None,
+                copy_executor=copy_executor,
             )
             if prefix_pages and manager.rank == 0
             else None

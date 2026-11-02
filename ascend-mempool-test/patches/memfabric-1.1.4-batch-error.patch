@@ -1,0 +1,9 @@
+--- a/src/hybm/csrc/data_operation/host/hybm_data_op_sdma.cpp
++++ b/src/hybm/csrc/data_operation/host/hybm_data_op_sdma.cpp
+@@ -732,5 +732,5 @@
+         len = count;
+     }
+     asyncFunc();
+-    return InnerWait(options, 0);
++    return ret == BM_OK ? InnerWait(options, 0) : ret;
+ }

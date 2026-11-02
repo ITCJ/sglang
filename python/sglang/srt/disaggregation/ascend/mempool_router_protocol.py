@@ -48,6 +48,10 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     prefix_start_segment: int | None = None
     prefix_admit_mode: str = "owners"
     prefix_admit_rank: int = 0
+    pool_copy: bool = False
+    pool_copy_sdk_build_id: str = ""
+    pool_copy_bind_cpu: bool = True
+    pool_copy_delay_seconds: float = 0.0
     prefill_shared: bool = False
     prefill_groups: tuple[tuple[int, ...], ...] = tuple(
         (r, r + 1) for r in range(0, 16, 2)
@@ -62,6 +66,11 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     decode_write_assignment: str = "features"
 
     def __post_init__(self) -> None:
+        if (
+            not math.isfinite(self.pool_copy_delay_seconds)
+            or self.pool_copy_delay_seconds < 0
+        ):
+            raise ValueError("pool copy test delay must be finite and nonnegative")
         if self.prefix_shared and not (
             self.prefill_shared and self.prefill_index_shared
         ):
@@ -196,6 +205,10 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
 
     def prefix_policy(self) -> dict[str, Any]:
         return dict(
+            pool_copy=self.pool_copy,
+            pool_copy_sdk_build_id=self.pool_copy_sdk_build_id,
+            pool_copy_bind_cpu=self.pool_copy_bind_cpu,
+            pool_copy_delay_seconds=self.pool_copy_delay_seconds,
             admit_mode=self.prefix_admit_mode,
             admit_rank=self.prefix_admit_rank,
             start_segment=self.prefix_start_segment,

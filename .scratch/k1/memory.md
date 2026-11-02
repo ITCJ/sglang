@@ -1,19 +1,32 @@
 # K1 项目记忆
 
-更新：2026-11-02；设计决定日期：2026-11-01。12已由用户确认004验收关闭；11已解锁、尚未实施。
-11本轮仅完成方案草案：建议先由high实施独立SDMA demo，用户运行后再定稿逐op路径并核对，之后才授权工程代码。
-先读[demo交接](ticket11-demo-handoff.md)；[工程草案](ticket11-implementation-plan.md)仍待结果和用户确认。
-SDK按用户指定使用本地GitCode `../gitcode/memfabric_hybrid`（1.3.0，29fbd1ae14e7），不以较旧GitHub版本判断实现。
-本地batch子提交错误传播存在待核对缺口；demo未编写、NPU未运行，11仍open、09仍阻塞。
-最新硬件反馈：31/32的c2ed808092、k1-ticket12-004自动验收均passed，page-first-copy/fetch及两轮六例完成，五类布局/签名和字节核对通过。见[004核对记录与边界](verification/k1-ticket12-004/README.md)。用户已明确回复“关闭”；12已closed，11已解锁但未实施。
-这是会话恢复摘要；逐票事实以最新 Comments 和用户验收记录为准，实施细节以执行文本为准。
+更新：2026-11-02。12已关闭；11 demo已交付746ec2d54c并收到实机结果；工程fill/admit接入已实现，尚未部署/验收。
+用户回传demo-001的31/32 launcher：两侧exit_code=0、children_reaped=true，实际端口均passed。
+8rank摘要已核实746ec2d54c：admit16块/97,517,568B，fill24块/189,530,112B；设备内容通过，实际wait期间P控制循环均推进。
+用户确认双方memfabric_hybrid=1.1.4、memfabric_zbal=1.1.2；原unknown只是模块版本属性未取得。
+本地GitCode v1.1.4/c01f3ad842b9也有普通batch子提交错误丢失缺口；partial_succeed涉及其它线程流，不可直接替换。
+部署二进制与tag一致性仍有限制；demo功能结论保留，不重跑、不自动升级SDK。
+[001反馈](verification/k1-ticket11-demo-001/README.md)保留证据边界；interface_ready=false不是本次测试失败判据。
+11仍open、09阻塞。工程部署依据为GitCode v1.1.4/c01f3ad842b9加最小错误传播补丁；硬件可见性证据边界保留。
+
+## 11 工程最新交付（2026-11-02）
+
+用户明确授权按此前计划实现工程部分。P各分片fill/admit已接共用池库执行器，tick submit/poll；
+空清单仍汇总、完整prompt分工、正常释放后retire；load_back与原有父进程清理不变。
+新增pool_copy显式开关，默认false；部署修复SDK后开启。GitCode v1.1.4普通batch子提交错误丢失以独立单行补丁交付，
+未自动安装或修改外部SDK。构建标识仅审计，不证明加载修复库。
+两轮自运行服务验收复用原入口，强制50ms提交前延迟、16分片、2N/9N/字节及完成到receipt顺序；服务不新增目标读回。
+CPU合并549项中548通过、1项既有UINT32_MAX用例失败；Standards/Spec代码复核问题已修复。
+真实SDK在途故障/超时、服务NPU与性能尚未验证，保留为验收缺口，不能用CPU替代。
+[工程运行说明](../../ascend-mempool-test/K1_TICKET11.md)、[CPU证据](verification/ticket11-service-cpu/README.md)。
+11仍open、09阻塞，等待用户NPU验收。
 
 ## 11 demo 最新交付（2026-11-02）
 
 用户已授权implement demo；共用pool_copy适配层、manager装配口、两组P/D设备校验及自运行入口已实现。
 路径已定，demo后仅核对接口事实；不做八组demo，服务不新增目标读回。
 CPU完整一次547项；21个沙箱受限方法补跑通过；1项既有test_config的旧UINT32_MAX预期失败保留。
-本次新增测试、静态及适配层strict mypy通过，双轴复核无阻断；NPU未运行。
+本次新增测试、静态及适配层strict mypy通过，双轴复核无阻断；交付时NPU未运行，最新用户结果见上方001记录。
 命令和证据边界见[demo交付](../../ascend-mempool-test/K1_TICKET11_DEMO.md)。11仍open，09阻塞。
 
 ## 恢复顺序与依据
@@ -31,7 +44,7 @@ stream/event与图捕获由实施侧核对本仓库源码及实验后决定；�
 
 - K1共12票：01、02、03、05、06、07、08、12已closed；04、10、11、09为open（8 closed、4 open）。
 - 主线为07 → 08 → **12 → 11 → 09**；04和10不阻塞。12直接依赖08，11直接依赖12，09直接依赖06、08、11并传递依赖12。
-- 08已由用户验收；12代码与验收入口已交付，CPU合并541项中540项通过；1项旧注册夹具修正后按两轮限制未第三次运行，不计为通过。自身NPU004已由用户确认验收，详见[交付说明](delivery-ticket12.md)。12已关闭，11已解锁、尚未实施。
+- 08已由用户验收；12代码与验收入口已交付，CPU合并541项中540项通过；1项旧注册夹具修正后按两轮限制未第三次运行，不计为通过。自身NPU004已由用户确认验收，详见[交付说明](delivery-ticket12.md)。12已关闭，11工程已实现、待自身NPU验收。
 - 旧“08关闭后11已解锁”是历史状态。旧阶段0的02只待单独关闭确认，不是K1票、不阻塞本链。
 - 功能基线为08实现提交`4441eb9015`；关闭记录提交`b4a925a3a3`。后续读实际git状态，保留用户未提交修改。
 
@@ -45,8 +58,8 @@ P alive Index K、prefix主KV、prefix Index K。D生成的Index K仍只在设�
 08验收基线是layer-first；12已改page first，004已由用户确认验收。alive仍整槽预留；prefix有40页、8段各5页，
 描述符页号为`segment × 5 + local_page`；按请求轮转起始段，段满取剩余页最多者。
 P/D各16槽，验收配置`S_P=8192`、`S_D=128`、统一`B=128`，仍单请求串行。
-fill/load_back有独立设备流，仍由worker有序路径提交；admit在调用流提交，三者查询设备事件完成。
-已有独立设备流不代表票11的独立主机执行器线程已经实现。
+旧路径fill/load_back有独立设备流，admit在调用流提交，查询设备事件完成。
+票11新路径开启pool_copy后，fill/admit由独立主机线程执行BM batch/wait；load_back仍用原事件。
 
 ## 12的固定边界与第一步
 

@@ -1,0 +1,3 @@
+GitCode v1.1.4 c01f3ad842b9 BatchCopyG2G exact extracted body.
+Standalone C++ stubs: fail first/last child and no failure.
+Original exit=1, patched exit=0. Does not test SDK binary or hardware.

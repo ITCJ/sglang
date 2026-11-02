@@ -52,3 +52,39 @@ State保持open，09仍阻塞；必须带回demo证据并经用户确认路径�
 新测试、静态与pool_copy strict mypy通过；Standards/Spec复核均无剩余阻断。
 [运行说明](../../../ascend-mempool-test/K1_TICKET11_DEMO.md)和[验证记录](../verification/ticket11-demo-cpu/README.md)已交付。
 NPU未运行，不修改SDK、不接服务fill/admit；11保持open、09仍阻塞。路径不重复确认，demo后核对库接口事实与证据。
+
+### 2026-11-02：demo001双方launcher成功，待逐rank证据
+
+用户回传31/32 launcher均exit_code=0、children_reaped=true，实际端口重绑全部passed。
+按746ec2d54c入口判据可推断功能smoke完成；实际commit、传输及GIL细节待已有all-ranks.json核实。
+[反馈记录](../verification/k1-ticket11-demo-001/README.md)已归档。interface_ready=false为固定保留标记，不是本次实测失败。
+本次只归档，不重跑、不开始服务接入；11保持open，09阻塞。
+
+### 2026-11-02：demo001逐rank功能与控制推进证据通过
+
+用户回传8rank摘要，全部746ec2d54c且passed。admit16块/97,517,568B，fill24块/189,530,112B；实际submit/wait均0。
+admit两个owner wait期间各10tick；fill四rank分别15/12/11/13tick；D零搬运为预期，设备读者校验通过。
+[摘要与边界](../verification/k1-ticket11-demo-001/README.md)已补齐。mf_version未知，实际SDK构建、子任务错误传播和可见性契约仍待核对。
+本次仅归档，无重跑、无生产接入；11仍open、09阻塞。
+
+### 2026-11-02：两侧SDK版本确认及1.1.4源码核对
+
+用户确认memfabric_hybrid=1.1.4、memfabric_zbal=1.1.2。本地GitCode v1.1.4/c01f3ad842b9可用，普通batch也存在子提交错误丢失路径。
+partial_succeed大块走库线程池，调用线程wait不自动覆盖子线程流，不能直接替换。
+[001记录](../verification/k1-ticket11-demo-001/README.md)补充tag和证据限制；未修改SDK、未重跑、未接生产，11仍open。
+
+### 2026-11-02：工程服务接入实现，等待修复SDK上的NPU验收
+
+用户明确授权开始工程部分。基于746ec2d54c，P各分片fill/admit接入共用PoolCopyExecutor，
+按完整prompt分工生成混合主KV/Index K页块清单；tick保留状态/汇总，库真实完成才receipt。
+空清单、UNKNOWN锁存、源释放门与父进程清理保留；load_back未切换，通用主线源码改动0。
+配置pool_copy默认false；需先部署GitCode v1.1.4最小batch错误传播补丁再开启。
+补丁仅作为交付文件，未改外部SDK或安装远端。build-id仅为审计标签，不能证明二进制已修复。
+[工程交付](../../../ascend-mempool-test/K1_TICKET11.md)列出功能阅读顺序、SDK构建前提与31/32命令。
+两轮服务入口复用既有准备/请求/清理；强制提交前50ms延迟、16分片、2N/9N/字节与submit→库完成→receipt顺序。
+不新增服务目标读回，按用户已确认的demo独立设备比较 + 服务B/C/V2/字节证据边界交付。
+[CPU记录](../verification/ticket11-service-cpu/README.md)：完整548项一次，沙箱受限21方法补跑通过；
+后增检查器1项通过，合计549项中548通过，保留旧UINT32_MAX预期1项失败。静态/类型检查通过。
+Standards无阻断；Spec提出的检查器覆盖和顺序/延迟缺口已修复。
+SDK函数原文提取体补丁红绿验证通过；完整SDK构建、真实在途失败/超时及服务NPU验收仍未执行。
+不把提交前延迟当作硬件在途注入或性能验证；11保持open，09仍阻塞。

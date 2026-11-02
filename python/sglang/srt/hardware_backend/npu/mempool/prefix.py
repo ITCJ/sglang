@@ -18,6 +18,7 @@ from .indexed_copy import copy_rows
 from .layout import check_index, positive_int
 from .manager import MempoolKVManager
 from .page_write import PageWriter
+from .pool_copy import CopyBlock, CopyTask, PoolCopyExecutor
 from .split_read import assign_prefix_pages
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,7 @@ class PrefixStore:
         admit_mode: str = "owners",
         admit_rank: int = 0,
         start_segment: int | None = None,
+        copy_executor: PoolCopyExecutor | None = None,
     ) -> None:
         positive_int("page_size", page_size)
         layout = manager.layout.prefix_main
@@ -93,6 +95,7 @@ class PrefixStore:
             raise ValueError("prefix store requires P's configured page regions")
         self.manager, self.page_size, self.device = manager, page_size, device
         self.verify = verify
+        self.copy_executor = copy_executor
         self.page_writer = page_writer
         self.index_writer = index_writer
         self._prompt_tokens = 0
@@ -288,7 +291,10 @@ class PrefixStore:
             self._operations[op_id] = operation = candidate
             self._free.difference_update(target_pages)
             try:
-                self._submit(operation)
+                if self.copy_executor is not None:
+                    self._submit_pool_copy(operation)
+                else:
+                    self._submit(operation)
             except Exception as exc:
                 self._fault = str(exc)
                 raise
@@ -298,7 +304,7 @@ class PrefixStore:
         ):
             raise ValueError("conflicting duplicate prefix operation")
         if operation.receipt is None:
-            if not operation.event.query():
+            if not self._copy_complete(operation):
                 return None
             main, index = (
                 self.manager.layout.prefix_main,
@@ -335,6 +341,114 @@ class PrefixStore:
                 operation.committed = True
                 self._ready.update(target_pages)
         return copy.deepcopy(operation.receipt)
+
+    def _copy_complete(self, operation: _Admit | _Read) -> bool:
+        if self.copy_executor is None or (
+            isinstance(operation, _Read) and operation.kind == "load_back"
+        ):
+            return bool(operation.event.query())
+        result = self.copy_executor.poll(operation.op_id)
+        if result.state == "PENDING":
+            return False
+        logger.info(
+            "mempool pool_copy_complete data=%s",
+            json.dumps(
+                dict(
+                    rid=operation.rid,
+                    op_id=operation.op_id,
+                    rank=self.replica,
+                    state=result.state,
+                    ready_at=result.finished,
+                    error=result.error,
+                    **result.evidence,
+                )
+            ),
+        )
+        if result.state != "READY":
+            self._fault = f"pool copy {result.state}: {result.error}"
+            raise RuntimeError(self._fault)
+        return True
+
+    def _submit_pool_copy(self, operation: _Admit | _Read) -> None:
+        """Resolve SDK page blocks on tick; the executor owns no prefix state."""
+        assert self.copy_executor is not None
+        admit = isinstance(operation, _Admit)
+        pages = (
+            operation.target_pages
+            if isinstance(operation, _Admit)
+            else operation.source_pages
+        )
+        blocks = []
+        if isinstance(operation, _Admit):
+            operation.written_pages = [
+                p
+                for p in pages
+                if self.prefix_layout is None or self._admit_writer(p) == self.replica
+            ]
+        for region, writer in (
+            ("main", self.page_writer),
+            ("index", self.index_writer),
+        ):
+            owned = (
+                set(writer.pages(self._prompt_tokens)) if writer is not None else None
+            )
+            counts = []
+            read_pages = []
+            for segment, assigned in self._tasks(pages):
+                count = 0
+                for position, local_page in assigned:
+                    if isinstance(operation, _Admit):
+                        if pages[position] not in operation.written_pages:
+                            continue
+                        alive_page = operation.source_pages[position]
+                    else:
+                        if owned is not None and position not in owned:
+                            continue
+                        alive_page = position
+                    alive = self.manager.view(0, 0, region="alive_" + region)
+                    prefix = self.manager.view(
+                        0, 0, region="prefix_" + region, segment=segment
+                    )
+                    alive_block = alive.page_block(
+                        operation.slot * (alive.layout.tokens // self.page_size)
+                        + alive_page
+                    )
+                    prefix_block = prefix.page_block(local_page)
+                    src, dst = (
+                        (alive_block, prefix_block)
+                        if admit
+                        else (prefix_block, alive_block)
+                    )
+                    blocks.append(CopyBlock(src[0], dst[0], src[2]))
+                    count += self.page_size
+                    read_pages.append(pages[position])
+                counts.append(count)
+            if isinstance(operation, _Read):
+                operation.segment_rows[region] = counts
+                operation.read_pages[region] = read_pages
+                if writer is not None:
+                    rows = torch.tensor(sum(counts), dtype=torch.int64)
+                    if region == "main":
+                        operation.main_rows = rows
+                    else:
+                        operation.index_rows = rows
+        task = CopyTask(
+            operation.rid, operation.op_id, "admit" if admit else "fill", tuple(blocks)
+        )
+        logger.info(
+            "mempool pool_copy_submit data=%s",
+            json.dumps(
+                dict(
+                    rid=task.rid,
+                    op_id=task.op_id,
+                    kind=task.kind,
+                    rank=self.replica,
+                    blocks=len(blocks),
+                    bytes=sum(b.nbytes for b in blocks),
+                )
+            ),
+        )
+        self.copy_executor.submit(task)
 
     def _read_context(self) -> Any:
         if torch.device(self.device).type == "cpu":
@@ -390,11 +504,14 @@ class PrefixStore:
                 raise ValueError("prefix read requires unique ready source pages")
             self._reads[op_id] = operation = candidate
             try:
-                with self._read_context():
-                    if operation.kind == "fill":
-                        self._submit_fill(operation)
-                    else:
-                        self._submit_load_back(operation)
+                if operation.kind == "fill" and self.copy_executor is not None:
+                    self._submit_pool_copy(operation)
+                else:
+                    with self._read_context():
+                        if operation.kind == "fill":
+                            self._submit_fill(operation)
+                        else:
+                            self._submit_load_back(operation)
             except Exception as exc:
                 self._fault = str(exc)
                 raise
@@ -408,7 +525,7 @@ class PrefixStore:
         ):
             raise ValueError("conflicting duplicate prefix read")
         if operation.receipt is None:
-            if not operation.event.query():
+            if not self._copy_complete(operation):
                 return None
             main, index = (
                 self.manager.layout.prefix_main,
@@ -917,6 +1034,16 @@ class PrefixStore:
             )
             self._report("retained", source, 0, [], pages)
             self._source = None
+        if self.copy_executor is not None:
+            operations: tuple[_Admit | _Read, ...] = (
+                *self._operations.values(),
+                *self._reads.values(),
+            )
+            for operation in operations:
+                if operation.rid == rid and (
+                    isinstance(operation, _Admit) or operation.kind == "fill"
+                ):
+                    self.copy_executor.retire(operation.op_id)
         self._operations = {
             op_id: operation
             for op_id, operation in self._operations.items()

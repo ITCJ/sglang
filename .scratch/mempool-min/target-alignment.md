@@ -112,6 +112,15 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 
 ## D 名称、验收与实施票怎样对应
 
+**2026-11-02 K1-11工程：fill/admit服务接入已实现，待NPU验收。**
+
+P分片共用demo执行器，tick提交/轮询，按完整prompt分工；空清单汇总、源释放门、UNKNOWN保留。
+显式pool_copy开关默认关闭；开启前须部署GitCode1.1.4的最小batch错误传播补丁，未自动安装SDK。
+两轮服务入口复用原验收，核16分片、2N/9N/字节、库完成后receipt及50ms延迟；服务不新增目标读回。
+CPU合并549项中548通过，1项既有UINT32_MAX预期失败；双轴代码问题已修复。
+[工程交付](../../ascend-mempool-test/K1_TICKET11.md)含31/32命令与SDK前提。
+服务NPU、真实在途失败/超时、性能尚未验证，11仍open、09阻塞。
+
 **2026-11-02 K1-11 demo：共用适配层与两组P/D入口已交付。**
 
 用户授权implement demo；生产fill/admit尚未切换。

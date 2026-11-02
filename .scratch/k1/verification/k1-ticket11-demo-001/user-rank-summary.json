@@ -1,0 +1,275 @@
+{
+  "source": "User-pasted all-ranks summary; not the full raw report",
+  "ranks": [
+    {
+      "role": "prefill",
+      "rank": 0,
+      "device": 0,
+      "numa": 0,
+      "status": "passed",
+      "commit": "746ec2d54c5fa015a891e5e9b94fc2d47251d783",
+      "mf_version": "unknown",
+      "cases": [
+        {
+          "op": "admit",
+          "blocks": 8,
+          "bytes": 48758784,
+          "ticks_during_wait": 10,
+          "gil_runtime": "observed-progress",
+          "timing": {
+            "submit_enter": 964582.922874098,
+            "submit_returned": 964582.923250061,
+            "wait_returned": 964582.924780803,
+            "submit_return": 0,
+            "wait_return": 0,
+            "tid": 375353,
+            "blocks": 8,
+            "bytes": 48758784
+          }
+        },
+        {
+          "op": "fill",
+          "blocks": 12,
+          "bytes": 51511296,
+          "ticks_during_wait": 15,
+          "gil_runtime": "observed-progress",
+          "timing": {
+            "submit_enter": 964583.594692102,
+            "submit_returned": 964583.594776593,
+            "wait_returned": 964583.597043071,
+            "submit_return": 0,
+            "wait_return": 0,
+            "tid": 375353,
+            "blocks": 12,
+            "bytes": 51511296
+          }
+        }
+      ]
+    },
+    {
+      "role": "prefill",
+      "rank": 1,
+      "device": 1,
+      "numa": 0,
+      "status": "passed",
+      "commit": "746ec2d54c5fa015a891e5e9b94fc2d47251d783",
+      "mf_version": "unknown",
+      "cases": [
+        {
+          "op": "admit",
+          "blocks": 0,
+          "bytes": 0,
+          "ticks_during_wait": 0,
+          "gil_runtime": "unverified-no-samples",
+          "timing": {}
+        },
+        {
+          "op": "fill",
+          "blocks": 4,
+          "bytes": 46006272,
+          "ticks_during_wait": 12,
+          "gil_runtime": "observed-progress",
+          "timing": {
+            "submit_enter": 964583.59442681,
+            "submit_returned": 964583.595370207,
+            "wait_returned": 964583.597367543,
+            "submit_return": 0,
+            "wait_return": 0,
+            "tid": 375352,
+            "blocks": 4,
+            "bytes": 46006272
+          }
+        }
+      ]
+    },
+    {
+      "role": "prefill",
+      "rank": 2,
+      "device": 2,
+      "numa": 1,
+      "status": "passed",
+      "commit": "746ec2d54c5fa015a891e5e9b94fc2d47251d783",
+      "mf_version": "unknown",
+      "cases": [
+        {
+          "op": "admit",
+          "blocks": 8,
+          "bytes": 48758784,
+          "ticks_during_wait": 10,
+          "gil_runtime": "observed-progress",
+          "timing": {
+            "submit_enter": 964582.922904258,
+            "submit_returned": 964582.923972437,
+            "wait_returned": 964582.925490399,
+            "submit_return": 0,
+            "wait_return": 0,
+            "tid": 375349,
+            "blocks": 8,
+            "bytes": 48758784
+          }
+        },
+        {
+          "op": "fill",
+          "blocks": 4,
+          "bytes": 46006272,
+          "ticks_during_wait": 11,
+          "gil_runtime": "observed-progress",
+          "timing": {
+            "submit_enter": 964583.594291849,
+            "submit_returned": 964583.59440102,
+            "wait_returned": 964583.596179494,
+            "submit_return": 0,
+            "wait_return": 0,
+            "tid": 375349,
+            "blocks": 4,
+            "bytes": 46006272
+          }
+        }
+      ]
+    },
+    {
+      "role": "prefill",
+      "rank": 3,
+      "device": 3,
+      "numa": 1,
+      "status": "passed",
+      "commit": "746ec2d54c5fa015a891e5e9b94fc2d47251d783",
+      "mf_version": "unknown",
+      "cases": [
+        {
+          "op": "admit",
+          "blocks": 0,
+          "bytes": 0,
+          "ticks_during_wait": 0,
+          "gil_runtime": "unverified-no-samples",
+          "timing": {}
+        },
+        {
+          "op": "fill",
+          "blocks": 4,
+          "bytes": 46006272,
+          "ticks_during_wait": 13,
+          "gil_runtime": "observed-progress",
+          "timing": {
+            "submit_enter": 964583.594338309,
+            "submit_returned": 964583.595214646,
+            "wait_returned": 964583.597252953,
+            "submit_return": 0,
+            "wait_return": 0,
+            "tid": 375355,
+            "blocks": 4,
+            "bytes": 46006272
+          }
+        }
+      ]
+    },
+    {
+      "role": "decode",
+      "rank": 0,
+      "device": 0,
+      "numa": 0,
+      "status": "passed",
+      "commit": "746ec2d54c5fa015a891e5e9b94fc2d47251d783",
+      "mf_version": "unknown",
+      "cases": [
+        {
+          "op": "admit",
+          "blocks": 0,
+          "bytes": 0,
+          "ticks_during_wait": 0,
+          "gil_runtime": "unverified-no-samples",
+          "timing": {}
+        },
+        {
+          "op": "fill",
+          "blocks": 0,
+          "bytes": 0,
+          "ticks_during_wait": 0,
+          "gil_runtime": "unverified-no-samples",
+          "timing": {}
+        }
+      ]
+    },
+    {
+      "role": "decode",
+      "rank": 1,
+      "device": 1,
+      "numa": 0,
+      "status": "passed",
+      "commit": "746ec2d54c5fa015a891e5e9b94fc2d47251d783",
+      "mf_version": "unknown",
+      "cases": [
+        {
+          "op": "admit",
+          "blocks": 0,
+          "bytes": 0,
+          "ticks_during_wait": 0,
+          "gil_runtime": "unverified-no-samples",
+          "timing": {}
+        },
+        {
+          "op": "fill",
+          "blocks": 0,
+          "bytes": 0,
+          "ticks_during_wait": 0,
+          "gil_runtime": "unverified-no-samples",
+          "timing": {}
+        }
+      ]
+    },
+    {
+      "role": "decode",
+      "rank": 2,
+      "device": 2,
+      "numa": 1,
+      "status": "passed",
+      "commit": "746ec2d54c5fa015a891e5e9b94fc2d47251d783",
+      "mf_version": "unknown",
+      "cases": [
+        {
+          "op": "admit",
+          "blocks": 0,
+          "bytes": 0,
+          "ticks_during_wait": 0,
+          "gil_runtime": "unverified-no-samples",
+          "timing": {}
+        },
+        {
+          "op": "fill",
+          "blocks": 0,
+          "bytes": 0,
+          "ticks_during_wait": 0,
+          "gil_runtime": "unverified-no-samples",
+          "timing": {}
+        }
+      ]
+    },
+    {
+      "role": "decode",
+      "rank": 3,
+      "device": 3,
+      "numa": 1,
+      "status": "passed",
+      "commit": "746ec2d54c5fa015a891e5e9b94fc2d47251d783",
+      "mf_version": "unknown",
+      "cases": [
+        {
+          "op": "admit",
+          "blocks": 0,
+          "bytes": 0,
+          "ticks_during_wait": 0,
+          "gil_runtime": "unverified-no-samples",
+          "timing": {}
+        },
+        {
+          "op": "fill",
+          "blocks": 0,
+          "bytes": 0,
+          "ticks_during_wait": 0,
+          "gil_runtime": "unverified-no-samples",
+          "timing": {}
+        }
+      ]
+    }
+  ]
+}
