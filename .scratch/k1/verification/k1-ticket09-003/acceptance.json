@@ -1,0 +1,13 @@
+{
+  "date": "2026-11-03",
+  "user_confirmation": "关闭",
+  "user_accepted": true,
+  "ticket": "K1-09",
+  "state": "closed",
+  "runs": [
+    "k1-ticket09-001",
+    "k1-ticket09-002",
+    "k1-ticket09-003"
+  ],
+  "scope": "four configuration functional acceptance; existing evidence limitations retained"
+}

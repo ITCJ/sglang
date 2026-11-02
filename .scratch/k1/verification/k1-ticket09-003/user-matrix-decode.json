@@ -1,0 +1,17 @@
+{
+  "status": "passed",
+  "user_accepted": false,
+  "combinations": {
+    "b64-sd128": {
+      "status": "passed",
+      "exit_code": 0,
+      "report": "/home/cryang/log/mempool-min/k1-ticket09-003/k1-ticket09-003-b64-sd128/decode/v1-v10.json"
+    },
+    "b64-sd512": {
+      "status": "passed",
+      "exit_code": 0,
+      "report": "/home/cryang/log/mempool-min/k1-ticket09-003/k1-ticket09-003-b64-sd512/decode/v1-v10.json"
+    }
+  },
+  "coverage": "remaining combinations only"
+}

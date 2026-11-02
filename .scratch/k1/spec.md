@@ -14,16 +14,17 @@ K1功能实现与NUMA验收继续推进；下文性能复测、基线并列和�
 执行文本和[基线目标](k1-01-baseline-prompt.md)按原文同步；各票保留本地状态、依赖链接、验收勾选与 Comments。
 设计决策回查 [mempool-min 讨论](/Users/hibikid/Documents/syncfile/sglang-kv-explainer/mempool-min-demo/discussion.md)及[完整设计讨论](/Users/hibikid/Documents/syncfile/sglang-kv-explainer/mempool-design/discussion.md)。
 
-**当前结论（2026-11-02用户验收）：** 01、02、03、05、06、07、08、11、12已closed，共9 closed、3 open。
+**当前结论（2026-11-03用户验收）：** 01、02、03、05、06、07、08、09、11、12已closed，共10 closed、2 open。
 用户在11之前新增[12：page first](issues/12-k1-05d-page-first-layout.md)，主线为07→08→12→11→09。
-12的004与11的002双机验收均已由用户确认关闭；09前置全部满足，已解锁但尚未实施。04、10不阻塞。
+09的001/002/003四组双机功能验收已由用户确认关闭，K1功能主线完成。
+04、10作为不阻塞的旁路票继续open；下一主推进为阶段1，本轮未启动。
 会话恢复读[项目记忆](memory.md)；本地[M17/M58摘录](../mempool-min/discussion.md)保留此次决定。
 设计agent负责架构逻辑，Ascend/NPU具体实现以本仓库实际接口与验证为准。
 
 **2026-11-02 ticket09范围补充：** 用户指定 `(B,S_D)` 为
 `(128,128)/(128,512)/(64,128)/(64,512)`，保持原09完整验收思路。
 配置矩阵、派生容量与实施顺序见[09计划](ticket09-implementation-plan.md)。
-目前仅完成规划；四组均未运行，09保持open。
+四组均已报告通过并由用户确认关闭；[合核与证据边界](verification/k1-ticket09-003/README.md)。
 
 ## 票据索引
 
