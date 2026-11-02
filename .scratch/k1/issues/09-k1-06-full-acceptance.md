@@ -60,3 +60,16 @@ prefix保持5120-token容量，分别40/80页；长生成上限随S_D。
 本地修复测试入口遗漏dist-init端口及单次bind误报路径，复用已有TIME_WAIT/监听判别。
 两项本机回归通过，硬件原因尚无端口快照；详见[001记录](../verification/k1-ticket09-001/README.md)。
 新增--start-from支持002仅跑剩余三组，第一组保留001证据。09仍open。
+
+### 2026-11-02：NPU002第二组通过，64/128证据解析失败
+
+用户回传128/512两侧passed；64/128在target报JSONDecodeError(char4964)，64/512未运行。
+[002记录](../verification/k1-ticket09-002/README.md)保留摘要边界；先取已有日志，不安排第三轮。
+09保持open，尚未定位具体JSON来源。
+
+### 2026-11-02：确认长JSON交错并修复证据输出
+
+用户提供TP3/TP13 JSON中插入TP5/TP0日志头，已确认多进程长日志交错。
+验收输出改为独立prefix-content JSON文件+短日志引用，检查器保留原行号与完整内容校验。
+11项CPU、8模块Linux目标strict mypy、ruff通过，Standards/Spec无阻断。
+003仅继续64两组；64/128为第二次尝试，64/512首次。09仍open。

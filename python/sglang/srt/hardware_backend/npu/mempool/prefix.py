@@ -7,6 +7,8 @@ import hashlib
 import importlib
 import json
 import logging
+import os
+from pathlib import Path
 from contextlib import nullcontext
 from typing import Any, Callable
 
@@ -22,6 +24,25 @@ from .pool_copy import CopyBlock, CopyTask, PoolCopyExecutor
 from .split_read import assign_prefix_pages
 
 logger = logging.getLogger(__name__)
+
+
+def log_prefix_content(record: dict[str, Any]) -> None:
+    """Keep large acceptance records out of the multi-process launcher stream."""
+    payload = json.dumps(record, sort_keys=True)
+    folder = os.environ.get("SGLANG_NPU_MEMPOOL_EVIDENCE_DIR")
+    if folder is None:
+        logger.info("mempool prefix_content data=%s", payload)
+        return
+    relative = Path("prefix-content") / (
+        hashlib.sha256(payload.encode()).hexdigest() + ".json"
+    )
+    destination = Path(folder) / relative
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(payload + "\n")
+    # File is closed before the causal marker; each rank has its own record.
+    logger.info(
+        "mempool prefix_content_file data=%s", json.dumps(dict(file=str(relative)))
+    )
 
 
 class _Source(msgspec.Struct):
@@ -1204,28 +1225,24 @@ class PrefixStore:
     ) -> None:
         main, index = self.manager.layout.prefix_main, self.manager.layout.prefix_index
         assert main is not None and index is not None
-        logger.info(
-            "mempool prefix_content data=%s",
-            json.dumps(
-                dict(
-                    stage=stage,
-                    rank=self.replica,
-                    rid=source.rid,
-                    slot=source.slot,
-                    op_id=op_id,
-                    prompt_tokens=source.tokens,
-                    source_pages=source_pages,
-                    main_layers=main.layers,
-                    index_layers=index.layers,
-                    page_size=self.page_size,
-                    pages=pages,
-                    content_source=(
-                        "native_hbm" if stage == "load_back" else "computed_source"
-                    ),
-                    bm_readback=False,
-                    prefix_shared=self.prefix_layout is not None,
-                    **evidence,
+        log_prefix_content(
+            dict(
+                stage=stage,
+                rank=self.replica,
+                rid=source.rid,
+                slot=source.slot,
+                op_id=op_id,
+                prompt_tokens=source.tokens,
+                source_pages=source_pages,
+                main_layers=main.layers,
+                index_layers=index.layers,
+                page_size=self.page_size,
+                pages=pages,
+                content_source=(
+                    "native_hbm" if stage == "load_back" else "computed_source"
                 ),
-                sort_keys=True,
+                bm_readback=False,
+                prefix_shared=self.prefix_layout is not None,
+                **evidence,
             ),
         )

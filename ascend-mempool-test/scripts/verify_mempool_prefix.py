@@ -28,8 +28,13 @@ class Reports(msgspec.Struct):
         for line_no, line in enumerate(
             prefill.read_text(errors="replace").splitlines()
         ):
-            if "mempool prefix_content data=" in line:
+            if (
+                "mempool prefix_content_file data=" in line
+                or "mempool prefix_content data=" in line
+            ):
                 value = json.loads(line.split(" data=", 1)[1])
+                if "mempool prefix_content_file data=" in line:
+                    value = json.loads((prefill.parent / value["file"]).read_text())
                 content_key = value["rid"], value["rank"], value["stage"]
                 if content_key in report.contents:
                     raise ValueError("duplicate prefix content receipt")

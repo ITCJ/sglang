@@ -77,3 +77,13 @@ SDK构建字符串是审计标签，不单独证明部署二进制含补丁。
 更新代码后，两侧改用run-id `k1-ticket09-002`，并加 `--start-from b128-sd512`。
 自动跑剩余三组；首组沿用001报告，本轮报告标为remaining combinations only。
 若仍有真实监听，回传preflight-port-10000.json；不要强杀未知进程。
+
+## 002后的64页续跑
+
+002的128/512通过；64/128在target的长prefix_content日志发生rank间交错。
+修复仅验收证据输出：完整JSON保存在阶段的 `prefix-content/` 下，日志写短引用。
+**归档和回传须包含该目录**；缺文件或损坏仍失败，不能仅复制prefill.log。
+两侧更新后用run-id `k1-ticket09-003`、`--start-from b64-sd128`，仅跑64两组。
+64/128为修复后的第二次尝试，64/512此前未运行；128两组无需重跑。
+功能源码新增净改动：NPU `mempool/prefix.py` 仅改变验收证据写出，不改KV/同步/释放。
+测试入口设置显式证据目录，检查器保持原日志行号及旧inline格式兼容。

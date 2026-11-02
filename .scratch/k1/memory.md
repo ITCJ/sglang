@@ -1,5 +1,11 @@
 # K1 项目记忆
 
+最新09反馈002：128/512两侧passed，64/128在target报JSONDecodeError(char4964)，64/512未运行。
+连同001的128/128，现有两组128页已报告通过；09仍open。
+用户取证已确认TP长JSON交错；修复为独立prefix-content文件+短日志引用，保留完整校验。
+11项CPU与8模块Linux目标类型检查通过；003从b64-sd128继续，128两组不重跑。
+回传须保留prefix-content目录；见verification/k1-ticket09-002/README.md。
+
 最新09反馈：001的128/128两侧passed；128/512在D:10000端口preflight失败，64两组not-run。
 测试入口现将10000纳入释放检查，preflight复用TIME_WAIT等待；真实监听仍失败。
 002用--start-from b128-sd512续跑，保留001首组证据。09未关闭，详见verification/k1-ticket09-001/README.md。

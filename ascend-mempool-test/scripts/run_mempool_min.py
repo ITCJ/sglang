@@ -160,6 +160,7 @@ def service_environment(
         "HTTPS_PROXY",
         "SGLANG_NPU_MEMPOOL_TEST_CAPACITY",
         "MEMPOOL_RANK_NUMA_MAP",
+        "SGLANG_NPU_MEMPOOL_EVIDENCE_DIR",
     ):
         env.pop(name, None)
     env.update(
@@ -185,6 +186,8 @@ def service_environment(
         HCCL_SOCKET_IFNAME=config.interface,
         GLOO_SOCKET_IFNAME=config.interface,
     )
+    if target and config.verify_prefix:
+        env["SGLANG_NPU_MEMPOOL_EVIDENCE_DIR"] = str(root)
     if target:
         env[CONFIG_ENV], env[RUN_ENV] = str(args.config), args.run_id
         if getattr(args, "rank_numa_map", None) is not None:
