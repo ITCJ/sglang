@@ -20,6 +20,11 @@ from ascend_mempool_pd.mempool_router_protocol import RouterConfig
 
 
 class TestSessionAcceptance(unittest.TestCase):
+    def test_model_distributed_port_is_checked_at_each_stage_boundary(self):
+        config = RouterConfig("p", "d", "/model")
+        for role in ("prefill", "decode"):
+            self.assertIn(10000, run_mempool_min.service_ports(config, role))
+
     def test_prefix_cli_enables_single_segments_and_reports_both_budgets(self):
         with tempfile.TemporaryDirectory() as folder:
             config = Path(folder) / "config.json"

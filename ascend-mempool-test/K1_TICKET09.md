@@ -70,3 +70,10 @@ SDK构建字符串是审计标签，不单独证明部署二进制含补丁。
 `mempool_logical_cases.py`参数化题目；`verify_mempool_prefix/reuse/min/full/decode.py`核验内容与完整证据；
 `run_pool_copy_acceptance.py`复用搬运检查；`verify_graph.py`传入B；`verify_fetch.py`强制跨页读取。
 相关unit覆盖配置/扣账、逻辑题、报告拒绝、共享D数据和独立地址oracle。
+
+## 001后的续跑
+
+001首组128/128两侧通过，第二组在D:10000端口预检失败。
+更新代码后，两侧改用run-id `k1-ticket09-002`，并加 `--start-from b128-sd512`。
+自动跑剩余三组；首组沿用001报告，本轮报告标为remaining combinations only。
+若仍有真实监听，回传preflight-port-10000.json；不要强杀未知进程。

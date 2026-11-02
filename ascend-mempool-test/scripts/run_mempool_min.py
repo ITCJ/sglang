@@ -39,7 +39,6 @@ SESSION_MODES = (
     "page-first-acceptance",
 )
 from run_ticket10 import (
-    available_port,
     connect,
     model_identity,
     receive_log,
@@ -225,6 +224,7 @@ def service_ports(config: RouterConfig, role: str) -> set[int]:
     )
     sessions = [plan.session(rank) for rank in range(16)]
     ports = {session.nic_base_port + session.participant for session in sessions}
+    ports.add(10000)  # run_service.sh --dist-init-addr on both hosts
     ports.add(config.prefill_port if role == "prefill" else config.decode_port)
     if role == "prefill":
         ports.update(session.store_port for session in sessions)
@@ -431,11 +431,18 @@ class Runner:
                 stderr=subprocess.STDOUT,
                 check=True,
             )
-        ports = service_ports(self.config, self.args.role) | {10000}
+        ports = service_ports(self.config, self.args.role)
         if self.is_p:
             ports.update((self.config.bootstrap_port, 24670))
-        for port in ports:
-            available_port(self.host, port)
+        deadline = time.monotonic() + self.config.operation_timeout
+        for port in sorted(ports):
+            verify_mempool_session.released_port(
+                self.host,
+                port,
+                timeout=max(0, deadline - time.monotonic()),
+                evidence_path=self.root / f"preflight-port-{port}.json",
+                check=self.peer.check,
+            )
         if self.config.verify_decode:
             from mempool_numa_runner import topology
 

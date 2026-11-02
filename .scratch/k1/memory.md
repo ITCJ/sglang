@@ -1,5 +1,9 @@
 # K1 项目记忆
 
+最新09反馈：001的128/128两侧passed；128/512在D:10000端口preflight失败，64两组not-run。
+测试入口现将10000纳入释放检查，preflight复用TIME_WAIT等待；真实监听仍失败。
+002用--start-from b128-sd512续跑，保留001首组证据。09未关闭，详见verification/k1-ticket09-001/README.md。
+
 更新：2026-11-02。用户确认31/32的11工程002验收并明确关闭；11已closed，09已解锁、尚未实施。
 用户随后要求09保持完整验收并覆盖B=128/64、S_D=128/512四组。
 [09实施计划](ticket09-implementation-plan.md)已写；prefix维持5120 tokens，四组均not-run。

@@ -53,3 +53,10 @@ prefix保持5120-token容量，分别40/80页；长生成上限随S_D。
 [运行说明](../../../ascend-mempool-test/K1_TICKET09.md)、[CPU与review](../verification/ticket09-cpu/README.md)。
 完整CPU553项，已修正本次报告夹具；关键39项与沙箱补跑21项通过，既有UINT32_MAX旧预期失败保留。
 四组NPU均未运行；State=open，等待用户真实验收与确认，不勾选硬件验收项。
+
+### 2026-11-02：NPU001第一组通过，第二组preflight端口失败
+
+用户回传两侧b128-sd128 passed，第二组D的10000 occupied，后两组not-run。
+本地修复测试入口遗漏dist-init端口及单次bind误报路径，复用已有TIME_WAIT/监听判别。
+两项本机回归通过，硬件原因尚无端口快照；详见[001记录](../verification/k1-ticket09-001/README.md)。
+新增--start-from支持002仅跑剩余三组，第一组保留001证据。09仍open。

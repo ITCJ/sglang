@@ -53,12 +53,19 @@ def main() -> int:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--sdk-build-id", required=True)
     parser.add_argument("--describe", action="store_true")
+    parser.add_argument(
+        "--start-from",
+        choices=[f"b{b}-sd{sd}" for b, sd in MATRIX],
+        help="Resume at this combination; earlier results remain in the previous run",
+    )
     args = parser.parse_args()
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,59}", args.run_id):
         parser.error(
             "run-id must be a simple new directory name, at most 60 characters"
         )
     configs = configurations(RouterConfig.read(str(args.config)), args.sdk_build_id)
+    if args.start_from:
+        configs = configs[[name for name, _ in configs].index(args.start_from) :]
     if args.describe:
         print(
             json.dumps({name: msgspec.to_builtins(c) for name, c in configs}, indent=2)
@@ -116,6 +123,9 @@ def main() -> int:
                 raise ValueError(f"{name}: full K1 evidence missing or failed")
             entry["status"] = "passed"
         report["status"] = "passed"
+        report["coverage"] = (
+            "remaining combinations only" if args.start_from else "complete matrix"
+        )
         return 0
     except (Exception, KeyboardInterrupt) as exc:
         report["error"] = str(exc)
