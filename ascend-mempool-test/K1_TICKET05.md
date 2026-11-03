@@ -1,5 +1,10 @@
 # K1-ticket05：P alive 主 KV 共享
 
+2026-11-03验收后清理：P共享启动跨写者探针已删除；下文相关哨兵结论属于历史验收版本。
+当前入口继续做共享注册、内容与生命周期回归，不再要求shared_probe字段。
+详见[清理记录](../.scratch/k1/cleanup-test-hooks.md)。
+
+
 P、D 各一台 TP16，模型 GLM-5.2，page 128，P slot 8192，D slot 128。
 P 主 KV 为 8 份；D 主 KV、P Index K、prefix 主 KV、prefix Index K 各 16 份。
 两机使用相同提交、模型和配置，CANN / ATB / MemFabric 环境沿用前票。

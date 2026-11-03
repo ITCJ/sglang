@@ -91,7 +91,6 @@ class TestSharedDecode(unittest.TestCase):
                     ],
                     event_factory=event,
                     decode_writer=DecodeWriter(member, 2, assignment),
-                    verify_decode=True,
                 )
                 runtimes.append(runtime)
                 bindings.append(runtime.bind(1, slot=0, prompt_tokens=2, prompt_slot=1))
@@ -146,10 +145,6 @@ class TestSharedDecode(unittest.TestCase):
                     )
             for runtime, binding in zip(runtimes, bindings):
                 self.assertEqual(runtime.completion_report(binding)["written_kv"], 4)
-                self.assertEqual(
-                    runtime.completion_report(binding)["shared_decode"]["checked_rows"],
-                    6,
-                )
 
 
 if __name__ == "__main__":

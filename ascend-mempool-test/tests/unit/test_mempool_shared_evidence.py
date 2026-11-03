@@ -68,25 +68,10 @@ def shared_registration(
                 replica_locations=manager.replica_registration(),
                 local_dram_bytes=manager.contribution,
                 numa_placement_verified=False,
-                shared_probe=dict(
-                    status="passed",
-                    reader=row["rank"],
-                    writers=list(session.region_members(0)),
-                    copy="unidex_copy",
-                    source="shared_prompt",
-                    bytes=2304,
-                ),
             )
             if prefix_shared and side == 0:
                 row.update(
                     prefix_region=session.identity, prefix_policy=config.prefix_policy()
-                )
-            if decode_shared and side == 1:
-                row["shared_probe"]["decode_order"] = dict(
-                    status="passed",
-                    engine="graph_replay",
-                    negative_without_wait=True,
-                    positive_with_wait=True,
                 )
     return config, registrations
 
@@ -183,6 +168,16 @@ class TestSharedEvidence(unittest.TestCase):
                 ordering="compute_stream_before_post_attention_tp_collective",
             ),
         )
+        # Historical report checker only: current registration has no probes.
+        for row in registrations["decode"]["ranks"]:
+            row["shared_probe"] = dict(
+                decode_order=dict(
+                    status="passed",
+                    engine="graph_replay",
+                    negative_without_wait=True,
+                    positive_with_wait=True,
+                )
+            )
         check_order(registrations)
         self.assertEqual(check_completion(data, 1, config)["steps"], 3)
         for key in ("checked_rows", "written_bytes"):
@@ -196,7 +191,7 @@ class TestSharedEvidence(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Graph ordering"):
             check_order(registrations)
 
-    def test_shared_registration_rejects_private_aliases_and_missing_peer_reads(self):
+    def test_shared_registration_rejects_private_aliases(self):
         config, registrations = shared_registration(self)
         result = verify_mempool_shared.check_registration(registrations, config)
         self.assertEqual(result["main_replicas"], 8)
@@ -209,10 +204,6 @@ class TestSharedEvidence(unittest.TestCase):
             bad["prefill"]["ranks"][1]["replica_locations"][region]["members"] = [0, 1]
             with self.assertRaisesRegex(ValueError, "owner/member"):
                 verify_mempool_shared.check_registration(bad, config)
-        bad = copy.deepcopy(registrations)
-        bad["decode"]["ranks"][1]["shared_probe"]["writers"] = [1]
-        with self.assertRaisesRegex(ValueError, "cross-writer"):
-            verify_mempool_shared.check_registration(bad, config)
 
     def test_session_startup_checker_selects_the_shared_registration_contract(self):
         import verify_mempool_session

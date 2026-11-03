@@ -8,7 +8,7 @@ import queue
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
@@ -35,11 +35,10 @@ class CopyResult:
     state: str
     finished: float = 0
     error: str = ""
-    evidence: dict[str, Any] = field(default_factory=dict)
 
 
 class Transfer(Protocol):
-    def transfer(self, blocks: tuple[CopyBlock, ...]) -> dict[str, Any]: ...
+    def transfer(self, blocks: tuple[CopyBlock, ...]) -> None: ...
 
 
 class CompletionUnknown(RuntimeError):
@@ -52,8 +51,7 @@ class BMTransfer:
     def __init__(self, handle: Any, bm: Any) -> None:
         self.handle, self.bm = handle, bm
 
-    def transfer(self, blocks: tuple[CopyBlock, ...]) -> dict[str, Any]:
-        started = time.monotonic()
+    def transfer(self, blocks: tuple[CopyBlock, ...]) -> None:
         ret = self.handle.copy_data_batch(
             [b.src_gva for b in blocks],
             [b.dst_gva for b in blocks],
@@ -63,26 +61,14 @@ class BMTransfer:
             flags=1,
             stream=0,
         )
-        submitted = time.monotonic()
         if ret != 0:
             raise RuntimeError(f"BM batch returned {ret}; partial writes possible")
         try:
             ret = self.handle.wait()
         except Exception as exc:  # noqa: BLE001 - deliver thread failures to poll  # noqa: BLE001 - preserve unknown native completion
             raise CompletionUnknown(str(exc)) from exc
-        finished = time.monotonic()
         if ret != 0:
             raise CompletionUnknown(f"BM wait returned {ret}; completion unknown")
-        return dict(
-            submit_enter=started,
-            submit_returned=submitted,
-            wait_returned=finished,
-            submit_return=0,
-            wait_return=0,
-            tid=threading.get_native_id(),
-            blocks=len(blocks),
-            bytes=sum(b.nbytes for b in blocks),
-        )
 
 
 class PoolCopyExecutor:
@@ -93,21 +79,16 @@ class PoolCopyExecutor:
         transfer: Transfer,
         *,
         timeout: float,
-        delay_seconds: float = 0,
         setup: Callable[[], None] = lambda: None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("copy timeout must be positive and finite")
-        if not math.isfinite(delay_seconds) or delay_seconds < 0:
-            raise ValueError("copy delay must be nonnegative and finite")
-        self.delay_seconds = delay_seconds
         self.transfer, self.timeout, self.clock = transfer, timeout, clock
         self._tasks: queue.Queue[CopyTask | None] = queue.Queue()
         self._results: queue.Queue[CopyResult] = queue.Queue()
         self._pending: dict[int, tuple[CopyTask, float]] = {}
         self._completed: dict[int, CopyResult] = {}
-        self._polls: dict[int, list[float]] = {}
         self._closed = False
         self._failed = threading.Event()
         self._thread = threading.Thread(target=self._run, args=(setup,), daemon=True)
@@ -120,11 +101,6 @@ class PoolCopyExecutor:
         self._tasks.put(task)
 
     def poll(self, op_id: int) -> CopyResult:
-        now = self.clock()
-        stats = self._polls.setdefault(op_id, [0.0, now, 0.0])
-        stats[0] += 1
-        stats[2] = max(stats[2], now - stats[1])
-        stats[1] = now
         while True:
             try:
                 result = self._results.get_nowait()
@@ -147,10 +123,6 @@ class PoolCopyExecutor:
         result = self._completed.get(op_id, CopyResult(task, "PENDING"))
         if result.state in ("FAILED", "UNKNOWN"):
             self._failed.set()
-        if result.state != "PENDING":
-            result.evidence.update(
-                poll_count=int(stats[0]), max_poll_gap_seconds=stats[2]
-            )
         return result
 
     def _run(self, setup: Callable[[], None]) -> None:
@@ -172,20 +144,9 @@ class PoolCopyExecutor:
                     raise CompletionUnknown("executor stopped or task expired")
                 if setup_error:
                     raise RuntimeError(setup_error)
-                delay_started = self.clock()
-                if task.blocks and self.delay_seconds:
-                    time.sleep(self.delay_seconds)
-                if (
-                    self._failed.is_set()
-                    or self.clock() >= self._pending[task.op_id][1]
-                ):
-                    raise CompletionUnknown("copy expired before device submission")
-                evidence = self.transfer.transfer(task.blocks) if task.blocks else {}
-                evidence.update(
-                    delay_started=delay_started,
-                    delay_seconds=self.delay_seconds if task.blocks else 0,
-                )
-                result = CopyResult(task, "READY", self.clock(), evidence=evidence)
+                if task.blocks:
+                    self.transfer.transfer(task.blocks)
+                result = CopyResult(task, "READY", self.clock())
             except Exception as exc:  # noqa: BLE001 - deliver thread failures to poll
                 result = CopyResult(
                     task,
@@ -202,7 +163,6 @@ class PoolCopyExecutor:
             raise RuntimeError("cannot retire an incomplete or failed copy")
         del self._completed[op_id]
         del self._pending[op_id]
-        self._polls.pop(op_id, None)
 
     def close(self) -> None:
         """Test/owner drain only; never called by scheduler tick on fail-stop."""
@@ -219,6 +179,7 @@ def device_thread_setup(device: str, numa_node: int, bind_cpu: bool = True) -> N
     """Bind only the copy thread, preserving scheduler affinity."""
     import os
     from pathlib import Path
+
     import torch
 
     torch.npu.set_device(device)

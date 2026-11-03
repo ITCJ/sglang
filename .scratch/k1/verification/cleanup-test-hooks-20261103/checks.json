@@ -1,0 +1,28 @@
+{
+  "base": "b3bb63e067",
+  "cpu_full": {
+    "run": 556,
+    "passed_methods": 550,
+    "failed_methods": 6,
+    "failures": 8,
+    "errors": 5
+  },
+  "baseline_original": {
+    "run": 6,
+    "failures": 8,
+    "errors": 5,
+    "identical_failure_entries": true
+  },
+  "cpu_focused": {
+    "run": 59,
+    "status": "passed"
+  },
+  "static": {
+    "python_files": 18,
+    "ruff": true,
+    "isort": true,
+    "python39_ast": true,
+    "strict_mypy_linux_modules": 11
+  },
+  "hardware": "not-run"
+}

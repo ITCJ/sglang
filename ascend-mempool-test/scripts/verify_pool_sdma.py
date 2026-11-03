@@ -6,11 +6,12 @@ import argparse
 import datetime
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
+import threading
 import time
 import traceback
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -34,16 +35,43 @@ def write_report(path, report):
     temporary.replace(path)
 
 
+class MeasuredHandle:
+    """Collect SDK timing only in the standalone experiment."""
+
+    def __init__(self, handle):
+        self.handle = handle
+        self.evidence = {}
+
+    def copy_data_batch(self, *args, **kwargs):
+        self.evidence = dict(
+            submit_enter=time.monotonic(), tid=threading.get_native_id()
+        )
+        result = self.handle.copy_data_batch(*args, **kwargs)
+        self.evidence.update(submit_returned=time.monotonic(), submit_return=result)
+        return result
+
+    def wait(self):
+        result = self.handle.wait()
+        self.evidence.update(wait_returned=time.monotonic(), wait_return=result)
+        return result
+
+
 def worker(args, report):
-    import torch
-    import torch_npu  # noqa: F401
     import memfabric_hybrid as mf
     import sgl_kernel_npu.sparsity_driven_kv_offload  # noqa: F401
+    import torch
+    import torch_npu  # noqa: F401
+
+    from ascend_mempool.indexed_copy import copy_rows
     from ascend_mempool.layout import KVLayout, PoolLayout
     from ascend_mempool.manager import MempoolKVManager
-    from ascend_mempool.sharing_plan import MempoolNumaConfig, HostTopology, RankNuma
-    from ascend_mempool.pool_copy import CopyBlock, CopyTask, PoolCopyExecutor
-    from ascend_mempool.indexed_copy import copy_rows
+    from ascend_mempool.pool_copy import (
+        BMTransfer,
+        CopyBlock,
+        CopyTask,
+        PoolCopyExecutor,
+    )
+    from ascend_mempool.sharing_plan import HostTopology, MempoolNumaConfig, RankNuma
 
     rank = args.worker
     side = int(args.role == "decode")
@@ -145,8 +173,10 @@ def worker(args, report):
         os.sched_setaffinity(0, cpus)
         report["executor_cpus"] = sorted(os.sched_getaffinity(0))
 
+    transfer = manager.pool_transfer()
+    measured = MeasuredHandle(transfer.handle)
     executor = PoolCopyExecutor(
-        manager.pool_transfer(), timeout=args.timeout, setup=setup
+        BMTransfer(measured, transfer.bm), timeout=args.timeout, setup=setup
     )
 
     # Patterns are built independently as [layer, token, feature] for each page.
@@ -278,6 +308,7 @@ def worker(args, report):
         report["active_task"] = dict(
             rid="synthetic", op_id=op_id, kind=kind, paths=paths
         )
+        measured.evidence = {}
         executor.submit(CopyTask("synthetic", op_id, kind, tuple(blocks)))
         ticks = []
         while True:
@@ -286,11 +317,14 @@ def worker(args, report):
             if result.state != "PENDING":
                 break
             time.sleep(0.0001)
+        evidence = dict(
+            measured.evidence, blocks=len(blocks), bytes=sum(b.nbytes for b in blocks)
+        )
         report["active_task"].update(
             state=result.state,
             error=result.error,
             ticks=ticks,
-            evidence=result.evidence,
+            evidence=evidence,
         )
         if result.state != "READY":
             raise RuntimeError(f"{kind}: {result.state}: {result.error}")
@@ -301,12 +335,12 @@ def worker(args, report):
                 paths=paths,
                 ticks=ticks,
                 ticks_during_wait=sum(
-                    result.evidence.get("submit_returned", 0)
+                    evidence.get("submit_returned", 0)
                     <= t
-                    <= result.evidence.get("wait_returned", 0)
+                    <= evidence.get("wait_returned", 0)
                     for t in ticks
                 ),
-                evidence=result.evidence,
+                evidence=evidence,
             )
         )
         dist.barrier()

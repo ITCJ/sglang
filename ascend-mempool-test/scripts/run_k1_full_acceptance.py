@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import re
 import signal
 import subprocess
 import sys
+from pathlib import Path
 
 import msgspec
 
@@ -35,11 +35,9 @@ def configurations(base: RouterConfig, sdk: str) -> list[tuple[str, RouterConfig
                 prefix_shared=True,
                 match_prefix=True,
                 verify_prefix=True,
-                verify_decode=True,
                 prefix_read_assignment="by_segment",
                 pool_copy=True,
                 pool_copy_sdk_build_id=sdk,
-                pool_copy_delay_seconds=0.05,
             ),
         )
         for b, sd in MATRIX

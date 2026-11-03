@@ -542,12 +542,10 @@ class MempoolSubrouter:
         registration: Callable[[], dict[str, Any]],
         timeout: float = 600,
         clock: Callable[[], float] = time.monotonic,
-        verify_mapping: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
         self.shard, self.run_id, self.gather = shard, run_id, gather
         self.receive, self.send, self.registration = receive, send, registration
         self.timeout, self.clock = timeout, clock
-        self.verify_mapping = verify_mapping
         self.last_main = clock()
         self.last_sent = float("-inf")
         self.registered = False
@@ -623,8 +621,6 @@ class MempoolSubrouter:
                 o["registration"] is not None for o in observations
             ):
                 results["registration"] = [o["registration"] for o in observations]
-                if self.verify_mapping is not None:
-                    results["mapping"] = self.verify_mapping()
                 self.registered = True
             for message in observations[0]["incoming"]:
                 if (
@@ -768,11 +764,6 @@ class MempoolSubrouter:
         envelope = dict(run_id=self.run_id, role=control.local.role)
         if results["registration"] is not None:
             ranks = results["registration"]
-            if self.verify_mapping is not None:
-                ranks = [
-                    dict(rank, shared_probe=result["mapping"])
-                    for rank, result in zip(ranks, committed)
-                ]
             self.send(dict(envelope, kind="register", ranks=ranks))
         if acknowledged and command is not None:
             self.send(

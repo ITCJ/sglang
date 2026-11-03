@@ -1,5 +1,17 @@
 # K1 ticket11：服务池间异步页块搬运
 
+2026-11-03验收后清理：人工延迟、计时/poll统计和临时清单日志已删除。
+当前 `pool_copy=true` 继续使用库batch/wait，配置中请移除 `pool_copy_delay_seconds`。
+下文服务验收命令与计时证据属于清理前b3bb63e067；当前回归使用[K1四组入口](K1_TICKET09.md)。
+`run_pool_copy_acceptance.py`现在仅核验旧日志：
+
+```bash
+python3 ascend-mempool-test/scripts/run_pool_copy_acceptance.py --report-root /home/cryang/log/mempool-min/<历史run-id>/prefill --page-size 128
+```
+
+[清理范围与本机验证](../.scratch/k1/cleanup-test-hooks.md)。
+
+
 工程实现以 demo 提交 `746ec2d54c` 为基线。新路径通过配置 `pool_copy=true` 开启；
 默认 false 保留既有路径，必须先部署下述 SDK 修复再开启。用户已确认31/32的002验收并关闭ticket11，09已解锁；[确认与边界](../.scratch/k1/verification/k1-ticket11-002/README.md)。
 

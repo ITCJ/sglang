@@ -27,7 +27,7 @@ class DecodeWriter:
 
 
 class DecodeKV:
-    """Stable HBM rows and graph-captured evidence for one shared D replica.
+    """Stable HBM rows for the current token of one shared D replica.
 
     The real writer runs on the compute stream before post-attention TP
     communication. Only previous tokens may be read from shared DRAM.
@@ -40,9 +40,8 @@ class DecodeKV:
         rows: int,
         device: str,
         kernel: Any = None,
-        verify: bool = False,
     ) -> None:
-        self.manager, self.writer, self.verify = manager, writer, verify
+        self.manager, self.writer = manager, writer
         self.kernel = kernel
         layout = manager.layout.decode
         self.current = torch.zeros(
@@ -50,14 +49,6 @@ class DecodeKV:
             dtype=torch.bfloat16,
             device=device,
         )
-        # Per layer/request: checked prior rows, mismatches, physical bytes,
-        # current-token HBM reads. No host reads occur during capture/replay.
-        self.checks = torch.zeros(
-            (layout.layers, rows, 4) if verify else (0,),
-            dtype=torch.int64,
-            device=device,
-        )
-        self.dtype = torch.empty(1, dtype=torch.bfloat16, device="cpu")
 
     def copy(self, *args: Any) -> None:
         if self.kernel is None:
@@ -70,64 +61,8 @@ class DecodeKV:
         layer: int,
         values: Tensor,
         rows: Tensor,
-        slots: Tensor,
-        positions: Tensor,
-        valid: Tensor,
     ) -> None:
-        if not self.verify:
-            self.current[layer].index_copy_(0, rows, values)
-            return
-        view = self.manager.view(1, layer)
-        layout = view.layout
-        if self.verify:
-            previous = valid & (positions > 0)
-            actual = torch.empty_like(values)
-            from .indexed_copy import copy_rows
-
-            copy_rows(
-                self.copy,
-                self.dtype,
-                actual,
-                torch.where(previous, slots * layout.tokens + positions - 1, 0),
-                torch.arange(rows.numel(), device=rows.device),
-                previous,
-                row_bytes=layout.row_bytes,
-                source_view=view,
-            )
-            wrong = previous & (actual != self.current[layer, rows]).flatten(1).any(1)
-            self.checks[layer, :, 0].scatter_add_(0, rows, previous.long())
-            self.checks[layer, :, 1].scatter_add_(0, rows, wrong.long())
         self.current[layer].index_copy_(0, rows, values)
-        byte_count = (
-            layout.row_bytes // self.writer.feature_part[1]
-            if self.writer.owns_layer(layer)
-            else 0
-        )
-        self.checks[layer, :, 2].scatter_add_(0, rows, valid.long() * byte_count)
-
-    def verify_final(self, row: int, slot: int, tokens: int) -> int:
-        """Check the last written row after the request's existing drain gate."""
-        from .indexed_copy import copy_rows
-
-        if not tokens:
-            return 0
-        for layer in range(self.manager.layout.decode.layers):
-            view = self.manager.view(1, layer)
-            output = torch.empty_like(self.current[layer, row : row + 1])
-            device = output.device
-            copy_rows(
-                self.copy,
-                self.dtype,
-                output,
-                torch.tensor([slot * view.layout.tokens + tokens - 1], device=device),
-                torch.zeros(1, dtype=torch.int64, device=device),
-                torch.ones(1, dtype=torch.bool, device=device),
-                row_bytes=view.layout.row_bytes,
-                source_view=view,
-            )
-            if not torch.equal(output.cpu(), self.current[layer, row : row + 1].cpu()):
-                raise RuntimeError("shared decode final-row sentinel mismatch")
-        return int(self.manager.layout.decode.layers)
 
     def supply_current(
         self,
@@ -156,6 +91,4 @@ class DecodeKV:
             None,
             None,
         )
-        if self.verify:
-            self.checks[layer, :, 3].index_add_(0, safe, current.sum(1))
         return misses & ~current

@@ -1,0 +1,196 @@
+$ git archive b3bb63e067 (isolated original sources)
+$ /private/tmp/k1-ticket05-fix-venv/bin/python -m unittest -v test_config.TestMempoolConfig.test_defaults_and_unsupported_model_storage test_mempool_min_entry.TestPreflightIdentity test_mempool_session_acceptance.TestSessionAcceptance.test_cleanup_checks_actual_session_ports_not_reserved_range test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints
+test_defaults_and_unsupported_model_storage (test_config.TestMempoolConfig.test_defaults_and_unsupported_model_storage)
+Keep 16K defaults and reject non-BF16 or kernel-incompatible storage. ... FAIL
+test_matching_identities_keep_preflight_enabled (test_mempool_min_entry.TestPreflightIdentity.test_matching_identities_keep_preflight_enabled) ... ERROR
+test_mismatch_keeps_both_identities_and_names_the_differing_field (test_mempool_min_entry.TestPreflightIdentity.test_mismatch_keeps_both_identities_and_names_the_differing_field) ...
+  test_mismatch_keeps_both_identities_and_names_the_differing_field (test_mempool_min_entry.TestPreflightIdentity.test_mismatch_keeps_both_identities_and_names_the_differing_field) (field='versions.torch-npu') ... ERROR
+  test_mismatch_keeps_both_identities_and_names_the_differing_field (test_mempool_min_entry.TestPreflightIdentity.test_mismatch_keeps_both_identities_and_names_the_differing_field) (field='model.manifest.config.json') ... ERROR
+  test_mismatch_keeps_both_identities_and_names_the_differing_field (test_mempool_min_entry.TestPreflightIdentity.test_mismatch_keeps_both_identities_and_names_the_differing_field) (field='untracked_sha256.python/local.py') ... ERROR
+test_peer_disconnect_still_preserves_local_identity (test_mempool_min_entry.TestPreflightIdentity.test_peer_disconnect_still_preserves_local_identity) ... ERROR
+test_cleanup_checks_actual_session_ports_not_reserved_range (test_mempool_session_acceptance.TestSessionAcceptance.test_cleanup_checks_actual_session_ports_not_reserved_range) ... FAIL
+test_service_ports_preserves_pair_and_shared_group_endpoints (test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints) ...
+  test_service_ports_preserves_pair_and_shared_group_endpoints (test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints) (options={}, role='prefill') ... FAIL
+  test_service_ports_preserves_pair_and_shared_group_endpoints (test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints) (options={}, role='decode') ... FAIL
+  test_service_ports_preserves_pair_and_shared_group_endpoints (test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints) (options={'prefill_shared': True}, role='prefill') ... FAIL
+  test_service_ports_preserves_pair_and_shared_group_endpoints (test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints) (options={'prefill_shared': True}, role='decode') ... FAIL
+  test_service_ports_preserves_pair_and_shared_group_endpoints (test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints) (options={'decode_shared': True}, role='prefill') ... FAIL
+  test_service_ports_preserves_pair_and_shared_group_endpoints (test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints) (options={'decode_shared': True}, role='decode') ... FAIL
+
+======================================================================
+ERROR: test_matching_identities_keep_preflight_enabled (test_mempool_min_entry.TestPreflightIdentity.test_matching_identities_keep_preflight_enabled)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/k1-cleanup-baseline/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 154, in test_matching_identities_keep_preflight_enabled
+    with self.environment() as npu_smi:
+         ^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/contextlib.py", line 137, in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+  File "/private/tmp/k1-cleanup-baseline/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 104, in environment
+    patch.object(runner, "available_port"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py", line 1467, in __enter__
+    original, local = self.get_original()
+                      ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py", line 1437, in get_original
+    raise AttributeError(
+AttributeError: <module 'run_mempool_min' from '/private/tmp/k1-cleanup-baseline/ascend-mempool-test/scripts/run_mempool_min.py'> does not have the attribute 'available_port'
+
+======================================================================
+ERROR: test_mismatch_keeps_both_identities_and_names_the_differing_field (test_mempool_min_entry.TestPreflightIdentity.test_mismatch_keeps_both_identities_and_names_the_differing_field) (field='versions.torch-npu')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/k1-cleanup-baseline/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 131, in test_mismatch_keeps_both_identities_and_names_the_differing_field
+    self.environment() as npu_smi,
+    ^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/contextlib.py", line 137, in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+  File "/private/tmp/k1-cleanup-baseline/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 104, in environment
+    patch.object(runner, "available_port"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py", line 1467, in __enter__
+    original, local = self.get_original()
+                      ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py", line 1437, in get_original
+    raise AttributeError(
+AttributeError: <module 'run_mempool_min' from '/private/tmp/k1-cleanup-baseline/ascend-mempool-test/scripts/run_mempool_min.py'> does not have the attribute 'available_port'
+
+======================================================================
+ERROR: test_mismatch_keeps_both_identities_and_names_the_differing_field (test_mempool_min_entry.TestPreflightIdentity.test_mismatch_keeps_both_identities_and_names_the_differing_field) (field='model.manifest.config.json')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/k1-cleanup-baseline/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 131, in test_mismatch_keeps_both_identities_and_names_the_differing_field
+    self.environment() as npu_smi,
+    ^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/contextlib.py", line 137, in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+  File "/private/tmp/k1-cleanup-baseline/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 104, in environment
+    patch.object(runner, "available_port"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py", line 1467, in __enter__
+    original, local = self.get_original()
+                      ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py", line 1437, in get_original
+    raise AttributeError(
+AttributeError: <module 'run_mempool_min' from '/private/tmp/k1-cleanup-baseline/ascend-mempool-test/scripts/run_mempool_min.py'> does not have the attribute 'available_port'
+
+======================================================================
+ERROR: test_mismatch_keeps_both_identities_and_names_the_differing_field (test_mempool_min_entry.TestPreflightIdentity.test_mismatch_keeps_both_identities_and_names_the_differing_field) (field='untracked_sha256.python/local.py')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/k1-cleanup-baseline/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 131, in test_mismatch_keeps_both_identities_and_names_the_differing_field
+    self.environment() as npu_smi,
+    ^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/contextlib.py", line 137, in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+  File "/private/tmp/k1-cleanup-baseline/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 104, in environment
+    patch.object(runner, "available_port"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py", line 1467, in __enter__
+    original, local = self.get_original()
+                      ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py", line 1437, in get_original
+    raise AttributeError(
+AttributeError: <module 'run_mempool_min' from '/private/tmp/k1-cleanup-baseline/ascend-mempool-test/scripts/run_mempool_min.py'> does not have the attribute 'available_port'
+
+======================================================================
+ERROR: test_peer_disconnect_still_preserves_local_identity (test_mempool_min_entry.TestPreflightIdentity.test_peer_disconnect_still_preserves_local_identity)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/k1-cleanup-baseline/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 165, in test_peer_disconnect_still_preserves_local_identity
+    with self.environment(), self.assertRaisesRegex(ConnectionError, "peer"):
+         ^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/contextlib.py", line 137, in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+  File "/private/tmp/k1-cleanup-baseline/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 104, in environment
+    patch.object(runner, "available_port"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py", line 1467, in __enter__
+    original, local = self.get_original()
+                      ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py", line 1437, in get_original
+    raise AttributeError(
+AttributeError: <module 'run_mempool_min' from '/private/tmp/k1-cleanup-baseline/ascend-mempool-test/scripts/run_mempool_min.py'> does not have the attribute 'available_port'
+
+======================================================================
+FAIL: test_defaults_and_unsupported_model_storage (test_config.TestMempoolConfig.test_defaults_and_unsupported_model_storage)
+Keep 16K defaults and reject non-BF16 or kernel-incompatible storage.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/k1-cleanup-baseline/ascend-mempool-test/tests/unit/test_config.py", line 106, in test_defaults_and_unsupported_model_storage
+    with self.assertRaisesRegex(ValueError, "UINT32_MAX"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_cleanup_checks_actual_session_ports_not_reserved_range (test_mempool_session_acceptance.TestSessionAcceptance.test_cleanup_checks_actual_session_ports_not_reserved_range)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/k1-cleanup-baseline/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py", line 234, in test_cleanup_checks_actual_session_ports_not_reserved_range
+    self.assertEqual(decode, {8001, *(25686 + 33 * rank for rank in range(16))})
+AssertionError: Items in the first set but not the second:
+10000
+
+======================================================================
+FAIL: test_service_ports_preserves_pair_and_shared_group_endpoints (test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints) (options={}, role='prefill')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/k1-cleanup-baseline/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py", line 265, in test_service_ports_preserves_pair_and_shared_group_endpoints
+    self.assertEqual(
+AssertionError: Items in the first set but not the second:
+10000
+
+======================================================================
+FAIL: test_service_ports_preserves_pair_and_shared_group_endpoints (test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints) (options={}, role='decode')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/k1-cleanup-baseline/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py", line 265, in test_service_ports_preserves_pair_and_shared_group_endpoints
+    self.assertEqual(
+AssertionError: Items in the first set but not the second:
+10000
+
+======================================================================
+FAIL: test_service_ports_preserves_pair_and_shared_group_endpoints (test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints) (options={'prefill_shared': True}, role='prefill')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/k1-cleanup-baseline/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py", line 265, in test_service_ports_preserves_pair_and_shared_group_endpoints
+    self.assertEqual(
+AssertionError: Items in the first set but not the second:
+10000
+
+======================================================================
+FAIL: test_service_ports_preserves_pair_and_shared_group_endpoints (test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints) (options={'prefill_shared': True}, role='decode')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/k1-cleanup-baseline/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py", line 265, in test_service_ports_preserves_pair_and_shared_group_endpoints
+    self.assertEqual(
+AssertionError: Items in the first set but not the second:
+10000
+
+======================================================================
+FAIL: test_service_ports_preserves_pair_and_shared_group_endpoints (test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints) (options={'decode_shared': True}, role='prefill')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/k1-cleanup-baseline/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py", line 265, in test_service_ports_preserves_pair_and_shared_group_endpoints
+    self.assertEqual(
+AssertionError: Items in the first set but not the second:
+10000
+
+======================================================================
+FAIL: test_service_ports_preserves_pair_and_shared_group_endpoints (test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints) (options={'decode_shared': True}, role='decode')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/k1-cleanup-baseline/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py", line 265, in test_service_ports_preserves_pair_and_shared_group_endpoints
+    self.assertEqual(
+AssertionError: Items in the first set but not the second:
+10000
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.017s
+
+FAILED (failures=8, errors=5)

@@ -1,5 +1,7 @@
 import unittest
+
 from run_k1_full_acceptance import configurations
+
 from ascend_mempool_pd.mempool_router_protocol import RouterConfig
 
 
@@ -11,7 +13,7 @@ class TestK1Matrix(unittest.TestCase):
             [(128, 128, 40), (128, 512, 40), (64, 128, 80), (64, 512, 80)],
         )
         for _, c in rows:
-            self.assertTrue(c.verify_decode and c.pool_copy and c.prefix_shared)
+            self.assertTrue(c.pool_copy and c.prefix_shared)
             self.assertTrue(
                 c.prefill_shared and c.decode_shared and c.prefill_index_shared
             )

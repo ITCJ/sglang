@@ -1,12 +1,12 @@
-"""Enable ticket11 and reuse the existing two-round prefix acceptance runner."""
+"""Offline checker for archived ticket11 copy traces from pre-cleanup versions."""
 
 from __future__ import annotations
+
 import argparse
 import json
 import re
-from pathlib import Path
-import subprocess
 import sys
+from pathlib import Path
 
 
 def verify(root, phases=("target", "restart"), page_size=128):
@@ -113,59 +113,14 @@ def verify(root, phases=("target", "restart"), page_size=128):
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--role", choices=("prefill", "decode"), required=True)
-    p.add_argument("--config", type=Path, required=True)
-    p.add_argument("--run-id", required=True)
-    p.add_argument(
-        "--sdk-build-id",
-        required=True,
-        help="Identity of installed SDK including batch-error patch",
+    p = argparse.ArgumentParser(
+        description="Check archived pre-cleanup pool-copy reports"
     )
+    p.add_argument("--report-root", type=Path, required=True)
+    p.add_argument("--page-size", type=int, choices=(64, 128), default=128)
     args = p.parse_args()
-    if Path(args.run_id).name != args.run_id or args.run_id in (".", ".."):
-        p.error("run-id must be a directory name")
-    root = Path("/home/cryang/log/mempool-min") / args.run_id
-    config = json.loads(args.config.read_text())
-    config["pool_copy"] = True
-    config["pool_copy_sdk_build_id"] = args.sdk_build_id
-    config["pool_copy_delay_seconds"] = 0.05
-    generated = root.parent / (args.run_id + "-" + args.role + "-config.json")
-    generated.parent.mkdir(parents=True, exist_ok=True)
-    generated.write_text(json.dumps(config, indent=2))
-    command = [
-        "bash",
-        str(Path(__file__).with_name("run_mempool_min.sh")),
-        "--role",
-        args.role,
-        "--mode",
-        "prefix-sharing-acceptance",
-        "--config",
-        str(generated),
-        "--run-id",
-        args.run_id,
-    ]
-    result = subprocess.run(command)
-    report = dict(status="failed", sdk_build_id=args.sdk_build_id, user_accepted=False)
-    try:
-        if result.returncode:
-            raise RuntimeError(f"base acceptance exited {result.returncode}")
-        if args.role == "prefill":
-            report["pool_copy"] = verify(root / args.role)
-        else:
-            report["pool_copy"] = (
-                "P report owns transfer evidence; D base acceptance passed"
-            )
-        report["status"] = "passed"
-        return 0
-    except Exception as exc:
-        report["error"] = str(exc)
-        return 1
-    finally:
-        target = root / args.role
-        target.mkdir(parents=True, exist_ok=True)
-        (target / "pool-copy-acceptance.json").write_text(json.dumps(report, indent=2))
-        print(json.dumps(report), flush=True)
+    print(json.dumps(verify(args.report_root, page_size=args.page_size), indent=2))
+    return 0
 
 
 if __name__ == "__main__":

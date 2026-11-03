@@ -1,0 +1,50 @@
+$ /private/tmp/k1-ticket05-fix-venv/bin/ruff check --config ascend-mempool-test/pyproject.toml ascend-mempool-test/scripts/run_k1_full_acceptance.py ascend-mempool-test/scripts/run_mempool_min.py ascend-mempool-test/scripts/run_pool_copy_acceptance.py ascend-mempool-test/scripts/verify_mempool_decode.py ascend-mempool-test/scripts/verify_mempool_shared.py ascend-mempool-test/scripts/verify_pool_sdma.py ascend-mempool-test/tests/unit/test_k1_full_acceptance.py ascend-mempool-test/tests/unit/test_mempool_shared_evidence.py ascend-mempool-test/tests/unit/test_mempool_subrouter.py ascend-mempool-test/tests/unit/test_pool_copy.py ascend-mempool-test/tests/unit/test_shared_decode.py python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py python/sglang/srt/disaggregation/ascend/mempool_router_transport.py python/sglang/srt/disaggregation/ascend/mempool_subrouter.py python/sglang/srt/hardware_backend/npu/mempool/decode_write.py python/sglang/srt/hardware_backend/npu/mempool/pool_copy.py python/sglang/srt/hardware_backend/npu/mempool/prefix.py python/sglang/srt/hardware_backend/npu/mempool/runtime.py
+All checks passed!
+
+exit_code=0
+
+$ /private/tmp/k1-ticket05-fix-venv/bin/ruff format --check --config ascend-mempool-test/pyproject.toml ascend-mempool-test/scripts/run_k1_full_acceptance.py ascend-mempool-test/scripts/run_mempool_min.py ascend-mempool-test/scripts/run_pool_copy_acceptance.py ascend-mempool-test/scripts/verify_mempool_decode.py ascend-mempool-test/scripts/verify_mempool_shared.py ascend-mempool-test/scripts/verify_pool_sdma.py ascend-mempool-test/tests/unit/test_k1_full_acceptance.py ascend-mempool-test/tests/unit/test_mempool_shared_evidence.py ascend-mempool-test/tests/unit/test_mempool_subrouter.py ascend-mempool-test/tests/unit/test_pool_copy.py ascend-mempool-test/tests/unit/test_shared_decode.py python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py python/sglang/srt/disaggregation/ascend/mempool_router_transport.py python/sglang/srt/disaggregation/ascend/mempool_subrouter.py python/sglang/srt/hardware_backend/npu/mempool/decode_write.py python/sglang/srt/hardware_backend/npu/mempool/pool_copy.py python/sglang/srt/hardware_backend/npu/mempool/prefix.py python/sglang/srt/hardware_backend/npu/mempool/runtime.py
+18 files already formatted
+
+exit_code=0
+
+$ /private/tmp/k1-ticket05-fix-venv/bin/isort --check-only ascend-mempool-test/scripts/run_k1_full_acceptance.py ascend-mempool-test/scripts/run_mempool_min.py ascend-mempool-test/scripts/run_pool_copy_acceptance.py ascend-mempool-test/scripts/verify_mempool_decode.py ascend-mempool-test/scripts/verify_mempool_shared.py ascend-mempool-test/scripts/verify_pool_sdma.py ascend-mempool-test/tests/unit/test_k1_full_acceptance.py ascend-mempool-test/tests/unit/test_mempool_shared_evidence.py ascend-mempool-test/tests/unit/test_mempool_subrouter.py ascend-mempool-test/tests/unit/test_pool_copy.py ascend-mempool-test/tests/unit/test_shared_decode.py python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py python/sglang/srt/disaggregation/ascend/mempool_router_transport.py python/sglang/srt/disaggregation/ascend/mempool_subrouter.py python/sglang/srt/hardware_backend/npu/mempool/decode_write.py python/sglang/srt/hardware_backend/npu/mempool/pool_copy.py python/sglang/srt/hardware_backend/npu/mempool/prefix.py python/sglang/srt/hardware_backend/npu/mempool/runtime.py
+
+exit_code=0
+
+$ /private/tmp/k1-ticket05-fix-venv/bin/mypy --config-file ascend-mempool-test/pyproject.toml python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py python/sglang/srt/disaggregation/ascend/mempool_router_transport.py python/sglang/srt/disaggregation/ascend/mempool_subrouter.py python/sglang/srt/hardware_backend/npu/mempool/decode_write.py python/sglang/srt/hardware_backend/npu/mempool/pool_copy.py python/sglang/srt/hardware_backend/npu/mempool/prefix.py python/sglang/srt/hardware_backend/npu/mempool/runtime.py
+python/sglang/srt/hardware_backend/npu/mempool/pool_copy.py:198: error: Module has no attribute "sched_setaffinity"  [attr-defined]
+python/sglang/srt/hardware_backend/npu/mempool/prefix.py:157: error: Returning Any from function declared to return "list[int]"  [no-any-return]
+python/sglang/srt/hardware_backend/npu/mempool/prefix.py:221: error: Returning Any from function declared to return "int"  [no-any-return]
+python/sglang/srt/disaggregation/ascend/mempool_subrouter.py:97: error: Returning Any from function declared to return "str"  [no-any-return]
+Found 4 errors in 3 files (checked 7 source files)
+
+exit_code=1
+
+$ git diff --check
+
+exit_code=0
+
+Python 3.9 AST: 18 passed
+$ /private/tmp/k1-ticket05-fix-venv/bin/mypy --config-file ascend-mempool-test/pyproject.toml --platform linux python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py python/sglang/srt/disaggregation/ascend/mempool_router_transport.py python/sglang/srt/disaggregation/ascend/mempool_subrouter.py python/sglang/srt/hardware_backend/npu/mempool/decode_write.py python/sglang/srt/hardware_backend/npu/mempool/pool_copy.py python/sglang/srt/hardware_backend/npu/mempool/prefix.py python/sglang/srt/hardware_backend/npu/mempool/runtime.py python/sglang/srt/hardware_backend/npu/mempool/manager.py python/sglang/srt/hardware_backend/npu/mempool/sharing_plan.py python/sglang/srt/hardware_backend/npu/mempool/prefix_layout.py python/sglang/srt/hardware_backend/npu/mempool/layout.py
+Success: no issues found in 11 source files
+
+exit_code=0
+
+Final check after fixture/report-label adjustment:
+$ /private/tmp/k1-ticket05-fix-venv/bin/ruff check --config ascend-mempool-test/pyproject.toml ascend-mempool-test/scripts/run_k1_full_acceptance.py ascend-mempool-test/scripts/run_mempool_min.py ascend-mempool-test/scripts/run_pool_copy_acceptance.py ascend-mempool-test/scripts/verify_mempool_decode.py ascend-mempool-test/scripts/verify_mempool_shared.py ascend-mempool-test/scripts/verify_pool_sdma.py ascend-mempool-test/tests/unit/test_k1_full_acceptance.py ascend-mempool-test/tests/unit/test_mempool_shared_evidence.py ascend-mempool-test/tests/unit/test_mempool_subrouter.py ascend-mempool-test/tests/unit/test_pool_copy.py ascend-mempool-test/tests/unit/test_shared_decode.py python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py python/sglang/srt/disaggregation/ascend/mempool_router_transport.py python/sglang/srt/disaggregation/ascend/mempool_subrouter.py python/sglang/srt/hardware_backend/npu/mempool/decode_write.py python/sglang/srt/hardware_backend/npu/mempool/pool_copy.py python/sglang/srt/hardware_backend/npu/mempool/prefix.py python/sglang/srt/hardware_backend/npu/mempool/runtime.py
+All checks passed!
+
+exit_code=0
+$ /private/tmp/k1-ticket05-fix-venv/bin/ruff format --check --config ascend-mempool-test/pyproject.toml ascend-mempool-test/scripts/run_k1_full_acceptance.py ascend-mempool-test/scripts/run_mempool_min.py ascend-mempool-test/scripts/run_pool_copy_acceptance.py ascend-mempool-test/scripts/verify_mempool_decode.py ascend-mempool-test/scripts/verify_mempool_shared.py ascend-mempool-test/scripts/verify_pool_sdma.py ascend-mempool-test/tests/unit/test_k1_full_acceptance.py ascend-mempool-test/tests/unit/test_mempool_shared_evidence.py ascend-mempool-test/tests/unit/test_mempool_subrouter.py ascend-mempool-test/tests/unit/test_pool_copy.py ascend-mempool-test/tests/unit/test_shared_decode.py python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py python/sglang/srt/disaggregation/ascend/mempool_router_transport.py python/sglang/srt/disaggregation/ascend/mempool_subrouter.py python/sglang/srt/hardware_backend/npu/mempool/decode_write.py python/sglang/srt/hardware_backend/npu/mempool/pool_copy.py python/sglang/srt/hardware_backend/npu/mempool/prefix.py python/sglang/srt/hardware_backend/npu/mempool/runtime.py
+18 files already formatted
+
+exit_code=0
+$ /private/tmp/k1-ticket05-fix-venv/bin/isort --check-only ascend-mempool-test/scripts/run_k1_full_acceptance.py ascend-mempool-test/scripts/run_mempool_min.py ascend-mempool-test/scripts/run_pool_copy_acceptance.py ascend-mempool-test/scripts/verify_mempool_decode.py ascend-mempool-test/scripts/verify_mempool_shared.py ascend-mempool-test/scripts/verify_pool_sdma.py ascend-mempool-test/tests/unit/test_k1_full_acceptance.py ascend-mempool-test/tests/unit/test_mempool_shared_evidence.py ascend-mempool-test/tests/unit/test_mempool_subrouter.py ascend-mempool-test/tests/unit/test_pool_copy.py ascend-mempool-test/tests/unit/test_shared_decode.py python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py python/sglang/srt/disaggregation/ascend/mempool_router_transport.py python/sglang/srt/disaggregation/ascend/mempool_subrouter.py python/sglang/srt/hardware_backend/npu/mempool/decode_write.py python/sglang/srt/hardware_backend/npu/mempool/pool_copy.py python/sglang/srt/hardware_backend/npu/mempool/prefix.py python/sglang/srt/hardware_backend/npu/mempool/runtime.py
+
+exit_code=0
+$ git diff --check
+
+exit_code=0
+Python 3.9 AST: 18 passed
+Removed probe/delay/timing/poll symbols: no production Python matches

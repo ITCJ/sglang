@@ -4,11 +4,11 @@ import unittest
 from unittest.mock import patch
 
 from ascend_mempool.pool_copy import (
+    BMTransfer,
+    CompletionUnknown,
     CopyBlock,
     CopyTask,
     PoolCopyExecutor,
-    CompletionUnknown,
-    BMTransfer,
     device_thread_setup,
 )
 
@@ -26,7 +26,6 @@ class Backend:
         self.release.wait(2)
         if self.failure:
             raise RuntimeError("SDK failure")
-        return {"submit_return": 0, "wait_return": 0}
 
 
 class TestPoolCopy(unittest.TestCase):
@@ -101,6 +100,35 @@ class TestPoolCopy(unittest.TestCase):
 
 
 class TestBMTransfer(unittest.TestCase):
+    def test_demo_measures_the_same_batch_and_wait_calls(self):
+        from types import SimpleNamespace
+
+        from verify_pool_sdma import MeasuredHandle
+
+        calls = []
+
+        class Handle:
+            def copy_data_batch(self, *args, **kwargs):
+                calls.append((args, kwargs))
+                return 0
+
+            def wait(self):
+                calls.append("wait")
+                return 0
+
+        handle = MeasuredHandle(Handle())
+        adapter = BMTransfer(handle, SimpleNamespace(BmCopyType=SimpleNamespace(G2G=5)))
+        adapter.transfer((CopyBlock(8, 16, 4),))
+        self.assertEqual(
+            calls, [(([8], [16], [4], 1, 5), dict(flags=1, stream=0)), "wait"]
+        )
+        self.assertLessEqual(
+            handle.evidence["submit_enter"], handle.evidence["submit_returned"]
+        )
+        self.assertLessEqual(
+            handle.evidence["submit_returned"], handle.evidence["wait_returned"]
+        )
+
     def test_wait_failure_is_unknown(self):
         from types import SimpleNamespace
 

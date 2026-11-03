@@ -213,16 +213,6 @@ def check_registration(
                 raise ValueError(
                     "BM allocation differs from owned shared/private payloads"
                 )
-            probe = row.get("shared_probe", {})
-            if config.prefill_shared and (
-                probe["status"] != "passed"
-                or probe["reader"] != rank
-                or probe["writers"] != list(group)
-                or probe["copy"] != "unidex_copy"
-                or probe["source"] != "shared_prompt"
-                or probe["bytes"] != len(group) * row["dim"] * 2
-            ):
-                raise ValueError("missing live cross-writer shared prompt read")
             node = numa_by_role[role].setdefault(
                 row["numa_node"],
                 dict(main_replicas=0, main_payload_bytes=0, allocated_bytes=0),

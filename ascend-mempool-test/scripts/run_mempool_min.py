@@ -446,7 +446,7 @@ class Runner:
                 evidence_path=self.root / f"preflight-port-{port}.json",
                 check=self.peer.check,
             )
-        if self.config.verify_decode:
+        if self.config.prefix_shared:
             from mempool_numa_runner import topology
 
             topology(self.root, self.config.interface)
@@ -489,11 +489,11 @@ class Runner:
             "--layers",
             "78",
             "--s-p",
-            str(self.config.page_size if self.config.verify_decode else 8),
+            str(self.config.page_size if self.config.prefix_shared else 8),
             "--s-d",
-            str(self.config.decode_capacity if self.config.verify_decode else 16),
+            str(self.config.decode_capacity if self.config.prefix_shared else 16),
             "--page-size",
-            str(self.config.page_size if self.config.verify_decode else 1),
+            str(self.config.page_size if self.config.prefix_shared else 1),
             "--heads",
             "1",
             "--kv-dim",
@@ -1224,8 +1224,6 @@ class Runner:
             )
             if self.config.prefix_shared:
                 import verify_mempool_shared
-                import verify_mempool_decode
-                from run_pool_copy_acceptance import verify as verify_copies
 
                 target = self.root / "target"
                 registrations = json.loads((target / "registrations.json").read_text())
@@ -1234,10 +1232,11 @@ class Runner:
                     layout=verify_mempool_shared.check_page_first_registration(
                         registrations, self.config
                     ),
-                    decode=verify_mempool_decode.check_stage(target, self.config),
-                    copies=verify_copies(
-                        self.root, phases=("target",), page_size=self.config.page_size
-                    ),
+                    omitted_checks=[
+                        "startup cross-writer probes",
+                        "per-step decode sentinels and delayed-writer Graph test",
+                        "pool-copy artificial delay and timing/poll evidence",
+                    ],
                 )
                 fetch = json.loads(
                     (self.root / "fetch" / "decode-report.json").read_text()
@@ -1272,7 +1271,7 @@ class Runner:
                         "missing actual-geometry cross-page gather evidence"
                     )
                 acceptance["k1"]["boundaries"] = boundaries[0]
-                acceptance["coverage"] = "K1 complete functional acceptance"
+                acceptance["coverage"] = "K1 functional regression after probe cleanup"
             self.peer.send("full-result", acceptance=acceptance)
         else:
             acceptance = self.peer.expect("full-result")["acceptance"]

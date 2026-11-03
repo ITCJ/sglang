@@ -1,4 +1,4 @@
-"""Validate shared D ordering, coverage and optional ticket09 final-row evidence."""
+"""Offline checker for archived D probe reports from pre-cleanup versions."""
 
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ def check_completion(
         or proof["checked_rows"] != max(0, steps - 1) * layers
         or proof["written_bytes"] != steps * owned_bytes
         or (
-            config.verify_decode
+            "final_checked_rows" in proof
             and proof.get("final_checked_rows") != (layers if steps else 0)
         )
     ):

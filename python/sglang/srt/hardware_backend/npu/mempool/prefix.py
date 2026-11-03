@@ -8,8 +8,8 @@ import importlib
 import json
 import logging
 import os
-from pathlib import Path
 from contextlib import nullcontext
+from pathlib import Path
 from typing import Any, Callable
 
 import msgspec
@@ -371,20 +371,6 @@ class PrefixStore:
         result = self.copy_executor.poll(operation.op_id)
         if result.state == "PENDING":
             return False
-        logger.info(
-            "mempool pool_copy_complete data=%s",
-            json.dumps(
-                dict(
-                    rid=operation.rid,
-                    op_id=operation.op_id,
-                    rank=self.replica,
-                    state=result.state,
-                    ready_at=result.finished,
-                    error=result.error,
-                    **result.evidence,
-                )
-            ),
-        )
         if result.state != "READY":
             self._fault = f"pool copy {result.state}: {result.error}"
             raise RuntimeError(self._fault)
@@ -455,19 +441,6 @@ class PrefixStore:
                         operation.index_rows = rows
         task = CopyTask(
             operation.rid, operation.op_id, "admit" if admit else "fill", tuple(blocks)
-        )
-        logger.info(
-            "mempool pool_copy_submit data=%s",
-            json.dumps(
-                dict(
-                    rid=task.rid,
-                    op_id=task.op_id,
-                    kind=task.kind,
-                    rank=self.replica,
-                    blocks=len(blocks),
-                    bytes=sum(b.nbytes for b in blocks),
-                )
-            ),
         )
         self.copy_executor.submit(task)
 

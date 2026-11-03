@@ -17,18 +17,6 @@ from ascend_mempool_pd.mempool_tick import RequestObservation
 
 
 class TestSubrouter(unittest.TestCase):
-    def test_empty_commit_exception_stops_every_rank_before_registration_ack(self):
-        def fail_mapping():
-            raise AssertionError()
-
-        self.ticks["prefill"][0].verify_mapping = fail_mapping
-        with self.assertRaisesRegex(RuntimeError, "SR fail-stop: AssertionError"):
-            self.advance("prefill")
-        self.assertFalse(any(m["kind"] == "register" for m in self.messages["prefill"]))
-        self.assertTrue(
-            all(c.snapshot().protocol_fault for c in self.controls["prefill"])
-        )
-
     def test_shared_free_then_next_allocation_keeps_tp_ownership_consistent(self):
         self.shared_free_then_next_allocation(main_written=False)
 
