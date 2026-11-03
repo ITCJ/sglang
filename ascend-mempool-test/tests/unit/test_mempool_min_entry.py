@@ -169,6 +169,16 @@ class TestPreflightIdentity(unittest.TestCase):
 
 
 class TestMinRunner(unittest.TestCase):
+    def test_observation_fork_records_known_model_answer_without_blocking_reference(
+        self,
+    ):
+        self.check_reference(
+            "full-acceptance",
+            "abcefg",
+            (4096, 5120, 4096, 4096, 4096, 128),
+            observation=True,
+        )
+
     def test_prefix_reference_accepts_four_real_decode_requests_through_runner(self):
         self.check_reference("prefix-acceptance", "abce", (4096, 5120, 4096, 4096))
 
@@ -180,7 +190,7 @@ class TestMinRunner(unittest.TestCase):
             "full-acceptance", "abcefg", (4096, 5120, 4096, 4096, 4096, 128)
         )
 
-    def check_reference(self, mode, names, lengths):
+    def check_reference(self, mode, names, lengths, observation=False):
         logs = service_logs(
             (127,) * len(names), layers=78, indexer_layer_ids=verifier.PRODUCERS
         )
@@ -202,6 +212,7 @@ class TestMinRunner(unittest.TestCase):
                 mode=mode,
                 config=root / "config.json",
                 run_id="cpu",
+                observation_rounds=2 if observation else 1,
             )
             instance = runner.Runner(args, config, peer, root)
             instance.cases = [
@@ -227,6 +238,28 @@ class TestMinRunner(unittest.TestCase):
                 )
                 for case in instance.cases
             ]
+            fork_case = dict(
+                name="index-update",
+                input_ids=[7] * 5120,
+                expected_answer=dict(place="harbor", pencils=17, route="north"),
+                sampling_params=dict(max_new_tokens=128, ignore_eos=False),
+            )
+            model_text = (
+                '```json\n{"place": "harbor", "pencils": 12, "route": "north"}\n```'
+            )
+            if observation:
+                instance.tokenizer = SimpleNamespace(decode=lambda *a, **kw: model_text)
+                results.append(
+                    dict(
+                        text=model_text,
+                        output_ids=list(range(26)),
+                        meta_info=dict(
+                            prompt_tokens=5120,
+                            completion_tokens=26,
+                            finish_reason=dict(type="stop", matched=154827),
+                        ),
+                    )
+                )
             popen = runner.subprocess.Popen
 
             def launch(command, **kwargs):
@@ -242,6 +275,11 @@ class TestMinRunner(unittest.TestCase):
                 return now[0]
 
             with (
+                patch.object(
+                    runner.mempool_logical_cases,
+                    "make_index_cases",
+                    return_value=[{}, fork_case],
+                ),
                 patch.object(runner.subprocess, "Popen", side_effect=launch),
                 patch.object(
                     runner, "wait_http", side_effect=lambda url, timeout, watch: watch()
@@ -255,20 +293,45 @@ class TestMinRunner(unittest.TestCase):
                 patch.object(
                     runner,
                     "time",
-                    SimpleNamespace(monotonic=clock, sleep=runner.time.sleep),
+                    SimpleNamespace(
+                        monotonic=clock,
+                        monotonic_ns=lambda: 100,
+                        sleep=runner.time.sleep,
+                    ),
                 ),
             ):
                 instance.stage(target=False)
             evidence = json.loads((stage / "evidence.json").read_text())
             self.assertEqual(evidence["decode_requests"], len(names))
             self.assertEqual(evidence["zero_decode_requests"], 0)
-            self.assertEqual(instance.reference, results)
+            self.assertEqual(instance.reference, results[: len(names)])
             self.assertEqual(instance.report["stages"], ["reference"])
             if mode == "full-acceptance":
                 answers = json.loads((stage / "answers.json").read_text())
                 self.assertEqual(len(answers), 6)
                 # External response stand-ins omit text: never silently count as semantic passes.
                 self.assertTrue(all(item["status"] == "failed" for item in answers))
+            if observation:
+                report = json.loads((stage / "observation-fork.json").read_text())
+                self.assertEqual(report["status"], "reference-recorded")
+                self.assertEqual(report["answer"]["status"], "failed")
+                self.assertEqual(report["result"]["text"], model_text)
+                self.assertEqual(instance.reference_fork["output_ids"], list(range(26)))
+                target = instance.observation_fork_report(
+                    fork_case, results[-1], target=True
+                )
+                self.assertEqual(target["status"], "passed")
+                self.assertEqual(target["answer"]["status"], "failed")
+                changed = dict(results[-1], output_ids=[99] + list(range(1, 26)))
+                mismatch = instance.observation_fork_report(
+                    fork_case, changed, target=True
+                )
+                self.assertEqual(mismatch["status"], "failed")
+                self.assertEqual(mismatch["ids"]["first_difference"], 0)
+                with self.assertRaisesRegex(
+                    ValueError, "missing full output token IDs"
+                ):
+                    instance.observation_fork_report(fork_case, {}, target=True)
 
     def test_prefix_acceptance_has_effective_config_and_layout_based_memory_budget(
         self,

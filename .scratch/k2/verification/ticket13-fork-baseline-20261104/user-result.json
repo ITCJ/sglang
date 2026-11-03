@@ -1,0 +1,25 @@
+{
+  "run_id": "k2-ticket13-003",
+  "stage": "reference",
+  "graph_gate": "passed including page snapshots",
+  "reference_stability": "passed, A/C 17 output tokens identical",
+  "fork": {
+    "expected": {
+      "place": "harbor",
+      "pencils": 17,
+      "route": "north"
+    },
+    "text": "```json\n{\"place\": \"harbor\", \"pencils\": 12, \"route\": \"north\"}\n```",
+    "completion_tokens": 26,
+    "finish_reason": {
+      "type": "stop",
+      "matched": 154827
+    },
+    "answer": {
+      "status": "failed",
+      "category": "answer",
+      "error": "Expecting value: line 1 column 1 (char 0)"
+    }
+  },
+  "user_clarification": "这个17算成12的问题出现过。已经排查为量化模型精度问题。"
+}

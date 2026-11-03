@@ -1,0 +1,31 @@
+{
+  "baseline": "a762620e6f",
+  "user_run": "k2-ticket13-003",
+  "before": "reference stage raises ValueError: observation fork answer failed for the already accepted K1-07 model output",
+  "reproduction": "actual Runner.stage with external services replaced by owned local children and reported model output",
+  "first_round": {
+    "tests": 1,
+    "expected_failure": true,
+    "cleanup_note": "sandbox denied process-table access; second round ran with process permissions"
+  },
+  "after": {
+    "focused_runner_and_fixtures": 9,
+    "strict_answer_regressions": 4,
+    "total_passed": 13,
+    "same_unittest_max_rounds": 2,
+    "full_suite_rerun": false
+  },
+  "static": {
+    "ruff": true,
+    "isort": true,
+    "python39_ast": true,
+    "mypy_strict_runner": true,
+    "external_imports_ignored": true
+  },
+  "hardware_retest": "pending user run k2-ticket13-004",
+  "ticket_state": "open",
+  "reviews": {
+    "standards_unresolved": 0,
+    "spec_unresolved": 0
+  }
+}

@@ -345,6 +345,7 @@ class Runner:
         )
         self.cases: list[dict[str, Any]] = []
         self.reference: list[dict[str, Any]] = []
+        self.reference_fork: dict[str, Any] = {}
 
     def preflight(self) -> None:
         if self.config.interface not in {name for _, name in socket.if_nameindex()}:
@@ -724,6 +725,32 @@ class Runner:
         self.report["timeout_fail_stop"] = evidence
         self.report["paired_process_cleanup"] = "passed; both owned groups stopped"
 
+    def observation_fork_report(
+        self, case: dict[str, Any], result: dict[str, Any], *, target: bool
+    ) -> dict[str, Any]:
+        verify_mempool_min.check_response(case, result)
+        report = dict(
+            case=case,
+            result=result,
+            answer=mempool_logical_cases.answer(case, result),
+            acceptance="full output token IDs equal to this run's formal reference",
+            answer_policy="diagnostic only for this fork; K1-07 known model answer issue",
+            status="reference-recorded",
+        )
+        if target:
+            verify_mempool_min.check_response(case, self.reference_fork)
+            ids = mempool_logical_cases.id_difference(self.reference_fork, result)
+            report.update(
+                status="passed" if ids["equal"] else "failed",
+                ids=ids,
+                reference_answer=mempool_logical_cases.answer(
+                    case, self.reference_fork
+                ),
+            )
+        else:
+            self.reference_fork = result
+        return report
+
     def stage(
         self, *, target: bool, fault_only: bool = False, restart: bool = False
     ) -> None:
@@ -1024,13 +1051,17 @@ class Runner:
                         fork_result["text"] = self.tokenizer.decode(
                             fork_result["output_ids"], skip_special_tokens=True
                         )
-                        answer = mempool_logical_cases.answer(fork_case, fork_result)
+                        fork_report = self.observation_fork_report(
+                            fork_case, fork_result, target=target
+                        )
                         write_json(
                             root / "observation-fork.json",
-                            dict(case=fork_case, result=fork_result, answer=answer),
+                            fork_report,
                         )
-                        if answer["status"] != "passed":
-                            raise ValueError("observation fork answer failed")
+                        if fork_report["status"] == "failed":
+                            raise ValueError(
+                                "observation fork output IDs differ from formal reference"
+                            )
                     self.peer.send("stage-control", action="done")
                 else:
                     while True:

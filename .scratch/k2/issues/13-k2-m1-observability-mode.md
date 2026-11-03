@@ -77,3 +77,12 @@ forward:1/2各1条，两轮missing=[]，timing_source=CANN9.0_raw_endpoints。
 这是既有设备采集的trace复核；本次analyze-only不重新检查页快照。
 原始首次采集已通过页计数/快照检查。完整模型、双侧off/on与字节/开销验收仍待执行。
 下一次双机完整入口使用新run-id=k2-ticket13-002；ticket13保持open。
+
+### 2026-11-04：fork沿用K1-07已接受的模型精度边界
+
+用户003新Graph/页快照passed，原生参考A/C一致；新增fork输出围栏中的12，26 tokens正常EOS。
+用户再次明确该17→12已排查为量化模型精度问题；此前K1-07冷/热完整26 IDs一致且已接受。
+本轮错误是把同一旧题重新作为严格逻辑答案阻断条件。
+修复仅调整该fork：保留answer failed，目标/本轮正式参考完整IDs须一致；原6例和off/on门槛不变。
+13项定向CPU测试通过；[交付与004命令](../ticket13-fork-baseline-fix.md)。
+不修改题面、期望答案、JSON解析或模型；新NPU复验待用户运行，ticket保持open。
