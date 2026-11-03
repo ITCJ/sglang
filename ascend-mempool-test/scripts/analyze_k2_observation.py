@@ -9,6 +9,7 @@ import math
 import re
 from bisect import bisect_right
 from collections import defaultdict
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
@@ -221,6 +222,11 @@ def fork_overlap(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return output
 
 
+def trace_time_ns(microseconds: Any) -> int:
+    # Ascend exports epoch timestamps as strings; float loses sub-us precision.
+    return round(Decimal(str(microseconds)) * 1000)
+
+
 def trace_ranges(path: Path) -> list[dict[str, Any]]:
     raw = json.loads(path.read_text())
     events = raw["traceEvents"] if isinstance(raw, dict) else raw
@@ -236,15 +242,21 @@ def trace_ranges(path: Path) -> list[dict[str, Any]]:
         lane = lanes.get((e.get("pid"), e.get("tid")), "")
         semantic = e.get("name", "").startswith("mempool:")
         match = re.search(r"Stream\s*(\d+)", lane, re.I)
-        if match is None or (semantic and "mstx" not in lane.lower()):
+        if match is None:
+            continue
+        args = e.get("args", {})
+        device_task = (
+            str(args.get("Physic Stream Id")) == match.group(1) and "Task Id" in args
+        )
+        if semantic and "mstx" not in lane.lower() and not device_task:
             continue  # host MSTX durations are not device durations
         if not semantic and re.search(r"hccl|hcom", e.get("name", ""), re.I) is None:
             continue
         result.append(
             dict(
                 name=e["name"][8:] if semantic else "hccl_task:" + e["name"],
-                start_ns=round(e["ts"] * 1000),
-                end_ns=round((e["ts"] + e["dur"]) * 1000),
+                start_ns=trace_time_ns(e["ts"]),
+                end_ns=trace_time_ns(e["ts"]) + trace_time_ns(e["dur"]),
                 stream=int(match.group(1)),
                 trace=str(path),
             )
@@ -377,7 +389,7 @@ def step_timing(
             name = e.get("name", "")
             if name.startswith("mempool:clock:") and e.get("ph") in ("X", "i", "I"):
                 _, _, ids, before = name.split(":")
-                anchors[str(path), ids, int(before)] = round(e["ts"] * 1000)
+                anchors[str(path), ids, int(before)] = trace_time_ns(e["ts"])
     anchors_by_token = {
         (ids, before): (trace, ts) for (trace, ids, before), ts in anchors.items()
     }

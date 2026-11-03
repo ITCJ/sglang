@@ -6,17 +6,64 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from analyze_k2_observation import trace_ranges
 
-from ascend_mempool.observation_device import DeviceTrace, PageObservation, device_range
+
+def verify_traces(profile: Path) -> dict[str, Any]:
+    """Check exported device evidence, also usable without importing torch/NPU."""
+    paths = sorted(profile.rglob("trace_view.json"))
+    spans = [s for path in paths for s in trace_ranges(path)]
+    names = ("forward:1", "forward:2")
+    outer = [s for s in spans if s["name"] in names]
+    counts = {name: sum(s["name"] == name for s in outer) for name in names}
+    report: dict[str, Any] = dict(
+        status="failed",
+        coverage="exported trace only; page snapshots not checked",
+        traces=[str(p) for p in paths],
+        forward_counts=counts,
+        device_ranges=spans,
+        replay_checks=[],
+    )
+    if any(count != 1 for count in counts.values()):
+        report["error"] = (
+            f"expected one each of two device replay ranges; found {counts}; "
+            "inspect traces and device_ranges before attributing to MSTX/msprof"
+        )
+        return report
+    required = {"cache_manage:0", "miss_io:0", "materialize_wait:0", "attention:0"}
+    for forward in outer:
+        nested = {
+            s["name"]
+            for s in spans
+            if s["trace"] == forward["trace"]
+            and forward["start_ns"] <= s["start_ns"] < s["end_ns"] <= forward["end_ns"]
+        }
+        report["replay_checks"].append(
+            dict(forward=forward["name"], missing=sorted(required - nested))
+        )
+    if any(check["missing"] for check in report["replay_checks"]):
+        report["error"] = (
+            "captured layer/side-stream ranges missing or merged across replays; "
+            "see replay_checks and device_ranges"
+        )
+    else:
+        report["status"] = "passed"
+    return report
 
 
-def run(root: Path, device: int) -> dict:
+def run(root: Path, device: int) -> dict[str, Any]:
     import torch
     import torch_npu  # noqa: F401
+
+    from ascend_mempool.observation_device import (
+        DeviceTrace,
+        PageObservation,
+        device_range,
+    )
 
     torch.npu.set_device(device)
     trace = DeviceTrace(root / "profile")
@@ -73,55 +120,43 @@ def run(root: Path, device: int) -> dict:
             raise ValueError("second replay retained stale selected rows")
     finally:
         trace.stop()
-    paths = list((root / "profile").rglob("trace_view.json"))
-    spans = [s for path in paths for s in trace_ranges(path)]
-    outer = [s for s in spans if s["name"] in ("forward:1", "forward:2")]
-    if len(outer) != 2:
-        raise ValueError(
-            "two distinct device replay ranges missing; check deployed MSTX/msprof"
-        )
-    for forward in outer:
-        nested = {
-            s["name"]
-            for s in spans
-            if s["trace"] == forward["trace"]
-            and forward["start_ns"] <= s["start_ns"] < s["end_ns"] <= forward["end_ns"]
-        }
-        if not {
-            "cache_manage:0",
-            "miss_io:0",
-            "materialize_wait:0",
-            "attention:0",
-        }.issubset(nested):
-            raise ValueError(
-                "captured layer/side-stream ranges missing or merged across replays"
-            )
-    return dict(
-        status="passed",
+    report = verify_traces(root / "profile")
+    report.update(
         coverage="two replays, distinct device ranges, side stream, snapshot reuse and padding; no model or BM contents",
         torch_version=torch.__version__,
         n=2,
         warmup=1,
+        page_snapshots_status="passed",
         snapshots=counts,
-        traces=[str(p) for p in paths],
     )
+    return report
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--log-dir", required=True, type=Path)
     parser.add_argument("--device", type=int, default=0)
+    parser.add_argument(
+        "--analyze-only",
+        action="store_true",
+        help="recheck existing profile traces without initializing NPU or overwriting the capture report",
+    )
     args = parser.parse_args()
     if not args.log_dir.resolve().is_relative_to(Path("/home/cryang/log").resolve()):
         parser.error("logs must remain under /home/cryang/log/")
     args.log_dir.mkdir(parents=True, exist_ok=True)
     try:
-        report = run(args.log_dir, args.device)
+        report = (
+            verify_traces(args.log_dir / "profile")
+            if args.analyze_only
+            else run(args.log_dir, args.device)
+        )
     except Exception as exc:
         report = dict(status="failed", error=f"{type(exc).__name__}: {exc}")
-    (args.log_dir / "graph-observation.json").write_text(
-        json.dumps(report, indent=2) + "\n"
+    name = (
+        "graph-trace-analysis.json" if args.analyze_only else "graph-observation.json"
     )
+    (args.log_dir / name).write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report))
     return 0 if report["status"] == "passed" else 1
 

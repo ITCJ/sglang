@@ -1,7 +1,10 @@
 # K2 当前记忆
 
-更新：2026-11-03；ticket13代码与Mac检查已交付，等待用户NPU验收；14尚未实施。
+更新：2026-11-03；ticket13首次NPU反馈的trace解析错误已修复，图内区间完整性仍待验收；14尚未实施。
 
+- 31首测页计数/快照通过、服务未启动；Stream lane误过滤及字符串时间戳已修复。
+  15项观测测试通过。新增 `--analyze-only`；旧trace仍有跨replay层区间，不能宣称Graph计时通过。
+  见[修复交付](ticket13-trace-fix.md)，原NPU采集不重跑、不改profiler调度。
 - 当前以[13交付](ticket13-delivery.md)及[检查记录](verification/ticket13-20261103/checks.json)为准。
   默认关采集、独立快照、Main/SR/SDK因果、MSTX设备范围、四项分析和双机四组off/on已接线。
   两轮首轮预热n=1，同服务追加fork；默认父进程退出不变。

@@ -1,0 +1,37 @@
+{
+  "baseline": "13ff2021e8",
+  "reproduction": {
+    "source": "user NPU trace excerpt from 31, k2-ticket13-001",
+    "before": "accepted_forward_ranges: []; TypeError for string trace timestamps and host anchor",
+    "new_regression_first_round": {
+      "run": 2,
+      "errors": 2
+    }
+  },
+  "after": {
+    "focused_tests": 15,
+    "passed": 15,
+    "full_suite_rerun": false,
+    "same_unittest_max_rounds": 2
+  },
+  "static": {
+    "ruff": true,
+    "isort": true,
+    "python39_ast": true,
+    "mypy_sources": 2,
+    "mypy_note": "strict with --ignore-missing-imports for unavailable torch_npu and standalone package aliases"
+  },
+  "hardware": {
+    "agent_run": false,
+    "user_reported": "31 graph counts passed; trace gate failed; no model service started",
+    "graph_ranges": "cross-replay layer spans still incomplete; gate retained"
+  },
+  "ticket_state": "open",
+  "dependencies_unlocked": false,
+  "reviews": {
+    "standards_unresolved": 0,
+    "spec_unresolved": 0,
+    "scope": "two changed scripts plus four new regression tests",
+    "remaining_npu_issue": "captured layer ranges cross replay boundaries; not fixed by parser change"
+  }
+}

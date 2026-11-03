@@ -49,3 +49,14 @@ Graph逐层计时先验 replay/task 关联；Main感知TTFT为待用户反馈的
 
 未运行NPU。Graph重放、真实逐层/HCCL计时、字节、开销、四项真实日志输出及用户三档缓存
 均等待确认。State=open，验收项不勾选，18/21/22不解锁。
+
+### 2026-11-03：31 首次 Graph 验收反馈与 trace 解析修复
+
+用户运行 `k2-ticket13-001`；页计数和快照通过，trace gate 失败，模型服务未启动。
+原始事件证明设备 lane 为 `Stream 44`，带 `Physic Stream Id` / `Task Id`，时间戳为字符串。
+本次修复设备识别、Decimal 时间转换及 host anchor；新增离线重分析和详细 gate 证据。
+15项观测测试通过；同一 unittest 最多两轮，未重复完整套件。
+[修复范围、验证与命令](../ticket13-trace-fix.md)。
+
+用户原始图内区间横跨两次 replay；修复解析后仍应失败，不能放宽 gate 或用主机时间代替。
+图内计时问题尚未解决；State=open，18/21/22不解锁。
