@@ -52,6 +52,7 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     pool_copy_sdk_build_id: str = ""
     pool_copy_bind_cpu: bool = True
     observe: bool = False
+    observe_trace: bool = False
     observe_sample_every: int = 1
     prefill_shared: bool = False
     prefill_groups: tuple[tuple[int, ...], ...] = tuple(

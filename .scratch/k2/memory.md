@@ -78,3 +78,12 @@
 回归先复现导入错误；修复后该回归与原容量重放检查通过。
 整份 session 测试运行16项，存在7个旧端口断言失败及1个沙箱 bind 权限错误，未宣称全通过。
 下一次仍只运行 b64-sd128-on，使用新 run-id 006。暂时验收及随后推进18的约定不变。
+
+**2026-11-04 用户调整：默认关闭 trace。**
+
+006 在同步 profiler 解析期间停止 SR 心跳，600秒后 fail-stop；单个未完成 trace 超过1.2GB。
+用户要求停止自动 trace 采集，后续按需手动采少量 step。
+新增 observe_trace=False；普通 observe on 保留 JSONL、页统计、字节及生命周期验证。
+默认跳过 Graph trace gate；报告标记 device_timing=not-collected，未将设备计时视为已通过。
+撤回未提交的自动离线导出方案。48项CPU测试通过；Standards/Spec评审无阻断项。
+下一轮007仍为 b64-sd128-on，trace关闭；此组通过即按用户约定暂时接受13并推进18。

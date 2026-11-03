@@ -633,7 +633,8 @@ class MempoolSubrouter:
                 if message["kind"] == "heartbeat":
                     continue
                 if message["kind"] == "observation_flush" and self.observer is not None:
-                    self.observation_stop()
+                    if self.observation_stop is not None:
+                        self.observation_stop()
                     self.observer.flush()
                     results["observation_flushed"] = True
                     continue

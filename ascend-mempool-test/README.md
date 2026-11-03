@@ -692,3 +692,19 @@ python3 -u ascend-mempool-test/scripts/run_k2_observation.py \
 
 日志：`/home/cryang/log/k2/k2-ticket13-005/`。
 成功出口为 `passed_current_configuration`，组内 `FULL_ACCEPTANCE` 为 `passed`。
+
+### Ticket13 默认不采集 trace（2026-11-04）
+
+`observe=true` 仅启用 JSONL 观测，`observe_trace` 默认 false。
+`run_k2_observation.py` 默认不创建 profiler、不运行 Graph trace gate。
+页统计、字节核对、生命周期及该组完整功能检查继续执行；设备计时报告为 not-collected。
+下一轮沿用以上两机命令，将 run-id 改为 `k2-ticket13-007`，不传 `--trace`。
+独立 `verify_observation_graph.py` 仍是显式采集工具，不在默认工作流调用。
+
+两机停止测试后，可删除 K2 日志目录内的 profiler 数据，保留 JSONL 和报告：
+
+```bash
+find /home/cryang/log/k2 -type d \
+  \( -name 'trace-*' -o -name 'profile' -o -name '*_ascend_pt' \) \
+  -prune -exec rm -rf -- {} +
+```

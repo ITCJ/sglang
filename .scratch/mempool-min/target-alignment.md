@@ -112,6 +112,15 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 
 ## D 名称、验收与实施票怎样对应
 
+**2026-11-04 用户调整：默认关闭 trace。**
+
+006 在同步 profiler 解析期间停止 SR 心跳，600秒后 fail-stop；单个未完成 trace 超过1.2GB。
+用户要求停止自动 trace 采集，后续按需手动采少量 step。
+新增 observe_trace=False；普通 observe on 保留 JSONL、页统计、字节及生命周期验证。
+默认跳过 Graph trace gate；报告标记 device_timing=not-collected，未将设备计时视为已通过。
+撤回未提交的自动离线导出方案。48项CPU测试通过；Standards/Spec评审无阻断项。
+下一轮007仍为 b64-sd128-on，trace关闭；此组通过即按用户约定暂时接受13并推进18。
+
 **2026-11-04 005 离线容量重放修复。**
 
 005 Graph 通过，restart 后离线 capacity_check 使用 observe=True 创建 MainRouter，触发服务包导入错误。

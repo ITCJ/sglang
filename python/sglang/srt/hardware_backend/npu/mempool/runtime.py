@@ -438,7 +438,7 @@ class MempoolRuntime:
                 writes = self._prepared
                 self._prepared = None
             self.begin_forward(writes, replay=replay, capture=capture)
-            if self.observer is not None and not capture:
+            if self.observation_trace is not None and not capture:
                 from .observation_device import device_range
 
                 ids = "-".join(
@@ -1441,7 +1441,7 @@ def initialize_for_model_runner(model_runner: Any) -> None:
         )
         runtime.observation_producers = tuple(native_pool.indexer_layer_ids)
         if runtime._fetch is not None:
-            runtime._fetch.observe = True
+            runtime._fetch.observe = router.observe_trace
             runtime._fetch.start_layer = runtime.start_layer
         if sparse is not None and runtime.fetch_enabled:
             runtime.observation_device = PageObservation(
@@ -1473,24 +1473,26 @@ def initialize_for_model_runner(model_runner: Any) -> None:
             sdk_build_id=router.pool_copy_sdk_build_id,
             geometry=layout.signature(),
             topology=plan.report(),
-            profiler="MSTX device ranges; replay gate required",
+            trace_enabled=router.observe_trace,
+            profiler="MSTX device ranges" if router.observe_trace else "disabled",
         )
         runtime.observer.flush()
-        runtime.observation_trace = DeviceTrace(
-            runtime.observer.path.parent
-            / f"trace-{args.disaggregation_mode}-{model_runner.ps.tp_rank}"
-        )
-        runtime.observation_trace.install_hooks(model_runner.model)
-        from sglang.srt.runtime_context import get_parallel
+        if router.observe_trace:
+            runtime.observation_trace = DeviceTrace(
+                runtime.observer.path.parent
+                / f"trace-{args.disaggregation_mode}-{model_runner.ps.tp_rank}"
+            )
+            runtime.observation_trace.install_hooks(model_runner.model)
+            from sglang.srt.runtime_context import get_parallel
 
-        parallel = get_parallel()
-        runtime.observation_trace.install_collectives(
-            [
-                parallel.tp_group,
-                parallel.attn_tp_group,
-                parallel.moe_tp_group,
-            ]
-        )
+            parallel = get_parallel()
+            runtime.observation_trace.install_collectives(
+                [
+                    parallel.tp_group,
+                    parallel.attn_tp_group,
+                    parallel.moe_tp_group,
+                ]
+            )
         if prefix_store is not None:
             if prefix_group is not None:
                 prefix_store.all_gather = prefix_group.all_gather_into_tensor

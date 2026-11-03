@@ -287,7 +287,8 @@ def attach_subrouter(
     )
     if config.observe:
         subrouter.observer = runtime.observer
-        subrouter.observation_stop = runtime.observation_trace.stop
+        if runtime.observation_trace is not None:
+            subrouter.observation_stop = runtime.observation_trace.stop
     return subrouter
 
 

@@ -17,6 +17,23 @@ from ascend_mempool_pd.mempool_tick import RequestObservation
 
 
 class TestSubrouter(unittest.TestCase):
+    def test_jsonl_flush_acknowledges_without_a_profiler(self):
+        from unittest.mock import Mock
+
+        for role in ("prefill", "decode"):
+            for tick in self.ticks[role]:
+                tick.observer = Mock()
+                self.assertIsNone(tick.observation_stop)
+            self.commands[role].append(
+                dict(run_id="cpu", role=role, kind="observation_flush")
+            )
+            self.advance(role)
+            for tick in self.ticks[role]:
+                tick.observer.flush.assert_called_once_with()
+            self.assertEqual(
+                sum(m["kind"] == "observation_flushed" for m in self.messages[role]), 1
+            )
+
     def test_shared_free_then_next_allocation_keeps_tp_ownership_consistent(self):
         self.shared_free_then_next_allocation(main_written=False)
 

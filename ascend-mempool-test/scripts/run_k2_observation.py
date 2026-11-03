@@ -30,6 +30,11 @@ def main() -> int:
     )
     parser.add_argument("--geometry", choices=[f"b{b}-sd{sd}" for b, sd in MATRIX])
     parser.add_argument("--observe", choices=("both", "on", "off"), default="both")
+    parser.add_argument(
+        "--trace",
+        action="store_true",
+        help="explicitly enable profiler capture and graph trace gate",
+    )
     parser.add_argument("--describe", action="store_true")
     args = parser.parse_args()
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,45}", args.run_id):
@@ -42,8 +47,10 @@ def main() -> int:
     if args.smoke:
         configs = configs[:1]
     modes = (False, True) if args.observe == "both" else (args.observe == "on",)
-    coverage = "selected" if args.geometry or args.observe != "both" else (
-        "smoke" if args.smoke else "full"
+    coverage = (
+        "selected"
+        if args.geometry or args.observe != "both"
+        else ("smoke" if args.smoke else "full")
     )
     root = Path("/home/cryang/log/k2") / args.run_id
     if args.describe:
@@ -56,6 +63,7 @@ def main() -> int:
                     },
                     target_rounds=2,
                     observation_modes=list(modes),
+                    trace_enabled=args.trace,
                     warmup_round=1,
                     normal_target_starts_per_side=2 * len(modes) * len(configs),
                     logs=str(root),
@@ -87,23 +95,31 @@ def main() -> int:
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
     try:
-        child = subprocess.Popen(
-            [
-                sys.executable,
-                str(Path(__file__).with_name("verify_observation_graph.py")),
-                "--log-dir",
-                str(root / f"graph-{args.role}"),
-            ]
-        )
-        if child.wait():
-            raise RuntimeError("Graph observation gate failed; service was not started")
-        child = None
+        report["trace_enabled"] = args.trace
+        report["graph_trace_gate"] = "not-run"
+        if args.trace:
+            child = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(Path(__file__).with_name("verify_observation_graph.py")),
+                    "--log-dir",
+                    str(root / f"graph-{args.role}"),
+                ]
+            )
+            if child.wait():
+                raise RuntimeError(
+                    "Graph observation gate failed; service was not started"
+                )
+            child = None
+            report["graph_trace_gate"] = "passed"
         for name, base in configs:
             responses = {}
             walls = {}
             for enabled in modes:
                 label = f"{name}-{'on' if enabled else 'off'}"
-                config = msgspec.structs.replace(base, observe=enabled)
+                config = msgspec.structs.replace(
+                    base, observe=enabled, observe_trace=enabled and args.trace
+                )
                 generated = root / f"{label}-{args.role}.json"
                 generated.write_bytes(msgspec.json.encode(config))
                 child_id = f"{args.run_id}-{label}"

@@ -701,6 +701,10 @@ def lifecycle(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def summarize(
     data: list[dict[str, Any]], traces: list[Path], *, check_ranks: bool = True
 ) -> dict[str, Any]:
+    runs = [r for r in data if r["event"] == "run"]
+    trace_enabled = any(r.get("trace_enabled", True) for r in runs)
+    if not trace_enabled:
+        traces = []
     ranges = [r for path in traces for r in trace_ranges(path)]
     sharing = [
         r
@@ -791,12 +795,13 @@ def summarize(
         missing.append(
             f"{len(expected - pages)} expected layer/request/step page records"
         )
-    if outputs - timed:
+    if trace_enabled and outputs - timed:
         missing.append(
             f"{len(outputs - timed)} output steps lack profiler clock/device attribution"
         )
-    if not device or any(
-        not any(s["busy_ns"].get(k, 0) for s in device) for k in required
+    if trace_enabled and (
+        not device
+        or any(not any(s["busy_ns"].get(k, 0) for s in device) for k in required)
     ):
         missing.append("indexer/attention/MoE/collective device ranges")
     if device and not any(s["hccl_task_count"] for s in device):
@@ -869,6 +874,7 @@ def summarize(
             expected_page_records=len(expected),
             output_steps=len(outputs),
             timed_steps=len(timed),
+            device_timing="checked" if trace_enabled else "not-collected",
             external_pending=[
                 "user k/2k/4k cache-capacity logs; this run uses the actual configured cache capacity"
             ],

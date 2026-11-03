@@ -11,6 +11,35 @@ from ascend_mempool.observation import Observation, create_observation
 
 
 class TestObservation(unittest.TestCase):
+    def test_trace_disabled_manifest_preserves_non_trace_checks(self):
+        from analyze_k2_observation import summarize
+        from ascend_mempool_pd.mempool_router_protocol import RouterConfig
+
+        self.assertFalse(RouterConfig("p", "d", "/model").observe_trace)
+        common = dict(run_id="r", host="p", role="prefill", rank=0, pid=1, mono_ns=1, clock_domain="host:p")
+        data = [
+            dict(
+                common,
+                event="run",
+                trace_enabled=False,
+                tp_size=1,
+                layers=1,
+                producer_layers=[],
+                sample_every=1,
+            ),
+            dict(
+                common, event="forward_submitted", rid="q", forward_id=1, mode="prefill"
+            ),
+        ]
+        report = summarize(data, [])
+        self.assertEqual(report["status"], "passed")
+        self.assertEqual(report["coverage"]["device_timing"], "not-collected")
+        data[0]["trace_enabled"] = True
+        self.assertEqual(summarize(data, [])["status"], "incomplete")
+        data[0]["trace_enabled"] = False
+        data[0]["tp_size"] = 2
+        self.assertEqual(summarize(data, [])["status"], "incomplete")
+
     def test_disabled_does_not_create_files_and_enabled_preserves_clock_identity(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder) / "evidence"
@@ -431,9 +460,7 @@ class TestDeliveryContracts(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             runtime.observer = Observation(Path(folder), "empty", "decode", 0)
             self.addCleanup(runtime.observer.close)
-            runtime.observation_device = PageObservation(
-                1, 9, 16, 4, 2, (5,), 5, "cpu"
-            )
+            runtime.observation_device = PageObservation(1, 9, 16, 4, 2, (5,), 5, "cpu")
             runtime._capture_validated = True
             runtime.begin_forward([], replay=True)
             runtime.end_forward()
