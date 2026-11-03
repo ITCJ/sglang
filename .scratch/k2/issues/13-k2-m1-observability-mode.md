@@ -69,3 +69,11 @@ Graph逐层计时先验 replay/task 关联；Main感知TTFT为待用户反馈的
 已上传实测包离线检查passed，两轮各含四个阶段；18项CPU测试通过。
 [交付、源码与复核命令](../ticket13-cann90-log-fix.md)。
 没有改变运行环境或采集行为；完整模型NPU验收仍待用户执行，State=open，依赖不解锁。
+
+### 2026-11-03：用户确认31日志复核passed
+
+用户在31使用日志补丁重分析k2-ticket13-001，返回status=passed，
+forward:1/2各1条，两轮missing=[]，timing_source=CANN9.0_raw_endpoints。
+这是既有设备采集的trace复核；本次analyze-only不重新检查页快照。
+原始首次采集已通过页计数/快照检查。完整模型、双侧off/on与字节/开销验收仍待执行。
+下一次双机完整入口使用新run-id=k2-ticket13-002；ticket13保持open。
