@@ -1,0 +1,38 @@
+{
+  "baseline": "ef4bc86dfa",
+  "user_archive_sha256": "49c385e052555bcfac9eb6a008d22da9b967868dc9c996c2b83442ecdfa33070",
+  "environment": {
+    "cann": "9.0.0",
+    "torch_npu": "2.10.0",
+    "changed": false
+  },
+  "reproduction": "actual uploaded capture: 2 forwards, both missing all 4 phases before repair",
+  "tests": {
+    "initial_fixture_setup_error": "trace JSON is a top-level list; fixture generation corrected before reproducing actual failure",
+    "focused_passed": 18,
+    "same_unittest_max_rounds": 2,
+    "full_suite_rerun": false,
+    "runs_after_fix": [
+      17,
+      1
+    ]
+  },
+  "static": {
+    "ruff": true,
+    "isort": true,
+    "python39_ast": true,
+    "mypy_sources": 2,
+    "mypy_missing_external_imports_ignored": true
+  },
+  "actual_archive_offline_result": "passed; both forwards have all four phases",
+  "agent_npu_run": false,
+  "full_model_acceptance": "pending",
+  "ticket_state": "open",
+  "upstream_commit": "222074cdb867c23963bb1e29af6a387cd3d2b90a",
+  "reviews": {
+    "standards_unresolved": 0,
+    "spec_initial_p2": 1,
+    "spec_unresolved": 0,
+    "resolved": "apply capture mapping to HCCL device tasks as well as MSTX ranges"
+  }
+}

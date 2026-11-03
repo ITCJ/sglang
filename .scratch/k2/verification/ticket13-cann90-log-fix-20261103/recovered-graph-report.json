@@ -1,0 +1,337 @@
+{
+  "status": "passed",
+  "coverage": "exported trace only; page snapshots not checked",
+  "traces": [
+    "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json"
+  ],
+  "forward_counts": {
+    "forward:1": 1,
+    "forward:2": 1
+  },
+  "device_ranges": [
+    {
+      "name": "cache_manage:0",
+      "start_ns": 1793717160450497120,
+      "end_ns": 1793717160544738823,
+      "stream": 44,
+      "task_id": 4,
+      "trace": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "logical_stream": 44,
+      "timing_source": "CANN9.0_raw_endpoints",
+      "raw_index_id": 1,
+      "raw_source": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/PROF_000001_20261103224600277_00732656IDRRCIBF/device_0/data"
+    },
+    {
+      "name": "miss_io:0",
+      "start_ns": 1793717160544824185,
+      "end_ns": 1793717160556529919,
+      "stream": 43,
+      "task_id": 1,
+      "trace": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "logical_stream": 43,
+      "timing_source": "CANN9.0_raw_endpoints",
+      "raw_index_id": 2,
+      "raw_source": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/PROF_000001_20261103224600277_00732656IDRRCIBF/device_0/data"
+    },
+    {
+      "name": "materialize_wait:0",
+      "start_ns": 1793717160556543499,
+      "end_ns": 1793717160556684262,
+      "stream": 44,
+      "task_id": 45,
+      "trace": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "logical_stream": 44,
+      "timing_source": "CANN9.0_raw_endpoints",
+      "raw_index_id": 3,
+      "raw_source": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/PROF_000001_20261103224600277_00732656IDRRCIBF/device_0/data"
+    },
+    {
+      "name": "attention:0",
+      "start_ns": 1793717160556758243,
+      "end_ns": 1793717160558562379,
+      "stream": 44,
+      "task_id": 48,
+      "trace": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "logical_stream": 44,
+      "timing_source": "CANN9.0_raw_endpoints",
+      "raw_index_id": 4,
+      "raw_source": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/PROF_000001_20261103224600277_00732656IDRRCIBF/device_0/data"
+    },
+    {
+      "name": "cache_manage:0",
+      "start_ns": 1793717160578677521,
+      "end_ns": 1793717160579074469,
+      "stream": 12,
+      "task_id": 3,
+      "trace": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "logical_stream": 44,
+      "timing_source": "CANN9.0_raw_endpoints",
+      "raw_index_id": 5,
+      "raw_source": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/PROF_000001_20261103224600277_00732656IDRRCIBF/device_0/data"
+    },
+    {
+      "name": "cache_manage:0",
+      "start_ns": 1793717160580267393,
+      "end_ns": 1793717160580630220,
+      "stream": 12,
+      "task_id": 3,
+      "trace": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "logical_stream": 44,
+      "timing_source": "CANN9.0_raw_endpoints",
+      "raw_index_id": 5,
+      "raw_source": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/PROF_000001_20261103224600277_00732656IDRRCIBF/device_0/data"
+    },
+    {
+      "name": "miss_io:0",
+      "start_ns": 1793717160579117670,
+      "end_ns": 1793717160579530758,
+      "stream": 11,
+      "task_id": 1,
+      "trace": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "logical_stream": 43,
+      "timing_source": "CANN9.0_raw_endpoints",
+      "raw_index_id": 6,
+      "raw_source": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/PROF_000001_20261103224600277_00732656IDRRCIBF/device_0/data"
+    },
+    {
+      "name": "miss_io:0",
+      "start_ns": 1793717160580667761,
+      "end_ns": 1793717160581038628,
+      "stream": 11,
+      "task_id": 1,
+      "trace": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "logical_stream": 43,
+      "timing_source": "CANN9.0_raw_endpoints",
+      "raw_index_id": 6,
+      "raw_source": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/PROF_000001_20261103224600277_00732656IDRRCIBF/device_0/data"
+    },
+    {
+      "name": "materialize_wait:0",
+      "start_ns": 1793717160579087869,
+      "end_ns": 1793717160579555498,
+      "stream": 12,
+      "task_id": 44,
+      "trace": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "logical_stream": 44,
+      "timing_source": "CANN9.0_raw_endpoints",
+      "raw_index_id": 7,
+      "raw_source": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/PROF_000001_20261103224600277_00732656IDRRCIBF/device_0/data"
+    },
+    {
+      "name": "materialize_wait:0",
+      "start_ns": 1793717160580642940,
+      "end_ns": 1793717160581063128,
+      "stream": 12,
+      "task_id": 44,
+      "trace": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "logical_stream": 44,
+      "timing_source": "CANN9.0_raw_endpoints",
+      "raw_index_id": 7,
+      "raw_source": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/PROF_000001_20261103224600277_00732656IDRRCIBF/device_0/data"
+    },
+    {
+      "name": "attention:0",
+      "start_ns": 1793717160579567559,
+      "end_ns": 1793717160579963207,
+      "stream": 12,
+      "task_id": 47,
+      "trace": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "logical_stream": 44,
+      "timing_source": "CANN9.0_raw_endpoints",
+      "raw_index_id": 8,
+      "raw_source": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/PROF_000001_20261103224600277_00732656IDRRCIBF/device_0/data"
+    },
+    {
+      "name": "attention:0",
+      "start_ns": 1793717160581074629,
+      "end_ns": 1793717160581433416,
+      "stream": 12,
+      "task_id": 47,
+      "trace": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "logical_stream": 44,
+      "timing_source": "CANN9.0_raw_endpoints",
+      "raw_index_id": 8,
+      "raw_source": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/PROF_000001_20261103224600277_00732656IDRRCIBF/device_0/data"
+    },
+    {
+      "name": "forward:1",
+      "start_ns": 1793717160577344535,
+      "end_ns": 1793717160579976788,
+      "stream": 44,
+      "task_id": 89,
+      "trace": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "logical_stream": 44,
+      "timing_source": "CANN9.0_raw_endpoints",
+      "raw_index_id": 9,
+      "raw_source": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/PROF_000001_20261103224600277_00732656IDRRCIBF/device_0/data"
+    },
+    {
+      "name": "forward:2",
+      "start_ns": 1793717160579992767,
+      "end_ns": 1793717160581446076,
+      "stream": 44,
+      "task_id": 96,
+      "trace": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "logical_stream": 44,
+      "timing_source": "CANN9.0_raw_endpoints",
+      "raw_index_id": 10,
+      "raw_source": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/PROF_000001_20261103224600277_00732656IDRRCIBF/device_0/data"
+    }
+  ],
+  "replay_checks": [
+    {
+      "forward": "forward:1",
+      "missing": []
+    },
+    {
+      "forward": "forward:2",
+      "missing": []
+    }
+  ],
+  "device_steps": [
+    {
+      "forward_ids": "1",
+      "trace": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "device_forward_ns": 2632253,
+      "segments_ns": {
+        "other_device": 1372028,
+        "cache_manage": 864577,
+        "attention": 395648
+      },
+      "busy_ns": {
+        "cache_manage": 396948,
+        "miss_io": 413088,
+        "materialize_wait": 467629,
+        "attention": 395648
+      },
+      "intervals": [
+        {
+          "start_ns": 1793717160577344535,
+          "end_ns": 1793717160578677521,
+          "kind": "other_device"
+        },
+        {
+          "start_ns": 1793717160578677521,
+          "end_ns": 1793717160579074469,
+          "kind": "cache_manage"
+        },
+        {
+          "start_ns": 1793717160579074469,
+          "end_ns": 1793717160579087869,
+          "kind": "other_device"
+        },
+        {
+          "start_ns": 1793717160579087869,
+          "end_ns": 1793717160579117670,
+          "kind": "cache_manage"
+        },
+        {
+          "start_ns": 1793717160579117670,
+          "end_ns": 1793717160579530758,
+          "kind": "cache_manage"
+        },
+        {
+          "start_ns": 1793717160579530758,
+          "end_ns": 1793717160579555498,
+          "kind": "cache_manage"
+        },
+        {
+          "start_ns": 1793717160579555498,
+          "end_ns": 1793717160579567559,
+          "kind": "other_device"
+        },
+        {
+          "start_ns": 1793717160579567559,
+          "end_ns": 1793717160579963207,
+          "kind": "attention"
+        },
+        {
+          "start_ns": 1793717160579963207,
+          "end_ns": 1793717160579976788,
+          "kind": "other_device"
+        }
+      ],
+      "phase_names": [
+        "attention:0",
+        "cache_manage:0",
+        "materialize_wait:0",
+        "miss_io:0"
+      ],
+      "miss_exposed_by_source_ns": {},
+      "hccl_task_count": 0,
+      "coverage": "one rank, disjoint main-stream intervals; side-stream busy time is separate"
+    },
+    {
+      "forward_ids": "2",
+      "trace": "<user-capture>/profile/npu1-31_732656_20261103224600265_ascend_pt/ASCEND_PROFILER_OUTPUT/trace_view.json",
+      "device_forward_ns": 1453309,
+      "segments_ns": {
+        "other_device": 311507,
+        "cache_manage": 783015,
+        "attention": 358787
+      },
+      "busy_ns": {
+        "cache_manage": 362827,
+        "miss_io": 370867,
+        "materialize_wait": 420188,
+        "attention": 358787
+      },
+      "intervals": [
+        {
+          "start_ns": 1793717160579992767,
+          "end_ns": 1793717160580267393,
+          "kind": "other_device"
+        },
+        {
+          "start_ns": 1793717160580267393,
+          "end_ns": 1793717160580630220,
+          "kind": "cache_manage"
+        },
+        {
+          "start_ns": 1793717160580630220,
+          "end_ns": 1793717160580642940,
+          "kind": "other_device"
+        },
+        {
+          "start_ns": 1793717160580642940,
+          "end_ns": 1793717160580667761,
+          "kind": "cache_manage"
+        },
+        {
+          "start_ns": 1793717160580667761,
+          "end_ns": 1793717160581038628,
+          "kind": "cache_manage"
+        },
+        {
+          "start_ns": 1793717160581038628,
+          "end_ns": 1793717160581063128,
+          "kind": "cache_manage"
+        },
+        {
+          "start_ns": 1793717160581063128,
+          "end_ns": 1793717160581074629,
+          "kind": "other_device"
+        },
+        {
+          "start_ns": 1793717160581074629,
+          "end_ns": 1793717160581433416,
+          "kind": "attention"
+        },
+        {
+          "start_ns": 1793717160581433416,
+          "end_ns": 1793717160581446076,
+          "kind": "other_device"
+        }
+      ],
+      "phase_names": [
+        "attention:0",
+        "cache_manage:0",
+        "materialize_wait:0",
+        "miss_io:0"
+      ],
+      "miss_exposed_by_source_ns": {},
+      "hccl_task_count": 0,
+      "coverage": "one rank, disjoint main-stream intervals; side-stream busy time is separate"
+    }
+  ]
+}

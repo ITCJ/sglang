@@ -1,0 +1,424 @@
+{
+  "traceEvents": [
+    {
+      "ph": "M",
+      "name": "thread_name",
+      "pid": 732656,
+      "tid": 732656,
+      "args": {
+        "name": "Thread 732656"
+      }
+    },
+    {
+      "ph": "M",
+      "name": "thread_name",
+      "pid": 732656,
+      "tid": 732799,
+      "args": {
+        "name": "Thread 732799"
+      }
+    },
+    {
+      "name": "mempool:cache_manage:0",
+      "pid": 750239967,
+      "tid": 732799,
+      "ts": "1793717160450466.550",
+      "dur": 94247.34,
+      "ph": "X",
+      "args": {
+        "event_type": "start/end",
+        "domain": "default"
+      }
+    },
+    {
+      "name": "mempool:miss_io:0",
+      "pid": 750239967,
+      "tid": 732799,
+      "ts": "1793717160544808.940",
+      "dur": 11629.93,
+      "ph": "X",
+      "args": {
+        "event_type": "start/end",
+        "domain": "default"
+      }
+    },
+    {
+      "name": "mempool:materialize_wait:0",
+      "pid": 750239967,
+      "tid": 732799,
+      "ts": "1793717160556515.270",
+      "dur": 151.27,
+      "ph": "X",
+      "args": {
+        "event_type": "start/end",
+        "domain": "default"
+      }
+    },
+    {
+      "name": "mempool:attention:0",
+      "pid": 750239967,
+      "tid": 732799,
+      "ts": "1793717160556741.480",
+      "dur": 1797.27,
+      "ph": "X",
+      "args": {
+        "event_type": "start/end",
+        "domain": "default"
+      }
+    },
+    {
+      "name": "mempool:cache_manage:0",
+      "pid": 750239967,
+      "tid": 732799,
+      "ts": "1793717160562437.420",
+      "dur": 5001.33,
+      "ph": "X",
+      "args": {
+        "event_type": "start/end",
+        "domain": "default"
+      }
+    },
+    {
+      "name": "mempool:miss_io:0",
+      "pid": 750239967,
+      "tid": 732799,
+      "ts": "1793717160569726.480",
+      "dur": 3632.32,
+      "ph": "X",
+      "args": {
+        "event_type": "start/end",
+        "domain": "default"
+      }
+    },
+    {
+      "name": "mempool:materialize_wait:0",
+      "pid": 750239967,
+      "tid": 732799,
+      "ts": "1793717160573617.170",
+      "dur": 208.33,
+      "ph": "X",
+      "args": {
+        "event_type": "start/end",
+        "domain": "default"
+      }
+    },
+    {
+      "name": "mempool:attention:0",
+      "pid": 750239967,
+      "tid": 732799,
+      "ts": "1793717160573881.280",
+      "dur": 3002.84,
+      "ph": "X",
+      "args": {
+        "event_type": "start/end",
+        "domain": "default"
+      }
+    },
+    {
+      "name": "mempool:forward:1",
+      "pid": 750239967,
+      "tid": 732799,
+      "ts": "1793717160577313.870",
+      "dur": 1449.0,
+      "ph": "X",
+      "args": {
+        "event_type": "start/end",
+        "domain": "default"
+      }
+    },
+    {
+      "name": "mempool:forward:2",
+      "pid": 750239967,
+      "tid": 732799,
+      "ts": "1793717160579064.080",
+      "dur": 39.65,
+      "ph": "X",
+      "args": {
+        "event_type": "start/end",
+        "domain": "default"
+      }
+    },
+    {
+      "name": "thread_name",
+      "pid": 750239967,
+      "tid": 732799,
+      "ph": "M",
+      "args": {
+        "name": "Thread 732799"
+      }
+    },
+    {
+      "name": "mempool:cache_manage:0",
+      "pid": 750240160,
+      "tid": 44,
+      "ts": "1793717160450497.120",
+      "dur": 94241.703,
+      "ph": "X",
+      "args": {
+        "Physic Stream Id": 44,
+        "Task Id": 4
+      }
+    },
+    {
+      "name": "mempool:miss_io:0",
+      "pid": 750240160,
+      "tid": 43,
+      "ts": "1793717160544824.185",
+      "dur": 11705.734,
+      "ph": "X",
+      "args": {
+        "Physic Stream Id": 43,
+        "Task Id": 1
+      }
+    },
+    {
+      "name": "mempool:materialize_wait:0",
+      "pid": 750240160,
+      "tid": 44,
+      "ts": "1793717160556543.499",
+      "dur": 140.763,
+      "ph": "X",
+      "args": {
+        "Physic Stream Id": 44,
+        "Task Id": 45
+      }
+    },
+    {
+      "name": "mempool:attention:0",
+      "pid": 750240160,
+      "tid": 44,
+      "ts": "1793717160556758.243",
+      "dur": 1804.136,
+      "ph": "X",
+      "args": {
+        "Physic Stream Id": 44,
+        "Task Id": 48
+      }
+    },
+    {
+      "name": "mempool:cache_manage:0",
+      "pid": 750240160,
+      "tid": 12,
+      "ts": "1793717160578677.521",
+      "dur": 1952.699,
+      "ph": "X",
+      "args": {
+        "Physic Stream Id": 12,
+        "Task Id": 3
+      }
+    },
+    {
+      "name": "mempool:miss_io:0",
+      "pid": 750240160,
+      "tid": 11,
+      "ts": "1793717160579117.670",
+      "dur": 1920.958,
+      "ph": "X",
+      "args": {
+        "Physic Stream Id": 11,
+        "Task Id": 1
+      }
+    },
+    {
+      "name": "mempool:materialize_wait:0",
+      "pid": 750240160,
+      "tid": 12,
+      "ts": "1793717160579087.869",
+      "dur": 1975.26,
+      "ph": "X",
+      "args": {
+        "Physic Stream Id": 12,
+        "Task Id": 44
+      }
+    },
+    {
+      "name": "mempool:attention:0",
+      "pid": 750240160,
+      "tid": 12,
+      "ts": "1793717160579567.559",
+      "dur": 1865.857,
+      "ph": "X",
+      "args": {
+        "Physic Stream Id": 12,
+        "Task Id": 47
+      }
+    },
+    {
+      "name": "mempool:forward:1",
+      "pid": 750240160,
+      "tid": 44,
+      "ts": "1793717160577344.535",
+      "dur": 2632.252,
+      "ph": "X",
+      "args": {
+        "Physic Stream Id": 44,
+        "Task Id": 89
+      }
+    },
+    {
+      "name": "mempool:forward:2",
+      "pid": 750240160,
+      "tid": 44,
+      "ts": "1793717160579992.767",
+      "dur": 1453.31,
+      "ph": "X",
+      "args": {
+        "Physic Stream Id": 44,
+        "Task Id": 96
+      }
+    },
+    {
+      "name": "thread_name",
+      "pid": 750240160,
+      "tid": 11,
+      "ph": "M",
+      "args": {
+        "name": "Stream 11"
+      }
+    },
+    {
+      "name": "thread_name",
+      "pid": 750240160,
+      "tid": 12,
+      "ph": "M",
+      "args": {
+        "name": "Stream 12"
+      }
+    },
+    {
+      "name": "thread_name",
+      "pid": 750240160,
+      "tid": 43,
+      "ph": "M",
+      "args": {
+        "name": "Stream 43"
+      }
+    },
+    {
+      "name": "thread_name",
+      "pid": 750240160,
+      "tid": 44,
+      "ph": "M",
+      "args": {
+        "name": "Stream 44"
+      }
+    },
+    {
+      "name": "thread_name",
+      "pid": 750240160,
+      "tid": 11,
+      "ph": "M",
+      "args": {
+        "name": "Stream 11"
+      }
+    },
+    {
+      "name": "thread_name",
+      "pid": 750240160,
+      "tid": 12,
+      "ph": "M",
+      "args": {
+        "name": "Stream 12"
+      }
+    },
+    {
+      "name": "thread_name",
+      "pid": 750240160,
+      "tid": 43,
+      "ph": "M",
+      "args": {
+        "name": "Stream 43"
+      }
+    },
+    {
+      "name": "thread_name",
+      "pid": 750240160,
+      "tid": 44,
+      "ph": "M",
+      "args": {
+        "name": "Stream 44"
+      }
+    },
+    {
+      "name": "thread_name",
+      "pid": 750240160,
+      "tid": 46,
+      "ph": "M",
+      "args": {
+        "name": "Stream 46"
+      }
+    },
+    {
+      "name": "thread_name",
+      "pid": 750240160,
+      "tid": 47,
+      "ph": "M",
+      "args": {
+        "name": "Stream 47"
+      }
+    },
+    {
+      "name": "thread_name",
+      "pid": 750240160,
+      "tid": 49,
+      "ph": "M",
+      "args": {
+        "name": "Stream 49"
+      }
+    },
+    {
+      "name": "thread_name",
+      "pid": 750240704,
+      "tid": 0,
+      "ph": "M",
+      "args": {
+        "name": "Communication"
+      }
+    },
+    {
+      "name": "thread_name",
+      "pid": 750240704,
+      "tid": 1,
+      "ph": "M",
+      "args": {
+        "name": "Communication(Not Overlapped)"
+      }
+    },
+    {
+      "name": "thread_name",
+      "pid": 750240704,
+      "tid": 2,
+      "ph": "M",
+      "args": {
+        "name": "Computing"
+      }
+    },
+    {
+      "name": "thread_name",
+      "pid": 750240704,
+      "tid": 3,
+      "ph": "M",
+      "args": {
+        "name": "Free"
+      }
+    },
+    {
+      "name": "thread_name",
+      "pid": 750239999,
+      "tid": 732656,
+      "ph": "M",
+      "args": {
+        "name": "Thread 732656"
+      }
+    },
+    {
+      "name": "thread_name",
+      "pid": 750239999,
+      "tid": 732799,
+      "ph": "M",
+      "args": {
+        "name": "Thread 732799"
+      }
+    }
+  ]
+}

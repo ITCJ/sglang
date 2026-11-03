@@ -13,6 +13,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
+from observation_legacy_mstx import recover_ranges
+
 
 def records(paths: Iterable[Path]) -> list[dict[str, Any]]:
     result = []
@@ -258,10 +260,11 @@ def trace_ranges(path: Path) -> list[dict[str, Any]]:
                 start_ns=trace_time_ns(e["ts"]),
                 end_ns=trace_time_ns(e["ts"]) + trace_time_ns(e["dur"]),
                 stream=int(match.group(1)),
+                task_id=args.get("Task Id"),
                 trace=str(path),
             )
         )
-    return result
+    return recover_ranges(path, result)
 
 
 def sweep(
@@ -316,7 +319,8 @@ def device_steps(ranges: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 main = [
                     s
                     for s in active
-                    if s["stream"] == forward["stream"]
+                    if s.get("logical_stream", s["stream"])
+                    == forward.get("logical_stream", forward["stream"])
                     and not s["name"].startswith("layer:")
                 ]
                 selected = min(
