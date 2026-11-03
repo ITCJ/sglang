@@ -4810,6 +4810,12 @@ class Scheduler(
         elif batch.forward_mode.is_idle():
             self.batch_result_processor.process_batch_result_idle(batch, result)
 
+        if (
+            self.mempool_service is not None
+            and self.mempool_service.observer is not None
+        ):
+            self.mempool_service.observation_result(batch)
+
         # Submit this batch's queued host backups before the next scheduler step.
         self.tree_cache.flush_pending_backups()
 

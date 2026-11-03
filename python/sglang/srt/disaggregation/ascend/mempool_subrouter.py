@@ -553,6 +553,8 @@ class MempoolSubrouter:
         self.completed: dict[int, tuple[dict[str, Any], dict[str, Any]]] = {}
         self.last_op = 0
         self._admit_pages: tuple[int, ...] | None = None
+        self.observer: Any = None
+        self.observation_stop: Any = None
         self.fault: str | None = None
 
     def track(self, req: Any) -> None:
@@ -629,6 +631,11 @@ class MempoolSubrouter:
                 ):
                     raise ValueError("Router command belongs to another startup")
                 if message["kind"] == "heartbeat":
+                    continue
+                if message["kind"] == "observation_flush" and self.observer is not None:
+                    self.observation_stop()
+                    self.observer.flush()
+                    results["observation_flushed"] = True
                     continue
                 if message["kind"] == "error":
                     raise RuntimeError(message["reason"])
@@ -708,6 +715,13 @@ class MempoolSubrouter:
                         self._admit_pages or (),
                     )
                     results["ack"] = execution
+                    if execution is not None and self.observer is not None:
+                        self.observer.emit(
+                            "shard_complete",
+                            rid=command["rid"],
+                            op_id=command["op_id"],
+                            kind=command["kind"],
+                        )
             results["events"] = self.shard.advance(
                 common_facts,
                 restored=all(o["restored"] for o in observations),
@@ -762,10 +776,19 @@ class MempoolSubrouter:
         if not leader:
             return
         envelope = dict(run_id=self.run_id, role=control.local.role)
+        if all(r.get("observation_flushed", False) for r in committed):
+            self.send(dict(envelope, kind="observation_flushed"))
         if results["registration"] is not None:
             ranks = results["registration"]
             self.send(dict(envelope, kind="register", ranks=ranks))
         if acknowledged and command is not None:
+            if self.observer is not None:
+                self.observer.emit(
+                    "ack_sent",
+                    rid=command["rid"],
+                    op_id=command["op_id"],
+                    kind=command["kind"],
+                )
             self.send(
                 {
                     **command,

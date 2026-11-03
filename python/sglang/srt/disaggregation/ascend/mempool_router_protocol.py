@@ -51,6 +51,8 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     pool_copy: bool = False
     pool_copy_sdk_build_id: str = ""
     pool_copy_bind_cpu: bool = True
+    observe: bool = False
+    observe_sample_every: int = 1
     prefill_shared: bool = False
     prefill_groups: tuple[tuple[int, ...], ...] = tuple(
         (r, r + 1) for r in range(0, 16, 2)
@@ -65,6 +67,8 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     decode_write_assignment: str = "features"
 
     def __post_init__(self) -> None:
+        if self.observe_sample_every < 1:
+            raise ValueError("observe_sample_every must be positive")
         if self.prefix_shared and not (
             self.prefill_shared and self.prefill_index_shared
         ):

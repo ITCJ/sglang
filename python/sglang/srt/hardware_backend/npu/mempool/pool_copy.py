@@ -50,8 +50,17 @@ class BMTransfer:
 
     def __init__(self, handle: Any, bm: Any) -> None:
         self.handle, self.bm = handle, bm
+        self.observer: Any = None
+        self.observation_task: CopyTask | None = None
+
+    def _observe(self, event: str) -> None:
+        if self.observer is not None and self.observation_task is not None:
+            task = self.observation_task
+            self.observer.emit(event, rid=task.rid, op_id=task.op_id, kind=task.kind)
 
     def transfer(self, blocks: tuple[CopyBlock, ...]) -> None:
+        if self.observer is not None:
+            self._observe("library_submit_begin")
         ret = self.handle.copy_data_batch(
             [b.src_gva for b in blocks],
             [b.dst_gva for b in blocks],
@@ -61,6 +70,8 @@ class BMTransfer:
             flags=1,
             stream=0,
         )
+        if self.observer is not None:
+            self._observe("library_submit_return")
         if ret != 0:
             raise RuntimeError(f"BM batch returned {ret}; partial writes possible")
         try:
@@ -69,6 +80,8 @@ class BMTransfer:
             raise CompletionUnknown(str(exc)) from exc
         if ret != 0:
             raise CompletionUnknown(f"BM wait returned {ret}; completion unknown")
+        if self.observer is not None:
+            self._observe("library_complete")
 
 
 class PoolCopyExecutor:
@@ -85,6 +98,7 @@ class PoolCopyExecutor:
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("copy timeout must be positive and finite")
         self.transfer, self.timeout, self.clock = transfer, timeout, clock
+        self.observer: Any = None
         self._tasks: queue.Queue[CopyTask | None] = queue.Queue()
         self._results: queue.Queue[CopyResult] = queue.Queue()
         self._pending: dict[int, tuple[CopyTask, float]] = {}
@@ -98,6 +112,16 @@ class PoolCopyExecutor:
         if self._closed or self._failed.is_set() or task.op_id in self._pending:
             raise RuntimeError("executor closed or duplicate op_id")
         self._pending[task.op_id] = task, self.clock() + self.timeout
+        if self.observer is not None:
+            self.observer.emit(
+                "executor_enqueue",
+                rid=task.rid,
+                op_id=task.op_id,
+                kind=task.kind,
+                block_count=len(task.blocks),
+                nbytes=sum(b.nbytes for b in task.blocks),
+                zero_work=not task.blocks,
+            )
         self._tasks.put(task)
 
     def poll(self, op_id: int) -> CopyResult:
@@ -107,6 +131,14 @@ class PoolCopyExecutor:
             except queue.Empty:
                 break
             if result.task.op_id not in self._completed:
+                if self.observer is not None:
+                    self.observer.emit(
+                        "copy_poll_observed",
+                        rid=result.task.rid,
+                        op_id=result.task.op_id,
+                        kind=result.task.kind,
+                        state=result.state,
+                    )
                 _, deadline = self._pending[result.task.op_id]
                 self._completed[result.task.op_id] = (
                     result
@@ -137,6 +169,12 @@ class PoolCopyExecutor:
             if task is None:
                 return
             try:
+                if self.observer is not None:
+                    self.observer.emit(
+                        "executor_start", rid=task.rid, op_id=task.op_id, kind=task.kind
+                    )
+                    if isinstance(self.transfer, BMTransfer):
+                        self.transfer.observation_task = task
                 if (
                     self._failed.is_set()
                     or self.clock() >= self._pending[task.op_id][1]

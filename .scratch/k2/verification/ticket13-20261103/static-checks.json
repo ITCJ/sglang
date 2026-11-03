@@ -1,0 +1,71 @@
+{
+  "files": [
+    "ascend-mempool-test/scripts/analyze_k2_observation.py",
+    "ascend-mempool-test/scripts/run_k2_observation.py",
+    "ascend-mempool-test/scripts/run_mempool_min.py",
+    "ascend-mempool-test/scripts/verify_observation_graph.py",
+    "ascend-mempool-test/tests/unit/test_observation.py",
+    "python/sglang/srt/disaggregation/ascend/mempool_router.py",
+    "python/sglang/srt/disaggregation/ascend/mempool_router_protocol.py",
+    "python/sglang/srt/disaggregation/ascend/mempool_router_transport.py",
+    "python/sglang/srt/disaggregation/ascend/mempool_service.py",
+    "python/sglang/srt/disaggregation/ascend/mempool_subrouter.py",
+    "python/sglang/srt/hardware_backend/npu/mempool/copy.py",
+    "python/sglang/srt/hardware_backend/npu/mempool/observation.py",
+    "python/sglang/srt/hardware_backend/npu/mempool/observation_device.py",
+    "python/sglang/srt/hardware_backend/npu/mempool/pool_copy.py",
+    "python/sglang/srt/hardware_backend/npu/mempool/prefix.py",
+    "python/sglang/srt/hardware_backend/npu/mempool/runtime.py",
+    "python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/attention.py",
+    "python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/manager.py",
+    "python/sglang/srt/managers/scheduler.py"
+  ],
+  "python39_ast": true,
+  "checks": [
+    {
+      "tool": "isort",
+      "args": [
+        "--settings-path",
+        "ascend-mempool-test/pyproject.toml",
+        "ascend-mempool-test/scripts/analyze_k2_observation.py"
+      ],
+      "status": 0,
+      "output": ""
+    },
+    {
+      "tool": "ruff",
+      "args": [
+        "format",
+        "ascend-mempool-test/scripts/analyze_k2_observation.py",
+        "ascend-mempool-test/scripts/run_k2_observation.py"
+      ],
+      "status": 0,
+      "output": "19 files left unchanged\n"
+    },
+    {
+      "tool": "ruff",
+      "args": [
+        "check",
+        "--config",
+        "ascend-mempool-test/pyproject.toml"
+      ],
+      "status": 0,
+      "output": "All checks passed!\n"
+    },
+    {
+      "tool": "isort",
+      "args": [
+        "--check-only",
+        "--settings-path",
+        "ascend-mempool-test/pyproject.toml"
+      ],
+      "status": 0,
+      "output": ""
+    },
+    {
+      "tool": "mypy",
+      "status": 0,
+      "output": "Success: no issues found in 16 source files\n"
+    }
+  ]
+}

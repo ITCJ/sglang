@@ -186,8 +186,23 @@ def forward_sparsity_driven_kv_offload(
             mempool_runtime=backend.mempool_runtime if bm_fetch else None,
         )
 
+        observe = bm_fetch and backend.mempool_runtime.observer is not None
+        if observe:
+            wait_range = torch.npu.mstx.range_start(
+                f"mempool:cache_wait:{layer.layer_id}", stream
+            )
         _wait_stream_event(stream, sparse_kv_manager.hit_done)
+        if observe:
+            torch.npu.mstx.range_end(wait_range)
+            wait_range = torch.npu.mstx.range_start(
+                f"mempool:materialize_wait:{layer.layer_id}", stream
+            )
         _wait_stream_event(stream, sparse_kv_manager.miss_done)
+        if observe:
+            torch.npu.mstx.range_end(wait_range)
+            attention_range = torch.npu.mstx.range_start(
+                f"mempool:attention:{layer.layer_id}", stream
+            )
 
         selected_k_nope, selected_k_rope = selected_kv_buffer.split(
             [nope_head_dim, rope_head_dim], dim=-1
@@ -281,8 +296,15 @@ def forward_sparsity_driven_kv_offload(
             return_softmax_lse=False,
         )
 
+        if observe:
+            torch.npu.mstx.range_end(attention_range)
+            refill_wait_range = torch.npu.mstx.range_start(
+                f"mempool:cache_wait:{layer.layer_id}", stream
+            )
         _wait_stream_event(stream, sparse_kv_manager.refill_done)
         _wait_stream_event(stream, sparse_kv_manager.slot_map_done)
+        if observe:
+            torch.npu.mstx.range_end(refill_wait_range)
 
         attn_out = ret[0] if isinstance(ret, tuple) else ret
         attn_out = attn_out[:, :, :num_query_heads, :].reshape(

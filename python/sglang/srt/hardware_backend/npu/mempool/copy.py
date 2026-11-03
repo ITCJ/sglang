@@ -136,7 +136,7 @@ class SparseKVCopy:
             CopyIndices(d_index.flatten(), inputs.dst_index, d_valid.flatten()),
         )
 
-    def gather(self) -> Tensor:
+    def gather(self, observe: bool = False, layer_id: int = 0) -> Tensor:
         """Enqueue both sources, including zero-valid sources, without host reads."""
         import torch
 
@@ -145,6 +145,11 @@ class SparseKVCopy:
             self._kernel = torch.ops.npu.unidex_copy
         routes = self.routes()
         for source, indices in zip((self.prompt, self.decode), routes):
+            if observe:
+                source_kind = "P_remote" if source.rank == 0 else "D_local"
+                stamp = torch.npu.mstx.range_start(
+                    f"mempool:miss_{source_kind}:{layer_id}", torch.npu.current_stream()
+                )
             copy_rows(
                 self._kernel,
                 self._source_dtype,
@@ -156,6 +161,8 @@ class SparseKVCopy:
                 block_dim=self.block_dim,
                 source_view=source,
             )
+            if observe:
+                torch.npu.mstx.range_end(stamp)
         return self.output
 
 
@@ -168,6 +175,8 @@ class KVFetch:
         self.manager = manager
         self.block_dim = block_dim
         self.kernel = kernel
+        self.observe = False
+        self.start_layer = 0
         self._copies: dict[tuple[int, int, int], SparseKVCopy] = {}
 
     def gather(
@@ -222,4 +231,4 @@ class KVFetch:
         inputs.positions.copy_(positions)
         inputs.valid.copy_(misses)
         inputs.active.copy_(row_valid & (row_decode_slot[safe_rows] >= 0))
-        copier.gather()
+        copier.gather(self.observe, layer + self.start_layer)

@@ -130,6 +130,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--describe", action="store_true")
     parser.add_argument("--replay-responses", type=Path)
+    parser.add_argument("--observation-rounds", type=int, choices=(1, 2), default=1)
     args = parser.parse_args(argv)
     if (
         args.mode == "index-cold-diagnosis"
@@ -859,6 +860,11 @@ class Runner:
                         )
                     for index, case in enumerate(self.cases):
                         watch()
+                        requested_ns = (
+                            time.monotonic_ns()
+                            if getattr(self.args, "observation_rounds", 1) == 2
+                            else 0
+                        )
                         result = request_json(
                             base + "/generate",
                             payload={
@@ -866,6 +872,10 @@ class Runner:
                             },
                             timeout=self.config.operation_timeout,
                         )
+                        if getattr(self.args, "observation_rounds", 1) == 2:
+                            result["observation_request_wall_ns"] = (
+                                time.monotonic_ns() - requested_ns
+                            )
                         if (
                             self.full
                             and self.tokenizer is not None
@@ -991,6 +1001,36 @@ class Runner:
                     write_json(root / "evidence.json", evidence)
                     if not target:
                         self.reference = results
+                    if getattr(self.args, "observation_rounds", 1) == 2:
+                        # Keep ticket09's six frozen receipts; add one sibling
+                        # on the same live service, without another model start.
+                        fork_case = mempool_logical_cases.make_index_cases(
+                            self.tokenizer, self.cases
+                        )[1]
+                        fork_case["name"] = "observation-fork-update"
+                        started = time.monotonic_ns()
+                        fork_result = request_json(
+                            base + "/generate",
+                            payload={
+                                k: fork_case[k]
+                                for k in ("input_ids", "sampling_params")
+                            },
+                            timeout=self.config.operation_timeout,
+                        )
+                        fork_result["observation_request_wall_ns"] = (
+                            time.monotonic_ns() - started
+                        )
+                        verify_mempool_min.check_response(fork_case, fork_result)
+                        fork_result["text"] = self.tokenizer.decode(
+                            fork_result["output_ids"], skip_special_tokens=True
+                        )
+                        answer = mempool_logical_cases.answer(fork_case, fork_result)
+                        write_json(
+                            root / "observation-fork.json",
+                            dict(case=fork_case, result=fork_result, answer=answer),
+                        )
+                        if answer["status"] != "passed":
+                            raise ValueError("observation fork answer failed")
                     self.peer.send("stage-control", action="done")
                 else:
                     while True:
@@ -1008,7 +1048,37 @@ class Runner:
                             (root / f"{role}.log").read_bytes()
                         )
                 self.timeout_case(jobs, server, root, base)
+            if target and self.config.observe and not inject_fault:
+                if self.is_p:
+                    request_json(base + "/observation/flush", payload={})
+                    deadline = time.monotonic() + self.config.operation_timeout
+                    while request_json(base + "/status").get("observation_flushed") != [
+                        "decode",
+                        "prefill",
+                    ]:
+                        watch()
+                        if time.monotonic() >= deadline:
+                            raise TimeoutError(
+                                "observation export did not finish on both sides"
+                            )
+                        time.sleep(0.2)
+                self.peer.barrier(name + "-observation-exported")
         self.peer.barrier(name + "-stopped")
+        if target and self.config.observe and not inject_fault:
+            from analyze_k2_observation import summarize_directory
+
+            observation_root = root / "observe"
+            analysis = summarize_directory(observation_root)
+            write_json(root / "observation.json", analysis)
+            write_json(
+                root / "observation-checks.json",
+                {key: analysis[key] for key in ("status", "missing", "coverage")},
+            )
+            if self.is_p:
+                receive_log(self.peer, root / "decode-observation-checks.json")
+            else:
+                send_log(self.peer, root / "observation-checks.json")
+            self.peer.barrier(name + "-observation-collected")
         if inject_fault:
             self.final_timeout_evidence(root)
         if (
@@ -1213,6 +1283,8 @@ class Runner:
         self.prepare_full_cases()
         self.components()
         self.stage(target=False)
+        if getattr(self.args, "observation_rounds", 1) == 2:
+            self.stage(target=True, restart=True)
         self.stage(target=True)
         self.capacity_stage()
         self.stage(target=True, fault_only=True)

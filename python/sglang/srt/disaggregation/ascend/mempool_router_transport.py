@@ -276,7 +276,7 @@ def attach_subrouter(
                 )
         return result
 
-    return MempoolSubrouter(
+    subrouter = MempoolSubrouter(
         shard,
         run_id=run_id,
         gather=gather,
@@ -285,6 +285,10 @@ def attach_subrouter(
         registration=registered,
         timeout=config.operation_timeout,
     )
+    if config.observe:
+        subrouter.observer = runtime.observer
+        subrouter.observation_stop = runtime.observation_trace.stop
+    return subrouter
 
 
 class MainServer:
@@ -295,10 +299,14 @@ class MainServer:
         self.jobs: set[asyncio.Task[Any]] = set()
         self.socket: Any = None
         self.http: Any = None
+        self.observation_flushed: set[str] = set()
 
     async def generate(self, request: Any) -> Any:
         from aiohttp import web
 
+        received = (
+            self.router.observer.clock() if self.router.observer is not None else None
+        )
         try:
             payload = await request.json()
             admitted = self.router.submit(payload)
@@ -308,15 +316,44 @@ class MainServer:
             return web.json_response(dict(error="invalid request JSON"), status=400)
         future = asyncio.get_running_loop().create_future()
         self.clients[admitted["rid"]] = future
+        if self.router.observer is not None:
+            self.router.observer.emit(
+                "request_received", rid=admitted["rid"], received_ns=received
+            )
         # Disconnecting a client must not cancel inference, manufacture a drain
         # or release a reservation. The pump keeps running to real completion.
         result = await asyncio.shield(future)
         return web.json_response(result)
 
+    async def observation_flush(self, request: Any) -> Any:
+        from aiohttp import web
+
+        if self.router.observer is None:
+            return web.json_response(dict(error="observation disabled"), status=400)
+        if self.router.active is not None:
+            return web.json_response(dict(error="request still active"), status=409)
+        for role, route in self.routes.items():
+            await self.socket.send_multipart(
+                [
+                    route,
+                    json.dumps(
+                        dict(
+                            run_id=self.router.run_id,
+                            role=role,
+                            kind="observation_flush",
+                        )
+                    ).encode(),
+                ]
+            )
+        return web.json_response(dict(status="requested"))
+
     async def status(self, request: Any) -> Any:
         from aiohttp import web
 
-        return web.json_response(self.router.status())
+        body = self.router.status()
+        if self.router.observer is not None:
+            body["observation_flushed"] = sorted(self.observation_flushed)
+        return web.json_response(body)
 
     async def health(self, request: Any) -> Any:
         from aiohttp import web
@@ -396,6 +433,17 @@ class MainServer:
                         self.routes[role] = route
                     elif role not in self.routes:
                         raise ValueError("message from unregistered SR")
+                    if self.router.observer is not None and message["kind"].startswith(
+                        "observation_"
+                    ):
+                        if message["kind"] == "observation_flushed":
+                            self.observation_flushed.add(role)
+                        else:
+                            self.router.observer.emit(
+                                message["kind"], rid=message["rid"], side=role
+                            )
+                        self.router.observer.flush()
+                        continue
                     self.router.receive(message)
                 self.router.check_timeouts()
                 while self.router.outbox:
@@ -404,6 +452,14 @@ class MainServer:
                         [self.routes[command["role"]], json.dumps(command).encode()],
                         flags=Flag.NOBLOCK,
                     )
+                    if self.router.observer is not None:
+                        self.router.observer.emit(
+                            "command_sent",
+                            rid=command["rid"],
+                            op_id=command["op_id"],
+                            kind=command["kind"],
+                            side=command["role"],
+                        )
                 while self.router.launches:
                     job = asyncio.create_task(
                         self.infer(self.router.launches.popleft())
@@ -454,6 +510,7 @@ class MainServer:
                 web.get("/status", self.status),
                 web.get("/health", self.health),
                 web.get("/ready", self.health),
+                web.post("/observation/flush", self.observation_flush),
             ]
         )
         runner = web.AppRunner(app)

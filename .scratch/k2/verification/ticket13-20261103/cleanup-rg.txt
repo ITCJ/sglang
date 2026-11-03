@@ -1,0 +1,41 @@
+python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/manager.py:158:                # `max_context_len` is a valid sentinel column for masked writes.
+python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/manager.py:904:            # Route invalid requests to sentinel rows without changing graph shape.
+python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/manager.py:1094:        # entries use the max_context_len sentinel column to preserve shape.
+python/sglang/srt/hardware_backend/npu/mempool/layout.py:72:        """Return the KV payload size before probe space and allocation alignment."""
+python/sglang/srt/hardware_backend/npu/mempool/layout.py:130:    # A probe lives after all KV slabs, never inside a request's KV.
+python/sglang/srt/hardware_backend/npu/mempool/layout.py:131:    probe_bytes: int = 64
+python/sglang/srt/hardware_backend/npu/mempool/layout.py:139:        positive_int("probe_bytes", self.probe_bytes)
+python/sglang/srt/hardware_backend/npu/mempool/layout.py:183:    def probe_offset(self, rank: int) -> int:
+python/sglang/srt/hardware_backend/npu/mempool/layout.py:184:        """Locate the reserved mapping probe after the rank's KV payload."""
+python/sglang/srt/hardware_backend/npu/mempool/layout.py:188:        """Round this rank's KV payload and probe up to the backend alignment."""
+python/sglang/srt/hardware_backend/npu/mempool/layout.py:189:        required = self.probe_offset(rank) + self.probe_bytes
+python/sglang/srt/hardware_backend/npu/mempool/manager.py:319:                # Send no MF header or rank identity. MF 1.1 closes this probe
+python/sglang/srt/hardware_backend/npu/mempool/manager.py:615:    def probe_gva(self, side: int) -> int:
+python/sglang/srt/hardware_backend/npu/mempool/manager.py:618:            participant, offset = session.probe_location(side)
+python/sglang/srt/hardware_backend/npu/mempool/manager.py:620:        return self.bases(side)[0] + self.layout.probe_offset(side)
+python/sglang/srt/hardware_backend/npu/mempool/manager.py:622:    def probe_peer(self, marker: Any) -> None:
+python/sglang/srt/hardware_backend/npu/mempool/manager.py:623:        """Write a fixed-size marker to the peer's reserved startup probe range."""
+python/sglang/srt/hardware_backend/npu/mempool/manager.py:625:        gva = self.probe_gva(peer)
+python/sglang/srt/hardware_backend/npu/mempool/manager.py:627:            raise ValueError("mapping probe size differs from the reserved range")
+python/sglang/srt/hardware_backend/npu/mempool/manager.py:630:    def verify_local_probe(self, expected: bytes, device: str) -> None:
+python/sglang/srt/hardware_backend/npu/mempool/manager.py:635:            raise ValueError("pool identity probe must occupy exactly 64 bytes")
+python/sglang/srt/hardware_backend/npu/mempool/manager.py:637:        gva = self.probe_gva(self.rank)
+python/sglang/srt/hardware_backend/npu/mempool/manager.py:642:            raise RuntimeError(f"BM identity probe read failed: {ret}")
+python/sglang/srt/hardware_backend/npu/mempool/prefix.py:30:def log_prefix_content(record: dict[str, Any]) -> None:
+python/sglang/srt/hardware_backend/npu/mempool/prefix.py:35:        logger.info("mempool prefix_content data=%s", payload)
+python/sglang/srt/hardware_backend/npu/mempool/prefix.py:40:        "mempool prefix_content_file data=%s", json.dumps(dict(file=str(relative)))
+python/sglang/srt/hardware_backend/npu/mempool/prefix.py:1267:        log_prefix_content(
+python/sglang/srt/hardware_backend/npu/mempool/sharing_plan.py:227:    def probe_offset(self, participant: int) -> int:
+python/sglang/srt/hardware_backend/npu/mempool/sharing_plan.py:238:        required = self.probe_offset(participant) + self.layout.probe_bytes
+python/sglang/srt/hardware_backend/npu/mempool/sharing_plan.py:241:    def probe_location(self, side: int) -> tuple[int, int]:
+python/sglang/srt/hardware_backend/npu/mempool/sharing_plan.py:242:        """Reserve a different probe slot for every zero-contribution member."""
+python/sglang/srt/hardware_backend/npu/mempool/sharing_plan.py:248:        return participant, self.probe_offset(participant) + offset
+python/sglang/srt/hardware_backend/npu/mempool/sharing_plan.py:354:        """Reserve one session probe per member without changing token capacity."""
+python/sglang/srt/hardware_backend/npu/mempool/sharing_plan.py:357:            probe_bytes=max(
+python/sglang/srt/hardware_backend/npu/mempool/sharing_plan.py:358:                self.layout.probe_bytes,
+python/sglang/srt/hardware_backend/npu/mempool/sharing_plan.py:421:                        "probe_offset": layout.probe_offset(side) + 64 * member,
+python/sglang/srt/hardware_backend/npu/mempool/sharing_plan.py:443:                    probe_offset=session.probe_location(side)[1],
+python/sglang/srt/hardware_backend/npu/mempool/sharing_plan.py:444:                    probe_participant=session.probe_location(side)[0],
+python/sglang/srt/disaggregation/ascend/mempool_subrouter.py:379:        # Main already protects these prefix sources while submission is delayed.
+python/sglang/srt/disaggregation/ascend/mempool_service.py:163:        runtime.manager.probe_peer(
+python/sglang/srt/disaggregation/ascend/mempool_service.py:188:            verify_peer=lambda remote: runtime.manager.verify_local_probe(

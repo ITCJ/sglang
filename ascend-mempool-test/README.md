@@ -666,3 +666,10 @@ P日志中 `ready` 只表明mempool prompt写完；`native_handoff` 后才允许
 出现此类错误后同时停止接收新请求，协调停止两侧：确认D所有worker的NPU访问已停止，
 再停止/回收P，确认两侧旧进程和NPU任务均结束后才重新启动完整16对。
 不要只重启单个rank并接续旧session。
+
+## K2 ticket13：默认关闭的观测模式
+
+双机四组开关验收、Graph 重放关口、四项离线分析与日志合同见
+[观测模式交付](../.scratch/k2/ticket13-delivery.md)。入口为
+`scripts/run_k2_observation.py`，P/D 各一条命令；`--describe` 不启动服务，
+`--smoke` 只覆盖第一组。NPU 验收由用户运行，日志保存到 `/home/cryang/log/k2/`。

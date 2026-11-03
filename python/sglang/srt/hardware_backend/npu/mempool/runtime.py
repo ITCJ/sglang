@@ -115,6 +115,7 @@ class _Completion(msgspec.Struct):
     retained: tuple[Tensor, ...] = ()
     range_errors: Optional[Tensor] = None
     index_totals: Optional[tuple[int, ...]] = None
+    observation: Any = None
 
 
 class MempoolRuntime:
@@ -161,6 +162,16 @@ class MempoolRuntime:
         if type(start_layer) is not int or start_layer < 0:
             raise ValueError("start_layer must be a nonnegative integer")
         self.config: Optional[MempoolConfig] = None
+        self.observer: Any = None
+        self.observation_device: Any = None
+        self.observation_forward: dict[int, dict[str, Any]] = {}
+        self.observation_hashes: dict[str, list[str]] = {}
+        self.observation_trace: Any = None
+        self.observation_sample_every = 1
+        self.observation_page_size = manager.layout.prompt.page_size
+        self.observation_producers: tuple[int, ...] = ()
+        self.observation_config: Any = None
+        self.observation_hot_cache_tokens = 0
         self.manager = manager
         self.prefix_store = prefix_store
         self.page_writer = page_writer
@@ -386,6 +397,7 @@ class MempoolRuntime:
         self.row_prompt_slot[req_pool_idx] = -1
         self.row_decode_len[req_pool_idx] = 0
         del self._bindings[req_pool_idx]
+        self.observation_forward.pop(req_pool_idx, None)
         self._record_binding_update()
         return receipt
 
@@ -426,7 +438,25 @@ class MempoolRuntime:
                 writes = self._prepared
                 self._prepared = None
             self.begin_forward(writes, replay=replay, capture=capture)
-            yield
+            if self.observer is not None and not capture:
+                from .observation_device import device_range
+
+                ids = "-".join(
+                    str(self.observation_forward[w.req_pool_idx]["forward_id"])
+                    for w in writes
+                )
+                before = self.observer.clock()
+                torch.npu.mstx.mark(f"mempool:clock:{ids}:{before}")
+                self.observer.emit(
+                    "clock_anchor",
+                    forward_ids=ids,
+                    before_ns=before,
+                    after_ns=self.observer.clock(),
+                )
+                with device_range(f"forward:{ids}"):
+                    yield
+            else:
+                yield
             self.end_forward()
             if replay and writes and not self._logged_replay:
                 logger.info(
@@ -517,6 +547,8 @@ class MempoolRuntime:
                     self._bindings[write.req_pool_idx].submitted + write.rows
                 )
         self._active = _Forward(tuple(writes), replay, capture)
+        if self.observation_device is not None:
+            self.observation_device.reset()
 
     def write_layer(
         self, layer_id: int, k: Tensor, k_rope: Tensor, forward_batch: Any
@@ -581,9 +613,15 @@ class MempoolRuntime:
             self._decode.prepare(layer, values, safe_req)
             if not self._decode.writer.owns_layer(layer):
                 main_valid = torch.zeros_like(valid)
+        if self.observer is not None:
+            write_range = torch.npu.mstx.range_start(
+                f"mempool:write_through:{layer_id}", torch.npu.current_stream()
+            )
         self._writers[layer].write(
             values, slots=slots, positions=local_pos, valid=main_valid
         )
+        if self.observer is not None:
+            torch.npu.mstx.range_end(write_range)
         safe_slot = torch.where(valid, slots, 0)
         # Device counters catch silent invalid masks, including on graph replay.
         counted = valid if self._decode is not None else main_valid
@@ -733,6 +771,13 @@ class MempoolRuntime:
             self.row_prompt_len,
             self.row_decode_len,
         )
+        if self.observation_device is not None:
+            from .observation_device import device_range
+
+            with device_range(f"observer_io:{layer_id}"):
+                self.observation_device.io(
+                    layer_id, req_rows, positions, misses, self.row_prompt_len
+                )
         if self._fetch_sources is not None:
             # Captured alongside the two existing copies on the miss stream.
             # Read only after miss_done and the forward completion event. These
@@ -840,6 +885,19 @@ class MempoolRuntime:
             self._index_counts.clone() if self._index_counts is not None else None
         )
         range_errors = self._range_errors.clone() if self.manager.rank == 0 else None
+        observation: Any = None
+        if self.observer is not None:
+            observation = dict(
+                rows={row: dict(self.observation_forward[row]) for row in rows},
+                pages=self.observation_device.snapshot(
+                    torch.tensor(rows, device=self.row_slot.device)
+                )
+                if self.observation_device is not None
+                else None,
+                source_rows=sources,
+            )
+            for values in observation["rows"].values():
+                self.observer.emit("forward_submitted", replay=active.replay, **values)
         event = self._event_factory()
         event.record()
         self._pending.append(
@@ -856,6 +914,7 @@ class MempoolRuntime:
                 tuple(active.retained),
                 range_errors,
                 tuple(self._index_slot_totals),
+                observation,
             )
         )
         self._active = None
@@ -865,6 +924,8 @@ class MempoolRuntime:
         completed = []
         while self._pending and self._pending[0].event.query():
             item = self._pending[0]
+            if item.observation is not None:
+                self.collect_observation(item.observation)
             if item.range_errors is not None and bool(item.range_errors.cpu().any()):
                 self.fault = "mempool write range/counts differ from expected rows"
                 raise RuntimeError(self.fault)
@@ -917,6 +978,169 @@ class MempoolRuntime:
                 completed.append(row)
             self._pending.popleft()
         return completed
+
+    def collect_observation(self, snapshot: dict[str, Any]) -> None:
+        """Use the existing completed event; never read mutable graph outputs."""
+        import time
+
+        started = time.monotonic_ns()
+        data = snapshot["pages"]
+        counts: Any
+        equal: Any
+        counts, equal = (
+            (data[0].cpu().tolist(), data[1].cpu().tolist())
+            if data is not None
+            else (None, None)
+        )
+        source_rows = (
+            snapshot["source_rows"].cpu().tolist()
+            if snapshot.get("source_rows") is not None
+            else None
+        )
+        for row_index, (row, identity) in enumerate(snapshot["rows"].items()):
+            owned_rows = (
+                self.page_writer.rows(
+                    identity["write_start"],
+                    identity["write_start"] + identity["write_rows"],
+                    identity["prompt_tokens"],
+                )
+                if self.page_writer is not None
+                else identity["write_rows"]
+            )
+            layer_bytes = [owned_rows * self.layout.row_bytes] * self.layout.layers
+            if self._decode is not None:
+                writer = self._decode.writer
+                layer_bytes = [
+                    owned_rows * self.layout.row_bytes // writer.feature_part[1]
+                    if writer.owns_layer(layer)
+                    else 0
+                    for layer in range(self.layout.layers)
+                ]
+            self.observer.emit(
+                "forward_complete_observed",
+                **identity,
+                write_through_bytes_by_layer=layer_bytes,
+                index_write_bytes_by_layer={
+                    producer: (
+                        self.index_writer.rows(
+                            identity["write_start"],
+                            identity["write_start"] + identity["write_rows"],
+                            identity["prompt_tokens"],
+                        )
+                        if self.index_writer is not None
+                        else identity["write_rows"]
+                    )
+                    * self.manager.layout.prompt_index.row_bytes
+                    for producer in self._index_writers
+                }
+                if self.manager.layout.prompt_index is not None
+                else {},
+                completion_evidence="existing device event queried complete",
+            )
+            if counts is None or identity["step"] % self.observation_sample_every:
+                continue
+            if source_rows is not None:
+                actual = [sum(layer[row][i] for layer in source_rows) for i in (0, 1)]
+                observed = [
+                    sum(page[i] for layer in counts for page in layer[row_index])
+                    for i in (3, 4)
+                ]
+                self.observer.emit(
+                    "read_byte_reconciliation",
+                    **identity,
+                    actual_source_rows=actual,
+                    page_source_rows=observed,
+                    actual_source_bytes=[v * self.layout.row_bytes for v in actual],
+                    passed=actual == observed,
+                )
+            for layer, layer_rows in enumerate(counts):
+                layer_id = layer + self.start_layer
+                producer = max(p for p in self.observation_producers if p <= layer_id)
+                pages = []
+                for logical, values in enumerate(layer_rows[row_index]):
+                    selected, hit, miss, p_io, d_io, d_early = values
+                    if not selected:
+                        continue
+                    source = []
+                    d_page = (
+                        logical
+                        - identity["prompt_tokens"] // self.observation_page_size
+                    )
+                    for kind, number, pool_rank, slot, offset in (
+                        ("P_remote", p_io, 0, identity["prompt_slot"], logical),
+                        ("D_local", d_early, 1, identity["decode_slot"], d_page - 1),
+                        ("D_local", d_io - d_early, 1, identity["decode_slot"], d_page),
+                    ):
+                        if number:
+                            view = self.manager.view(pool_rank, layer)
+                            session = self.manager.session
+                            members = (
+                                session.region_members(pool_rank) if session else ()
+                            )
+                            owner = (
+                                session.region_owner(pool_rank)
+                                if session
+                                else pool_rank
+                            )
+                            source.append(
+                                dict(
+                                    source=kind,
+                                    rows=number,
+                                    nbytes=number * self.layout.row_bytes,
+                                    region=f"{session.identity if session else 'pair'}:alive_main:{owner}",
+                                    owner_participant=owner,
+                                    replica=members[0] if members else 0,
+                                    sharing_group=list(members),
+                                    source_host=identity["prefill_host"]
+                                    if pool_rank == 0
+                                    else identity["decode_host"],
+                                    source_numa=session.prefix_nodes[
+                                        next(
+                                            i
+                                            for i, g in enumerate(session.main_groups)
+                                            if members[0] in g
+                                        )
+                                    ]
+                                    if session and session.main_groups
+                                    else self.manager.numa_node,
+                                    physical_page=slot
+                                    * (view.layout.tokens // self.observation_page_size)
+                                    + offset,
+                                )
+                            )
+                    hashes = self.observation_hashes[identity["rid"]]
+                    pages.append(
+                        dict(
+                            logical_page=logical,
+                            content_page=hashes[logical]
+                            if logical < len(hashes)
+                            else f"{identity['rid']}:generated:{logical}",
+                            selected_count=selected,
+                            hit_count=hit,
+                            miss_count=miss,
+                            io_miss_count=p_io + d_io,
+                            current_device_supply_count=miss - p_io - d_io,
+                            status="miss" if miss else "hit",
+                            has_hit=bool(hit),
+                            sources=source,
+                        )
+                    )
+                self.observer.emit(
+                    "layer_pages",
+                    **identity,
+                    layer_id=layer_id,
+                    sharing_group=list(self.manager.session.region_members(1))
+                    if self.manager.session
+                    else [],
+                    producer_layer=producer,
+                    ordered_selection_equal=bool(equal[layer][row_index]),
+                    pages=pages,
+                    selected_count=sum(p["selected_count"] for p in pages),
+                    miss_count=sum(p["miss_count"] for p in pages),
+                    io_miss_count=sum(p["io_miss_count"] for p in pages),
+                )
+        self.observer.emit("observer_collect", elapsed_ns=time.monotonic_ns() - started)
+        self.observer.flush()
 
     def written_tokens(self, req_pool_idx: int) -> int:
         """Return locally completed KV rows, distinct from generated tokens."""
@@ -1199,6 +1423,84 @@ def initialize_for_model_runner(model_runner: Any) -> None:
             else None,
         )
     runtime.config = config
+    if router is not None and router.observe:
+        from .observation import create_observation
+        from .observation_device import DeviceTrace, PageObservation
+
+        runtime.observer = create_observation(
+            router,
+            os.environ[RUN_ENV],
+            args.disaggregation_mode,
+            model_runner.ps.tp_rank,
+        )
+        runtime.observation_sample_every = router.observe_sample_every
+        runtime.observation_page_size = config.page_size
+        runtime.observation_config = router
+        runtime.observation_hot_cache_tokens = (
+            sparse.sparse_context_len if sparse else 0
+        )
+        runtime.observation_producers = tuple(native_pool.indexer_layer_ids)
+        if runtime._fetch is not None:
+            runtime._fetch.observe = True
+            runtime._fetch.start_layer = runtime.start_layer
+        if sparse is not None and runtime.fetch_enabled:
+            runtime.observation_device = PageObservation(
+                layout.decode.layers,
+                runtime.row_slot.numel(),
+                runtime.max_context_len,
+                config.page_size,
+                sparse.sparse_context_len,
+                runtime.observation_producers,
+                runtime.start_layer,
+                device,
+            )
+        assert runtime.observer is not None
+        runtime.observer.emit(
+            "run",
+            page_size_tokens=config.page_size,
+            hot_cache_tokens=sparse.sparse_context_len if sparse else 0,
+            top_k=getattr(model_runner.model_config.hf_config, "index_topk", None),
+            replacement_policy="replace_selected",
+            reader_numa=manager.numa_node,
+            sharing_group=list(session.region_members(manager.rank))
+            if session
+            else [model_runner.ps.tp_rank],
+            sample_every=router.observe_sample_every,
+            layers=layout.prompt.layers,
+            producer_layers=runtime.observation_producers,
+            tp_size=model_runner.ps.tp_size,
+            torch_version=torch.__version__,
+            sdk_build_id=router.pool_copy_sdk_build_id,
+            geometry=layout.signature(),
+            topology=plan.report(),
+            profiler="MSTX device ranges; replay gate required",
+        )
+        runtime.observer.flush()
+        runtime.observation_trace = DeviceTrace(
+            runtime.observer.path.parent
+            / f"trace-{args.disaggregation_mode}-{model_runner.ps.tp_rank}"
+        )
+        runtime.observation_trace.install_hooks(model_runner.model)
+        from sglang.srt.runtime_context import get_parallel
+
+        parallel = get_parallel()
+        runtime.observation_trace.install_collectives(
+            [
+                parallel.tp_group,
+                parallel.attn_tp_group,
+                parallel.moe_tp_group,
+            ]
+        )
+        if prefix_store is not None:
+            if prefix_group is not None:
+                prefix_store.all_gather = prefix_group.all_gather_into_tensor
+            prefix_store.observer = runtime.observer
+            if copy_executor is not None:
+                copy_executor.observer = runtime.observer
+                from .pool_copy import BMTransfer
+
+                if isinstance(copy_executor.transfer, BMTransfer):
+                    copy_executor.transfer.observer = runtime.observer
     seen = set()
     for candidate in (backend, model_runner.decode_attn_backend):
         if candidate is not None and id(candidate) not in seen:

@@ -19,6 +19,7 @@ from torch import Tensor
 from .indexed_copy import copy_rows
 from .layout import check_index, positive_int
 from .manager import MempoolKVManager
+from .observation import write_evidence
 from .page_write import PageWriter
 from .pool_copy import CopyBlock, CopyTask, PoolCopyExecutor
 from .split_read import assign_prefix_pages
@@ -28,17 +29,12 @@ logger = logging.getLogger(__name__)
 
 def log_prefix_content(record: dict[str, Any]) -> None:
     """Keep large acceptance records out of the multi-process launcher stream."""
-    payload = json.dumps(record, sort_keys=True)
     folder = os.environ.get("SGLANG_NPU_MEMPOOL_EVIDENCE_DIR")
     if folder is None:
+        payload = json.dumps(record, sort_keys=True)
         logger.info("mempool prefix_content data=%s", payload)
         return
-    relative = Path("prefix-content") / (
-        hashlib.sha256(payload.encode()).hexdigest() + ".json"
-    )
-    destination = Path(folder) / relative
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(payload + "\n")
+    relative = write_evidence(record, Path(folder))
     # File is closed before the causal marker; each rank has its own record.
     logger.info(
         "mempool prefix_content_file data=%s", json.dumps(dict(file=str(relative)))
@@ -116,6 +112,7 @@ class PrefixStore:
             raise ValueError("prefix store requires P's configured page regions")
         self.manager, self.page_size, self.device = manager, page_size, device
         self.verify = verify
+        self.observer: Any = None
         self.copy_executor = copy_executor
         self.page_writer = page_writer
         self.index_writer = index_writer
@@ -358,6 +355,14 @@ class PrefixStore:
                 if self.verify:
                     operation.receipt["source_digests"] = self._admit_digests(operation)
             operation.retained.clear()
+            if self.observer is not None:
+                self.observer.emit(
+                    "copy_complete_observed",
+                    rid=rid,
+                    op_id=op_id,
+                    kind="admit",
+                    **operation.receipt,
+                )
             if self.prefix_layout is None:
                 operation.committed = True
                 self._ready.update(target_pages)
@@ -386,6 +391,7 @@ class PrefixStore:
             else operation.source_pages
         )
         blocks = []
+        observed_blocks = []
         if isinstance(operation, _Admit):
             operation.written_pages = [
                 p
@@ -427,6 +433,32 @@ class PrefixStore:
                         else (prefix_block, alive_block)
                     )
                     blocks.append(CopyBlock(src[0], dst[0], src[2]))
+                    if self.observer is not None:
+                        observed_blocks.append(
+                            dict(
+                                region=region,
+                                segment=segment,
+                                source_page=alive_page if admit else pages[position],
+                                destination_page=pages[position]
+                                if admit
+                                else alive_page,
+                                source_region="alive_" + region
+                                if admit
+                                else "prefix_" + region,
+                                destination_region="prefix_" + region
+                                if admit
+                                else "alive_" + region,
+                                source_host=self.observer.identity["host"],
+                                source_numa=self.manager.session.prefix_nodes[segment]
+                                if self.manager.session
+                                and not admit
+                                and segment is not None
+                                else self.manager.numa_node,
+                                src_gva=src[0],
+                                dst_gva=dst[0],
+                                nbytes=src[2],
+                            )
+                        )
                     count += self.page_size
                     read_pages.append(pages[position])
                 counts.append(count)
@@ -443,6 +475,15 @@ class PrefixStore:
             operation.rid, operation.op_id, "admit" if admit else "fill", tuple(blocks)
         )
         self.copy_executor.submit(task)
+        if self.observer is not None:
+            self.observer.emit(
+                "copy_plan",
+                rid=operation.rid,
+                op_id=operation.op_id,
+                kind=task.kind,
+                blocks=observed_blocks,
+                sources=list(pages),
+            )
 
     def _read_context(self) -> Any:
         if torch.device(self.device).type == "cpu":
@@ -497,11 +538,25 @@ class PrefixStore:
             ):
                 raise ValueError("prefix read requires unique ready source pages")
             self._reads[op_id] = operation = candidate
+            if self.observer is not None:
+                self.observer.emit(
+                    "copy_submit", rid=rid, op_id=op_id, kind=operation.kind
+                )
             try:
                 if operation.kind == "fill" and self.copy_executor is not None:
                     self._submit_pool_copy(operation)
                 else:
-                    with self._read_context():
+                    from .observation_device import device_range
+
+                    with (
+                        self._read_context(),
+                        (
+                            device_range(f"{operation.kind}:{op_id}")
+                            if self.observer is not None
+                            and torch.device(self.device).type == "npu"
+                            else nullcontext()
+                        ),
+                    ):
                         if operation.kind == "fill":
                             self._submit_fill(operation)
                         else:
@@ -553,6 +608,14 @@ class PrefixStore:
                         * geometry.layers
                     )
             operation.retained.clear()
+            if self.observer is not None:
+                self.observer.emit(
+                    "copy_complete_observed",
+                    rid=rid,
+                    op_id=op_id,
+                    kind=operation.kind,
+                    **operation.receipt,
+                )
         return copy.deepcopy(operation.receipt)
 
     def _verify_read(self, operation: _Read) -> None:
@@ -1048,6 +1111,9 @@ class PrefixStore:
             for op_id, operation in self._reads.items()
             if operation.rid != rid
         }
+        if self.observer is not None:
+            self.observer.emit("source_release", rid=rid)
+            self.observer.flush()
 
     def begin_request(self, rid: str, slot: int, tokens: int) -> None:
         if self.prefix_layout is not None and rid != self._request_rid:

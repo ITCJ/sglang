@@ -73,6 +73,13 @@ class MainRouter:
         self.next_request = 0
         self.started = self.clock()
         self.last_seen: dict[str, float] = {}
+        self.observer: Any = None
+        if config.observe:
+            from sglang.srt.hardware_backend.npu.mempool.observation import (
+                create_observation,
+            )
+
+            self.observer = create_observation(config, run_id, "main", 0)
 
     @property
     def ready(self) -> bool:
@@ -286,6 +293,15 @@ class MainRouter:
             save_planned=False,
             reads={},
         )
+        if self.observer is not None:
+            self.observer.emit(
+                "route_reserved",
+                rid=request["rid"],
+                room=request["room"],
+                page_hashes=hashes,
+                hit_len=request["hit_len"],
+                needed=needed,
+            )
         parent = None
         for hash_value in hashes:
             if hash_value not in self.directory:
@@ -422,6 +438,14 @@ class MainRouter:
             command=command, sent=self.clock(), ack=None
         )
         self.outbox.append(command)
+        if self.observer is not None:
+            self.observer.emit(
+                "command_queued",
+                rid=request["rid"],
+                op_id=self.next_op,
+                kind=kind,
+                side=role,
+            )
         self.active["trace"].append(dict(kind=kind, role=role, op_id=self.next_op))
 
     def status(self) -> dict[str, Any]:
@@ -513,6 +537,14 @@ class MainRouter:
                     raise ValueError("conflicting completion event")
                 return
         active["trace"].append(dict(kind=kind, role=role, op_id=message["op_id"]))
+        if self.observer is not None:
+            self.observer.emit(
+                "control_received",
+                rid=message["rid"],
+                op_id=message["op_id"],
+                kind=kind,
+                side=role,
+            )
         if kind == "alloc_ack":
             capacity = (
                 self.config.prompt_capacity
@@ -611,6 +643,14 @@ class MainRouter:
                 raise ValueError("free_ack lacks actual native/alive cleanup")
             key = "p_alive" if role == "prefill" else "d_alive"
             self.ledger[key].change(-active["needed"][key])
+            if self.observer is not None:
+                self.observer.emit(
+                    "credit_return",
+                    rid=message["rid"],
+                    op_id=message["op_id"],
+                    pool=key,
+                    side=role,
+                )
             active["free_acks"].append(role)
             if role == "prefill":
                 for hash_value in active["hashes"]:
@@ -779,6 +819,14 @@ class MainRouter:
         for value in admit["parents"]:
             self.directory[value]["prefix"]["lock_ops"].remove(command["op_id"])
         active["admit_complete"] = True
+        if self.observer is not None:
+            self.observer.emit(
+                "publish",
+                rid=active["request"]["rid"],
+                op_id=command["op_id"],
+                pages=targets,
+            )
+            self.observer.flush()
         self._free_after_save()
 
     def _free_after_save(self) -> None:

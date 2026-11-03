@@ -89,6 +89,12 @@ class MempoolPDService:
         self.timeout = timeout
         self._tick_started: float | None = None
         self.subrouter: Any = None
+        self.observer = getattr(runtime, "observer", None)
+        self.observation_tick = 0
+        self.observation_tick_ns = 0
+        self.observation_forward = 0
+        self.observation_batches: dict[int, list[dict[str, Any]]] = {}
+        self.observation_requests: dict[str, dict[str, Any]] = {}
         self.tick = MempoolTPTick(
             control,
             gather=gather,
@@ -311,6 +317,32 @@ class MempoolPDService:
         ):
             record.cancel = True
         self._requests[room] = record
+        if self.observer is not None:
+            from .mempool_router_protocol import page_hashes
+
+            self.observation_requests[req.rid] = dict(
+                page_hashes=page_hashes(
+                    list(req.origin_input_ids), self.runtime.observation_page_size
+                ),
+                prefill_forwards=0,
+                decode_forwards=0,
+                completed_forwards=0,
+                discarded_forwards=0,
+                prebuilt=0,
+                first=False,
+                previous_ready_ns=None,
+                previous_output_tokens=0,
+                last_write_position=None,
+            )
+            self.runtime.observation_hashes[req.rid] = self.observation_requests[
+                req.rid
+            ]["page_hashes"]
+            self.observer.emit(
+                "request_tracked",
+                rid=req.rid,
+                room=room,
+                page_hashes=self.observation_requests[req.rid]["page_hashes"],
+            )
 
     def tracks(self, req: Any) -> bool:
         """Distinguish this exact admitted request from fake or grammar-pending work."""
@@ -359,6 +391,10 @@ class MempoolPDService:
             return True
         record = self._record(req)
         if not record.transfer_ready:
+            if self.observer is not None:
+                self.observer.emit(
+                    "handoff_arrived_observed", rid=req.rid, room=req.bootstrap_room
+                )
             logger.info(
                 "mempool native_transfer_ready role=decode rank=%s room=%s",
                 self.control.local.tp_rank,
@@ -418,6 +454,42 @@ class MempoolPDService:
             else:
                 start, rows = batch.prefix_lens[index], batch.extend_lens[index]
             writes.append(KVWriteExpectation(row, start, rows))
+            if self.observer is not None:
+                config = self.runtime.observation_config
+                observed = self.observation_requests[req.rid]
+                decoding = batch.forward_mode.is_decode()
+                key = "decode_forwards" if decoding else "prefill_forwards"
+                observed[key] += 1
+                self.observation_forward += 1
+                binding = record.binding
+                identity = dict(
+                    rid=req.rid,
+                    room=req.bootstrap_room,
+                    step=observed[key],
+                    forward_id=self.observation_forward,
+                    batch_id=batch.forward_iter,
+                    tick_id=self.observation_tick,
+                    tick_ns=self.observation_tick_ns,
+                    output_before=len(req.output_ids),
+                    prompt_slot=binding.prompt_slot,
+                    decode_slot=binding.slot,
+                    prompt_tokens=len(req.origin_input_ids),
+                    write_start=start,
+                    write_rows=rows,
+                    mode="decode" if decoding else "prefill",
+                    prefill_host=config.prefill_host,
+                    decode_host=config.decode_host,
+                    page_size_tokens=config.page_size,
+                    hot_cache_tokens=self.runtime.observation_hot_cache_tokens,
+                    replacement_policy="replace_selected",
+                    reader_numa=self.runtime.manager.numa_node,
+                )
+                self.runtime.observation_forward[row] = identity
+                observed["last_write_position"] = start + rows - 1
+                self.observation_batches.setdefault(batch.forward_iter, []).append(
+                    identity
+                )
+                self.observer.emit("step_start", **identity)
         if (
             writes
             and self.subrouter is not None
@@ -425,6 +497,77 @@ class MempoolPDService:
         ):
             self._record_decode_step(batch, writes)
         self.runtime.prepare_forward(writes)
+
+    def observation_result(self, batch: Any) -> None:
+        """Observe accepted outputs after native result processing, never infer DMA completion."""
+        if self.observer is None:
+            return
+        now = self.observer.clock()
+        by_rid = {
+            record["rid"]: record
+            for record in self.observation_batches.pop(batch.forward_iter, [])
+        }
+        for req in batch.reqs:
+            observed = self.observation_requests.get(req.rid)
+            if observed is None:
+                continue
+            identity = by_rid.get(req.rid)
+            if batch.forward_mode.is_prebuilt():
+                observed["prebuilt"] += 1
+            previous = observed["previous_ready_ns"]
+            accepted = len(req.output_ids) - observed["previous_output_tokens"]
+            observed["previous_output_tokens"] = len(req.output_ids)
+            if identity is not None:
+                observed["completed_forwards"] += 1
+                observed["discarded_forwards"] += int(accepted == 0)
+                self.observer.emit(
+                    "token_ready" if accepted else "output_discarded",
+                    **identity,
+                    ready_ns=now,
+                    output_tokens=len(req.output_ids),
+                    accepted_tokens=accepted,
+                    t_step_ns=now - identity["tick_ns"],
+                    t_gap_ns=identity["tick_ns"] - previous
+                    if previous is not None
+                    else None,
+                    tbt_ns=now - previous if previous is not None else None,
+                    finished=bool(req.finished()),
+                )
+                if accepted:
+                    observed["previous_ready_ns"] = now
+            if req.output_ids and not observed["first"]:
+                observed["first"] = True
+                self.observer.emit("first_token_ready", rid=req.rid, ready_ns=now)
+                if (
+                    self.control.local.role == "decode"
+                    and self.control.local.tp_rank == 0
+                ):
+                    self.subrouter.send(
+                        dict(
+                            run_id=self.subrouter.run_id,
+                            role="decode",
+                            kind="observation_first_token",
+                            rid=req.rid,
+                            room=req.bootstrap_room,
+                        )
+                    )
+            if req.finished() and not observed.get("stopped"):
+                observed["stopped"] = True
+                self.observer.emit(
+                    "stop_boundary",
+                    rid=req.rid,
+                    room=req.bootstrap_room,
+                    n_prefill_forward=observed["prefill_forwards"],
+                    n_decode_forward=observed["decode_forwards"],
+                    n_prebuilt=observed["prebuilt"],
+                    n_completed_forward=observed["completed_forwards"],
+                    n_discarded_forward=observed["discarded_forwards"],
+                    n_output_tokens=len(req.output_ids),
+                    finish_reason=str(req.finished_reason),
+                    last_write_position=observed["last_write_position"],
+                )
+        self.runtime.poll_completed()
+        self.observer.flush()
 
     def _record_decode_step(self, batch: Any, writes: list[KVWriteExpectation]) -> None:
         """Record real native residency and execution for every scheduled step."""
@@ -465,6 +608,10 @@ class MempoolPDService:
         record.release = True
         record.is_insert = is_insert
         if handoff and not record.handoff:
+            if self.observer is not None:
+                self.observer.emit(
+                    "send_complete_observed", rid=req.rid, room=req.bootstrap_room
+                )
             logger.info(
                 "mempool native_handoff role=prefill rank=%s room=%s",
                 self.control.local.tp_rank,
@@ -647,6 +794,9 @@ class MempoolPDService:
     def advance(self) -> None:
         """Run one complete scheduler tick, preserving faults for same-side consensus."""
         self._tick_started = self.clock()
+        if self.observer is not None:
+            self.observation_tick += 1
+            self.observation_tick_ns = self.observer.clock()
         facts: list[RequestObservation] = []
         try:
             facts = self._observations()
@@ -670,10 +820,31 @@ class MempoolPDService:
             self.fault = str(exc)
         try:
             self.tick.advance(facts, fault=self.fault or self.runtime.fault)
+            if self.observer is not None:
+                for fact in facts:
+                    record = self._requests.get(fact.room)
+                    if record is not None:
+                        state = self._protocol(record)
+                        if state is not None and state.phase == "DECODING":
+                            observed = self.observation_requests[record.req.rid]
+                            if not observed.get("ready"):
+                                observed["ready"] = True
+                                self.observer.emit(
+                                    "three_conditions_ready",
+                                    rid=record.req.rid,
+                                    room=fact.room,
+                                )
             if self.subrouter is not None:
                 self.subrouter.advance(facts, fault=self.fault or self.runtime.fault)
             self._retire_local_records()
         finally:
+            if self.observer is not None and (facts or self._requests):
+                self.observer.emit(
+                    "control_tick",
+                    tick_id=self.observation_tick,
+                    begin_ns=self.observation_tick_ns,
+                    end_ns=self.observer.clock(),
+                )
             self._tick_started = None
 
     def _retire_local_records(self) -> None:
@@ -687,6 +858,24 @@ class MempoolPDService:
                 and state.phase in ("CANCELLED", "CLOSED", "RELEASED")
             ):
                 if self.scheduler is None or not self._request_in_queues(record.req):
+                    if self.observer is not None:
+                        observed = self.observation_requests.pop(record.req.rid)
+                        self.runtime.observation_hashes.pop(record.req.rid, None)
+                        self.observer.emit(
+                            "request_end",
+                            rid=record.req.rid,
+                            room=room,
+                            n_prefill_forward=observed["prefill_forwards"],
+                            n_decode_forward=observed["decode_forwards"],
+                            n_completed_forward=observed["completed_forwards"],
+                            n_discarded_forward=observed["discarded_forwards"],
+                            n_prebuilt=observed["prebuilt"],
+                            n_output_tokens=len(record.req.output_ids),
+                            finish_reason=str(record.req.finished_reason),
+                            last_write_position=observed["last_write_position"],
+                            cancelled=record.cancel,
+                        )
+                        self.observer.flush()
                     del self._requests[room]
 
     def _request_in_queues(self, req: Any) -> bool:

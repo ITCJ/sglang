@@ -11,14 +11,12 @@ from sgl_kernel_npu.sparsity_driven_kv_offload import (
     slot_map_lookup,
     unidex_copy_inplace,
 )
-
 from sglang.srt.hardware_backend.npu.kv_rows import derive_kv_rows
 
 from .config import SparseKVOffloadMode
 
 if TYPE_CHECKING:
     import torch.npu
-
     from sglang.srt.hardware_backend.npu.mempool.runtime import MempoolRuntime
     from sglang.srt.layers.radix_attention import RadixAttention
     from sglang.srt.managers.schedule_batch import Req
@@ -890,6 +888,11 @@ class SparseKVCacheManager:
             raise RuntimeError("BM fetch runtime must match the formal decode mode")
         layer_idx = layer.layer_id - self.start_layer
         stream = stream if stream is not None else torch.npu.current_stream()
+        observe = mempool_runtime is not None and mempool_runtime.observer is not None
+        if observe:
+            cache_range = torch.npu.mstx.range_start(
+                f"mempool:cache_manage:{layer.layer_id}", stream
+            )
 
         with torch.npu.stream(stream):
             topk_indices = normalize_batch_topk_indices(topk_indices)
@@ -952,6 +955,22 @@ class SparseKVCacheManager:
                 slot_lookup_topk_indices,
             )
             token_on_device = token_on_device.to(torch.bool) & valid_topk_mask
+            if observe:
+                torch.npu.mstx.range_end(cache_range)
+                sample_range = torch.npu.mstx.range_start(
+                    f"mempool:observer:{layer.layer_id}", stream
+                )
+                mempool_runtime.observation_device.cache(
+                    layer.layer_id,
+                    device_cache_row_indices,
+                    topk_indices,
+                    valid_topk_mask,
+                    token_on_device,
+                )
+                torch.npu.mstx.range_end(sample_range)
+                cache_range = torch.npu.mstx.range_start(
+                    f"mempool:cache_manage:{layer.layer_id}", stream
+                )
 
             # Build copy indices on the main stream, then protect their use on
             # the hit and miss streams with copy_ready.
@@ -988,11 +1007,18 @@ class SparseKVCacheManager:
             refill_valid_mask = valid_topk_mask.reshape(-1).contiguous()
 
             copy_ready = torch.npu.Event()
+            if observe:
+                torch.npu.mstx.range_end(cache_range)
             _record_stream_event(stream, copy_ready)
 
         # Copy device-cache hits into the selected KV buffer.
         with torch.npu.stream(self._materialize_d2d_hit_stream):
             _wait_stream_event(self._materialize_d2d_hit_stream, copy_ready)
+            if observe:
+                hit_range = torch.npu.mstx.range_start(
+                    f"mempool:cache_hit:{layer.layer_id}",
+                    self._materialize_d2d_hit_stream,
+                )
             unidex_copy_inplace(
                 self.device_kv_buffer[layer_idx],
                 selected_kv_buffer,
@@ -1003,12 +1029,19 @@ class SparseKVCacheManager:
                 2,  #
                 block_dim=24,
             )
+            if observe:
+                torch.npu.mstx.range_end(hit_range)
             _record_stream_event(self._materialize_d2d_hit_stream, self.hit_done)
 
         # Both BM sources run serially on the existing miss stream. Recording
         # one miss_done after both preserves the hit/refill/attention contract.
         with torch.npu.stream(self._materialize_h2d_miss_stream):
             _wait_stream_event(self._materialize_h2d_miss_stream, copy_ready)
+            if observe:
+                miss_range = torch.npu.mstx.range_start(
+                    f"mempool:miss_io:{layer.layer_id}",
+                    self._materialize_h2d_miss_stream,
+                )
             if mempool_runtime is not None:
                 mempool_runtime.fetch_selected_kv(
                     layer.layer_id,
@@ -1029,6 +1062,8 @@ class SparseKVCacheManager:
                     block_dim=24,
                     src_ptr=self.dev_ptr_list[layer_idx],
                 )
+            if observe:
+                torch.npu.mstx.range_end(miss_range)
             _record_stream_event(self._materialize_h2d_miss_stream, self.miss_done)
 
         # Refill the device cache with the current top-k after hit and miss
@@ -1036,6 +1071,11 @@ class SparseKVCacheManager:
         with torch.npu.stream(self._materialize_refill_stream):
             _wait_stream_event(self._materialize_refill_stream, self.hit_done)
             _wait_stream_event(self._materialize_refill_stream, self.miss_done)
+            if observe:
+                refill_range = torch.npu.mstx.range_start(
+                    f"mempool:cache_refill:{layer.layer_id}",
+                    self._materialize_refill_stream,
+                )
             unidex_copy_inplace(
                 selected_kv_buffer,
                 self.device_kv_buffer[layer_idx],
@@ -1046,12 +1086,19 @@ class SparseKVCacheManager:
                 2,
                 block_dim=24,
             )
+            if observe:
+                torch.npu.mstx.range_end(refill_range)
             _record_stream_event(self._materialize_refill_stream, self.refill_done)
 
         # Replace the slot-map row with the current top-k mapping. Invalid
         # entries use the max_context_len sentinel column to preserve shape.
         with torch.npu.stream(self._materialize_slot_map_stream):
             _wait_stream_event(self._materialize_slot_map_stream, copy_ready)
+            if observe:
+                map_range = torch.npu.mstx.range_start(
+                    f"mempool:cache_map:{layer.layer_id}",
+                    self._materialize_slot_map_stream,
+                )
             self.device_slot_map[layer_idx].copy_(self._device_slot_map_minus_one)
 
             slot_map_token_indices = torch.where(
@@ -1082,6 +1129,8 @@ class SparseKVCacheManager:
                 1,
                 block_dim=48,
             )
+            if observe:
+                torch.npu.mstx.range_end(map_range)
             _record_stream_event(self._materialize_slot_map_stream, self.slot_map_done)
         return valid_topk_mask
 

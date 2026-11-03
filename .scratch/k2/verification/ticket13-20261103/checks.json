@@ -1,0 +1,50 @@
+{
+  "baseline": "dc31b37cbefbb0b376997fd3949b94a01cb3fdca",
+  "cpu_full": {
+    "run": 563,
+    "passed_first": 535,
+    "failed_or_blocked_methods": 28,
+    "full_rounds": 1
+  },
+  "cpu_focused": {
+    "run": 23,
+    "passed": 23,
+    "includes_22_affected_methods": true
+  },
+  "cpu_supplemental": {
+    "new_unique_methods": 4,
+    "passed": true,
+    "delivery_final_run": 3,
+    "byte_receipt_run": 1
+  },
+  "final_unique_methods": {
+    "total": 567,
+    "passed": 561,
+    "known_baseline_failures": 6
+  },
+  "same_test_max_rounds": 2,
+  "static": {
+    "python_files": 19,
+    "mypy_linux_sources": 16,
+    "ruff": true,
+    "isort": true,
+    "python39_ast": true,
+    "diff_whitespace": true
+  },
+  "describe": {
+    "roles": 2,
+    "geometries": 4,
+    "modes": [
+      "off",
+      "on"
+    ],
+    "normal_target_starts_per_side": 16
+  },
+  "reviews": {
+    "standards_unresolved": 0,
+    "spec_unresolved": 0
+  },
+  "hardware": "not-run",
+  "ticket_state": "open",
+  "dependencies_unlocked": false
+}
