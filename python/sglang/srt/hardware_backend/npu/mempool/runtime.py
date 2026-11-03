@@ -890,7 +890,7 @@ class MempoolRuntime:
             observation = dict(
                 rows={row: dict(self.observation_forward[row]) for row in rows},
                 pages=self.observation_device.snapshot(
-                    torch.tensor(rows, device=self.row_slot.device)
+                    torch.tensor(rows, dtype=torch.int64, device=self.row_slot.device)
                 )
                 if self.observation_device is not None
                 else None,

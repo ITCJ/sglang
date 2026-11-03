@@ -421,6 +421,26 @@ class TestDeliveryContracts(unittest.TestCase):
             self.assertEqual(len(list(root.glob("*-summary.json"))), 2)
             self.assertEqual(len(list(root.glob("*-summary.md"))), 2)
 
+    def test_empty_replay_snapshot_uses_integer_rows(self):
+        import test_runtime
+        from ascend_mempool.observation_device import PageObservation
+
+        helper = test_runtime.TestMempoolRuntime()
+        self.addCleanup(helper.doCleanups)
+        runtime, _, _ = helper.make_runtime(rank=1, layers=1)
+        with tempfile.TemporaryDirectory() as folder:
+            runtime.observer = Observation(Path(folder), "empty", "decode", 0)
+            self.addCleanup(runtime.observer.close)
+            runtime.observation_device = PageObservation(
+                1, 9, 16, 4, 2, (5,), 5, "cpu"
+            )
+            runtime._capture_validated = True
+            runtime.begin_forward([], replay=True)
+            runtime.end_forward()
+            pages = runtime._pending[-1].observation["pages"]
+            self.assertEqual(pages[0].shape[1], 0)
+            self.assertEqual(pages[1].shape[1], 0)
+
     def test_collector_attributes_unaligned_locations_and_matches_existing_sources(
         self,
     ):

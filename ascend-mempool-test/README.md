@@ -673,3 +673,22 @@ P日志中 `ready` 只表明mempool prompt写完；`native_handoff` 后才允许
 [观测模式交付](../.scratch/k2/ticket13-delivery.md)。入口为
 `scripts/run_k2_observation.py`，P/D 各一条命令；`--describe` 不启动服务，
 `--smoke` 只覆盖第一组。NPU 验收由用户运行，日志保存到 `/home/cryang/log/k2/`。
+
+### Ticket13 指定单组重测（2026-11-04）
+
+两机更新同一提交后，分别运行以下命令；32 将 role 改为 decode。
+默认矩阵不变；以下选择只跑 b64-sd128-on，报告 coverage=selected，
+不计算 off/on 差异。保留 Graph gate、完整功能及观测证据检查。
+用户接受本组通过后暂时验收13并推进18。
+
+```bash
+python3 -u ascend-mempool-test/scripts/run_k2_observation.py \
+  --role prefill \
+  --config /home/cryang/mempool-min-ticket01-3132.json \
+  --run-id k2-ticket13-005 \
+  --sdk-build-id mf114-c01f3ad-ticket11-batchfix \
+  --geometry b64-sd128 --observe on
+```
+
+日志：`/home/cryang/log/k2/k2-ticket13-005/`。
+成功出口为 `passed_current_configuration`，组内 `FULL_ACCEPTANCE` 为 `passed`。

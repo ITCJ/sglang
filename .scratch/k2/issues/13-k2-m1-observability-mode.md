@@ -86,3 +86,11 @@ forward:1/2各1条，两轮missing=[]，timing_source=CANN9.0_raw_endpoints。
 修复仅调整该fork：保留answer failed，目标/本轮正式参考完整IDs须一致；原6例和off/on门槛不变。
 13项定向CPU测试通过；[交付与004命令](../ticket13-fork-baseline-fix.md)。
 不修改题面、期望答案、JSON解析或模型；新NPU复验待用户运行，ticket保持open。
+
+**2026-11-04 空请求观测修复与暂时验收约定。**
+
+004 的 b128-sd128-off 完整通过；on 在 decode warmup 因空 rows 默认 float 索引失败。
+修复 runtime 快照索引为 int64；空 replay 回归先复现后通过，观测/runtime 32 项 CPU 测试通过。
+新增 --geometry b64-sd128 --observe on，只执行指定服务组合，保留 Graph gate 和该组完整功能检查。
+用户明确约定：下一轮该组通过即暂时接受13，然后推进18；其余测试由用户自行安排，不提醒。
+当前修复已实现，所选 NPU 组尚待结果；未提前宣布13通过或开始18实现。

@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 import msgspec
-from run_k1_full_acceptance import configurations
+from run_k1_full_acceptance import MATRIX, configurations
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from ascend_mempool_pd.mempool_router_protocol import RouterConfig
@@ -28,28 +28,36 @@ def main() -> int:
         action="store_true",
         help="one geometry only; does not satisfy full acceptance",
     )
+    parser.add_argument("--geometry", choices=[f"b{b}-sd{sd}" for b, sd in MATRIX])
+    parser.add_argument("--observe", choices=("both", "on", "off"), default="both")
     parser.add_argument("--describe", action="store_true")
     args = parser.parse_args()
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,45}", args.run_id):
         parser.error("run-id must be a new simple name, at most 46 characters")
     configs = configurations(RouterConfig.read(str(args.config)), args.sdk_build_id)
+    if args.smoke and args.geometry:
+        parser.error("--smoke and --geometry cannot be combined")
+    if args.geometry:
+        configs = [(name, c) for name, c in configs if name == args.geometry]
     if args.smoke:
         configs = configs[:1]
+    modes = (False, True) if args.observe == "both" else (args.observe == "on",)
+    coverage = "selected" if args.geometry or args.observe != "both" else (
+        "smoke" if args.smoke else "full"
+    )
     root = Path("/home/cryang/log/k2") / args.run_id
     if args.describe:
         print(
             json.dumps(
                 dict(
-                    coverage="smoke"
-                    if args.smoke
-                    else "full four-geometry off/on acceptance",
+                    coverage=coverage,
                     configurations={
                         name: msgspec.to_builtins(c) for name, c in configs
                     },
                     target_rounds=2,
-                    observation_modes=[False, True],
+                    observation_modes=list(modes),
                     warmup_round=1,
-                    normal_target_starts_per_side=4 * len(configs),
+                    normal_target_starts_per_side=2 * len(modes) * len(configs),
                     logs=str(root),
                 ),
                 indent=2,
@@ -63,7 +71,9 @@ def main() -> int:
     report = dict(
         status="failed",
         overhead=[],
-        coverage="smoke" if args.smoke else "full",
+        coverage=coverage,
+        observation_modes=list(modes),
+        off_on_comparison="pending" if len(modes) == 2 else "not-run",
         user_accepted=False,
         stages=[],
         target_rounds=2,
@@ -91,7 +101,7 @@ def main() -> int:
         for name, base in configs:
             responses = {}
             walls = {}
-            for enabled in (False, True):
+            for enabled in modes:
                 label = f"{name}-{'on' if enabled else 'off'}"
                 config = msgspec.structs.replace(base, observe=enabled)
                 generated = root / f"{label}-{args.role}.json"
@@ -173,9 +183,10 @@ def main() -> int:
                         raise ValueError(f"{label}: observation evidence incomplete")
                 elif list(folder.rglob("*.jsonl")):
                     raise ValueError("observation files created with the switch off")
-            if responses and responses[False] != responses[True]:
+            if len(responses) == 2 and responses[False] != responses[True]:
                 raise ValueError(f"{name}: off/on output token IDs differ")
-            if walls:
+            if len(walls) == 2:
+                report["off_on_comparison"] = "passed"
                 report["overhead"].append(
                     dict(
                         geometry=name,
