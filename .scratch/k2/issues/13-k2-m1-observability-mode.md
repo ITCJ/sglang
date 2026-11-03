@@ -94,3 +94,11 @@ forward:1/2各1条，两轮missing=[]，timing_source=CANN9.0_raw_endpoints。
 新增 --geometry b64-sd128 --observe on，只执行指定服务组合，保留 Graph gate 和该组完整功能检查。
 用户明确约定：下一轮该组通过即暂时接受13，然后推进18；其余测试由用户自行安排，不提醒。
 当前修复已实现，所选 NPU 组尚待结果；未提前宣布13通过或开始18实现。
+
+**2026-11-04 005 离线容量重放修复。**
+
+005 Graph 通过，restart 后离线 capacity_check 使用 observe=True 创建 MainRouter，触发服务包导入错误。
+仅为离线准入重放复制 observe=False 配置；真实服务继续 observe on，容量不足及账本检查保留。
+回归先复现导入错误；修复后该回归与原容量重放检查通过。
+整份 session 测试运行16项，存在7个旧端口断言失败及1个沙箱 bind 权限错误，未宣称全通过。
+下一次仍只运行 b64-sd128-on，使用新 run-id 006。暂时验收及随后推进18的约定不变。

@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
+import msgspec
+
 if TYPE_CHECKING:
     from sglang.srt.disaggregation.ascend.mempool_router import MainRouter
     from sglang.srt.disaggregation.ascend.mempool_router_protocol import RouterConfig
@@ -120,7 +122,8 @@ def capacity_check(
     config: RouterConfig, run_id: str, registrations: dict[str, Any]
 ) -> dict[str, Any]:
     """Replay real registrations through admission; do not start another model."""
-    router = MainRouter(config, run_id)
+    # This admission-only replay must not create live observation files.
+    router = MainRouter(msgspec.structs.replace(config, observe=False), run_id)
     router.register(registrations["prefill"])
     before = router.status()["ledger"]
     decode = copy.deepcopy(registrations["decode"])

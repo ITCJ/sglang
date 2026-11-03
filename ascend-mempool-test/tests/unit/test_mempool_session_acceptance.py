@@ -20,6 +20,24 @@ from ascend_mempool_pd.mempool_router_protocol import RouterConfig
 
 
 class TestSessionAcceptance(unittest.TestCase):
+    def test_observed_capacity_replay_does_not_import_service_observer(self):
+        import builtins
+
+        config = RouterConfig("p", "d", "/model", observe=True)
+        actual = {r: registration(r) for r in ("prefill", "decode")}
+        original_import = builtins.__import__
+
+        def offline_import(name, *args, **kwargs):
+            if name == "sglang.srt.hardware_backend.npu.mempool.observation":
+                raise ModuleNotFoundError(name)
+            return original_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=offline_import):
+            result = verify_mempool_session.capacity_check(config, "cpu", actual)
+        self.assertEqual(result["status"], "passed")
+        self.assertTrue(result["ledger_unchanged"])
+        self.assertTrue(config.observe)
+
     def test_model_distributed_port_is_checked_at_each_stage_boundary(self):
         config = RouterConfig("p", "d", "/model")
         for role in ("prefill", "decode"):
