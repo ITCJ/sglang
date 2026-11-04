@@ -87,3 +87,17 @@
 默认跳过 Graph trace gate；报告标记 device_timing=not-collected，未将设备计时视为已通过。
 撤回未提交的自动离线导出方案。48项CPU测试通过；Standards/Spec评审无阻断项。
 下一轮007仍为 b64-sd128-on，trace关闭；此组通过即按用户约定暂时接受13并推进18。
+
+**007 用户实机证据：13按约定暂时验收通过，解锁18。**
+
+用户回传31/32的 report 与31的 v1-v10：两端 passed_current_configuration，
+b64-sd128-on，trace_enabled=false，阶段 exit_code=0。
+V1–V10、长生成、timeout_fail_stop、paired_cleanup 全 passed；六例完整输出ID与参考一致。
+两端 observation_status=passed、missing=[]；B/C load_back/fill 四项字节核对全通过。
+日志根目录 /home/cryang/log/k2/k2-ticket13-007；交付版本4864e534a7，SDK mf114-c01f3ad-ticket11-batchfix。
+按用户预先授权“此组过了就算暂时验收通过，然后推进18”，13按此范围关闭、18解除依赖。
+原始报告 user_accepted=false 是运行器固定字段，人工结论在本记录补充，不修改原始证据。
+范围为单组JSONL观测与功能回归；本轮未采设备trace或比较off/on开销。
+原清单未获本轮证据的条目保留未勾选，不代表仍阻塞18；不追加补测提醒。
+报告V1/V6/V7的detail沿用128页大小静态文案；本轮实际page_size=64，C命中4032、重算64，
+prefix页数及字节以k1.shared.writes/layout实际证据为准。
