@@ -36,3 +36,13 @@ slot仅保留既有协议绑定身份，物理范围由页集合决定。用户�
 验收入口复用四配置流程，增加实际B的Graph散页/rebind与4K→8K→1K；trace关闭。
 CPU覆盖、已知旧失败、环境导入问题及运行命令见[交付说明](../ticket18-delivery.md)。
 功能测试不超过两轮；NPU未运行，不关闭本票、不解锁25/19。
+
+### 2026-11-05：001 单组验收器长度合同修复
+
+用户31回传b64-sd512在target阶段报 `full controls must be long-generation and early-eos`。
+根因是ticket18已生成8192/1024控制用例，verify_mempool_reuse仍只接受4096/128。
+CPU真实MR历史与16rank内容回执复现同错；修正为明确接受两套长度组合。
+四项完整prefix回执验证通过，包含删去一个回执仍失败的负检查；静态检查通过。
+只改验收脚本及CPU测试，无功能源码、主线、kernel修改。
+001失败保留，后续capacity/timeout/cleanup汇总未完成不解释为已通过。18仍open。
+下一轮仅b64-sd512，两端使用k2-ticket18-002，trace关闭。

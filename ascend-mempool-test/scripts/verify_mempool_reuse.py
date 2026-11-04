@@ -44,7 +44,8 @@ def check_reuse(
         raise ValueError("E must be an independent 4096-token cold request")
     if count >= 6 and (
         [case["name"] for case in cases[4:6]] != ["long-generation", "early-eos"]
-        or [len(case["input_ids"]) for case in cases[4:6]] != [4096, 128]
+        or [len(case["input_ids"]) for case in cases[4:6]]
+        not in ([4096, 128], [8192, 1024])
     ):
         raise ValueError("full controls must be long-generation and early-eos")
     if count == 9 and (

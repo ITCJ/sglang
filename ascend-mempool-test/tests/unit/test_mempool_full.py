@@ -287,6 +287,20 @@ class TestLogicalAnswers(unittest.TestCase):
 
 
 class TestFullReuseEvidence(unittest.TestCase):
+    def test_ticket18_mixed_lengths_pass_full_receipt_verification(self):
+        snapshots, cases, lines = evidence_fixtures.TestPrefixEvidence().evidence(
+            reuse=True, full=True, controls=True, page_allocation=True
+        )
+        self.assertEqual([len(c["input_ids"]) for c in cases[-3:]], [4096, 8192, 1024])
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "prefill.log"
+            path.write_text("\n".join(lines))
+            report = verify_mempool_reuse.check_reuse(path, snapshots, cases, full=True)
+            self.assertEqual(report["status"], "passed")
+            path.write_text("\n".join(lines[:-1]))
+            with self.assertRaises(ValueError):
+                verify_mempool_reuse.check_reuse(path, snapshots, cases, full=True)
+
     def test_index_experiment_checks_all_nine_requests_and_retained_prefixes(self):
         snapshots, cases, lines = evidence_fixtures.TestPrefixEvidence().evidence(
             reuse=True, full=True, controls=True, index_checks=True

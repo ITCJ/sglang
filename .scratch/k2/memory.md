@@ -5,6 +5,8 @@
 先读[18交付](ticket18-delivery.md)。用户确认64位kernel已在Docker装载且Python接口不变，本地只改adapter。
 协议slot继续作为绑定身份，存储分配已改页集合；trace默认关闭。
 
+001在target验收器因旧控制长度合同失败，已修复并通过4项CPU回执检查；下一轮仅b64-sd512、run-id=k2-ticket18-002。
+
 ## 本轮教训（后续执行）
 
 - 观测与trace分开：trace默认关，只按需采少量step；全程TP16采集产生GB级文件，同步解析阻塞tick并触发心跳超时。先收窄采集，勿先加超时或导出子系统。

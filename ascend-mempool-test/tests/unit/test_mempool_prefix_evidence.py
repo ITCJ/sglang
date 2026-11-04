@@ -17,6 +17,7 @@ class TestPrefixEvidence(unittest.TestCase):
         reuse=False,
         full=False,
         controls=False,
+        page_allocation=False,
         index_checks=False,
         shared=False,
     ):
@@ -49,7 +50,10 @@ class TestPrefixEvidence(unittest.TestCase):
             if not full:
                 scenarios = scenarios[:3]
         if controls:
-            scenarios += (([10] * 4096, 0, 40), ([11] * 128, 0, 40))
+            scenarios += (
+                ([10] * (8192 if page_allocation else 4096), 0, 40),
+                ([11] * (1024 if page_allocation else 128), 0, 40),
+            )
         if index_checks:
             scenarios += (
                 ([12] * 4096, 0, 40),
