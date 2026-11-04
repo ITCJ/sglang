@@ -1,5 +1,13 @@
 # K2 当前记忆
 
+**2026-11-05：14已实现，等待NPU验收。**
+入口`ascend-mempool-test/scripts/run_bandwidth.sh`；默认remote-write，先跑31/P与32/D。
+8K及原三档、单/双写、D读干扰基线、连续逐层、完整读矩阵、Mooncake探测与报告已交付。
+新增6项CPU验证通过，6项原有失败在基点复现；两轴评审最终0未解决。
+运行说明见[14交付](ticket14-delivery.md)。14保持open；25没有实机前置证据，尚未解锁。
+
+
+
 当前：13按007单组约定暂时验收完成。18代码与CPU检查、两轴评审、自运行入口已交付，等待用户NPU验收；18保持open，不解锁25/19。
 
 先读[18交付](ticket18-delivery.md)。用户确认64位kernel已在Docker装载且Python接口不变，本地只改adapter。

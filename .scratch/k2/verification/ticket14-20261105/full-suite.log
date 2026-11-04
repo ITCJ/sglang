@@ -1,0 +1,826 @@
+AUTOMATED_CHECKS_PASSED: /var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpgl76urkf/components-test/prefill/summary.json
+.START bad pid=96834 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpzm_xi20i/bad.log
+.START server pid=96836 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpy4nltrqg/server.log
+...START server pid=96840 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpc83ngsza/server.log
+..PASS glm51/formal-graph
+PASS glm51/quick-smoke
+AUTOMATED_CHECKS_PASSED: /var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpxr8yawf2/quick/prefill/summary.json
+.STAGE glm51/formal-graph
+STAGE glm51/formal-graph
+PASS glm51/formal-graph
+PASS glm51/quick-smoke
+PASS glm51/formal-graph
+PASS glm51/quick-smoke
+.STAGE glm52/native-eager
+STAGE glm52/native-eager
+PASS glm52/native-eager
+PASS glm52/native-eager
+STAGE glm52/native-graph
+STAGE glm52/native-graph
+PASS glm52/native-graph
+PASS glm52/native-graph
+STAGE glm52/formal-eager
+STAGE glm52/formal-eager
+PASS glm52/formal-eager
+PASS glm52/formal-eager
+STAGE glm52/formal-graph
+STAGE glm52/formal-graph
+PASS glm52/formal-graph
+PASS glm52/formal-graph
+PASS glm52/token-comparison
+PASS glm52/token-comparison
+......Waiting for peer at 127.0.0.1:57556
+Waiting for peer at 127.0.0.1:57556
+START rank-0 pid=96878 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpd_twyzjk/cpu-fixture/prefill/rank-0.log
+START rank-0 pid=96886 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpd_twyzjk/cpu-fixture/decode/rank-0.log
+.Waiting for peer at 127.0.0.1:57567
+Waiting for peer at 127.0.0.1:57567
+START rank-0 pid=96907 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmp00rb60dv/cpu-failure/decode/rank-0.log
+START rank-0 pid=96908 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmp00rb60dv/cpu-failure/prefill/rank-0.log
+...........................................[------------------------] 0/10 tp4 | setup / mapping / staging | elapsed 0.0m ETA estimating
+[####--------------------] 2/10 tp4 | waiting-peer-close | elapsed 0.0m ETA estimating
+[####--------------------] 2/10 tp4 | waiting-peer-close | elapsed 0.2m ETA estimating
+[####--------------------] 2/10 tp4 | closed | elapsed 968.4m ETA 3873.7m
+.[------------------------] 0/10 tp4 | setup / mapping / staging | elapsed 0.0m ETA estimating
+[####--------------------] 2/10 tp4 | cleanup/pool-close | elapsed 0.0m ETA estimating
+.[------------------------] 0/6 tp4 | setup / mapping / staging | elapsed 0.0m ETA estimating
+[####--------------------] 1/6 tp4 | one | elapsed 0.0m ETA 0.0m
+[################--------] 4/6 tp4 | closed | elapsed 0.0m ETA 0.0m
+[################--------] 4/6 tp1 | setup / mapping / staging | elapsed 0.0m ETA 0.0m
+[########################] 6/6 tp1 | closed | elapsed 0.0m ETA 0.0m
+..[------------------------] 0/100 round-0/1-I0 | setup / mapping / staging | elapsed 0.0m ETA estimating
+[####--------------------] 18/100 round-0/1-I0 | waiting-peer-close | elapsed 0.0m ETA estimating
+...F.................................................START launcher pid=97169 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpfwhyjv_7/decode/timeout/launcher.log
+START router pid=97170 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpfwhyjv_7/prefill/timeout/router.log
+START launcher pid=97171 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpfwhyjv_7/prefill/timeout/launcher.log
+mempool_router fail-stop: SR heartbeat timeout
+....START router pid=97190 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmprf0ztf5q/prefill/capacity/router.log
+START launcher pid=97191 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmprf0ztf5q/prefill/capacity/launcher.log
+mempool_router fail-stop: SR native capacities do not cover the configured limits
+START launcher pid=97194 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmprf0ztf5q/decode/capacity/launcher.log
+.....................START launcher pid=97291 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpa_cpu0vi/reference/launcher.log
+START reference-router pid=97292 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpa_cpu0vi/reference/reference-router.log
+..START launcher pid=97295 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpgmlu992q/reference/launcher.log
+START reference-router pid=97296 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpgmlu992q/reference/reference-router.log
+..START worker pid=97313 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpglkb4irz/prefill/worker.log
+START worker pid=97314 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpglkb4irz/decode/worker.log
+mempool_router fail-stop: SR heartbeat timeout
+..START launcher pid=97348 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpqf6wpboe/reference/launcher.log
+START reference-router pid=97349 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmpqf6wpboe/reference/reference-router.log
+..START launcher pid=97365 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmp4xgqo67k/reference/launcher.log
+START reference-router pid=97366 log=/var/folders/37/7frsv9sd2bvg9z57ztq0x5gm0000gn/T/tmp4xgqo67k/reference/reference-router.log
+.mempool acceptance_capacity data={"run_id": "cpu", "rank": 15, "actual_hbm_pages": 128, "advertised_hbm_pages": 64, "required_hbm_pages": 65}
+.EEEEE.......................mempool_router fail-stop: SR allocation differs across TP ranks
+..mempool_router fail-stop: SR heartbeat timeout
+.mempool_router fail-stop: ack is missing ranks or contains duplicates
+.......mempool_router fail-stop: prefix ack lacks matching source/target completion
+mempool_router fail-stop: prefix ack lacks matching source/target completion
+mempool_router fail-stop: prefix ack lacks matching source/target completion
+mempool_router fail-stop: prefix ack lacks matching source/target completion
+mempool_router fail-stop: prefix ack lacks matching source/target completion
+mempool_router fail-stop: prefix ack lacks matching source/target completion
+.mempool_router fail-stop: ack is missing ranks or contains duplicates
+mempool_router fail-stop: prefix completion differs from source/target contract
+mempool_router fail-stop: load_back lacks complete native token indices
+mempool_router fail-stop: prefix completion differs from source/target contract
+mempool_router fail-stop: prompt became ready before both dispatches
+....mempool_router fail-stop: SR heartbeat timeout
+...F........FFFFFF...................................................................................................[MEMPOOL_INIT] FAIL stage=bm.wait_store pid=96818 tid=3101697 tp_rank=0 store=tcp://10.120.72.31:18573 elapsed=0.000s error=TimeoutError('P BM store tcp://10.120.72.31:18573 was not reachable within 0.25s')
+.[MEMPOOL_INIT] FAIL stage=bm.initialize pid=96818 tid=3101697 role=decode tp_rank=0 bm_rank=1 device_id=0 store=tcp://10.120.72.31:18573 nic=tcp://10.120.72.31:24670 world_size=2 auto_ranking=False start_store=False sdk_timeout=1 elapsed=0.000s error=RuntimeError('BM initialize failed for tcp://10.120.72.31:18573: -7')
+.[MEMPOOL_INIT] FAIL stage=bm.wait_store pid=96818 tid=3101697 tp_rank=0 store=tcp://10.120.72.31:18573 elapsed=0.000s error=TimeoutError('P BM store tcp://10.120.72.31:18573 was not reachable within 1.25s')
+......[MEMPOOL_INIT] FAIL stage=bm.close_drain pid=96818 tid=3101697 bm_rank=0 elapsed=0.000s error=RuntimeError('pending NPU reads')
+.[MEMPOOL_INIT] FAIL stage=bm.initialize pid=96818 tid=3101697 role=prefill tp_rank=0 bm_rank=0 device_id=0 store=tcp://10.120.72.31:18573 nic=tcp://10.120.72.31:24670 world_size=2 auto_ranking=False start_store=True sdk_timeout=1 elapsed=0.000s error=RuntimeError('BM initialize failed for tcp://10.120.72.31:18573: -7')
+[MEMPOOL_INIT] FAIL stage=bm.create2 pid=96818 tid=3101697 bm_rank=0 pool_id=0 local_dram_bytes=1073741824 max_dram_bytes=1073741824 local_hbm_bytes=0 max_hbm_bytes=0 data_op=SDMA tp_rank=0 local_numa_nodes=() numa_node=-1 bm_flags=0 elapsed=0.000s error=RuntimeError('BM create2 returned no handle')
+[MEMPOOL_INIT] FAIL stage=bm.wait_mappings pid=96818 tid=3101697 bm_rank=0 timeout=0.01 elapsed=0.015s error=TimeoutError('BM peer mappings did not become device-visible: missing_participant=0 offset=0')
+......................................Ascend mempool control fault: invalid mempool control frame: invalid mempool JSON frame
+.Ascend mempool control fault: mempool control startup buffer is full
+....Ascend mempool control fault: invalid mempool control frame: invalid mempool JSON frame
+........................................mempool native transfer rejected session=d:2: Native destination registration differs from the Index K transfer layout
+Session d:2 failed.
+mempool native transfer rejected session=d:2: Native destination registration differs from the Index K transfer layout
+Session d:2 failed.
+mempool native transfer rejected session=d:2: Native destination registration differs from the Index K transfer layout
+Session d:2 failed.
+mempool aux transfer rejected: Native destination registration differs from the Index K transfer layout
+mempool aux transfer rejected: Native destination registration differs from the Index K transfer layout
+mempool aux transfer rejected: Native destination registration differs from the Index K transfer layout
+.......mempool native transfer rejected session=d:2: Index K transfer has no matching mempool peer/session
+Session d:2 failed.
+.[MEMPOOL_INIT] FAIL stage=bm.close_drain pid=96818 tid=3101697 bm_rank=1 elapsed=0.000s error=RuntimeError('pending NPU work')
+.[MEMPOOL_INIT] FAIL stage=bm.wait_mappings pid=96818 tid=3101697 bm_rank=1 timeout=0.01 elapsed=0.015s error=TimeoutError('BM peer mappings did not become device-visible: missing_participant=0 offset=0')
+[MEMPOOL_INIT] FAIL stage=bm.wait_mappings pid=96818 tid=3101697 bm_rank=1 timeout=0.01 elapsed=0.000s error=RuntimeError('BM GVA rank stride differs from the common maximum')
+[MEMPOOL_INIT] FAIL stage=bm.wait_mappings pid=96818 tid=3101697 bm_rank=1 timeout=0.01 elapsed=0.000s error=RuntimeError('BM layer mapping is not device-contiguous')
+.[MEMPOOL_INIT] FAIL stage=bm.wait_mappings pid=96818 tid=3101697 bm_rank=0 timeout=0.1 elapsed=0.000s error=RuntimeError('BM layer mapping is not device-contiguous')
+..........[MEMPOOL_INIT] FAIL stage=bm.close_drain pid=96818 tid=3101697 bm_rank=0 elapsed=0.000s error=RuntimeError('still reading')
+[MEMPOOL_INIT] FAIL stage=bm.close_drain pid=96818 tid=3101697 bm_rank=0 elapsed=0.000s error=RuntimeError('still reading')
+......................................................................................BEGIN delay/eager/0
+BEGIN delay/eager/0
+BEGIN delay/eager/0
+..BEGIN delay/graph/0
+PASS delay/graph/0 {}
+BEGIN delay/graph/1
+PASS delay/graph/1 {}
+PASS delay/graph/profile
+.BEGIN delay/eager/0
+PASS delay/eager/0 {'ready_timestamp_us': 1000000, 'selected_timestamp_us': 1002000, 'writer_timestamp_us': 1005000, 'selected_ms': 2.0, 'writer_ms': 5.0, 'writer_minus_selected_ms': 3.0}
+BEGIN delay/eager/1
+PASS delay/eager/1 {'ready_timestamp_us': 1000000, 'selected_timestamp_us': 1002000, 'writer_timestamp_us': 1005000, 'selected_ms': 2.0, 'writer_ms': 5.0, 'writer_minus_selected_ms': 3.0}
+PASS delay/eager/profile
+BEGIN delay/graph/0
+PASS delay/graph/0 {}
+BEGIN delay/graph/1
+PASS delay/graph/1 {}
+PASS delay/graph/profile
+.BEGIN delay/eager/0
+PASS delay/eager/0 {'ready_timestamp_us': 1000000, 'selected_timestamp_us': 1002000, 'writer_timestamp_us': 1005000, 'selected_ms': 2.0, 'writer_ms': 5.0, 'writer_minus_selected_ms': 3.0}
+BEGIN delay/eager/1
+PASS delay/eager/1 {'ready_timestamp_us': 1000000, 'selected_timestamp_us': 1002000, 'writer_timestamp_us': 1005000, 'selected_ms': 2.0, 'writer_ms': 5.0, 'writer_minus_selected_ms': 3.0}
+PASS delay/eager/profile
+BEGIN delay/graph/0
+PASS delay/graph/0 {}
+BEGIN delay/graph/1
+PASS delay/graph/1 {}
+PASS delay/graph/profile
+BEGIN delay/eager/0
+...................................usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: --devices must name two or four different local NPU IDs
+usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: rounds, samples, repeats, warmup and delay-matmuls must be positive
+usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: --numa-node must be in [0, 126]
+usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: this matrix requires topk=2048 and P/D capacities >=8192 (equal-byte writes plus guards)
+usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: control-port must leave 13 consecutive ports available
+...usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: engines must be a nonempty, distinct list of eager/graph
+usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: smoke only supports eager
+.usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: diagnostic cannot be combined with smoke
+.usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: diagnostic cannot be combined with smoke
+usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: argument --diagnose-write-read: not allowed with argument --diagnose-independent
+.....usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: --devices must name two or four different local NPU IDs
+usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: --devices must name two or four different local NPU IDs
+usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: this matrix requires topk=2048 and P/D capacities >=8198 (equal-byte writes plus guards)
+usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: this matrix requires topk=2048 and P/D capacities >=8198 (equal-byte writes plus guards)
+..usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: --devices must name two or four different local NPU IDs
+usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: rounds, samples, repeats, warmup and delay-matmuls must be positive
+usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: --numa-node must be in [0, 126]
+usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: this matrix requires topk=2048 and P/D capacities >=8192 (equal-byte writes plus guards)
+usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: control-port must leave 13 consecutive ports available
+...usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: engines must be a nonempty, distinct list of eager/graph
+usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: smoke only supports eager
+.usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: diagnostic cannot be combined with smoke
+.usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: diagnostic cannot be combined with smoke
+usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: argument --diagnose-write-read: not allowed with argument --diagnose-independent
+.....usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: --devices must name two or four different local NPU IDs
+usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: --devices must name two or four different local NPU IDs
+usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: this matrix requires topk=2048 and P/D capacities >=8198 (equal-byte writes plus guards)
+usage: ticket14-full-suite.py [-h] --role {prefill,decode} --prefill-host
+                              PREFILL_HOST --decode-host DECODE_HOST --run-id
+                              RUN_ID [--devices DEVICES [DEVICES ...]]
+                              --numa-node NUMA_NODE
+                              [--prompt-tokens PROMPT_TOKENS]
+                              [--decode-tokens DECODE_TOKENS] [--topk TOPK]
+                              [--block-dims BLOCK_DIMS [BLOCK_DIMS ...]]
+                              [--engines {eager,graph} [{eager,graph} ...]]
+                              [--rounds ROUNDS] [--resume-from RESUME_FROM]
+                              [--resume-round RESUME_ROUND]
+                              [--samples SAMPLES] [--repeats REPEATS]
+                              [--warmup WARMUP]
+                              [--delay-matmuls DELAY_MATMULS]
+                              [--control-port CONTROL_PORT]
+                              [--timeout TIMEOUT]
+                              [--diagnose-write-read | --diagnose-independent | --diagnose-publication]
+                              [--log-root LOG_ROOT] [--smoke] [--describe]
+ticket14-full-suite.py: error: this matrix requires topk=2048 and P/D capacities >=8198 (equal-byte writes plus guards)
+.........................
+======================================================================
+ERROR: test_matching_identities_keep_preflight_enabled (test_mempool_min_entry.TestPreflightIdentity.test_matching_identities_keep_preflight_enabled)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 154, in test_matching_identities_keep_preflight_enabled
+    with self.environment() as npu_smi:
+         ^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/contextlib.py", line 137, in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 104, in environment
+    patch.object(runner, "available_port"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py", line 1467, in __enter__
+    original, local = self.get_original()
+                      ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py", line 1437, in get_original
+    raise AttributeError(
+AttributeError: <module 'run_mempool_min' from '/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/scripts/run_mempool_min.py'> does not have the attribute 'available_port'
+
+======================================================================
+ERROR: test_mismatch_keeps_both_identities_and_names_the_differing_field (test_mempool_min_entry.TestPreflightIdentity.test_mismatch_keeps_both_identities_and_names_the_differing_field) (field='versions.torch-npu')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 131, in test_mismatch_keeps_both_identities_and_names_the_differing_field
+    self.environment() as npu_smi,
+    ^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/contextlib.py", line 137, in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 104, in environment
+    patch.object(runner, "available_port"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py", line 1467, in __enter__
+    original, local = self.get_original()
+                      ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py", line 1437, in get_original
+    raise AttributeError(
+AttributeError: <module 'run_mempool_min' from '/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/scripts/run_mempool_min.py'> does not have the attribute 'available_port'
+
+======================================================================
+ERROR: test_mismatch_keeps_both_identities_and_names_the_differing_field (test_mempool_min_entry.TestPreflightIdentity.test_mismatch_keeps_both_identities_and_names_the_differing_field) (field='model.manifest.config.json')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 131, in test_mismatch_keeps_both_identities_and_names_the_differing_field
+    self.environment() as npu_smi,
+    ^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/contextlib.py", line 137, in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 104, in environment
+    patch.object(runner, "available_port"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py", line 1467, in __enter__
+    original, local = self.get_original()
+                      ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py", line 1437, in get_original
+    raise AttributeError(
+AttributeError: <module 'run_mempool_min' from '/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/scripts/run_mempool_min.py'> does not have the attribute 'available_port'
+
+======================================================================
+ERROR: test_mismatch_keeps_both_identities_and_names_the_differing_field (test_mempool_min_entry.TestPreflightIdentity.test_mismatch_keeps_both_identities_and_names_the_differing_field) (field='untracked_sha256.python/local.py')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 131, in test_mismatch_keeps_both_identities_and_names_the_differing_field
+    self.environment() as npu_smi,
+    ^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/contextlib.py", line 137, in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 104, in environment
+    patch.object(runner, "available_port"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py", line 1467, in __enter__
+    original, local = self.get_original()
+                      ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py", line 1437, in get_original
+    raise AttributeError(
+AttributeError: <module 'run_mempool_min' from '/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/scripts/run_mempool_min.py'> does not have the attribute 'available_port'
+
+======================================================================
+ERROR: test_peer_disconnect_still_preserves_local_identity (test_mempool_min_entry.TestPreflightIdentity.test_peer_disconnect_still_preserves_local_identity)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 165, in test_peer_disconnect_still_preserves_local_identity
+    with self.environment(), self.assertRaisesRegex(ConnectionError, "peer"):
+         ^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/contextlib.py", line 137, in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 104, in environment
+    patch.object(runner, "available_port"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py", line 1467, in __enter__
+    original, local = self.get_original()
+                      ^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py", line 1437, in get_original
+    raise AttributeError(
+AttributeError: <module 'run_mempool_min' from '/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/scripts/run_mempool_min.py'> does not have the attribute 'available_port'
+
+======================================================================
+FAIL: test_defaults_and_unsupported_model_storage (test_config.TestMempoolConfig.test_defaults_and_unsupported_model_storage)
+Keep 16K defaults and reject non-BF16 or kernel-incompatible storage.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_config.py", line 106, in test_defaults_and_unsupported_model_storage
+    with self.assertRaisesRegex(ValueError, "UINT32_MAX"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_cleanup_checks_actual_session_ports_not_reserved_range (test_mempool_session_acceptance.TestSessionAcceptance.test_cleanup_checks_actual_session_ports_not_reserved_range)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py", line 252, in test_cleanup_checks_actual_session_ports_not_reserved_range
+    self.assertEqual(decode, {8001, *(25686 + 33 * rank for rank in range(16))})
+AssertionError: Items in the first set but not the second:
+10000
+
+======================================================================
+FAIL: test_service_ports_preserves_pair_and_shared_group_endpoints (test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints) (options={}, role='prefill')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py", line 283, in test_service_ports_preserves_pair_and_shared_group_endpoints
+    self.assertEqual(
+AssertionError: Items in the first set but not the second:
+10000
+
+======================================================================
+FAIL: test_service_ports_preserves_pair_and_shared_group_endpoints (test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints) (options={}, role='decode')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py", line 283, in test_service_ports_preserves_pair_and_shared_group_endpoints
+    self.assertEqual(
+AssertionError: Items in the first set but not the second:
+10000
+
+======================================================================
+FAIL: test_service_ports_preserves_pair_and_shared_group_endpoints (test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints) (options={'prefill_shared': True}, role='prefill')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py", line 283, in test_service_ports_preserves_pair_and_shared_group_endpoints
+    self.assertEqual(
+AssertionError: Items in the first set but not the second:
+10000
+
+======================================================================
+FAIL: test_service_ports_preserves_pair_and_shared_group_endpoints (test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints) (options={'prefill_shared': True}, role='decode')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py", line 283, in test_service_ports_preserves_pair_and_shared_group_endpoints
+    self.assertEqual(
+AssertionError: Items in the first set but not the second:
+10000
+
+======================================================================
+FAIL: test_service_ports_preserves_pair_and_shared_group_endpoints (test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints) (options={'decode_shared': True}, role='prefill')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py", line 283, in test_service_ports_preserves_pair_and_shared_group_endpoints
+    self.assertEqual(
+AssertionError: Items in the first set but not the second:
+10000
+
+======================================================================
+FAIL: test_service_ports_preserves_pair_and_shared_group_endpoints (test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints) (options={'decode_shared': True}, role='decode')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py", line 283, in test_service_ports_preserves_pair_and_shared_group_endpoints
+    self.assertEqual(
+AssertionError: Items in the first set but not the second:
+10000
+
+----------------------------------------------------------------------
+Ran 588 tests in 53.714s
+
+FAILED (failures=8, errors=5)

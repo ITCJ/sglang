@@ -23,8 +23,8 @@ class CohortServer:
     def __init__(
         self, host: str, port: int, identity: str, timeout: float, tp_size: int = 2
     ) -> None:
-        if tp_size not in (1, 2, 4):
-            raise ValueError("tp_size must be 1, 2 or 4")
+        if tp_size not in (1, 2, 4, 8, 16):
+            raise ValueError("tp_size must be 1, 2, 4, 8 or 16")
         self.world_size = 2 * tp_size
         self.identity, self.timeout = identity, timeout
         self.condition = threading.Condition()
@@ -132,7 +132,7 @@ class Cohort:
         timeout: float,
         tp_size: int = 2,
     ) -> None:
-        if tp_size not in (1, 2, 4) or rank not in range(2 * tp_size):
+        if tp_size not in (1, 2, 4, 8, 16) or rank not in range(2 * tp_size):
             raise ValueError("invalid TP size or cohort rank")
         self.tp_size = tp_size
         deadline = time.monotonic() + timeout

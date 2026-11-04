@@ -1,0 +1,94 @@
+FEEEEE
+======================================================================
+ERROR: test_mempool_session_acceptance (unittest.loader._FailedTest.test_mempool_session_acceptance)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_mempool_session_acceptance
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/loader.py", line 137, in loadTestsFromName
+    module = __import__(module_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/ticket14-baseline/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py", line 15, in <module>
+    import run_mempool_min
+  File "/tmp/ticket14-baseline/ascend-mempool-test/scripts/run_mempool_min.py", line 31, in <module>
+    import verify_mempool_session
+  File "/tmp/ticket14-baseline/ascend-mempool-test/scripts/verify_mempool_session.py", line 20, in <module>
+    from ascend_mempool_pd.mempool_router import MainRouter
+ModuleNotFoundError: No module named 'ascend_mempool_pd.mempool_router'
+
+
+======================================================================
+ERROR: test_mempool_session_acceptance (unittest.loader._FailedTest.test_mempool_session_acceptance)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_mempool_session_acceptance
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/loader.py", line 137, in loadTestsFromName
+    module = __import__(module_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/ticket14-baseline/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py", line 15, in <module>
+    import run_mempool_min
+  File "/tmp/ticket14-baseline/ascend-mempool-test/scripts/run_mempool_min.py", line 31, in <module>
+    import verify_mempool_session
+  File "/tmp/ticket14-baseline/ascend-mempool-test/scripts/verify_mempool_session.py", line 20, in <module>
+    from ascend_mempool_pd.mempool_router import MainRouter
+ModuleNotFoundError: No module named 'ascend_mempool_pd.mempool_router'
+
+
+======================================================================
+ERROR: test_mempool_min_entry (unittest.loader._FailedTest.test_mempool_min_entry)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_mempool_min_entry
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/loader.py", line 137, in loadTestsFromName
+    module = __import__(module_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/ticket14-baseline/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 17, in <module>
+    from test_mempool_router import payload, registration
+  File "/tmp/ticket14-baseline/ascend-mempool-test/tests/unit/test_mempool_router.py", line 9, in <module>
+    from ascend_mempool_pd.mempool_router import MainRouter, RequestRejected
+ModuleNotFoundError: No module named 'ascend_mempool_pd.mempool_router'
+
+
+======================================================================
+ERROR: test_mempool_min_entry (unittest.loader._FailedTest.test_mempool_min_entry)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_mempool_min_entry
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/loader.py", line 137, in loadTestsFromName
+    module = __import__(module_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/ticket14-baseline/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 17, in <module>
+    from test_mempool_router import payload, registration
+  File "/tmp/ticket14-baseline/ascend-mempool-test/tests/unit/test_mempool_router.py", line 9, in <module>
+    from ascend_mempool_pd.mempool_router import MainRouter, RequestRejected
+ModuleNotFoundError: No module named 'ascend_mempool_pd.mempool_router'
+
+
+======================================================================
+ERROR: test_mempool_min_entry (unittest.loader._FailedTest.test_mempool_min_entry)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_mempool_min_entry
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/loader.py", line 137, in loadTestsFromName
+    module = __import__(module_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/ticket14-baseline/ascend-mempool-test/tests/unit/test_mempool_min_entry.py", line 17, in <module>
+    from test_mempool_router import payload, registration
+  File "/tmp/ticket14-baseline/ascend-mempool-test/tests/unit/test_mempool_router.py", line 9, in <module>
+    from ascend_mempool_pd.mempool_router import MainRouter, RequestRejected
+ModuleNotFoundError: No module named 'ascend_mempool_pd.mempool_router'
+
+
+======================================================================
+FAIL: test_defaults_and_unsupported_model_storage (test_config.TestMempoolConfig.test_defaults_and_unsupported_model_storage)
+Keep 16K defaults and reject non-BF16 or kernel-incompatible storage.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/ticket14-baseline/ascend-mempool-test/tests/unit/test_config.py", line 106, in test_defaults_and_unsupported_model_storage
+    with self.assertRaisesRegex(ValueError, "UINT32_MAX"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.000s
+
+FAILED (failures=1, errors=5)

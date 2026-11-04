@@ -1,0 +1,95 @@
+{
+  "run": 588,
+  "failures": [
+    [
+      "test_config.TestMempoolConfig.test_defaults_and_unsupported_model_storage",
+      "Traceback (most recent call last):\n  File \"/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_config.py\", line 106, in test_defaults_and_unsupported_model_storage\n    with self.assertRaisesRegex(ValueError, \"UINT32_MAX\"):\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ValueError not raised\n"
+    ],
+    [
+      "test_mempool_session_acceptance.TestSessionAcceptance.test_cleanup_checks_actual_session_ports_not_reserved_range",
+      "Traceback (most recent call last):\n  File \"/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py\", line 252, in test_cleanup_checks_actual_session_ports_not_reserved_range\n    self.assertEqual(decode, {8001, *(25686 + 33 * rank for rank in range(16))})\nAssertionError: Items in the first set but not the second:\n10000\n"
+    ],
+    [
+      "test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints (options={}, role='prefill')",
+      "Traceback (most recent call last):\n  File \"/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py\", line 283, in test_service_ports_preserves_pair_and_shared_group_endpoints\n    self.assertEqual(\nAssertionError: Items in the first set but not the second:\n10000\n"
+    ],
+    [
+      "test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints (options={}, role='decode')",
+      "Traceback (most recent call last):\n  File \"/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py\", line 283, in test_service_ports_preserves_pair_and_shared_group_endpoints\n    self.assertEqual(\nAssertionError: Items in the first set but not the second:\n10000\n"
+    ],
+    [
+      "test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints (options={'prefill_shared': True}, role='prefill')",
+      "Traceback (most recent call last):\n  File \"/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py\", line 283, in test_service_ports_preserves_pair_and_shared_group_endpoints\n    self.assertEqual(\nAssertionError: Items in the first set but not the second:\n10000\n"
+    ],
+    [
+      "test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints (options={'prefill_shared': True}, role='decode')",
+      "Traceback (most recent call last):\n  File \"/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py\", line 283, in test_service_ports_preserves_pair_and_shared_group_endpoints\n    self.assertEqual(\nAssertionError: Items in the first set but not the second:\n10000\n"
+    ],
+    [
+      "test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints (options={'decode_shared': True}, role='prefill')",
+      "Traceback (most recent call last):\n  File \"/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py\", line 283, in test_service_ports_preserves_pair_and_shared_group_endpoints\n    self.assertEqual(\nAssertionError: Items in the first set but not the second:\n10000\n"
+    ],
+    [
+      "test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints (options={'decode_shared': True}, role='decode')",
+      "Traceback (most recent call last):\n  File \"/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_session_acceptance.py\", line 283, in test_service_ports_preserves_pair_and_shared_group_endpoints\n    self.assertEqual(\nAssertionError: Items in the first set but not the second:\n10000\n"
+    ]
+  ],
+  "errors": [
+    [
+      "test_mempool_min_entry.TestPreflightIdentity.test_matching_identities_keep_preflight_enabled",
+      "Traceback (most recent call last):\n  File \"/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py\", line 154, in test_matching_identities_keep_preflight_enabled\n    with self.environment() as npu_smi:\n         ^^^^^^^^^^^^^^^^^^\n  File \"/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/contextlib.py\", line 137, in __enter__\n    return next(self.gen)\n           ^^^^^^^^^^^^^^\n  File \"/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py\", line 104, in environment\n    patch.object(runner, \"available_port\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py\", line 1467, in __enter__\n    original, local = self.get_original()\n                      ^^^^^^^^^^^^^^^^^^^\n  File \"/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py\", line 1437, in get_original\n    raise AttributeError(\nAttributeError: <module 'run_mempool_min' from '/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/scripts/run_mempool_min.py'> does not have the attribute 'available_port'\n"
+    ],
+    [
+      "test_mempool_min_entry.TestPreflightIdentity.test_mismatch_keeps_both_identities_and_names_the_differing_field (field='versions.torch-npu')",
+      "Traceback (most recent call last):\n  File \"/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py\", line 131, in test_mismatch_keeps_both_identities_and_names_the_differing_field\n    self.environment() as npu_smi,\n    ^^^^^^^^^^^^^^^^^^\n  File \"/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/contextlib.py\", line 137, in __enter__\n    return next(self.gen)\n           ^^^^^^^^^^^^^^\n  File \"/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py\", line 104, in environment\n    patch.object(runner, \"available_port\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py\", line 1467, in __enter__\n    original, local = self.get_original()\n                      ^^^^^^^^^^^^^^^^^^^\n  File \"/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py\", line 1437, in get_original\n    raise AttributeError(\nAttributeError: <module 'run_mempool_min' from '/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/scripts/run_mempool_min.py'> does not have the attribute 'available_port'\n"
+    ],
+    [
+      "test_mempool_min_entry.TestPreflightIdentity.test_mismatch_keeps_both_identities_and_names_the_differing_field (field='model.manifest.config.json')",
+      "Traceback (most recent call last):\n  File \"/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py\", line 131, in test_mismatch_keeps_both_identities_and_names_the_differing_field\n    self.environment() as npu_smi,\n    ^^^^^^^^^^^^^^^^^^\n  File \"/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/contextlib.py\", line 137, in __enter__\n    return next(self.gen)\n           ^^^^^^^^^^^^^^\n  File \"/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py\", line 104, in environment\n    patch.object(runner, \"available_port\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py\", line 1467, in __enter__\n    original, local = self.get_original()\n                      ^^^^^^^^^^^^^^^^^^^\n  File \"/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py\", line 1437, in get_original\n    raise AttributeError(\nAttributeError: <module 'run_mempool_min' from '/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/scripts/run_mempool_min.py'> does not have the attribute 'available_port'\n"
+    ],
+    [
+      "test_mempool_min_entry.TestPreflightIdentity.test_mismatch_keeps_both_identities_and_names_the_differing_field (field='untracked_sha256.python/local.py')",
+      "Traceback (most recent call last):\n  File \"/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py\", line 131, in test_mismatch_keeps_both_identities_and_names_the_differing_field\n    self.environment() as npu_smi,\n    ^^^^^^^^^^^^^^^^^^\n  File \"/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/contextlib.py\", line 137, in __enter__\n    return next(self.gen)\n           ^^^^^^^^^^^^^^\n  File \"/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py\", line 104, in environment\n    patch.object(runner, \"available_port\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py\", line 1467, in __enter__\n    original, local = self.get_original()\n                      ^^^^^^^^^^^^^^^^^^^\n  File \"/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py\", line 1437, in get_original\n    raise AttributeError(\nAttributeError: <module 'run_mempool_min' from '/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/scripts/run_mempool_min.py'> does not have the attribute 'available_port'\n"
+    ],
+    [
+      "test_mempool_min_entry.TestPreflightIdentity.test_peer_disconnect_still_preserves_local_identity",
+      "Traceback (most recent call last):\n  File \"/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py\", line 165, in test_peer_disconnect_still_preserves_local_identity\n    with self.environment(), self.assertRaisesRegex(ConnectionError, \"peer\"):\n         ^^^^^^^^^^^^^^^^^^\n  File \"/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/contextlib.py\", line 137, in __enter__\n    return next(self.gen)\n           ^^^^^^^^^^^^^^\n  File \"/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_mempool_min_entry.py\", line 104, in environment\n    patch.object(runner, \"available_port\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py\", line 1467, in __enter__\n    original, local = self.get_original()\n                      ^^^^^^^^^^^^^^^^^^^\n  File \"/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/mock.py\", line 1437, in get_original\n    raise AttributeError(\nAttributeError: <module 'run_mempool_min' from '/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/scripts/run_mempool_min.py'> does not have the attribute 'available_port'\n"
+    ]
+  ],
+  "skipped": [],
+  "cached_green": [
+    "test_bandwidth.TestBandwidthPlan.test_eight_k_is_one_layer_and_writers_partition_one_copy",
+    "test_bandwidth.TestBandwidthPlan.test_empty_or_incomplete_measurements_cannot_be_reported_as_passed",
+    "test_bandwidth.TestBandwidthPlan.test_layer_completion_waits_for_all_writers_before_taking_median",
+    "test_bandwidth.TestBandwidthPlan.test_report_uses_concurrent_span_and_actual_operation_samples"
+  ],
+  "unique_failing_methods": 6,
+  "passed_methods": 582,
+  "distinct_methods": 592,
+  "distinct_passed_methods": 586,
+  "new_methods_passed": 6,
+  "baseline_reproduced_methods": [
+    "test_config.TestMempoolConfig.test_defaults_and_unsupported_model_storage",
+    "test_mempool_min_entry.TestPreflightIdentity.test_matching_identities_keep_preflight_enabled",
+    "test_mempool_min_entry.TestPreflightIdentity.test_mismatch_keeps_both_identities_and_names_the_differing_field",
+    "test_mempool_min_entry.TestPreflightIdentity.test_peer_disconnect_still_preserves_local_identity",
+    "test_mempool_session_acceptance.TestSessionAcceptance.test_cleanup_checks_actual_session_ports_not_reserved_range",
+    "test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints"
+  ],
+  "baseline_note": "The first archive omitted Ascend PD modules: five methods did not execute at import. Added the original modules and ran those five; config test was not repeated.",
+  "npu_executed": false,
+  "user_accepted": false,
+  "ruff": true,
+  "mypy_strict_modules": 7,
+  "shell_syntax": true,
+  "renderer": "Six SVG groups rendered from explicitly synthetic layout-only data; not performance evidence.",
+  "reviews": {
+    "Standards": {
+      "unresolved": 0
+    },
+    "Spec": {
+      "unresolved": 0
+    }
+  },
+  "base": "50395d0b3b0dfd97090a96aaef56e4cf3e98da5d"
+}
