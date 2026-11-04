@@ -423,8 +423,7 @@ class PrefixStore:
                         0, 0, region="prefix_" + region, segment=segment
                     )
                     alive_block = alive.page_block(
-                        operation.slot * (alive.layout.tokens // self.page_size)
-                        + alive_page
+                        alive.physical_page(operation.slot, alive_page)
                     )
                     prefix_block = prefix.page_block(local_page)
                     src, dst = (
@@ -939,7 +938,7 @@ class PrefixStore:
                     continue
                 source = self._rows([offset for _, offset in selected])
                 target = self._rows([position for position, _ in selected])
-                target += operation.slot * self.manager.layout.prompt.tokens
+                target += operation.slot * self.manager.view(0, 0).token_capacity
                 valid = torch.ones_like(source, dtype=torch.bool)
                 operation.retained.extend((source, target, valid))
                 self._copy_region(
@@ -1046,7 +1045,7 @@ class PrefixStore:
                 [offset for _, offset in pages], dtype=torch.int64, device=self.device
             )
             source = (source[:, None] * self.page_size + offsets).flatten()
-            source += operation.slot * self.manager.layout.prompt.tokens
+            source += operation.slot * self.manager.view(0, 0).token_capacity
             target = (target[:, None] * self.page_size + offsets).flatten()
             valid = torch.ones_like(source, dtype=torch.bool)
             operation.retained.extend((source, target, valid))

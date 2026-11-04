@@ -49,6 +49,20 @@ def prefill_batch(lengths=(2, 1), prefixes=(0, 0), rows=(1, 2)):
 class TestMempoolRuntime(unittest.TestCase):
     """Use real binding/index/counter logic with fake BM and device completion."""
 
+    def test_page_table_retirement_fail_stops_before_forward(self):
+        from ascend_mempool.alive_pages import PageLease
+
+        runtime, _, _ = self.make_runtime(layers=1)
+        manager = runtime.manager
+        manager.enable_page_tables("cpu")
+        lease = PageLease("r", 1, (3, 1))
+        manager.install_pages(0, 0, lease)
+        runtime.bind(1, slot=0, prompt_tokens=2)
+        manager.clear_pages(0, 0, lease)
+        with self.assertRaisesRegex(RuntimeError, "stale request page table"):
+            runtime.begin_forward([KVWriteExpectation(1, 0, 1)])
+        self.assertIsNotNone(runtime.fault)
+
     def test_page_writers_touch_only_their_half_and_allow_an_empty_suffix_share(self):
         from ascend_mempool.page_write import PageWriter
 
@@ -189,9 +203,11 @@ class TestMempoolRuntime(unittest.TestCase):
             runtime.poll_completed()
         self.assertFalse(runtime.writes_done(1))
 
-    def make_runtime(self, rank=0, layers=2, **kwargs):
+    def make_runtime(self, rank=0, layers=2, page_size=1, **kwargs):
         """Open small local storage and inject only SDK/kernel/event boundaries."""
-        layout = KVLayout(layers=layers, slots=16, tokens=8, heads=1, dim=4)
+        layout = KVLayout(
+            layers=layers, slots=16, tokens=8, heads=1, dim=4, page_size=page_size
+        )
         manager = MempoolKVManager.create(
             PoolLayout(layout, layout), rank, bm_module=FakeBM(rank)
         )

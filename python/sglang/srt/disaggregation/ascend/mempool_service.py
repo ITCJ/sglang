@@ -313,7 +313,7 @@ class MempoolPDService:
         if (
             self.control.local.role == "decode"
             and req.sampling_params.max_new_tokens
-            > self.runtime.manager.layout.decode.tokens
+            > self.runtime.manager.view(1, 0).token_capacity
         ):
             record.cancel = True
         self._requests[room] = record

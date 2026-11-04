@@ -115,7 +115,7 @@ class TestPipelineSubmission(unittest.TestCase):
             setattr(pipeline, name, Mock())
         geometry = KVLayout(1, 16, 8192, 1, 288)
         work.pool.view.return_value = SimpleNamespace(
-            layout=geometry, layer=0, device_base=1234
+            layout=geometry, layer=0, device_base=1234, map_rows=geometry.physical_rows
         )
         pipeline.published = tensorlib.zeros((1, 1, 288), dtype=tensorlib.bfloat16)
         pipeline.publish_src = tensorlib.zeros(1, dtype=tensorlib.int64)

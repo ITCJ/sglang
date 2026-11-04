@@ -13,10 +13,19 @@ from ascend_mempool.observation import Observation, create_observation
 class TestObservation(unittest.TestCase):
     def test_trace_disabled_manifest_preserves_non_trace_checks(self):
         from analyze_k2_observation import summarize
+
         from ascend_mempool_pd.mempool_router_protocol import RouterConfig
 
         self.assertFalse(RouterConfig("p", "d", "/model").observe_trace)
-        common = dict(run_id="r", host="p", role="prefill", rank=0, pid=1, mono_ns=1, clock_domain="host:p")
+        common = dict(
+            run_id="r",
+            host="p",
+            role="prefill",
+            rank=0,
+            pid=1,
+            mono_ns=1,
+            clock_domain="host:p",
+        )
         data = [
             dict(
                 common,
@@ -452,11 +461,12 @@ class TestDeliveryContracts(unittest.TestCase):
 
     def test_empty_replay_snapshot_uses_integer_rows(self):
         import test_runtime
+
         from ascend_mempool.observation_device import PageObservation
 
         helper = test_runtime.TestMempoolRuntime()
         self.addCleanup(helper.doCleanups)
-        runtime, _, _ = helper.make_runtime(rank=1, layers=1)
+        runtime, _, _ = helper.make_runtime(rank=1, layers=1, page_size=4)
         with tempfile.TemporaryDirectory() as folder:
             runtime.observer = Observation(Path(folder), "empty", "decode", 0)
             self.addCleanup(runtime.observer.close)
@@ -479,7 +489,7 @@ class TestDeliveryContracts(unittest.TestCase):
 
         helper = test_runtime.TestMempoolRuntime()
         self.addCleanup(helper.doCleanups)
-        runtime, _, _ = helper.make_runtime(rank=1, layers=1)
+        runtime, _, _ = helper.make_runtime(rank=1, layers=1, page_size=4)
         with tempfile.TemporaryDirectory() as folder:
             observer = Observation(Path(folder), "r", "decode", 0)
             self.addCleanup(observer.close)

@@ -130,6 +130,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--describe", action="store_true")
     parser.add_argument("--replay-responses", type=Path)
+    parser.add_argument("--page-allocation", action="store_true")
     parser.add_argument("--observation-rounds", type=int, choices=(1, 2), default=1)
     args = parser.parse_args(argv)
     if (
@@ -466,7 +467,9 @@ class Runner:
         self.peer.barrier("preflight")
 
     def components(self) -> None:
-        if self.args.mode == "page-first-acceptance":
+        if self.args.mode == "page-first-acceptance" or getattr(
+            self.args, "page_allocation", False
+        ):
             self.page_first_probe()
         root = self.root / "fetch"
         env = service_environment(self.config, self.args, root, target=False)
@@ -546,6 +549,8 @@ class Runner:
                     sys.executable,
                     "-u",
                     str(SCRIPTS / "verify_page_first_copy.py"),
+                    "--page-size",
+                    str(self.config.page_size),
                     "--report",
                     str(root / "report.json"),
                 ],
@@ -580,7 +585,7 @@ class Runner:
             dict(
                 input_ids=[7] * self.config.page_size,
                 sampling_params=dict(
-                    temperature=0, max_new_tokens=self.config.decode_capacity + 1
+                    temperature=0, max_new_tokens=self.config.decode_capacity * 16 + 1
                 ),
             ),
             dict(text="unsupported"),
@@ -937,7 +942,10 @@ class Runner:
                         verify_mempool_min.check_response(case, result)
                         if (
                             target
-                            and not self.full
+                            and (
+                                not self.full
+                                or getattr(self.args, "page_allocation", False)
+                            )
                             and result["output_ids"]
                             != self.reference[index]["output_ids"]
                         ):
@@ -1246,7 +1254,10 @@ class Runner:
                 self.tokenizer, self.config.page_size
             )
             self.cases += mempool_logical_cases.make_controls(
-                self.tokenizer, self.config.page_size, self.config.decode_capacity
+                self.tokenizer,
+                self.config.page_size,
+                self.config.decode_capacity,
+                page_allocation=getattr(self.args, "page_allocation", False),
             )
             if self.index_acceptance:
                 self.cases += mempool_logical_cases.make_index_cases(

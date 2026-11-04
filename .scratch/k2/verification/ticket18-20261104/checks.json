@@ -1,0 +1,56 @@
+{
+  "base": "4026e92136bfe1943f0c679c88ccb91c4f8aec64",
+  "cpu_full": {
+    "run": 584,
+    "passed_suite": false,
+    "reason": "environment and existing failures; see logs"
+  },
+  "targeted": {
+    "run": 43,
+    "passed": 42,
+    "import_setup_failure": "test_http_startup: requests missing"
+  },
+  "http_after_dependency_setup": {
+    "run": 1,
+    "passed": 1,
+    "first_actual_test_execution": true
+  },
+  "known_existing_failed_methods": 6,
+  "mypy": {
+    "sources": 28,
+    "status": "passed",
+    "excluded": "NPU-only Triton restore_kernel"
+  },
+  "static": [
+    {
+      "tool": "isort",
+      "args": [
+        "--settings-path",
+        "ascend-mempool-test/pyproject.toml"
+      ],
+      "exit_code": 0,
+      "output": "Fixing /Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_observation.py\n"
+    },
+    {
+      "tool": "ruff",
+      "args": [
+        "format"
+      ],
+      "exit_code": 0,
+      "output": "5 files reformatted, 22 files left unchanged\n"
+    },
+    {
+      "tool": "ruff",
+      "args": [
+        "check",
+        "--config",
+        "ascend-mempool-test/pyproject.toml"
+      ],
+      "exit_code": 0,
+      "output": "All checks passed!\n"
+    }
+  ],
+  "compiled_files": 27,
+  "npu": "not-run",
+  "user_accepted": false
+}

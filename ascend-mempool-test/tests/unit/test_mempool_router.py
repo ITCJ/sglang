@@ -103,14 +103,23 @@ class TestMainRouter(unittest.TestCase):
         self.main.register(registration("prefill"))
         self.main.register(registration("decode"))
 
-    def test_reject_is_atomic_and_accept_reserves_whole_slots(self):
+    def test_generation_uses_region_pages_but_stays_within_context(self):
+        before = deepcopy(self.main.status())
+        with self.assertRaises(RequestRejected):
+            self.main.submit(payload(8192, 512))
+        self.assertEqual(self.main.status(), before)
+        self.main.submit(payload(4096, 513))
+        self.assertEqual(self.main.ledger["p_alive"].outstanding, 32)
+        self.assertEqual(self.main.ledger["d_alive"].outstanding, 5)
+
+    def test_reject_is_atomic_and_accept_reserves_request_pages(self):
         before = deepcopy(self.main.status())
         for data in (
             payload(64),
             payload(65),
             payload(192),
             payload(8256),
-            payload(new_tokens=129),
+            payload(new_tokens=2049),
             {"text": "no"},
         ):
             with self.assertRaises(RequestRejected):
@@ -118,7 +127,7 @@ class TestMainRouter(unittest.TestCase):
             self.assertEqual(self.main.status(), before)
         request = self.main.submit(payload())
         status = self.main.status()
-        self.assertEqual(status["ledger"]["p_alive"]["outstanding"], 64)
+        self.assertEqual(status["ledger"]["p_alive"]["outstanding"], 32)
         self.assertEqual(status["ledger"]["d_alive"]["outstanding"], 1)
         self.assertEqual(status["ledger"]["d_hbm"]["outstanding"], 33)
         self.assertEqual(status["ledger"]["d_rows"]["outstanding"], 1)
@@ -130,7 +139,7 @@ class TestMainRouter(unittest.TestCase):
         self.assertEqual(rejected.exception.status, 429)
         self.assertEqual(self.main.status(), status)
 
-    def test_ticket09_four_geometries_reserve_whole_decode_slots(self):
+    def test_ticket09_four_geometries_reserve_requested_decode_pages(self):
         for page_size, capacity, pages in (
             (128, 128, 1),
             (128, 512, 4),
@@ -283,7 +292,7 @@ class TestMainRouter(unittest.TestCase):
         )
         p_alloc = self.main.outbox.popleft()
         self.ack(
-            p_alloc, message={"opaque": "p"}, pages=[dict(page_size=128)] * 64, slot=5
+            p_alloc, message={"opaque": "p"}, pages=[dict(page_size=128)] * 32, slot=5
         )
         d_dispatch = self.main.outbox.popleft()
         self.ack(d_dispatch, message={"opaque": "bound"})
@@ -308,7 +317,7 @@ class TestMainRouter(unittest.TestCase):
         )
         status = self.main.status()
         self.assertEqual(status["ledger"]["d_hbm"]["outstanding"], 0)
-        self.assertEqual(status["ledger"]["p_alive"]["outstanding"], 64)
+        self.assertEqual(status["ledger"]["p_alive"]["outstanding"], 32)
         frees = [self.main.outbox.popleft(), self.main.outbox.popleft()]
         response = {"output_ids": [2, 3]}
         self.main.backend_result(request["rid"], response)
@@ -458,7 +467,10 @@ class TestPrefixMainRouter(unittest.TestCase):
         for tokens, expected in (([7] * 4096 + [8] * 1024, 4096), ([7] * 4096, 3968)):
             req, p_dispatch, d_dispatch = self.start_inference(tokens)
             self.assertEqual(req["hit_len"], expected)
-            self.assertEqual(self.main.ledger["p_alive"].outstanding, 64)
+            self.assertEqual(
+                self.main.ledger["p_alive"].outstanding,
+                len(self.main.active["request"]["input_ids"]) // 128,
+            )
             self.assertFalse(self.main.launches)
             load = self.main.outbox.popleft()
             self.assertEqual(load["kind"], "load_back")
@@ -576,10 +588,11 @@ class TestPrefixMainRouter(unittest.TestCase):
                         pool="alive_main",
                         region=f"prefill-{rank}",
                         replica=rank,
-                        logical_page=5 * 64 + page,
+                        logical_page=page,
+                        physical_page=page,
                         page_size=128,
                     )
-                    for page in range(64)
+                    for page in range(len(data["input_ids"]) // 128)
                 ],
             ),
         )
@@ -772,7 +785,10 @@ class TestPrefixMainRouter(unittest.TestCase):
                     self.main.receive(ack)
                 self.assertIsNotNone(self.main.fault)
                 self.assertFalse(self.main.outbox)
-                self.assertEqual(self.main.ledger["p_alive"].outstanding, 64)
+                self.assertEqual(
+                    self.main.ledger["p_alive"].outstanding,
+                    len(self.main.active["request"]["input_ids"]) // 128,
+                )
                 self.assertTrue(
                     all(node["lock_ref"] == 1 for node in self.main.directory.values())
                 )

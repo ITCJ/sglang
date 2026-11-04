@@ -15,6 +15,7 @@ from typing import Any, Protocol
 
 import msgspec
 
+from .alive_pages import PageLease
 from .diagnostics import startup_stage
 from .layout import KVLayout, PoolLayout, check_index
 from .sharing_plan import (
@@ -106,6 +107,9 @@ class MempoolKVManager:
         self.session: PoolSession | None = None
         self.owners = (0, 1)
         self.contribution = layout.contribution_bytes(rank)
+        self.page_tables: dict[tuple[int, str], Any] = {}
+        self.page_leases: dict[tuple[int, int], PageLease] = {}
+        self.active_page_versions: dict[tuple[int, int], int] = {}
 
     @classmethod
     def create(
@@ -582,6 +586,45 @@ class MempoolKVManager:
             numa_evidence=evidence,
         )
 
+    def enable_page_tables(self, device: str) -> None:
+        """Allocate stable lookup buffers before capture; handles own no storage."""
+        import torch
+
+        for rank in (0, 1):
+            for region, (_, layout) in self.layout.regions(rank).items():
+                if region.startswith("alive_"):
+                    self.page_tables[rank, region] = torch.full(
+                        (layout.slots, layout.physical_pages),
+                        -1,
+                        dtype=torch.int64,
+                        device=device,
+                    )
+
+    def install_pages(self, rank: int, handle: int, lease: PageLease) -> None:
+        """Update contents only, on the scheduler stream before binding's event."""
+        import torch
+
+        previous = self.page_leases.get((rank, handle))
+        if previous is not None and lease.version <= previous.version:
+            raise RuntimeError("stale device page table version")
+        self.page_leases[rank, handle] = lease
+        self.active_page_versions[rank, handle] = lease.version
+        for (side, _), table in self.page_tables.items():
+            if side == rank:
+                table[handle].fill_(-1)
+                table[handle, : len(lease.pages)].copy_(
+                    torch.tensor(lease.pages, dtype=torch.int64, device=table.device)
+                )
+
+    def clear_pages(self, rank: int, handle: int, lease: PageLease) -> None:
+        if self.page_leases.get((rank, handle)) != lease:
+            raise RuntimeError("stale device page table release")
+        for (side, _), table in self.page_tables.items():
+            if side == rank:
+                table[handle].fill_(-1)
+        del self.active_page_versions[rank, handle]
+        # Retain the version boundary so a delayed installation cannot revive it.
+
     def view(
         self,
         rank: int,
@@ -598,7 +641,7 @@ class MempoolKVManager:
         else:
             offset, layout = self.layout.regions(rank)[region]
         check_index("layer", layer, layout.layers)
-        return MempoolKVView(self, rank, layer, layout, offset, participant)
+        return MempoolKVView(self, rank, layer, layout, offset, participant, region)
 
     def bases(self, rank: int) -> tuple[int, int]:
         """Return this process's verified GVA and NPU base for a pool rank."""
@@ -698,6 +741,33 @@ class MempoolKVView(msgspec.Struct, frozen=True):
     layout: KVLayout
     region_offset: int = 0
     participant: int | None = None
+    region: str = "alive_main"
+
+    @property
+    def token_capacity(self) -> int:
+        if (self.rank, self.region) in self.owner.page_tables:
+            return self.layout.physical_pages * self.layout.page_size
+        return self.layout.tokens
+
+    def physical_page(self, handle: int, logical_page: int) -> int:
+        check_index(
+            "logical page", logical_page, self.token_capacity // self.layout.page_size
+        )
+        if (self.rank, self.region) in self.owner.page_tables:
+            return self.owner.page_leases[self.rank, handle].pages[logical_page]
+        return handle * (self.layout.tokens // self.layout.page_size) + logical_page
+
+    def map_rows(self, rows: Any) -> Any:
+        table = self.owner.page_tables.get((self.rank, self.region))
+        if table is None:
+            return self.layout.physical_rows(rows)
+        handle = rows // self.token_capacity
+        position = rows % self.token_capacity
+        page = table[handle, position // self.layout.page_size]
+        return (
+            page * (self.layout.layers * self.layout.page_size)
+            + position % self.layout.page_size
+        )
 
     @property
     def shape(self) -> tuple[int, int, int, int]:
@@ -727,24 +797,36 @@ class MempoolKVView(msgspec.Struct, frozen=True):
             + self.layer * self.layout.page_size * self.layout.row_bytes
         )
 
+    def _element_offset(self, handle: int, token: int, head: int, column: int) -> int:
+        check_index("slot", handle, self.layout.slots)
+        check_index("token", token, self.token_capacity)
+        check_index("head", head, self.layout.heads)
+        check_index("column", column, self.layout.dim)
+        return (
+            self.layout.page_offset(
+                self.physical_page(handle, token // self.layout.page_size)
+            )
+            + (self.layer * self.layout.page_size + token % self.layout.page_size)
+            * self.layout.row_bytes
+            + (head * self.layout.dim + column) * self.layout.element_bytes
+        )
+
     def element_gva(self, slot: int, token: int, head: int = 0, column: int = 0) -> int:
         """Resolve a checked logical element to its SDK GVA."""
-        offset = self.layout.byte_offset(self.layer, slot, token, head, column)
         return (
             self.owner.view_bases(self.rank, self.participant)[0]
             + self.region_offset
-            + offset
+            + self._element_offset(slot, token, head, column)
         )
 
     def element_device_ptr(
         self, slot: int, token: int, head: int = 0, column: int = 0
     ) -> int:
-        """Resolve a checked logical element to its local NPU address."""
-        offset = self.layout.byte_offset(self.layer, slot, token, head, column)
+        """Resolve a checked logical element to its NPU address."""
         return (
             self.owner.view_bases(self.rank, self.participant)[1]
             + self.region_offset
-            + offset
+            + self._element_offset(slot, token, head, column)
         )
 
     def page_block(self, physical_page: int) -> tuple[int, int, int]:

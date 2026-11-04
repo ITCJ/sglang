@@ -97,9 +97,11 @@ class MempoolKVOffload:
             & (slots >= 0)
             & (slots < layout.slots)
             & (positions >= 0)
-            & (positions < layout.tokens)
+            & (positions < self.target.token_capacity)
         )
-        destination = torch.where(valid, slots * layout.tokens + positions, 0)
+        destination = torch.where(
+            valid, slots * self.target.token_capacity + positions, 0
+        )
         heads = torch.arange(layout.heads, dtype=torch.int64, device=values.device)
         source = torch.arange(rows, dtype=torch.int64, device=values.device)
         if self.parts > 1:

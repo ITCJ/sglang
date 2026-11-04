@@ -50,6 +50,11 @@ def main() -> int:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--sdk-build-id", required=True)
+    parser.add_argument(
+        "--page-allocation",
+        action="store_true",
+        help="ticket18: scattered-page Graph gate and 4K/8K/1K service sequence",
+    )
     parser.add_argument("--describe", action="store_true")
     parser.add_argument(
         "--start-from",
@@ -62,6 +67,11 @@ def main() -> int:
             "run-id must be a simple new directory name, at most 60 characters"
         )
     configs = configurations(RouterConfig.read(str(args.config)), args.sdk_build_id)
+    if args.page_allocation:
+        configs = [
+            (name, msgspec.structs.replace(c, observe_trace=False))
+            for name, c in configs
+        ]
     if args.start_from:
         configs = configs[[name for name, _ in configs].index(args.start_from) :]
     if args.describe:
@@ -77,6 +87,7 @@ def main() -> int:
     report = dict(
         status="failed",
         user_accepted=False,
+        page_allocation=args.page_allocation,
         combinations={name: dict(status="not-run") for name, _ in configs},
     )
     child = None
@@ -106,6 +117,7 @@ def main() -> int:
                     child_id,
                     "--log-root",
                     str(root),
+                    *(["--page-allocation"] if args.page_allocation else []),
                 ]
             )
             code = child.wait()

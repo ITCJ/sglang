@@ -668,10 +668,10 @@ class TestSubrouter(unittest.TestCase):
         shard.track(req)
         self.assertIs(shard.req, req)
 
-    def test_whole_slot_descriptors_use_unified_pages(self):
+    def test_request_descriptors_use_only_reserved_pages(self):
         d = self.command("decode", "alloc", request=self.request)
         p = self.command("prefill", "alloc", request=self.request, bindings=d["ranks"])
-        for result, count in ((p, 64), (d, 1)):
+        for result, count in ((p, 1), (d, 1)):
             for rank in result["ranks"]:
                 self.assertEqual(len(rank["pages"]), count)
                 self.assertEqual(

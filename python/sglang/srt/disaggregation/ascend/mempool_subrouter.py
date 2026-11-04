@@ -18,6 +18,8 @@ if TYPE_CHECKING:
     from sglang.srt.hardware_backend.npu.mempool.page_write import PageWriter
     from sglang.srt.hardware_backend.npu.mempool.prefix import PrefixStore
 
+from sglang.srt.hardware_backend.npu.mempool.alive_pages import AlivePages, PageLease
+
 from .mempool_accounting import PromptCoverage, ReplicaReaders
 from .mempool_control import MempoolPDControl
 from .mempool_native_reservation import NativeReservations
@@ -47,6 +49,7 @@ class RouterShard:
         main_region: str | None = None,
         page_writers: Sequence[PageWriter] = (),
         index_writers: Sequence[PageWriter] = (),
+        manager: Any = None,
     ) -> None:
         self.control, self.native, self.effect, self.reply_to = (
             control,
@@ -89,6 +92,19 @@ class RouterShard:
         if native is not None and native.allocator.page_size != page_size:
             raise ValueError("SR native and DRAM page_size differ")
         self.page_size = page_size
+        self.manager = manager
+        capacity = (
+            control.local.layout.prompt_tokens
+            if control.local.role == "prefill"
+            else control.local.layout.decode_tokens
+        )
+        self.alive = AlivePages(
+            control.local.layout.slots * capacity // page_size, page_size=page_size
+        )
+        self.page_lease: PageLease | None = None
+        self.peer_page_lease: PageLease | None = None
+        self.page_handle = -1
+        self.peer_page_handle = -1
 
     @property
     def prefix_region(self) -> str:
@@ -220,6 +236,17 @@ class RouterShard:
                     self._binding(command), slot
                 )
             self.identity = message.request
+            tokens = (
+                request["prompt_tokens"]
+                if role == "prefill"
+                else request["max_new_tokens"]
+            )
+            self.page_lease = self.alive.reserve(request["attempt"], tokens)
+            self.page_handle = slot
+            if self.manager is not None:
+                self.manager.install_pages(
+                    0 if role == "prefill" else 1, slot, self.page_lease
+                )
             if self.prefix is not None:
                 self.prefix.begin_request(
                     rid=request["rid"], slot=slot, tokens=request["prompt_tokens"]
@@ -250,20 +277,17 @@ class RouterShard:
             self.last_coverage = None
             result["message"] = native_wire(message)
             result["slot"] = slot
-            capacity = (
-                self.control.local.layout.prompt_tokens
-                if role == "prefill"
-                else self.control.local.layout.decode_tokens
-            )
+            result["page_version"] = self.page_lease.version
             result["pages"] = [
                 dict(
                     pool="alive_main",
                     region=self.main_region,
                     replica=self.main_owner,
-                    logical_page=slot * (capacity // self.page_size) + i,
+                    logical_page=i,
+                    physical_page=page,
                     page_size=self.page_size,
                 )
-                for i in range(capacity // self.page_size)
+                for i, page in enumerate(self.page_lease.pages)
             ]
         else:
             if (
@@ -277,6 +301,18 @@ class RouterShard:
             if kind == "dispatch":
                 if self.dispatch is not None or command["request"] != self.request:
                     raise ValueError("dispatch conflicts with allocation")
+                if role == "decode":
+                    peer = command["bindings"][rank]
+                    self.peer_page_handle = peer["slot"]
+                    self.peer_page_lease = PageLease(
+                        command["attempt"],
+                        peer["page_version"],
+                        tuple(page["physical_page"] for page in peer["pages"]),
+                    )
+                    if self.manager is not None:
+                        self.manager.install_pages(
+                            0, self.peer_page_handle, self.peer_page_lease
+                        )
                 reply = self.control.router_bind(self._binding(command))
                 if reply is not None:
                     result["message"] = native_wire(reply)
@@ -297,6 +333,17 @@ class RouterShard:
                 if self.prefix is not None:
                     self.prefix.assert_source_releasable(command["rid"])
                 self.control.router_free(self.identity)
+                assert self.page_lease is not None
+                self.alive.release(self.page_lease)
+                if self.manager is not None:
+                    self.manager.clear_pages(
+                        0 if role == "prefill" else 1, self.page_handle, self.page_lease
+                    )
+                    if self.peer_page_lease is not None:
+                        self.manager.clear_pages(
+                            0, self.peer_page_handle, self.peer_page_lease
+                        )
+                self.page_lease = self.peer_page_lease = None
                 if self.prefix is not None:
                     self.prefix.release_source(command["rid"])
                 if self.restore is not None:
@@ -410,7 +457,7 @@ class RouterShard:
         sources, pages = command["sources"], command["source_pages"]
         if [source["rank"] for source in sources] != list(range(16)):
             raise ValueError("admit source is missing TP ranks")
-        capacity = self.control.local.layout.prompt_tokens // self.page_size
+        assert self.page_lease is not None
         expected = dict(
             rank=rank,
             slot=state.p_slot.slot,
@@ -419,7 +466,8 @@ class RouterShard:
                     pool="alive_main",
                     region=self.main_region,
                     replica=self.main_owner,
-                    logical_page=state.p_slot.slot * capacity + page,
+                    logical_page=page,
+                    physical_page=self.page_lease.pages[page],
                     page_size=self.page_size,
                 )
                 for page in pages
@@ -591,6 +639,7 @@ class MempoolSubrouter:
                 incoming=incoming,
                 facts=list(facts),
                 free=free,
+                alive_free=self.shard.alive.free_count,
                 prefix_free=prefix_free,
                 state=state,
                 registration=registration,
@@ -613,7 +662,8 @@ class MempoolSubrouter:
                     )
                 )
             if any(
-                o["free"] != observations[0]["free"]
+                o["alive_free"] != observations[0]["alive_free"]
+                or o["free"] != observations[0]["free"]
                 or o["prefix_free"] != observations[0]["prefix_free"]
                 or o["state"] != observations[0]["state"]
                 for o in observations

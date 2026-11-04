@@ -107,9 +107,9 @@ class SparseKVCopy:
             & (inputs.d_slots >= 0)
             & (inputs.d_slots < d_layout.slots)
             & (inputs.prompt_lengths >= 0)
-            & (inputs.prompt_lengths <= p_layout.tokens)
+            & (inputs.prompt_lengths <= self.prompt.token_capacity)
             & (inputs.decode_lengths >= 0)
-            & (inputs.decode_lengths <= d_layout.tokens)
+            & (inputs.decode_lengths <= self.decode.token_capacity)
         ).unsqueeze(1)
         position = inputs.positions
         prompt_length = inputs.prompt_lengths.unsqueeze(1)
@@ -124,11 +124,13 @@ class SparseKVCopy:
             & (decode_position < inputs.decode_lengths.unsqueeze(1))
         )
         p_index = torch.where(
-            p_valid, inputs.p_slots.unsqueeze(1) * p_layout.tokens + position, 0
+            p_valid,
+            inputs.p_slots.unsqueeze(1) * self.prompt.token_capacity + position,
+            0,
         )
         d_index = torch.where(
             d_valid,
-            inputs.d_slots.unsqueeze(1) * d_layout.tokens + decode_position,
+            inputs.d_slots.unsqueeze(1) * self.decode.token_capacity + decode_position,
             0,
         )
         return (

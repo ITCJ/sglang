@@ -318,12 +318,35 @@ def check_pages(
             ):
                 raise ValueError("DRAM/HBM page_size registration mismatch")
             pages = allocated["pages"]
-            start = allocated["slot"] * (capacity // page_size)
-            if len(pages) != capacity // page_size or any(
+            paged = "page_version" in allocated
+            start = 0 if paged else allocated["slot"] * (capacity // page_size)
+            tokens = (
+                len(case["input_ids"])
+                if role == "prefill"
+                else case["sampling_params"]["max_new_tokens"]
+            )
+            count = (
+                (tokens + page_size - 1) // page_size
+                if paged
+                else capacity // page_size
+            )
+            if paged and done["needed"][ledger] != count:
+                raise ValueError("MR reserved pages differ from the request budget")
+            if paged and (
+                len({p["physical_page"] for p in pages}) != count
+                or any(
+                    not 0 <= p["physical_page"] < 16 * capacity // page_size
+                    for p in pages
+                )
+            ):
+                raise ValueError("SR physical pages overlap or exceed region capacity")
+            if len(pages) != count or any(
                 p["page_size"] != page_size or p["logical_page"] != start + i
                 for i, p in enumerate(pages)
             ):
-                raise ValueError("SR logical pages differ from the whole-slot budget")
+                raise ValueError(
+                    "SR logical pages differ from the reserved page budget"
+                )
             if role == "decode":
                 needed = (
                     len(case["input_ids"])

@@ -374,7 +374,9 @@ class MempoolPDControl:
         ):
             raise ValueError("prompt length exceeds mempool capacity")
         if type(decode_tokens) is not int or not (
-            0 <= decode_tokens <= self.local.layout.decode_tokens
+            0
+            <= decode_tokens
+            <= self.local.layout.decode_tokens * self.local.layout.slots
         ):
             raise ValueError("decode limit exceeds mempool capacity")
         if not isinstance(reply_to, str) or not reply_to.strip():
@@ -673,7 +675,7 @@ class MempoolPDControl:
             raise ValueError("ACQUIRE is missing required metadata")
         if prompt_tokens > self.local.layout.prompt_tokens:
             raise ValueError("ACQUIRE prompt length exceeds P mempool capacity")
-        if decode_tokens > self.local.layout.decode_tokens:
+        if decode_tokens > self.local.layout.decode_tokens * self.local.layout.slots:
             raise ValueError("ACQUIRE decode limit exceeds D mempool capacity")
         if d_slot.slot >= self.local.layout.slots:
             raise ValueError("ACQUIRE D slot is outside the paired pool")

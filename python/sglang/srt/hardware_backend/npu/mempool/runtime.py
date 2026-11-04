@@ -61,6 +61,7 @@ class KVRowBinding(msgspec.Struct, frozen=True, eq=False):
     prompt_tokens: int
     prompt_slot: Optional[int] = None
     write_start: int = 0
+    page_versions: tuple[tuple[int, int, int], ...] = ()
 
 
 class KVWriteReceipt(msgspec.Struct, frozen=True):
@@ -345,12 +346,22 @@ class MempoolRuntime:
             raise RuntimeError("request row is already bound or in-flight")
         if any(binding.attachment.slot == slot for binding in self._bindings.values()):
             raise RuntimeError("mempool slot is already bound")
+        page_handles = [(self.manager.rank, slot)]
+        if self.manager.rank == 1:
+            assert prompt_slot is not None
+            page_handles.append((0, prompt_slot))
         attachment = KVRowBinding(
             req_pool_idx,
             slot,
             prompt_tokens,
             prompt_slot,
             prompt_tokens if self.manager.rank == 1 else start_position,
+            tuple(
+                (side, handle, self.manager.active_page_versions[side, handle])
+                for side, handle in page_handles
+            )
+            if self.manager.page_tables
+            else (),
         )
         self._bindings[req_pool_idx] = _Binding(attachment)
         self.row_slot[req_pool_idx] = slot
@@ -411,6 +422,13 @@ class MempoolRuntime:
         progress = self._bindings.get(req_pool_idx)
         if binding is None or progress is None or progress.attachment is not binding:
             raise RuntimeError("request row has no matching mempool binding")
+        self._check_page_versions(binding)
+
+    def _check_page_versions(self, binding: KVRowBinding) -> None:
+        for side, handle, version in binding.page_versions:
+            if self.manager.active_page_versions.get((side, handle)) != version:
+                self.fault = "stale request page table before forward"
+                raise RuntimeError(self.fault)
 
     def prepare_forward(self, writes: Sequence[KVWriteExpectation]) -> None:
         """Save scheduler-approved host expectations for exactly one model call."""
@@ -511,13 +529,19 @@ class MempoolRuntime:
             binding = self._bindings.get(write.req_pool_idx)
             if binding is None:
                 raise RuntimeError("real forward request has no mempool binding")
+            self._check_page_versions(binding.attachment)
             base = binding.attachment.write_start
             if write.start_position != base + binding.submitted:
                 raise ValueError(
                     "expected writes must continue the submitted KV prefix"
                 )
             limit = (
-                self.layout.tokens
+                (
+                    len(self.manager.page_leases[1, binding.attachment.slot].pages)
+                    * self.layout.page_size
+                    if self.manager.page_tables
+                    else self.layout.tokens
+                )
                 if self.manager.rank == 1
                 else binding.attachment.prompt_tokens - base
             )
@@ -588,7 +612,9 @@ class MempoolRuntime:
         prompt = self.row_prompt_len[safe_req]
         local_pos = positions - prompt if self.manager.rank == 1 else positions
         valid = native_valid & row_valid & (slots >= 0) & (local_pos >= 0)
-        valid = valid & (local_pos < self.layout.tokens)
+        valid = valid & (
+            local_pos < self.manager.view(self.manager.rank, 0).token_capacity
+        )
         if self._fetch is not None:
             # A repeated or skipped device position must not count as a new
             # readable token when graph inputs disagree with host expectations.
@@ -1103,9 +1129,7 @@ class MempoolRuntime:
                                     ]
                                     if session and session.main_groups
                                     else self.manager.numa_node,
-                                    physical_page=slot
-                                    * (view.layout.tokens // self.observation_page_size)
-                                    + offset,
+                                    physical_page=view.physical_page(slot, offset),
                                 )
                             )
                     hashes = self.observation_hashes[identity["rid"]]
@@ -1399,6 +1423,8 @@ def initialize_for_model_runner(model_runner: Any) -> None:
             if prefix_pages and manager.rank == 0
             else None
         )
+        if router is not None:
+            manager.enable_page_tables(model_runner.device)
         runtime = MempoolRuntime(
             manager,
             req_pool_rows=model_runner.req_to_token_pool.req_to_token.shape[0],

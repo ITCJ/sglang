@@ -182,6 +182,7 @@ def attach_subrouter(
         main_region=session.identity if session is not None else None,
         page_writers=[writers[rank] for rank in range(16)] if writers else (),
         index_writers=index_writers,
+        manager=runtime.manager,
     )
     connection = (
         SRConnection(config.control_endpoint, role, control.local.session)

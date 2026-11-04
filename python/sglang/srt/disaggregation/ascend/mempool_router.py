@@ -238,7 +238,8 @@ class MainRouter:
         new = sampling.get("max_new_tokens")
         if (
             type(new) is not int
-            or not 1 <= new <= self.config.decode_capacity
+            or not 1 <= new <= self.config.decode_capacity * 16
+            or len(tokens) + new > self.config.context_length
             or sampling.get("temperature") != 0
             or sampling.get("top_k", 1) != 1
             or sampling.get("top_p", 1) != 1
@@ -247,11 +248,11 @@ class MainRouter:
         ):
             raise RequestRejected(
                 "requires greedy, non-streaming generation within "
-                f"{self.config.decode_capacity} tokens"
+                f"{self.config.decode_capacity * 16} tokens"
             )
         needed = dict(
-            p_alive=self.config.prompt_capacity // page_size,
-            d_alive=self.config.decode_capacity // page_size,
+            p_alive=(len(tokens) + page_size - 1) // page_size,
+            d_alive=(new + page_size - 1) // page_size,
             d_hbm=(len(tokens) + new + page_size - 1) // page_size,
             d_rows=1,
         )
@@ -546,12 +547,7 @@ class MainRouter:
                 side=role,
             )
         if kind == "alloc_ack":
-            capacity = (
-                self.config.prompt_capacity
-                if role == "prefill"
-                else self.config.decode_capacity
-            )
-            pages = capacity // self.config.page_size
+            pages = active["needed"]["p_alive" if role == "prefill" else "d_alive"]
             if len({r["slot"] for r in ranks}) != 1 or any(
                 len(r["pages"]) != pages
                 or any(p["page_size"] != self.config.page_size for p in r["pages"])
@@ -862,6 +858,7 @@ class MainRouter:
                 room=active["request"]["room"],
                 result=active["result"],
                 allocations=active["allocations"],
+                needed=active["needed"],
                 events=active["events"],
                 trace=active["trace"],
                 hit_len=active["request"]["hit_len"],

@@ -11,16 +11,26 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from ascend_mempool.alive_pages import PageLease
 from ascend_mempool.indexed_copy import copy_rows
-from ascend_mempool.layout import KVLayout
-from ascend_mempool.manager import MempoolKVView
+from ascend_mempool.layout import KVLayout, PoolLayout
+from ascend_mempool.manager import MempoolKVManager, MempoolKVView
 from ascend_mempool.offload import MempoolKVOffload
 
 
 def check_geometry(layout, torch):
     storage = torch.empty(layout.total_bytes // 2, dtype=torch.bfloat16, device="npu")
     base = storage.data_ptr()
-    owner = SimpleNamespace(rank=0, view_bases=lambda rank, participant: (base, base))
+    owner = SimpleNamespace(
+        rank=0,
+        layout=PoolLayout(layout, layout),
+        page_tables={},
+        page_leases={},
+        active_page_versions={},
+        view_bases=lambda rank, participant: (base, base),
+    )
+    MempoolKVManager.enable_page_tables(owner, "npu")
+    pointer = owner.page_tables[0, "alive_main"].data_ptr()
     view = MempoolKVView(owner, 0, layout.layers - 1, layout)
     slots = torch.zeros(3, dtype=torch.int64, device="npu")
     positions = torch.tensor(
@@ -50,7 +60,7 @@ def check_geometry(layout, torch):
                 kernel,
                 dtype,
                 output,
-                slots * layout.tokens + positions,
+                slots * view.token_capacity + positions,
                 destination,
                 valid,
                 row_bytes=layout.row_bytes,
@@ -62,7 +72,17 @@ def check_geometry(layout, torch):
         graph = torch.npu.NPUGraph()
         with torch.npu.graph(graph, stream=stream, auto_dispatch_capture=True):
             launch()
-        for slot, enabled in [(layout.slots - 1, True), (0, True), (0, False)]:
+        for version, enabled in [(1, True), (2, True), (3, False)]:
+            slot = 0
+            pages = tuple(
+                layout.physical_pages - 1 - 2 * i if version == 1 else 2 * i
+                for i in range(layout.tokens // layout.page_size)
+            )
+            MempoolKVManager.install_pages(
+                owner, 0, slot, PageLease("probe", version, pages)
+            )
+            if owner.page_tables[0, "alive_main"].data_ptr() != pointer:
+                raise AssertionError("page table address changed")
             slots.fill_(slot)
             valid.fill_(enabled)
             output.fill_(-1)
@@ -77,8 +97,7 @@ def check_geometry(layout, torch):
                 # Independent physical tensor view validates the write even if
                 # the write and read adapters share an incorrect row formula.
                 physical = storage.view(
-                    layout.slots,
-                    layout.tokens // layout.page_size,
+                    layout.physical_pages,
                     layout.layers,
                     layout.page_size,
                     1,
@@ -86,7 +105,7 @@ def check_geometry(layout, torch):
                 )
                 oracle = torch.stack(
                     [
-                        physical[slot, page, -1, token]
+                        physical[pages[page], -1, token]
                         for page, token in [
                             (0, layout.page_size - 1),
                             (1, 0),
@@ -107,13 +126,19 @@ def check_geometry(layout, torch):
         layers=layout.layers,
         page_size=layout.page_size,
         device_base=hex(base),
-        cases=["cross-page", "last-slot", "changed-slot", "zero-valid-replay"],
+        cases=[
+            "scattered-pages",
+            "64-bit-offset",
+            "stable-table-rebind",
+            "zero-valid-replay",
+        ],
         storage="NPU device arena; no BM allocation or BM readback",
     )
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--page-size", type=int, choices=(64, 128), default=128)
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
     result = dict(status="failed", user_accepted=False, cases=[])
@@ -124,9 +149,9 @@ def main():
 
         torch.npu.set_device(0)
         for geometry in [
-            KVLayout(3, 2, 256, 1, 16, page_size=128),
-            KVLayout(78, 16, 8192, 1, 576, page_size=128),
-            KVLayout(21, 16, 8192, 1, 128, page_size=128),
+            KVLayout(3, 2, 256, 1, 16, page_size=args.page_size),
+            KVLayout(78, 16, 8192, 1, 576, page_size=args.page_size),
+            KVLayout(21, 16, 8192, 1, 128, page_size=args.page_size),
         ]:
             result["cases"].append(check_geometry(geometry, torch))
             torch.npu.empty_cache()

@@ -268,7 +268,11 @@ def check_index_accuracy(
 
 
 def make_controls(
-    tokenizer: Any, page_size: int, decode_capacity: int = 128
+    tokenizer: Any,
+    page_size: int,
+    decode_capacity: int = 128,
+    *,
+    page_allocation: bool = False,
 ) -> list[dict[str, Any]]:
     cases = []
     for name, text, length, ignore_eos, expected in (
@@ -287,6 +291,8 @@ def make_controls(
             dict(sum=5),
         ),
     ):
+        if page_allocation:
+            length = 8192 if ignore_eos else 1024
         messages, rendered, ids = padded_messages(
             tokenizer, [dict(role="user", content=text + PAD)], length
         )

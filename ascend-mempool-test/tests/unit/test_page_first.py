@@ -12,6 +12,28 @@ from ascend_mempool.offload import MempoolKVOffload
 
 
 class TestPageFirstLayout(unittest.TestCase):
+    def test_address_above_four_tb_uses_one_kernel_submission(self):
+        layout = KVLayout(78, 16, 1 << 24, 1, 576, page_size=128)
+        manager = MempoolKVManager.create(
+            PoolLayout(layout, layout), 0, bm_module=FakeBM(0)
+        )
+        manager.join(0.1)
+        self.addCleanup(manager.close, drain=lambda: None)
+        calls = []
+
+        def kernel(src, dst, si, di, mask, sr, dr, rb, count, block, sp, dp):
+            calls.append(dp + int(di[0]) * rb)
+
+        MempoolKVOffload(manager.view(0, 77), kernel=kernel).write(
+            torch.ones((1, 1, 576), dtype=torch.bfloat16),
+            slots=torch.tensor([15]),
+            positions=torch.tensor([(1 << 24) - 1]),
+            valid=torch.tensor([True]),
+        )
+        # Last physical row of a row-major [page,layer,token,feature] arena.
+        self.assertEqual(calls, [0x5000000000 + 78 * 16 * (1 << 24) * 1152 - 1152])
+        self.assertGreater(calls[0] - 0x5000000000, 4 * (1 << 40))
+
     def test_four_decode_geometries_match_physical_tensor_oracle(self):
         for b, sd in ((128, 128), (128, 512), (64, 128), (64, 512)):
             layout = KVLayout(3, 2, sd, 1, 4, page_size=b)
@@ -54,7 +76,7 @@ class TestPageFirstLayout(unittest.TestCase):
         self.assertEqual(layout.byte_offset(77, 15, 8191, 0, 575), 11777605630)
         self.assertEqual(layout.storage_order, "page_first")
 
-    def test_large_component_slot_is_split_only_at_page_boundaries(self):
+    def test_large_component_uses_one_64_bit_base(self):
         geometry = KVLayout(78, 16, 65536, 1, 576, page_size=128)
         manager = MempoolKVManager.create(
             PoolLayout(geometry, geometry), 0, bm_module=FakeBM(0)
@@ -64,7 +86,7 @@ class TestPageFirstLayout(unittest.TestCase):
         addresses = []
 
         def kernel(src, dst, si, di, mask, sr, dr, rb, count, block, sp, dp):
-            self.assertLessEqual(dr * rb, 2**32 - 1)
+            self.assertGreater(dr * rb, 2**32 - 1)
             addresses.extend(dp + int(index) * rb for index in di[mask])
 
         MempoolKVOffload(manager.view(0, 77), kernel=kernel).write(
@@ -138,7 +160,7 @@ class TestPageFirstLayout(unittest.TestCase):
         self.assertEqual(second[0] - first[0], first[2])
         self.assertEqual(second[1] - first[1], first[2])
 
-    def test_last_slot_write_keeps_kernel_offsets_small_and_updates_device_bindings(
+    def test_last_slot_write_uses_64_bit_offsets_and_updates_device_bindings(
         self,
     ):
         geometry = KVLayout(78, 16, 8192, 1, 576, page_size=128)
@@ -150,7 +172,7 @@ class TestPageFirstLayout(unittest.TestCase):
         addresses = []
 
         def kernel(src, dst, si, di, valid, sr, dr, rb, count, block, sp, dp):
-            self.assertLessEqual(max(sr, dr) * rb, 2**32 - 1)
+            self.assertGreater(max(sr, dr) * rb, 2**32 - 1)
             self.assertLessEqual(rb, 32768)
             addresses.extend(dp + int(index) * rb for index in di[valid])
 

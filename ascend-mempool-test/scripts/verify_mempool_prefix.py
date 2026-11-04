@@ -442,7 +442,12 @@ def check_copied_pages(
                 ],
             )
             or source_descriptor["logical_page"]
-            != slot * (registration["prompt_capacity"] // reports.page_size) + logical
+            != (
+                logical
+                if "physical_page" in source_descriptor
+                else slot * (registration["prompt_capacity"] // reports.page_size)
+                + logical
+            )
             or copied["pages"][str(target)] != expected
             or descriptor
             != dict(
