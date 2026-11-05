@@ -104,3 +104,25 @@ API依据：[Mooncake Python API](https://github.com/kvcache-ai/mooncake/blob/ma
 - full中的`mooncake/`保留原始操作样本，`mooncake.json`保存简表或缺测原因。
 
 先回传两侧report、conclusions与runner。错误时回传首个失败rank日志。CPU和NPU状态分开记录；用户确认后才更新ticket。
+
+## 001：同源码独立构建 SDK 的离线恢复
+
+用户确认31/32 SDK源码HEAD相同、分别编译；各机16个rank内部SHA一致，跨机SHA不同。
+允许通过 `--sdk-source-confirmation` 记录人工源码确认，不伪造尚未提供的源码SHA。
+原始二进制SHA全部保留；同机不一致、缺证据、kernel/torch差异仍拒绝。
+正常运行入口也支持该参数。确认SDK源码一致不等于用户已确认NPU验收。
+
+001的runner为measured/cleanup passed，原始采样可直接离线处理，不启动NPU或双机连接。
+在31执行（已包含peer证据，只需这一台）：
+
+```bash
+python3 ascend-mempool-test/scripts/analyze_bandwidth.py \
+  --input /home/cryang/log/k2/k2-ticket14-001/prefill \
+  --output /home/cryang/log/k2/k2-ticket14-001-analysis/prefill \
+  --sdk-source-confirmation '用户已核对31和32 SDK源码HEAD一致，两侧分别编译'
+```
+
+若也需要32独立生成报告，将input/output最后的prefill改成decode。
+输出目录必须不存在；原001失败报告、原始采样及环境文件均不修改。
+返回0且输出 `TICKET14_ANALYSIS_COMPLETE` 后回传新目录report.json与conclusions.md。
+其他覆盖、内容状态、并发、统计检查继续执行；后续若另有失败，保留输出并回传错误。

@@ -13,8 +13,42 @@ from ascend_mempool.bandwidth import BenchmarkConfig, build_plan
 from ascend_mempool.bandwidth_report import validate_measurements
 
 
-def finish_report(root: Path, args: argparse.Namespace) -> None:
-    report = json.loads((root / "report.json").read_text())
+def validate_versions(
+    environments: dict[str, Any], source_confirmation: str = ""
+) -> dict[str, Any]:
+    values = list(environments.values())
+    for key in ("kernel_binaries", "torch", "torch_npu", "unidex_schema", "memfabric"):
+        observed = [e.get(key) for e in values]
+        if not observed or not observed[0] or any(v != observed[0] for v in observed):
+            raise ValueError(f"worker runtime identity differs or is missing: {key}")
+    builds = {}
+    for host in ("local", "peer"):
+        observed = [
+            e.get("sdk_binaries")
+            for path, e in environments.items()
+            if ("peer" if path.startswith("peer/") else "local") == host
+        ]
+        if not observed or not observed[0] or any(v != observed[0] for v in observed):
+            raise ValueError(f"sdk_binaries missing or different within host: {host}")
+        builds[host] = observed[0]
+    differs = builds["local"] != builds["peer"]
+    if differs and not source_confirmation.strip():
+        raise ValueError(
+            "sdk_binaries differ across hosts: source confirmation required"
+        )
+    return dict(
+        status="source_confirmed_separate_builds" if differs else "identical_binaries",
+        source_confirmation=source_confirmation,
+        builds=builds,
+        source_evidence="user_confirmation" if source_confirmation else "not_supplied",
+    )
+
+
+def finish_report(
+    root: Path, args: argparse.Namespace, output: Path | None = None
+) -> None:
+    output = root if output is None else output
+    report = json.loads((output / "report.json").read_text())
     config = BenchmarkConfig(
         **{**report["config"], "nodes": tuple(report["config"]["nodes"])}
     )
@@ -23,19 +57,21 @@ def finish_report(root: Path, args: argparse.Namespace) -> None:
         r for p in root.glob("**/pipeline.json") for r in json.loads(p.read_text())
     ]
     validate_measurements(config, rows, pipes)
-    environments = [json.loads(p.read_text()) for p in root.glob("**/environment.json")]
-    if len(environments) != 2 * config.tp_size:
-        raise ValueError("missing worker version evidence")
-    for key in (
-        "kernel_binaries",
-        "sdk_binaries",
-        "torch",
-        "torch_npu",
-        "unidex_schema",
-    ):
-        values = [e[key] for e in environments]
-        if not values[0] or any(v != values[0] for v in values):
-            raise ValueError(f"worker runtime identity differs or is missing: {key}")
+    evidence = {
+        str(p.relative_to(root)): json.loads(p.read_text())
+        for p in root.glob("**/environment.json")
+    }
+    expected = {
+        f"{prefix}rank-{rank}/environment.json"
+        for prefix in ("", "peer/")
+        for rank in range(config.tp_size)
+    }
+    if set(evidence) != expected:
+        raise ValueError("missing or unexpected worker version evidence")
+    report["sdk_identity"] = validate_versions(
+        evidence, report.get("sdk_source_confirmation", "")
+    )
+    environments = list(evidence.values())
     measurements = report["measurements"]
     for name, row in measurements.items():
         if row["min_overlap_fraction"] <= 0:
@@ -54,6 +90,7 @@ def finish_report(root: Path, args: argparse.Namespace) -> None:
     )
     conclusions = [
         "# Ticket14 measured conclusions",
+        "SDK identity: " + json.dumps(report["sdk_identity"], ensure_ascii=False),
         "",
         f"Scope: {config.suite}. This is not model-service or NPU user acceptance.",
         "Timing: eager host submission through actual completion, including Python/SDK overhead.",
@@ -219,9 +256,9 @@ def finish_report(root: Path, args: argparse.Namespace) -> None:
         }
         for rank in range(config.tp_size)
     }
-    (root / "conclusions.md").write_text("\n".join(conclusions) + "\n")
-    plot(root, report, config)
-    (root / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+    (output / "conclusions.md").write_text("\n".join(conclusions) + "\n")
+    plot(output, report, config)
+    (output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
 
 
 def plot(root: Path, report: dict[str, Any], config: BenchmarkConfig) -> None:

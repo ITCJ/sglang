@@ -55,6 +55,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument("--timeout", type=float, default=1800)
     p.add_argument("--log-root", type=Path, default=Path("/home/cryang/log/k2"))
     p.add_argument("--describe", action="store_true")
+    p.add_argument("--sdk-source-confirmation", default="")
     p.add_argument("--mooncake-protocol", choices=("rdma", "tcp"), default="rdma")
     p.add_argument("--mooncake-device", default="")
     p.add_argument(
@@ -281,6 +282,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             outcome,
             scope=args.suite,
             config=configuration(args).signature(),
+            sdk_source_confirmation=args.sdk_source_confirmation,
             layer_window_ms=args.layer_window_ms,
             overlap="not_proven_by_transfer_only_microbenchmark",
         )
