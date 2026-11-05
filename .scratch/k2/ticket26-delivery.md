@@ -95,7 +95,9 @@ python ascend-mempool-test/scripts/run_ticket26.py \
 
 D将role改为decode、config改为D配置，其余保持一致。
 日志在`/home/cryang/log/k2/<run-id>`；完整服务回归沿既有入口保存在`/home/cryang/log/mempool-min/<run-id>-phase1/phase2`。
-入口自动构建插件、运行两阶段四配置完整回归、检查真实淘汰、运行两种写者规模微测并清理自身子进程。
+入口自动构建插件、运行两阶段单配置回归、检查真实淘汰、运行两种写者规模微测并清理自身子进程。
+**用户缩减范围：两阶段均只跑 `(64,512)`，各一次；其余三组不跑。微测每档 samples=1、warmup=1、iterations=2，不自动重试。全部场景保留；小样本性能仅作粗测，不能代表稳定尾延迟。**
+
 阶段1独立clone当前仓库后回到基点aa5852624e，再覆盖归档；不会把阶段2源码混入阶段1。
 `--stage phase1|phase2|benchmark`可用于失败后的分阶段续跑，不删该阶段用例。
 每阶段保留12/18写读、Graph和过期表测试，以及09的A/B/C/E、V1–V10完整ID和字节检查。

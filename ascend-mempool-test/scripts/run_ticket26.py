@@ -38,7 +38,9 @@ def main() -> int:
         hardware_acceptance="pending user",
         ticket25_unlocked=False,
         model_compute_overlap="unknown; requires same-workload concurrent trace",
-        regression="each phase: all four ticket09 geometries, ticket12/18 cases and V1-V10",
+        regression="each phase: only b64-sd512; ticket12/18 cases and V1-V10",
+        coverage="user-limited geometry; other three combinations not run",
+        benchmark_repetitions=dict(samples=1, warmup=1, iterations=2),
     )
     if a.describe:
         print(json.dumps(report, indent=2))
@@ -123,6 +125,8 @@ def main() -> int:
                         "--sdk-build-id",
                         a.sdk_build_id,
                         "--page-allocation",
+                        "--start-from",
+                        "b64-sd512",
                     ],
                     checkout,
                     env,
@@ -157,6 +161,12 @@ def main() -> int:
                             a.run_id + "-" + suffix,
                             "--suite",
                             "remote-write",
+                            "--samples",
+                            "1",
+                            "--warmup",
+                            "1",
+                            "--iterations",
+                            "2",
                             "--copy-backend",
                             "multibase",
                             "--sdk-source-confirmation",

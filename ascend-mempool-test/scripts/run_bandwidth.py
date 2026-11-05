@@ -50,6 +50,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--suite", choices=("remote-write", "full", "smoke"), default="remote-write"
     )
     p.add_argument("--copy-backend", choices=("sdk", "multibase"), default="sdk")
+    p.add_argument("--samples", type=int, default=3)
     p.add_argument("--iterations", type=int, default=100)
     p.add_argument("--warmup", type=int, default=3)
     p.add_argument("--control-port", type=int, default=21000)
@@ -84,12 +85,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     if args.suite == "full" and (len(args.devices) != 16 or len(args.numa_nodes) != 8):
         p.error("full coverage requires 16 devices and eight NUMA nodes")
     if (
-        args.iterations < 1
+        args.samples < 1
+        or args.iterations < 1
         or args.warmup < 1
         or not math.isfinite(args.timeout)
         or args.timeout <= 0
     ):
-        p.error("iterations, warmup and timeout must be positive")
+        p.error("samples, iterations, warmup and timeout must be positive")
     if not 1 <= args.control_port <= 64000:
         p.error("control-port must leave room for SDK NIC ports (1..64000)")
     if args.layer_window_ms is not None and (
@@ -108,6 +110,7 @@ def configuration(args: argparse.Namespace) -> BenchmarkConfig:
         page_size=args.page_size,
         tp_size=len(args.devices),
         nodes=tuple(args.numa_nodes),
+        samples=args.samples,
         iterations=args.iterations,
         warmup=args.warmup,
         suite=args.suite,
