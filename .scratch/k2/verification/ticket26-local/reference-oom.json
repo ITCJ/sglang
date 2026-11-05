@@ -1,0 +1,51 @@
+{
+  "run_id": "k2-ticket26-003",
+  "stage": "phase1/prefill/reference model weight initialization",
+  "status": "failed_environment_occupancy",
+  "evidence_source": "user-pasted historical snapshots and launcher log",
+  "snapshots": [
+    "prefill/npu-smi.txt",
+    "prefill/reference/prefill-environment.txt"
+  ],
+  "preexisting_scheduler_host_pids": [
+    18078,
+    18079,
+    18080,
+    18082,
+    18083,
+    18084,
+    18085,
+    18086,
+    18090,
+    18091,
+    18092,
+    18093,
+    18094,
+    18095,
+    18096,
+    18097
+  ],
+  "scheduler_memory_mib_range": [
+    53252,
+    53412
+  ],
+  "total_hbm_used_mib_range": [
+    56083,
+    56584
+  ],
+  "weight_load_free_gib_range": [
+    8.55,
+    9.12
+  ],
+  "distributed_init_net_gib_per_rank": 0.01,
+  "conclusion": "SGLang scheduler processes were already occupying all devices before this reference service launched; job ownership was not established.",
+  "later_user_snapshot": "31: no NPU processes, approximately 2.8-3.1 GiB used per chip",
+  "next_run": "k2-ticket26-004; reuse passed phase1 components from k2-ticket26-002",
+  "remaining": [
+    "phase1 service regression",
+    "phase2 regression",
+    "remote-write benchmarks",
+    "new-buffer memory-budget accounting review"
+  ],
+  "ticket26": "open"
+}

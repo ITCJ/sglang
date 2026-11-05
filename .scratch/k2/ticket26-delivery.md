@@ -176,3 +176,9 @@ CPU检查通过，NPU重测待回传；先按[双机fetch重测](ticket26-fetch-
 原命令改用 `--run-id k2-ticket26-003` 并增加 `--phase1-component-run-id k2-ticket26-002`，即可复用阶段1已通过组件报告。
 本地会核对report的passed、rank和几何，归档原JSON与reused-from.json；缺失/失败报告不会跳过检查。
 阶段2不复用阶段1组件结果。只跑64/512及两次微测测量的约定不变。
+
+## 003 reference启动失败归因
+
+用户回传的两份启动前npu-smi快照均显示已有SGLang scheduler每卡占约53,300 MiB，因此本次权重加载只剩约9 GiB并OOM。
+后续31已空闲；两侧确认空闲后，原续跑命令改用 `--run-id k2-ticket26-004`，仍保留 `--phase1-component-run-id k2-ticket26-002`。
+003没有服务验收通过结果。新增HBM缓冲的预算记账仍单独待核对。
