@@ -1,0 +1,416 @@
+From 0f5611597e50156d8ceefc9788236900068b9600 Mon Sep 17 00:00:00 2001
+From: hibikid <7514545+hibikid@user.noreply.gitee.com>
+Date: Fri, 6 Nov 2026 04:27:48 +0800
+Subject: [PATCH] feat: package unidex multibase in the kernels wheel
+
+---
+ csrc/CMakeLists.txt                           |   2 +
+ .../unidex_copy_multibase/README.md           |  18 ++
+ .../op_host/unidex_copy_multibase.cpp         | 119 +++++++++++
+ .../unidex_copy_multibase_kernel.cpp          | 202 ++++++++++++++++++
+ .../source-identity.json                      |  15 ++
+ 5 files changed, 356 insertions(+)
+ create mode 100644 csrc/sparsity_driven_kv_offload/unidex_copy_multibase/README.md
+ create mode 100644 csrc/sparsity_driven_kv_offload/unidex_copy_multibase/op_host/unidex_copy_multibase.cpp
+ create mode 100644 csrc/sparsity_driven_kv_offload/unidex_copy_multibase/op_kernel/unidex_copy_multibase_kernel.cpp
+ create mode 100644 csrc/sparsity_driven_kv_offload/unidex_copy_multibase/source-identity.json
+
+diff --git a/csrc/CMakeLists.txt b/csrc/CMakeLists.txt
+index ff02308..5eed437 100644
+--- a/csrc/CMakeLists.txt
++++ b/csrc/CMakeLists.txt
+@@ -61,6 +61,7 @@ if(SGL_KERNEL_ENABLE_A3_ONLY_OPS)
+         ${PROJECT_OP_SRC_BASE}/causal_conv1d/op_host/causal_conv1d.cpp
+         ${PROJECT_OP_SRC_BASE}/mega_chunk_gdn/op_host/mega_chunk_gdn.cpp
+         ${PROJECT_OP_SRC_BASE}/sparsity_driven_kv_offload/unidex_copy/op_host/unidex_copy.cpp
++        ${PROJECT_OP_SRC_BASE}/sparsity_driven_kv_offload/unidex_copy_multibase/op_host/unidex_copy_multibase.cpp
+         ${PROJECT_OP_SRC_BASE}/sparsity_driven_kv_offload/slot_map_lookup/op_host/slot_map_lookup.cpp
+         ${PROJECT_OP_SRC_BASE}/sparsity_driven_kv_offload/shm_allocator/shm_allocator.cpp
+         ${PROJECT_OP_SRC_BASE}/sparsity_driven_kv_offload/shm_allocator/shm_allocator_op.cpp
+@@ -103,6 +104,7 @@ if(SGL_KERNEL_ENABLE_A3_ONLY_OPS)
+         ${PROJECT_OP_SRC_BASE}/tri_inv/op_kernel/tri_inv_kernel.cpp
+         ${PROJECT_OP_SRC_BASE}/recurrent_gated_delta_rule/op_kernel/recurrent_gated_delta_rule_kernel.cpp
+         ${PROJECT_OP_SRC_BASE}/sparsity_driven_kv_offload/unidex_copy/op_kernel/unidex_copy_kernel.cpp
++        ${PROJECT_OP_SRC_BASE}/sparsity_driven_kv_offload/unidex_copy_multibase/op_kernel/unidex_copy_multibase_kernel.cpp
+         ${PROJECT_OP_SRC_BASE}/sparsity_driven_kv_offload/slot_map_lookup/op_kernel/slot_map_lookup_kernel.cpp
+     )
+ endif()
+diff --git a/csrc/sparsity_driven_kv_offload/unidex_copy_multibase/README.md b/csrc/sparsity_driven_kv_offload/unidex_copy_multibase/README.md
+new file mode 100644
+index 0000000..f806060
+--- /dev/null
++++ b/csrc/sparsity_driven_kv_offload/unidex_copy_multibase/README.md
+@@ -0,0 +1,18 @@
++# UniDex multibase binary-v1
++
++The handoff binary-v1 implementation is built into libsgl_kernel_npu.so by:
++
++```bash
++bash build.sh -a kernels Ascend910_9382
++python3 -m pip install --force-reinstall --no-deps output/sgl_kernel_npu-*.whl
++```
++
++Import sgl_kernel_npu, then call torch.ops.npu.unidex_copy_multibase.
++The schema takes src_bases, src_ranges, src_base_valid, dst_bases,
++dst_ranges, dst_base_valid, src_index, dst_index, valid_mask,
++block_bytes, block_dim (default 8). Metadata tensors remain owned by the
++caller for the lifetime of captured graphs. Existing unidex_copy stays intact.
++
++Host and device sources are unchanged from the ticket26 standalone plugin.
++source-identity.json records their handoff provenance. Hardware compilation
++and Graph / remote visibility acceptance remain pending.
+diff --git a/csrc/sparsity_driven_kv_offload/unidex_copy_multibase/op_host/unidex_copy_multibase.cpp b/csrc/sparsity_driven_kv_offload/unidex_copy_multibase/op_host/unidex_copy_multibase.cpp
+new file mode 100644
+index 0000000..0b85197
+--- /dev/null
++++ b/csrc/sparsity_driven_kv_offload/unidex_copy_multibase/op_host/unidex_copy_multibase.cpp
+@@ -0,0 +1,119 @@
++// Copyright (c) 2026 Huawei Technologies Co., Ltd
++// All rights reserved.
++//
++// Licensed under the BSD 3-Clause License  (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++#include "torch_helper.h"
++#include "aclrtlaunch_unidex_copy_multibase.h"
++
++#include <cstdint>
++#include <limits>
++
++namespace sglang {
++namespace npu_kernel {
++namespace {
++
++void CheckTensor(const at::Tensor &tensor, const at::Tensor &reference,
++                 const char *name, bool mask = false)
++{
++    TORCH_CHECK(tensor.device().type() == at::DeviceType::PrivateUse1, name, " must be on an NPU device");
++    TORCH_CHECK(tensor.device() == reference.device(), name, " must be on the same device as src_bases");
++    TORCH_CHECK(tensor.is_contiguous(), name, " must be contiguous");
++    if (mask) {
++        TORCH_CHECK(tensor.scalar_type() == at::kBool || tensor.scalar_type() == at::kByte,
++                    name, " must be bool or uint8");
++    } else {
++        TORCH_CHECK(tensor.scalar_type() == at::kLong, name, " must be int64");
++    }
++}
++
++void CheckBaseShapes(const at::Tensor &bases, const at::Tensor &ranges,
++                     const at::Tensor &valid, const char *side)
++{
++    TORCH_CHECK(bases.dim() == 1, side, "_bases must be 1-D");
++    TORCH_CHECK(ranges.dim() == 2 && ranges.size(0) == bases.numel() && ranges.size(1) == 2,
++                side, "_ranges must have shape [base_capacity, 2]");
++    TORCH_CHECK(valid.dim() == 1 && valid.numel() == bases.numel(),
++                side, "_base_valid must have shape [base_capacity]");
++}
++
++}  // namespace
++
++static void unidex_copy_multibase(const at::Tensor &src_bases, const at::Tensor &src_ranges,
++                          const at::Tensor &src_base_valid, const at::Tensor &dst_bases,
++                          const at::Tensor &dst_ranges, const at::Tensor &dst_base_valid,
++                          const at::Tensor &src_index, const at::Tensor &dst_index,
++                          const at::Tensor &valid_mask, int64_t block_bytes, int64_t block_dim)
++{
++    CheckTensor(src_bases, src_bases, "src_bases");
++    CheckTensor(src_ranges, src_bases, "src_ranges");
++    CheckTensor(src_base_valid, src_bases, "src_base_valid", true);
++    CheckTensor(dst_bases, src_bases, "dst_bases");
++    CheckTensor(dst_ranges, src_bases, "dst_ranges");
++    CheckTensor(dst_base_valid, src_bases, "dst_base_valid", true);
++    CheckTensor(src_index, src_bases, "src_index");
++    CheckTensor(dst_index, src_bases, "dst_index");
++    CheckTensor(valid_mask, src_bases, "valid_mask", true);
++    CheckBaseShapes(src_bases, src_ranges, src_base_valid, "src");
++    CheckBaseShapes(dst_bases, dst_ranges, dst_base_valid, "dst");
++    TORCH_CHECK(src_index.dim() == 1 && dst_index.dim() == 1 && valid_mask.dim() == 1,
++                "src_index, dst_index, and valid_mask must be 1-D");
++    TORCH_CHECK(src_index.numel() == dst_index.numel() && src_index.numel() == valid_mask.numel(),
++                "src_index, dst_index, and valid_mask must have the same length");
++    TORCH_CHECK(block_bytes > 0 && block_bytes <= 32 * 1024, "block_bytes must be in [1, 32768]");
++    TORCH_CHECK(block_dim > 0 && block_dim <= std::numeric_limits<uint32_t>::max(),
++                "block_dim must be positive and fit uint32");
++    int32_t currentDevice = -1;
++    c10_npu::GetDevice(&currentDevice);
++    TORCH_CHECK(src_bases.device().index() == currentDevice, "metadata must be on the current NPU device");
++
++    uint64_t srcCapacity = src_bases.numel();
++    uint64_t dstCapacity = dst_bases.numel();
++    uint64_t maxCopy = src_index.numel();
++    if (maxCopy == 0 || srcCapacity == 0 || dstCapacity == 0) {
++        return;
++    }
++    auto stream = c10_npu::getCurrentNPUStream();
++    for (const auto &tensor : {src_bases, src_ranges, src_base_valid, dst_bases, dst_ranges,
++                              dst_base_valid, src_index, dst_index, valid_mask}) {
++        tensor.record_stream(stream);
++    }
++    uint32_t blockBytes = block_bytes;
++    uint32_t blockDim = block_dim;
++    const auto args = TorchNpuHelper::ConvertTypes(src_bases, src_ranges, src_base_valid,
++                                                  dst_bases, dst_ranges, dst_base_valid,
++                                                  src_index, dst_index, valid_mask,
++                                                  srcCapacity, dstCapacity, blockBytes, maxCopy);
++    const auto aclStream = stream.stream(false);
++    at_npu::native::OpCommand::RunOpApi("unidex_copy_multibase", [=]() -> int {
++        return std::apply([=](auto... params) {
++            return ACLRT_LAUNCH_KERNEL(unidex_copy_multibase)(blockDim, aclStream, params...);
++        }, args);
++    });
++}
++
++}  // namespace npu_kernel
++}  // namespace sglang
++
++TORCH_LIBRARY_FRAGMENT(npu, m)
++{
++    m.def(torch::schema(
++        "unidex_copy_multibase(Tensor src_bases, Tensor src_ranges, Tensor src_base_valid, "
++        "Tensor dst_bases, Tensor dst_ranges, Tensor dst_base_valid, "
++        "Tensor src_index, Tensor dst_index, Tensor valid_mask, "
++        "int block_bytes, int block_dim=8) -> ()",
++        c10::AliasAnalysisKind::CONSERVATIVE));
++}
++
++TORCH_LIBRARY_IMPL(npu, PrivateUse1, m)
++{
++    m.impl("unidex_copy_multibase", TORCH_FN(sglang::npu_kernel::unidex_copy_multibase));
++}
+diff --git a/csrc/sparsity_driven_kv_offload/unidex_copy_multibase/op_kernel/unidex_copy_multibase_kernel.cpp b/csrc/sparsity_driven_kv_offload/unidex_copy_multibase/op_kernel/unidex_copy_multibase_kernel.cpp
+new file mode 100644
+index 0000000..2649949
+--- /dev/null
++++ b/csrc/sparsity_driven_kv_offload/unidex_copy_multibase/op_kernel/unidex_copy_multibase_kernel.cpp
+@@ -0,0 +1,202 @@
++/**
++ * Masked global-row copies with 64-bit addresses and two-slot FIFO buffering.
++ * A task must match exactly one enabled, well-formed range on each side.
++ * The caller owns allocation bounds, accessibility and non-aliasing guarantees.
++ */
++#include "kernel_operator.h"
++
++using CopyUnit = uint8_t;
++constexpr uint32_t BUFFER_NUM = 2;
++
++class KernelUniDexCopy
++{
++public:
++    __aicore__ inline void Init(GM_ADDR src_bases, GM_ADDR src_ranges, GM_ADDR src_base_valid,
++                                GM_ADDR dst_bases, GM_ADDR dst_ranges, GM_ADDR dst_base_valid,
++                                GM_ADDR src_index, GM_ADDR dst_index, GM_ADDR valid_mask,
++                                uint64_t srcCapacity, uint64_t dstCapacity,
++                                uint32_t blockBytes, uint64_t maxCopy, AscendC::TPipe *pipe)
++    {
++        this->srcCapacity = srcCapacity;
++        this->dstCapacity = dstCapacity;
++        this->blockBytes = blockBytes;
++        this->maxCopy = maxCopy;
++        const uint64_t blockNum = AscendC::GetBlockNum();
++        copyRowsPerCore = maxCopy / blockNum + (maxCopy % blockNum != 0);
++        srcBases.SetGlobalBuffer((__gm__ int64_t *)src_bases, srcCapacity);
++        srcRanges.SetGlobalBuffer((__gm__ int64_t *)src_ranges, srcCapacity * 2);
++        srcBaseValid.SetGlobalBuffer((__gm__ uint8_t *)src_base_valid, srcCapacity);
++        dstBases.SetGlobalBuffer((__gm__ int64_t *)dst_bases, dstCapacity);
++        dstRanges.SetGlobalBuffer((__gm__ int64_t *)dst_ranges, dstCapacity * 2);
++        dstBaseValid.SetGlobalBuffer((__gm__ uint8_t *)dst_base_valid, dstCapacity);
++        srcIndex.SetGlobalBuffer((__gm__ int64_t *)src_index, maxCopy);
++        dstIndex.SetGlobalBuffer((__gm__ int64_t *)dst_index, maxCopy);
++        validMask.SetGlobalBuffer((__gm__ uint8_t *)valid_mask, maxCopy);
++        pipe->InitBuffer(copyQue, BUFFER_NUM, (blockBytes + 31U) & ~31U);
++    }
++
++    __aicore__ inline void Process()
++    {
++        const uint64_t begin = static_cast<uint64_t>(AscendC::GetBlockIdx()) * copyRowsPerCore;
++        uint64_t end = begin + copyRowsPerCore;
++        if (end > maxCopy) {
++            end = maxCopy;
++        }
++        if (begin >= end) {
++            return;
++        }
++        const int64_t srcOrdered = OrderedPrefix(srcRanges, srcBaseValid, srcCapacity);
++        const int64_t dstOrdered = OrderedPrefix(dstRanges, dstBaseValid, dstCapacity);
++        if (srcOrdered == 0 || dstOrdered == 0) {
++            return;
++        }
++        uint64_t dstAddresses[BUFFER_NUM] = {0, 0};
++        uint32_t head = 0, tail = 0, queued = 0;
++        for (uint64_t i = begin; i < end; ++i) {
++            if (validMask.GetValue(i) == 0) {
++                continue;
++            }
++            uint64_t srcAddress = 0, dstAddress = 0;
++            if (!Resolve(srcIndex.GetValue(i), srcBases, srcRanges, srcBaseValid, srcCapacity, srcOrdered, srcAddress) ||
++                !Resolve(dstIndex.GetValue(i), dstBases, dstRanges, dstBaseValid, dstCapacity, dstOrdered, dstAddress)) {
++                continue;
++            }
++            if (queued == BUFFER_NUM) {
++                CopyOut(dstAddresses[head]);
++                head = (head + 1) % BUFFER_NUM;
++                --queued;
++            }
++            CopyIn(srcAddress);
++            dstAddresses[tail] = dstAddress;
++            tail = (tail + 1) % BUFFER_NUM;
++            ++queued;
++        }
++        while (queued > 0) {
++            CopyOut(dstAddresses[head]);
++            head = (head + 1) % BUFFER_NUM;
++            --queued;
++        }
++    }
++
++private:
++    // A replay may change every entry. Prove uniqueness once per active core,
++    // never on the host or across replays. -1 retains the general lookup.
++    __aicore__ inline int64_t OrderedPrefix(AscendC::GlobalTensor<int64_t> &ranges,
++                                           AscendC::GlobalTensor<uint8_t> &valid, uint64_t capacity)
++    {
++        int64_t count = 0, previousEnd = 0;
++        for (uint64_t b = 0; b < capacity; ++b) {
++            if (!valid.GetValue(b)) {
++                continue;
++            }
++            if (b != static_cast<uint64_t>(count)) {
++                return -1;
++            }
++            const int64_t begin = ranges.GetValue(2 * b);
++            const int64_t end = ranges.GetValue(2 * b + 1);
++            if (begin < previousEnd || begin >= end) {
++                return -1;
++            }
++            previousEnd = end;
++            ++count;
++        }
++        return count;
++    }
++
++    __aicore__ inline bool RowAddress(int64_t rawBase, int64_t local, uint64_t &address)
++    {
++        if (rawBase <= 0) {
++            return false;
++        }
++        const uint64_t base = static_cast<uint64_t>(rawBase);
++        const uint64_t localRow = static_cast<uint64_t>(local);
++        const uint64_t maxAddress = ~static_cast<uint64_t>(0);
++        if (localRow > (maxAddress - base - (blockBytes - 1)) / blockBytes) {
++            return false;
++        }
++        address = base + localRow * static_cast<uint64_t>(blockBytes);
++        return true;
++    }
++
++    __aicore__ inline bool Resolve(int64_t row, AscendC::GlobalTensor<int64_t> &bases,
++                                   AscendC::GlobalTensor<int64_t> &ranges,
++                                   AscendC::GlobalTensor<uint8_t> &valid, uint64_t capacity,
++                                   int64_t ordered, uint64_t &address)
++    {
++        if (row < 0) {
++            return false;
++        }
++        if (ordered >= 0) {
++            int64_t lo = 0, hi = ordered;
++            while (lo < hi) {
++                const int64_t mid = lo + (hi - lo) / 2;
++                const int64_t begin = ranges.GetValue(2 * mid);
++                if (row < begin) {
++                    hi = mid;
++                } else if (row >= ranges.GetValue(2 * mid + 1)) {
++                    lo = mid + 1;
++                } else {
++                    return RowAddress(bases.GetValue(mid), row - begin, address);
++                }
++            }
++            return false;
++        }
++        // Unordered or overlapping ranges may still have uniquely mapped rows.
++        bool found = false;
++        for (uint64_t b = 0; b < capacity; ++b) {
++            if (!valid.GetValue(b)) {
++                continue;
++            }
++            const int64_t begin = ranges.GetValue(2 * b);
++            const int64_t end = ranges.GetValue(2 * b + 1);
++            if (begin < 0 || row < begin || row >= end) {
++                continue;
++            }
++            if (found || !RowAddress(bases.GetValue(b), row - begin, address)) {
++                return false;
++            }
++            found = true;
++        }
++        return found;
++    }
++
++    __aicore__ inline void CopyIn(uint64_t address)
++    {
++        AscendC::GlobalTensor<CopyUnit> src;
++        src.SetGlobalBuffer(reinterpret_cast<__gm__ CopyUnit *>(address), blockBytes);
++        auto local = copyQue.AllocTensor<CopyUnit>();
++        AscendC::DataCopyExtParams params{1, blockBytes, 0, 0, 0};
++        AscendC::DataCopyPadExtParams<CopyUnit> padding{false, 0, 0, 0};
++        AscendC::DataCopyPad(local, src, params, padding);
++        copyQue.EnQue(local);
++    }
++
++    __aicore__ inline void CopyOut(uint64_t address)
++    {
++        AscendC::GlobalTensor<CopyUnit> dst;
++        dst.SetGlobalBuffer(reinterpret_cast<__gm__ CopyUnit *>(address), blockBytes);
++        auto local = copyQue.DeQue<CopyUnit>();
++        AscendC::DataCopyExtParams params{1, blockBytes, 0, 0, 0};
++        AscendC::DataCopyPad(dst, local, params);
++        copyQue.FreeTensor(local);
++    }
++
++    AscendC::TQueBind<AscendC::TPosition::VECIN, AscendC::TPosition::VECOUT, BUFFER_NUM> copyQue;
++    AscendC::GlobalTensor<int64_t> srcBases, srcRanges, dstBases, dstRanges, srcIndex, dstIndex;
++    AscendC::GlobalTensor<uint8_t> srcBaseValid, dstBaseValid, validMask;
++    uint64_t srcCapacity = 0, dstCapacity = 0, maxCopy = 0, copyRowsPerCore = 0;
++    uint32_t blockBytes = 0;
++};
++
++extern "C" __global__ __aicore__ void unidex_copy_multibase(
++    GM_ADDR src_bases, GM_ADDR src_ranges, GM_ADDR src_base_valid,
++    GM_ADDR dst_bases, GM_ADDR dst_ranges, GM_ADDR dst_base_valid,
++    GM_ADDR src_index, GM_ADDR dst_index, GM_ADDR valid_mask,
++    uint64_t srcCapacity, uint64_t dstCapacity, uint32_t blockBytes, uint64_t maxCopy)
++{
++    AscendC::TPipe pipe;
++    KernelUniDexCopy kernel;
++    kernel.Init(src_bases, src_ranges, src_base_valid, dst_bases, dst_ranges, dst_base_valid,
++                src_index, dst_index, valid_mask, srcCapacity, dstCapacity, blockBytes, maxCopy, &pipe);
++    kernel.Process();
++}
+diff --git a/csrc/sparsity_driven_kv_offload/unidex_copy_multibase/source-identity.json b/csrc/sparsity_driven_kv_offload/unidex_copy_multibase/source-identity.json
+new file mode 100644
+index 0000000..484ad55
+--- /dev/null
++++ b/csrc/sparsity_driven_kv_offload/unidex_copy_multibase/source-identity.json
+@@ -0,0 +1,15 @@
++{
++  "multibase_reference_sha256": "27c783f1f855fbd66225b574a65f35d75fd1b21d5dc5534f282c25b1d95c973c",
++  "multibase_reference_commit": "c46f25e",
++  "original": {
++    "csrc/sparsity_driven_kv_offload/unidex_copy/op_host/unidex_copy.cpp": "44457ea637df2d63bef0420691fce30a54708e0abac9dffc1af7a3f481422fe7",
++    "csrc/sparsity_driven_kv_offload/unidex_copy/op_kernel/unidex_copy_kernel.cpp": "6c27688112d55131b677094a7d14ce74035b43bf2047dc488c798308cb1d0a3e",
++    "csrc/pytorch_extensions.cpp": "0fcbffbd5d9e316e41a43e21a149803a15a1fc4b75897c37904e08cdc7a7e837"
++  },
++  "plugin": {
++    "host.cpp": "3216616c0d2c35ea3644dd5fe535908712a4ba2b2f8c52a83cb3cfe2e59bf6f0",
++    "kernel.cpp": "621aa4988be7a76df8403485e9dcdf648795883c609c1438616ddf773aebaeaa",
++    "CMakeLists.txt": "cafc429c5c78f84382c5575586afb6df40354afa46af2f8af1075bc1913482d2",
++    "source.patch": "f4394b5016787a8839c342413bf5dc4bd5fc5b472f207d0d18ec7d38a525d281"
++  }
++}
+\ No newline at end of file

@@ -1,0 +1,10 @@
+{
+  "deployment": "build.sh kernels wheel",
+  "operator": "torch.ops.npu.unidex_copy_multibase",
+  "cpu_tests": 7,
+  "cpu_status": "passed",
+  "host_device_hashes": "unchanged from handoff",
+  "phase1_archive": "updated loader, Python compiles",
+  "static": "ruff check/format and diff check passed",
+  "hardware": "not run"
+}
