@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import importlib
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import msgspec
 
-from .indexed_copy import copy_rows
 from .layout import UINT32_MAX, positive_int
 from .manager import MempoolKVManager, MempoolKVView
+from .multibase import BaseTable, MultibaseCopy, mapped_regions, view_regions
 
 if TYPE_CHECKING:
     from torch import Tensor
@@ -58,7 +57,8 @@ class SparseKVCopy:
         inputs: SparseCopyInputs,
         block_dim: int = 48,
         kernel: Any = None,
-        output: Optional[Tensor] = None,
+        output: Tensor | None = None,
+        extra_sources: tuple[Any, Any] = (None, None),
     ) -> None:
         """Allow sequential layers to share scratch storage on the submission stream."""
         import torch
@@ -90,9 +90,34 @@ class SparseKVCopy:
                 "copy output must be contiguous BF16 storage matching the selection"
             )
         self.output = output
-        # Raw-pointer mode checks dtype, not source storage size. A meta tensor
-        # would select Meta dispatch instead of the registered NPU kernel.
-        self._source_dtype = torch.empty(1, dtype=torch.bfloat16, device="cpu")
+        self.views = mapped_regions(prompt.owner, prompt.layer)
+        regions = view_regions(self.views, prompt.layout.row_bytes)
+        for tensor in extra_sources:
+            regions.append(
+                (
+                    tensor.data_ptr(),
+                    tensor.numel() * tensor.element_size() // prompt.layout.row_bytes,
+                )
+                if tensor is not None
+                else (0, 1)
+            )
+        self.extra_sources = extra_sources
+        self.source_table = BaseTable(
+            regions, output.device, [prompt.owner, *extra_sources]
+        )
+        self.target_table = BaseTable(
+            [(output.data_ptr(), inputs.positions.numel())], output.device, [output]
+        )
+        self.transfer = MultibaseCopy(
+            self.source_table,
+            self.target_table,
+            inputs.positions.numel(),
+            row_bytes=prompt.layout.row_bytes,
+            block_dim=block_dim,
+            kernel=kernel,
+        )
+        self.count_sources = False
+        self.source_regions: Tensor | None = None
 
     def routes(self) -> tuple[CopyIndices, CopyIndices]:
         """Mask unwritten positions and translate each role's independent slot."""
@@ -138,33 +163,65 @@ class SparseKVCopy:
             CopyIndices(d_index.flatten(), inputs.dst_index, d_valid.flatten()),
         )
 
-    def gather(self, observe: bool = False, layer_id: int = 0) -> Tensor:
-        """Enqueue both sources, including zero-valid sources, without host reads."""
+    def gather(
+        self,
+        observe: bool = False,
+        layer_id: int = 0,
+        extra_routes: tuple[CopyIndices, ...] = (),
+    ) -> Tensor:
+        """Materialize exactly one selected source per row in a single launch."""
         import torch
 
-        if self._kernel is None:
-            importlib.import_module("sgl_kernel_npu.sparsity_driven_kv_offload")
-            self._kernel = torch.ops.npu.unidex_copy
-        routes = self.routes()
-        for source, indices in zip((self.prompt, self.decode), routes):
-            if observe:
-                source_kind = "P_remote" if source.rank == 0 else "D_local"
-                stamp = torch.npu.mstx.range_start(
-                    f"mempool:miss_{source_kind}:{layer_id}", torch.npu.current_stream()
+        source_rows = torch.zeros_like(self.inputs.dst_index)
+        valid = torch.zeros_like(source_rows, dtype=torch.bool)
+        region_ids = (
+            torch.zeros_like(source_rows) if observe or self.count_sources else None
+        )
+        for side, (view, route) in enumerate(
+            zip((self.prompt, self.decode), self.routes())
+        ):
+            locations = view.owner.page_locations.get(side)
+            if locations is None:
+                regions = torch.full_like(route.src_index, side)
+                physical = view.map_rows(route.src_index)
+                enabled = route.valid
+            else:
+                handle = route.src_index // view.token_capacity
+                position = route.src_index % view.token_capacity
+                regions, page, page_valid = locations.resolve(
+                    handle, position // view.layout.page_size
                 )
-            copy_rows(
-                self._kernel,
-                self._source_dtype,
-                self.output,
-                indices.src_index,
-                indices.dst_index,
-                indices.valid,
-                row_bytes=source.layout.row_bytes,
-                block_dim=self.block_dim,
-                source_view=source,
+                physical = (
+                    page * view.layout.layers * view.layout.page_size
+                    + position % view.layout.page_size
+                )
+                enabled = route.valid & page_valid
+            start = self.source_table.ranges[regions, 0]
+            end = self.source_table.ranges[regions, 1]
+            enabled = enabled & (physical >= 0) & (physical < end - start)
+            source_rows = torch.where(enabled, start + physical, source_rows)
+            if region_ids is not None:
+                region_ids = torch.where(enabled, regions, region_ids)
+            valid |= enabled
+        for offset, route in enumerate(extra_routes):
+            region = len(self.views) + offset
+            source_rows = torch.where(
+                route.valid,
+                route.src_index + self.source_table.starts[region],
+                source_rows,
             )
-            if observe:
-                torch.npu.mstx.range_end(stamp)
+            if region_ids is not None:
+                region_ids = torch.where(route.valid, region, region_ids)
+            valid |= route.valid
+        # Counts use the same selected tasks, never an additional DRAM read.
+        self.source_regions = region_ids
+        if observe:
+            stamp = torch.npu.mstx.range_start(
+                f"mempool:materialize:{layer_id}", torch.npu.current_stream()
+            )
+        self.transfer.submit(source_rows, self.inputs.dst_index, valid)
+        if observe:
+            torch.npu.mstx.range_end(stamp)
         return self.output
 
 
@@ -178,8 +235,10 @@ class KVFetch:
         self.block_dim = block_dim
         self.kernel = kernel
         self.observe = False
+        self.count_sources = False
         self.start_layer = 0
         self._copies: dict[tuple[int, int, int], SparseKVCopy] = {}
+        self._captured: dict[tuple[int, int, int, int], SparseKVCopy] = {}
 
     def gather(
         self,
@@ -192,8 +251,11 @@ class KVFetch:
         row_decode_slot: Tensor,
         row_prompt_len: Tensor,
         row_decode_len: Tensor,
-    ) -> None:
-        """Enqueue both copies on the miss stream, including zero-valid sources.
+        *,
+        extra_sources: tuple[Any, Any] = (None, None),
+        extra_routes: tuple[CopyIndices, ...] = (),
+    ) -> SparseKVCopy:
+        """Materialize every selected source on the miss stream, including zero work.
 
         The caller orders binding/current-layer writes before this stream, and
         joins it before attention/refill or the next use of these fixed inputs.
@@ -205,7 +267,7 @@ class KVFetch:
             raise ValueError("fetch miss mask must match the top-k selection")
         key = (layer, batch, topk)
         copier = self._copies.get(key)
-        if copier is None or copier.output is not output:
+        if copier is None or copier.output.data_ptr() != output.data_ptr():
             # Eager calls and distinct captures may allocate a new destination
             # with the same shape. Update the destination but retain the fixed
             # metadata that an existing graph may have captured during warmup.
@@ -221,6 +283,7 @@ class KVFetch:
                 block_dim=self.block_dim,
                 kernel=self.kernel,
                 output=output,
+                extra_sources=extra_sources,
             )
             self._copies[key] = copier
         inputs = copier.inputs
@@ -233,4 +296,8 @@ class KVFetch:
         inputs.positions.copy_(positions)
         inputs.valid.copy_(misses)
         inputs.active.copy_(row_valid & (row_decode_slot[safe_rows] >= 0))
-        copier.gather(self.observe, layer + self.start_layer)
+        if output.device.type == "npu" and torch.npu.is_current_stream_capturing():
+            self._captured[(*key, output.data_ptr())] = copier
+        copier.count_sources = self.count_sources
+        copier.gather(self.observe, layer + self.start_layer, extra_routes)
+        return copier

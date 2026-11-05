@@ -18,6 +18,7 @@ import msgspec
 from .alive_pages import PageLease
 from .diagnostics import startup_stage
 from .layout import KVLayout, PoolLayout, check_index
+from .page_locations import PageLocations
 from .sharing_plan import (
     NUMA_ENV,
     MempoolNumaConfig,
@@ -108,6 +109,8 @@ class MempoolKVManager:
         self.owners = (0, 1)
         self.contribution = layout.contribution_bytes(rank)
         self.page_tables: dict[tuple[int, str], Any] = {}
+        self.page_locations: dict[int, PageLocations] = {}
+        self.write_locations: dict[tuple[int, str], PageLocations] = {}
         self.page_leases: dict[tuple[int, int], PageLease] = {}
         self.active_page_versions: dict[tuple[int, int], int] = {}
 
@@ -590,9 +593,21 @@ class MempoolKVManager:
         """Allocate stable lookup buffers before capture; handles own no storage."""
         import torch
 
+        self.page_locations = {}
+        self.write_locations = {}
         for rank in (0, 1):
+            main = self.layout.regions(rank)["alive_main"][1]
+            self.page_locations[rank] = PageLocations(
+                main.slots, main.physical_pages, rank, device
+            )
             for region, (_, layout) in self.layout.regions(rank).items():
                 if region.startswith("alive_"):
+                    self.write_locations[rank, region] = PageLocations(
+                        layout.slots,
+                        layout.physical_pages,
+                        rank if region == "alive_main" else 0,
+                        device,
+                    )
                     self.page_tables[rank, region] = torch.full(
                         (layout.slots, layout.physical_pages),
                         -1,
@@ -609,12 +624,40 @@ class MempoolKVManager:
             raise RuntimeError("stale device page table version")
         self.page_leases[rank, handle] = lease
         self.active_page_versions[rank, handle] = lease.version
-        for (side, _), table in self.page_tables.items():
+        locations = self.page_locations[rank]
+        locations.install(
+            handle,
+            torch.tensor(lease.pages, dtype=torch.int64, device=locations.pages.device),
+        )
+        for (side, region), table in self.page_tables.items():
             if side == rank:
+                self.write_locations[side, region].install(
+                    handle,
+                    torch.tensor(lease.pages, dtype=torch.int64, device=table.device),
+                )
                 table[handle].fill_(-1)
                 table[handle, : len(lease.pages)].copy_(
                     torch.tensor(lease.pages, dtype=torch.int64, device=table.device)
                 )
+
+    def install_page_locations(
+        self,
+        rank: int,
+        handle: int,
+        version: int,
+        regions: Any,
+        pages: Any,
+        valid: Any,
+        selected: Any,
+    ) -> None:
+        """Publish fixed location contents before the existing binding event."""
+        if self.active_page_versions.get((rank, handle)) != version:
+            raise RuntimeError("stale device page location version")
+        table = self.page_locations[rank]
+        table.regions[handle].copy_(regions)
+        table.pages[handle].copy_(pages)
+        table.valid[handle].copy_(valid)
+        table.selected[handle].copy_(selected)
 
     def clear_pages(self, rank: int, handle: int, lease: PageLease) -> None:
         if self.page_leases.get((rank, handle)) != lease:
@@ -622,6 +665,10 @@ class MempoolKVManager:
         for (side, _), table in self.page_tables.items():
             if side == rank:
                 table[handle].fill_(-1)
+        for (side, _), table in self.write_locations.items():
+            if side == rank:
+                table.valid[handle].zero_()
+        self.page_locations[rank].valid[handle].zero_()
         del self.active_page_versions[rank, handle]
         # Retain the version boundary so a delayed installation cannot revive it.
 

@@ -1,0 +1,10 @@
+test_preallocated_write_locations_enable_second_target_without_new_tables (test_multibase.TestMultibase.test_preallocated_write_locations_enable_second_target_without_new_tables) ... ok
+test_complete_replays_pass_but_duplicate_identity_does_not (test_observation_trace.TestObservationTrace.test_complete_replays_pass_but_duplicate_identity_does_not) ... ok
+test_deployed_stream_lanes_and_decimal_timestamps (test_observation_trace.TestObservationTrace.test_deployed_stream_lanes_and_decimal_timestamps) ... ok
+test_string_clock_anchor_aligns_with_device_time (test_observation_trace.TestObservationTrace.test_string_clock_anchor_aligns_with_device_time) ... ok
+test_user_merged_ranges_remain_failed_with_specific_evidence (test_observation_trace.TestObservationTrace.test_user_merged_ranges_remain_failed_with_specific_evidence) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.355s
+
+OK

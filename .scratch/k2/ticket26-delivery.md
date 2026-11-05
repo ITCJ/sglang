@@ -1,0 +1,158 @@
+# Ticket26：多基址后端实现交付
+
+2026-11-06。本地实现与评审完成，**State 仍为 open，等待用户实机验收**。
+本票没有开启25双写业务，也没有解锁25；kernel远端可见性与真实计算重叠仍待实测。
+
+## 已实现行为
+
+五类操作及保留兼容分支使用 binary-v1 多基址后端：主KV/Index K写回、swap-in、HBM回填、slot-map写入、prefix load_back gather。
+单源通过同一后端适配。保留当前fill/admit的SDMA G2G batch/wait；load_back的collective和布局恢复不变。
+生产与验证Python入口中的旧算子直接调用为零，检索记录见本票检查目录。
+
+阶段1保留原调用结构；源码快照与62项定向CPU结果留存。
+阶段2将当前HBM cache/current与P/D DRAM物化合成一次调用。
+当前token仍由current HBM提供；回填仍等物化完成后读取selected HBM。
+slot-map保持单独提交，attention返回前继续等待refill/map完成。
+
+selected HBM按Graph batch形状共享给顺序执行的层，下一层复用前上一层的attention/refill/map已经完成。
+Host兼容路径仍按调用分配临时selected buffer。
+已捕获的copier及其九张metadata表由runtime保活；普通eager仅保留当前descriptor计划。
+不会用record_stream代替未来replay的所有权。
+
+## 表、容量与寻址
+
+| 用途 | 当前固定集合 | 当前业务 / 预留 |
+|---|---|---|
+| 主KV物化 | 12源槽：P alive、D alive、8个prefix段、cache/current HBM | 当前业务用P/D/cache/current；25后11源形状由微测覆盖 |
+| 主KV写 | 10目标槽：P alive、D alive、8个prefix段 | 只激活当前目标；每行预留两个任务 |
+| P Index K写 | 9目标槽：P alive_index、8个prefix_index段 | 不增加D alive_index |
+| 单源Host/HBM/slot-map | 一项源/目标表 | 使用同一kernel ABI |
+
+默认部署为8个prefix段。较小拓扑的缺席槽保持invalid。
+12是本票部署集合，不是kernel硬上限；底层容量来自tensor.numel，以uint64传入。
+仍受内存和int64索引区间约束。旧交接最多8→8 eager、6→6二分Graph；本次新形状尚未实机验证。
+报告必须区分容量、有效映射数和本次任务实际访问的基址数。
+
+kernel ABI是两侧bases/ranges/base_valid，加src_index/dst_index/valid_mask，共九张固定设备表。
+虚拟行地址为base+(index-range_begin)*row_bytes；区间有序且互不重叠。
+主KV、Index K、4B slot-map按各自行宽分别调用；单行上限32768B。
+
+原physical_page设备表保留。新增读位置表和按区域的写位置表，形状为[handle, logical_page, 2]。
+字段为region、physical_page、valid；读表另有selected，选中副本失效时回到另一位置。
+主KV区域号为0=P alive、1=D alive、2…9=prefix；HBM两路由cache/current任务单独选行。
+Index K写表为0=P alive_index、1…8=prefix_index。
+26安装lease时只激活正本；复用handle时同时恢复canonical region，不能残留旧区域。
+写表第二位置已进入固定任务生成，更新内容即可激活第二目标，不新增kernel参数存储。
+这不实现19复制策略，也不保证未来新增arena无需重新捕获。
+
+沿用带层偏移的view base：物理行=page*layers*page_size+token_in_page。
+特征分写再展开行内分片；不会重复加层偏移。
+绑定/页表版本检查仍在forward/replay前，内容更新沿用binding event排序。
+
+## 观测与验收入口
+
+默认trace关闭。按源行数/字节仍表示有效复制任务载荷，不冒充总线流量。
+融合后的分源时间为null并注明fused；每层materialize时间取copy_ready到全部物化分支完成的包络，作为暴露miss IO上界。
+没有trace时T_step和设备时间均为null；不按字节分摊，不填0，不把上界再加进T_step。
+
+`compare_multibase_observation.py`输出baseline/phase1/phase2同字段JSON和CSV。
+旧日志从layer_pages恢复同一组源计数；新日志直接使用materialization记录。
+当前比较脚本按GLM主KV 1152B/行解释旧日志。没有匹配的旧运行目录时，不伪造迁移前对照。
+
+观测开启时，回填之后核对实际HBM内容；slot-map写完后再次查询新项及检查正条目数量。
+两种核对使用独立设备缓冲，并在各自完成event前完成；报告只在现有forward完成后读取。
+真实长生成必须出现evicted_entries、refilled_rows和slot_map_updates，且实际检查行数为正。
+任意request/rank出现缓存内容、missing或stale错误，整体验证失败。
+
+新微测复用14的双机协调、进程清理和归档方式：
+
+- 4K/8K/32K/128K一层远端/双目标写，带与不带D本地读，先两rank，再16rank。
+- TP16每对P rank按页写一份D副本，共8份；候选页全局每页一名写者。远端与候选mask分别生成。
+- main远端、本机和Index K字节分列。共同完成event后，每个目标分别记completed或zero-work。
+- 写者event完成并通知后，D立即从自己的映射读回HBM比对，不插入人为延迟。
+- 双机12源/11活跃源、切页/切源、预留副本切换/失效、零有效行；一次capture后多次replay。
+- D另捕获真实runtime空写图，然后注入过期版本，在replay入口之前验证fail-stop。
+- 写微测也使用捕获后的Graph replay。无模型计算的pipeline只报告传输，不证明计算重叠。
+
+14旧对照为SDK L2G batch/wait；旧16rank共同写D segment0的一份主KV。
+新16rank是8份，不能直接用旧单份字节作分母。旧数字保存在[方案D节](ticket26-plan.md)。
+
+## 实机运行
+
+P/D各执行一条命令，使用同一个新run-id。需要已可运行的服务配置、模型和SDK。
+`--sgl-source`指向服务器现有sgl-kernel-npu源码目录；只读取其CMake/helper，不改写安装库。
+默认按CANN9.0.0与Ascend910_9382构建独立插件。不同构建配置先用build_multibase.py指定参数。
+
+```bash
+python ascend-mempool-test/scripts/run_ticket26.py \
+  --role prefill \
+  --config /path/to/prefill-config.json \
+  --run-id k2-ticket26-001 \
+  --sdk-build-id mf114-c01f3ad-ticket11-batchfix \
+  --sgl-source /path/to/sgl-kernel-npu \
+  --prefill-host <P地址> --decode-host <D地址>
+```
+
+D将role改为decode、config改为D配置，其余保持一致。
+日志在`/home/cryang/log/k2/<run-id>`；完整服务回归沿既有入口保存在`/home/cryang/log/mempool-min/<run-id>-phase1/phase2`。
+入口自动构建插件、运行两阶段四配置完整回归、检查真实淘汰、运行两种写者规模微测并清理自身子进程。
+阶段1独立clone当前仓库后回到基点aa5852624e，再覆盖归档；不会把阶段2源码混入阶段1。
+`--stage phase1|phase2|benchmark`可用于失败后的分阶段续跑，不删该阶段用例。
+每阶段保留12/18写读、Graph和过期表测试，以及09的A/B/C/E、V1–V10完整ID和字节检查。
+
+若SDK两端分别编译，可传`--sdk-source-confirmation`记录已经核对的源码一致性；不跳过二进制身份归档。
+
+```bash
+python ascend-mempool-test/scripts/compare_multibase_observation.py \
+  --baseline /path/to/matched-baseline-observation \
+  --phase1 /home/cryang/log/mempool-min/k2-ticket26-001-phase1 \
+  --phase2 /home/cryang/log/mempool-min/k2-ticket26-001-phase2 \
+  --output /home/cryang/log/k2/k2-ticket26-001/comparison
+```
+
+需要回传ticket26汇总、两阶段matrix/V1–V10、cache-eviction、每rank multibase-graph、带宽report/samples/background/environment以及comparison。
+真实模型计算重叠尚无结果：入口始终明确unknown，25仍锁定；后续需同硬件同负载的并行计算/写入和尾部等待证据。
+
+## 功能源码阅读顺序
+
+均为专用代码；本票无通用主线功能源码改动。
+
+| 文件（相对python/sglang/srt/hardware_backend/npu） | 用途 |
+|---|---|
+| mempool/multibase.py | 插件加载、固定基址/任务表、单源适配与捕获生命周期 |
+| mempool/page_locations.py | 正本/副本候选与复用时的区域重置 |
+| mempool/manager.py | 预分配读写位置表、lease原位安装和版本边界 |
+| mempool/indexed_copy.py | 页先布局、特征分片与双位置写任务对接 |
+| mempool/offload.py | 保留现有P/D/Index K写者，预建目标集合 |
+| mempool/copy.py | 四来源物化、显式区域路由与已捕获copier保活 |
+| mempool/decode_write.py | current HBM及保留的单源接口适配 |
+| mempool/runtime.py | 物化接线、当前token排除、完成后观测归档 |
+| sparsity_driven_kv_offload/manager.py | Host兼容路径、缓存回填/slot-map和写后核对 |
+| sparsity_driven_kv_offload/attention.py | 稳定selected HBM的获取；既有等待/消费顺序保留 |
+| mempool/prefix.py | load_back与pool_copy关闭时的保留分支适配 |
+| mempool/observation_device.py | 设备源计数及缓存/slot-map实际检查 |
+| mempool/kernels/unidex_multibase/host.cpp、kernel.cpp | 原样引入交接的独立binary-v1算子；身份另附 |
+
+## 脚本、测试和文档
+
+- 构建/编排：build_multibase.py、run_ticket26.py、run_bandwidth.py、bandwidth_worker.py。
+- 设备工作负载：multibase_graph.py、multibase_write.py；bandwidth_device/report/summary适配新路径和分目标字节。
+- 既有验证入口：verify_graph/fetch/page_first_copy/pool_sdma及sharing_copy/cd_copy均迁移；不改变SDMA被测路径。
+- 观测分析：analyze_k2_observation.py、compare_multibase_observation.py。
+- CPU oracle/测试：multibase_oracle.py、test_multibase.py、test_multibase_delivery.py，以及现有复制/资源/多层fetch测试的外部kernel替身适配。
+- 当前文档、本票、方案及target-alignment D节同步；检查与阶段1快照在[verification/ticket26-local](verification/ticket26-local/)。
+
+## 本地验证与证据边界
+
+阶段1定向62项通过；阶段2完整套件运行一次，共598项。
+其中24个方法受沙箱本地端口/进程权限影响，沙箱外只重跑这些方法，24项通过。
+剩余6个既有失败方法涉及旧32位容量断言、端口预期和已删除preflight测试钩子，原始失败保留。
+未为了本票修改无关服务行为来迎合旧测试。598项中592个方法经本轮运行通过。
+
+新增补充检查验证预留第二写目标原位启用、8份远端+1份候选实际内容/字节、淘汰后的实际cache/map，以及任意rank错误不能被成功记录掩盖。
+受评审修改影响的页表和trace定向检查通过；未重复执行完整套件。
+本地相关22个源码模块严格类型检查通过，改动Python静态检查及归档源码编译通过。
+Standards与Spec两轴评审的已报告问题均已修复，最终未解决各0项。
+
+本机未编译CANN插件、未访问设备、未运行双机Graph/远端写/真实模型回归。
+以上CPU和静态结果不替代实机验收；不勾选未实测验收项，不关闭26。

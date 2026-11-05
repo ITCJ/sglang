@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import argparse
-import json
 import importlib
+import json
 import math
 import signal
 import sys
@@ -49,6 +49,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument(
         "--suite", choices=("remote-write", "full", "smoke"), default="remote-write"
     )
+    p.add_argument("--copy-backend", choices=("sdk", "multibase"), default="sdk")
     p.add_argument("--iterations", type=int, default=100)
     p.add_argument("--warmup", type=int, default=3)
     p.add_argument("--control-port", type=int, default=21000)
@@ -95,6 +96,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         not math.isfinite(args.layer_window_ms) or args.layer_window_ms <= 0
     ):
         p.error("layer-window-ms must be positive and finite")
+    if args.copy_backend == "multibase" and len(args.devices) != 2 * len(
+        args.numa_nodes
+    ):
+        p.error("ticket26 requires two writers per D NUMA replica")
     return args
 
 
@@ -106,6 +111,7 @@ def configuration(args: argparse.Namespace) -> BenchmarkConfig:
         iterations=args.iterations,
         warmup=args.warmup,
         suite=args.suite,
+        copy_backend=args.copy_backend,
     )
 
 
@@ -213,7 +219,16 @@ def run_pair(
                     for rank, output in enumerate(outputs):
                         other = root / "peer" / f"rank-{rank}"
                         other.mkdir(parents=True)
-                        for name in (*ARTIFACTS, "worker.log"):
+                        artifacts = (
+                            *ARTIFACTS,
+                            "worker.log",
+                            *(
+                                ["multibase-graph.json"]
+                                if args.copy_backend == "multibase"
+                                else []
+                            ),
+                        )
+                        for name in artifacts:
                             source = (
                                 root / f"rank-{rank}.log"
                                 if name == "worker.log"

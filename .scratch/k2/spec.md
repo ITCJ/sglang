@@ -1,5 +1,13 @@
 # K2：sparse attention + KV cache offloading
 
+**2026-11-06 ticket26实施更新：当前状态以本段为准。**
+
+13/14/18已按约定验收范围关闭；26已完成本地实现与两轴评审，等待用户实机验收。
+五类操作统一多基址，四路物化合并，fill/admit保留SDMA；不启用25双写业务。
+新核Graph、D立即读回与真实计算重叠未实测，26保持open，25/20及21/22依赖不解锁。
+运行命令、代码阅读顺序和本地检查见[26交付](ticket26-delivery.md)。
+
+
 **Status:** ready-for-agent
 
 **State:** open

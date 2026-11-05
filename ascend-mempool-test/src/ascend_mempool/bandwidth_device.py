@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from sglang.srt.hardware_backend.npu.mempool.manager import (
         MempoolKVView,
     )
+    from sglang.srt.hardware_backend.npu.mempool.multibase import IndexedCopy
     from sglang.srt.hardware_backend.npu.mempool.sharing_plan import (
         HostTopology,
         MempoolNumaConfig,
@@ -23,11 +24,14 @@ if TYPE_CHECKING:
 else:
     from .layout import KVLayout, PoolLayout
     from .manager import MempoolKVView
+    from .multibase import IndexedCopy
     from .sharing_plan import HostTopology, MempoolNumaConfig
 
 
 def pool_plan(c: BenchmarkConfig, side: int, host: str, port: int, run_id: str) -> Any:
-    common = dict(slots=2, tokens=c.capacity, heads=1, page_size=c.page_size)
+    common: dict[str, Any] = dict(
+        slots=2, tokens=c.capacity, heads=1, page_size=c.page_size
+    )
     layout = PoolLayout(
         KVLayout(layers=c.layers, dim=576, **common),
         KVLayout(layers=c.layers, dim=576, **common),
@@ -83,7 +87,7 @@ class Device:
         self.side, self.rank, self.device_id = side, rank, device_id
         self.handle = pool._handle
         self.placeholder = torch.empty(1, dtype=torch.bfloat16)
-        self.kernel = torch.ops.npu.unidex_copy
+        self.kernel = IndexedCopy()
 
     def view(
         self, side: int, segment: int, layer: int = 0, region: str = "alive_main"
@@ -345,13 +349,16 @@ class WriteWork:
 def pipeline(device: Device, case: Case, variant: int = 0) -> dict[str, Any]:
     """Queue each layer once; source buffers remain alive through the final drain."""
     c, t = device.config, device.torch
-    work = [WriteWork(device, case, layer, variant) for layer in range(c.layers)]
+    from .multibase_write import MultibaseWriteWork
+
+    writer = MultibaseWriteWork if c.copy_backend == "multibase" else WriteWork
+    work = [writer(device, case, layer, variant) for layer in range(c.layers)]
     timings: list[dict[str, float]] = []
 
     def setup() -> None:
         t.npu.set_device(device.device_id)
 
-    def execute(w: WriteWork, queued: float) -> None:
+    def execute(w: Any, queued: float) -> None:
         started = time.perf_counter()
         w.run()
         timings.append(

@@ -1,0 +1,6 @@
+test_cache_gate_rejects_any_rank_error_even_when_another_rank_passes (test_multibase_delivery.TestMultibaseDelivery.test_cache_gate_rejects_any_rank_error_even_when_another_rank_passes) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+OK

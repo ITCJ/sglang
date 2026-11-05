@@ -3,6 +3,7 @@
 import unittest
 
 import torch
+from multibase_oracle import MappedKernel
 from test_pool import FakeBM
 
 from ascend_mempool.copy import SparseCopyInputs, SparseKVCopy
@@ -146,7 +147,7 @@ class TestPageFirstLayout(unittest.TestCase):
         inputs.positions.copy_(torch.tensor([[3, 5], [6, -1]]))
         inputs.valid.fill_(True)
         gather = SparseKVCopy(
-            manager.view(0, 1), manager.view(1, 1), inputs, kernel=kernel
+            manager.view(0, 1), manager.view(1, 1), inputs, kernel=MappedKernel(bases)
         )
         gather.output.fill_(-9)
         result = gather.gather()

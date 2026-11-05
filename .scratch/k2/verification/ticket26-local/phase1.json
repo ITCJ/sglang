@@ -1,0 +1,38 @@
+{
+  "base": "aa5852624e15df139df7c76bb8d757341b049713",
+  "cpu_tests": 62,
+  "status": "passed",
+  "hardware": "not-run",
+  "files": [
+    "ascend-mempool-test/scripts/build_multibase.py",
+    "ascend-mempool-test/scripts/verify_fetch.py",
+    "ascend-mempool-test/scripts/verify_graph.py",
+    "ascend-mempool-test/scripts/verify_page_first_copy.py",
+    "ascend-mempool-test/scripts/verify_pool_sdma.py",
+    "ascend-mempool-test/src/ascend_mempool/bandwidth_device.py",
+    "ascend-mempool-test/src/ascend_mempool/cd_copy.py",
+    "ascend-mempool-test/src/ascend_mempool/sharing_copy.py",
+    "ascend-mempool-test/src/ascend_sparse/__init__.py",
+    "ascend-mempool-test/src/ascend_sparse/fixture.py",
+    "ascend-mempool-test/tests/unit/test_materialize.py",
+    "ascend-mempool-test/tests/unit/test_multibase.py",
+    "ascend-mempool-test/tests/unit/test_sparse_resources.py",
+    "python/sglang/srt/hardware_backend/npu/mempool/copy.py",
+    "python/sglang/srt/hardware_backend/npu/mempool/decode_write.py",
+    "python/sglang/srt/hardware_backend/npu/mempool/kernels/unidex_multibase/CMakeLists.txt",
+    "python/sglang/srt/hardware_backend/npu/mempool/kernels/unidex_multibase/host.cpp",
+    "python/sglang/srt/hardware_backend/npu/mempool/kernels/unidex_multibase/kernel.cpp",
+    "python/sglang/srt/hardware_backend/npu/mempool/kernels/unidex_multibase/source-identity.json",
+    "python/sglang/srt/hardware_backend/npu/mempool/multibase.py",
+    "python/sglang/srt/hardware_backend/npu/mempool/offload.py",
+    "python/sglang/srt/hardware_backend/npu/mempool/prefix.py",
+    "python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/manager.py"
+  ],
+  "base_checkout_required": true,
+  "archive_sha256": "b8d9ed3bd143e1d9b566e63c55053fa19be92765b17fca33709dfd29bc8e200e",
+  "review_corrections": [
+    "snapshot syntax",
+    "build entry",
+    "bounded descriptor retention; call structure unchanged"
+  ]
+}

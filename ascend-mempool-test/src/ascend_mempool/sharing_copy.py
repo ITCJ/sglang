@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from ascend_mempool.multibase import IndexedCopy
+
 from .indexed_copy import copy_rows
 from .sharing import writer_rows
 from .sharing_cases import Case
@@ -53,13 +55,14 @@ class CopyWorkload:
         device: str = "npu",
         kernel: Any = None,
         side_active: bool = True,
+        read_kernel: Any = None,
     ) -> None:
         import torch
 
         self.pool, self.case, self.topk, self.block_dim = pool, case, topk, block_dim
         self.tp_size = pool.tp_size
         self.device = device
-        self.kernel = kernel if kernel is not None else torch.ops.npu.unidex_copy
+        self.kernel = kernel if kernel is not None else IndexedCopy()
         self.batch = min(16, pool.layout.prompt.slots)
         if case.active > self.batch:
             raise ValueError("active requests exceed physical slots")
@@ -70,7 +73,7 @@ class CopyWorkload:
             pool.view(1, self.layer),
             self.inputs,
             block_dim=block_dim,
-            kernel=self.kernel,
+            kernel=read_kernel,
         )
         self.output = self.copy.output
         self.dtype_placeholder = torch.empty(1, dtype=torch.bfloat16)

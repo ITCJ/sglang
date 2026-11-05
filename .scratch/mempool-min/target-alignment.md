@@ -1,11 +1,11 @@
 ---
 title: mempool-min：实现目标对齐核对
-subtitle: 以 syncfile 现行文字为依据，区分阶段 0 与后续目标
+subtitle: 多基址后端已实现；26验收后再推进25与20
 template: doc
 theme: blueprint
 lang: zh
 date: 2026-11-02
-status: K1-12用户确认004验收并关闭；8 closed、4 open，11已解锁
+status: K2 26本地实现完成；等待用户实机验收
 ---
 
 **当前四票与 sparse 阶段 0 一致，但没有覆盖后续全部目标。**
@@ -111,6 +111,29 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 共享后分片解析组映射；Router 仍只处理逻辑位置和不透明描述符。
 
 ## D 名称、验收与实施票怎样对应
+
+**2026-11-06 ticket26第二步：本地实现完成，等待用户实机验收。**
+
+五类操作统一多基址，swap-in四来源一次物化。fill/admit保持SDMA。
+预建12源/10目标、正本与副本位置表及2N写任务；捕获表保持存活。
+
+selected HBM按batch形状复用，attention/refill/map完成后再供下一层使用。
+阶段1快照、阶段2完整回归、双机Graph和远端写自运行入口已交付。
+598项完整CPU运行中，24项环境受限方法重跑通过，6个既有失败方法保留。
+
+新增检查覆盖8份远端与1份候选、原位启用第二目标、实际cache/map与错误门禁。
+Standards/Spec最终各0未解决。没有运行新kernel实机验收；26仍open，25不解锁。
+详见[26交付](../k2/ticket26-delivery.md)。
+
+**2026-11-06 ticket26第一步：一对一替换已实现，实机尚未验收。**
+
+五类操作及保留兼容入口接入多基址封装，fill/admit保持SDMA。
+62项定向CPU检查通过；插件在Mac上未编译，Graph与远端可见性未测。
+第一步源码快照和检查位于K2 verification/ticket26-local。
+下一步合并物化、固定区域表、设备位置表及验收入口。
+
+
+
 
 **ticket14 001：SDK源码相同、分别编译的身份校验修复。**
 

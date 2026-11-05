@@ -49,6 +49,7 @@ class BenchmarkConfig:
     suite: str = "full"
     seed: int = 14
     row_bytes: int = 1152
+    copy_backend: str = "sdk"
 
     @property
     def groups(self) -> int:

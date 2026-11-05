@@ -1,0 +1,4 @@
+Command: rg -n unidex_copy_inplace|torch\.ops\.npu\.unidex_copy([^_a-zA-Z]|$) python ascend-mempool-test --glob *.py
+Exit: 1
+
+No executable legacy entry matches.

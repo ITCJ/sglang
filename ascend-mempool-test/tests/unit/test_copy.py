@@ -1,6 +1,7 @@
 import unittest
 
 import torch
+from multibase_oracle import MappedKernel
 from test_pool import FakeBM
 
 from ascend_mempool.copy import SparseCopyInputs, SparseKVCopy
@@ -61,29 +62,11 @@ class TestSparseKVCopy(unittest.TestCase):
         d_source[3, 2] = 203
         sources = {0x5000000000: p_source, 0x7000000000: d_source}
 
-        def cpu_kernel(
-            src,
-            dst,
-            src_index,
-            dst_index,
-            valid,
-            src_rows,
-            dst_rows,
-            row_bytes,
-            max_copy,
-            block_dim,
-            src_ptr,
-            dst_ptr,
-        ):
-            source = sources[src_ptr].reshape(src_rows, row_bytes // 2)
-            target = dst.reshape(dst_rows, row_bytes // 2)
-            target[dst_index[valid]] = source[src_index[valid]]
-
         copy = SparseKVCopy(
             self.manager.view(0, 0),
             self.manager.view(1, 0),
             self.inputs,
-            kernel=cpu_kernel,
+            kernel=MappedKernel(sources),
         )
         self.inputs.p_slots[0] = 2
         self.inputs.d_slots[0] = 3

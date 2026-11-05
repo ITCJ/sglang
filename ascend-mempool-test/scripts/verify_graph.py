@@ -157,11 +157,26 @@ def load_runtime(args: argparse.Namespace) -> tuple[Any, Any, dict[str, Any]]:
     ):
         if not hasattr(mf.bm.BigMemory, name):
             raise RuntimeError(f"BM handle API missing: {name}")
-    schema = str(torch.ops.npu.unidex_copy.default._schema)
-    if "src_ptr" not in schema or "src_rows" not in schema:
-        raise RuntimeError(
-            "installed UniDexCopy must support raw pointers and explicit row extents"
+    from ascend_mempool.multibase import load_kernel
+
+    schema = str(load_kernel().default._schema)
+    import hashlib
+    import os
+
+    from ascend_mempool import multibase
+
+    library = Path(
+        os.environ.get(
+            "SGLANG_UNIDEX_MULTIBASE_LIBRARY",
+            str(
+                Path(multibase.__file__).parent
+                / "kernels/unidex_multibase/build/libunidex_multibase.so"
+            ),
         )
+    )
+    if "src_bases" not in schema or "dst_ranges" not in schema:
+        raise RuntimeError("installed UniDexCopy must expose the multibase ABI")
+
     environment = {
         "target_memfabric": TARGET_MEMFABRIC_VERSION,
         "memfabric": package_version("memfabric_hybrid"),
@@ -169,6 +184,9 @@ def load_runtime(args: argparse.Namespace) -> tuple[Any, Any, dict[str, Any]]:
         "torch_npu": str(torch_npu.__version__),
         "sgl_kernel_npu": package_version("sgl-kernel-npu"),
         "unidex_schema": schema,
+        "multibase_binary_sha256": hashlib.sha256(library.read_bytes()).hexdigest()
+        if library.exists()
+        else None,
         "device": str(torch.npu.get_device_name(args.device_id)),
         "hostname": socket.gethostname(),
     }

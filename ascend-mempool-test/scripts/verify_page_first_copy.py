@@ -15,6 +15,7 @@ from ascend_mempool.alive_pages import PageLease
 from ascend_mempool.indexed_copy import copy_rows
 from ascend_mempool.layout import KVLayout, PoolLayout
 from ascend_mempool.manager import MempoolKVManager, MempoolKVView
+from ascend_mempool.multibase import IndexedCopy
 from ascend_mempool.offload import MempoolKVOffload
 
 
@@ -23,12 +24,14 @@ def check_geometry(layout, torch):
     base = storage.data_ptr()
     owner = SimpleNamespace(
         rank=0,
+        session=None,
         layout=PoolLayout(layout, layout),
         page_tables={},
         page_leases={},
         active_page_versions={},
         view_bases=lambda rank, participant: (base, base),
     )
+    owner.view = MempoolKVManager.view.__get__(owner)
     MempoolKVManager.enable_page_tables(owner, "npu")
     pointer = owner.page_tables[0, "alive_main"].data_ptr()
     view = MempoolKVView(owner, 0, layout.layers - 1, layout)
@@ -49,7 +52,7 @@ def check_geometry(layout, torch):
     dtype = torch.empty(1, dtype=torch.bfloat16)
     destination = torch.arange(3, dtype=torch.int64, device="npu")
     writer = MempoolKVOffload(view)
-    kernel = torch.ops.npu.unidex_copy
+    kernel = IndexedCopy()
     stream = torch.npu.Stream()
     stream.wait_stream(torch.npu.current_stream())
     with torch.npu.stream(stream):

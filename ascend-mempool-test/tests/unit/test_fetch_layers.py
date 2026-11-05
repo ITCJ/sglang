@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 import torch
-from page_first_oracle import read_rows
+from multibase_oracle import MappedKernel
 from test_offload import CPUWriteKernel
 from test_pool import FakeBM
 from test_runtime import ManualEvent, prefill_batch
@@ -44,13 +44,6 @@ class TestKVFetchLayers(unittest.TestCase):
         }
         self.copy_counts = []
 
-        def copy(src, dst, si, di, valid, sr, dr, rb, count, block, sp, dp):
-            """Implement the SDK's indexed copy without sharing routing logic."""
-            self.copy_counts.append(int(valid.sum()))
-            dst.reshape(dr, rb // 2)[di[valid]] = read_rows(
-                views[sp], sources[sp], si[valid], rb
-            )
-
         self.events = []
 
         def event():
@@ -68,7 +61,9 @@ class TestKVFetchLayers(unittest.TestCase):
             event_factory=event,
             fetch_enabled=True,
             source_evidence=True,
-            fetch_kernel=copy,
+            fetch_kernel=MappedKernel(
+                {p: (views[p], t) for p, t in sources.items()}, self.copy_counts
+            ),
             kernels=[
                 CPUWriteKernel(self.d[i], manager.view(1, i)) for i in range(count)
             ],

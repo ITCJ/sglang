@@ -66,6 +66,8 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             operation_samples=len(latencies),
             median_GBps=median(rates),
             min_overlap_fraction=min(overlaps),
+            p50_ms=percentile(latencies, 0.50),
+            p95_ms=percentile(latencies, 0.95),
             p99_ms=percentile(latencies, 0.99),
             median_cpu_cores=median(cores),
             per_rank={
@@ -137,6 +139,32 @@ def validate_measurements(
         case = plan[r["case"]]
         if case.operation == "read":
             nbytes = case.read_blocks(config) * case.block_bytes(config)
+        elif config.copy_backend == "multibase" and case.group != "locations":
+            group_size = config.tp_size // config.groups
+            remote = sum(
+                min(config.page_size, case.tokens - page * config.page_size)
+                for page in range(math.ceil(case.tokens / config.page_size))
+                if page % group_size == r["rank"] % group_size
+            )
+            local = sum(
+                min(config.page_size, case.tokens - page * config.page_size)
+                for page in range(math.ceil(case.tokens / config.page_size))
+                if page % config.tp_size == r["rank"]
+            )
+            targets = dict(
+                remote_main=remote * config.row_bytes
+                if case.targets in ("remote", "dual")
+                else 0,
+                local_main=local * config.row_bytes
+                if case.targets in ("local", "dual")
+                else 0,
+                local_index=local * 256 if case.targets in ("local", "dual") else 0,
+            )
+            if r.get("target_bytes") != targets:
+                raise ValueError(
+                    "multibase target ownership/replica byte accounting differs"
+                )
+            nbytes = sum(targets.values())
         else:
             tokens = sum(
                 min(config.page_size, case.tokens - p * config.page_size)

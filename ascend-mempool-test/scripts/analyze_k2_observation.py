@@ -356,8 +356,51 @@ def device_steps(ranges: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 }.get(kind, kind)
                 durations[kind] += b - a
                 intervals.append(dict(start_ns=a, end_ns=b, kind=kind))
+            materialize = {}
+            for ready in (
+                s for s in spans if s["name"].startswith("materialize_ready:")
+            ):
+                layer = ready["name"].split(":")[-1]
+                endings = [
+                    s["end_ns"]
+                    for s in spans
+                    if s["name"]
+                    in (
+                        f"materialize:{layer}",
+                        f"miss_io:{layer}",
+                        f"cache_hit:{layer}",
+                    )
+                    and s["start_ns"] >= ready["end_ns"]
+                ]
+                if endings:
+                    materialize[layer] = max(endings) - ready["end_ns"]
+            # Baseline/phase1 have the original cache_manage boundary ending
+            # immediately before copy_ready; use the same branch envelope.
+            for layer in {
+                s["name"].split(":")[-1]
+                for s in spans
+                if s["name"].startswith("miss_io:")
+            }:
+                branches = [
+                    s
+                    for s in spans
+                    if s["name"] in (f"miss_io:{layer}", f"cache_hit:{layer}")
+                ]
+                ready = [
+                    s["end_ns"]
+                    for s in spans
+                    if s["name"] == f"cache_manage:{layer}"
+                    and s["end_ns"] <= min(b["start_ns"] for b in branches)
+                ]
+                if layer not in materialize and ready:
+                    materialize[layer] = max(b["end_ns"] for b in branches) - max(ready)
+            fused = any(s["name"].startswith("materialize:") for s in spans)
             output.append(
                 dict(
+                    materialize_ns_by_layer=materialize,
+                    miss_exposed_upper_ns_by_layer=materialize,
+                    source_time_ns=None if fused else dict(sources),
+                    source_time_reason="fused" if fused else "split",
                     forward_ids=forward["name"][8:],
                     trace=trace,
                     device_forward_ns=end - start,
@@ -371,7 +414,7 @@ def device_steps(ranges: list[dict[str, Any]]) -> list[dict[str, Any]]:
                             if not s["name"].startswith("hccl_task:")
                         }
                     ),
-                    miss_exposed_by_source_ns=dict(sources),
+                    miss_exposed_by_source_ns=None if fused else dict(sources),
                     hccl_task_count=sum(
                         s["name"].startswith("hccl_task:") for s in spans
                     ),

@@ -24,11 +24,13 @@ from ascend_mempool.bandwidth_device import (
     pipeline,
     pool_plan,
 )
+from ascend_mempool.multibase_write import MultibaseWriteWork
 
 if TYPE_CHECKING:
     from sglang.srt.hardware_backend.npu.mempool.manager import MempoolKVManager
 else:
     from ascend_mempool.manager import MempoolKVManager
+
 from ascend_mempool.sharing_control import Cohort
 from ascend_mempool.sharing_pool import numa_evidence
 
@@ -113,6 +115,7 @@ class Background:
 def benchmark(d: Device, cohort: Cohort, root: Path, timeout: float) -> None:
     c, t = d.config, d.torch
     rows, pipes, background_rows, manifests = [], [], [], []
+    writer = MultibaseWriteWork if c.copy_backend == "multibase" else WriteWork
     for case_id, case in enumerate(build_plan(c)):
         print(f"BEGIN {case.name}", flush=True)
         active = d.side == case.side and (
@@ -145,12 +148,12 @@ def benchmark(d: Device, cohort: Cohort, root: Path, timeout: float) -> None:
                 cohort.exchange(f"{case.name}/{sample}/written")
                 if d.side != case.side:
                     for layer in range(c.layers):
-                        WriteWork(d, case, layer, variant).verify()
+                        writer(d, case, layer, variant).verify()
                 cohort.exchange(f"{case.name}/{sample}/verified")
                 continue
             work: Any = None
             if case.operation == "write":
-                work = WriteWork(d, case, variant=variant)
+                work = writer(d, case, variant=variant)
             elif active:
                 work = ReadWork(d, case)
             if active and sample == 0:
@@ -159,6 +162,12 @@ def benchmark(d: Device, cohort: Cohort, root: Path, timeout: float) -> None:
                 )
                 if case.operation == "write":
                     entry.update(
+                        copy_backend=c.copy_backend,
+                        target_bytes=getattr(work, "target_bytes", None),
+                        d_replicas=c.groups if c.copy_backend == "multibase" else 1,
+                        completion="device event followed by D mapped readback"
+                        if c.copy_backend == "multibase"
+                        else "SDK batch/wait",
                         pages=work.pages,
                         destinations=[dict(gva=b[1], nbytes=b[2]) for b in work.blocks],
                     )
@@ -217,9 +226,32 @@ def benchmark(d: Device, cohort: Cohort, root: Path, timeout: float) -> None:
                         bytes_per_op=work.nbytes,
                         segments=work.segments,
                         cpu_seconds=time.process_time() - cpu_start,
+                        copy_backend=c.copy_backend,
+                        target_bytes=getattr(work, "target_bytes", None),
+                        targets={
+                            name: dict(
+                                nbytes=nbytes,
+                                rows=nbytes
+                                // (256 if name == "local_index" else c.row_bytes),
+                                status="completed_by_shared_event"
+                                if nbytes
+                                else "zero-work",
+                                completion="same device event" if nbytes else None,
+                            )
+                            for name, nbytes in getattr(
+                                work, "target_bytes", {}
+                            ).items()
+                        },
+                        completion="device event"
+                        if c.copy_backend == "multibase"
+                        else "SDK wait",
                     )
                 )
             cohort.exchange(f"{case.name}/{sample}/completed")
+            if case.operation == "read" and active:
+                work.verify()
+            elif case.operation == "write" and d.side != case.side:
+                work.verify()
             if background:
                 background_rows.append(
                     dict(
@@ -229,10 +261,6 @@ def benchmark(d: Device, cohort: Cohort, root: Path, timeout: float) -> None:
                         **background.finish(),
                     )
                 )
-            if case.operation == "read" and active:
-                work.verify()
-            elif case.operation == "write" and d.side != case.side:
-                work.verify()
             cohort.exchange(f"{case.name}/{sample}/checked")
             save(root / "samples.json", rows)
         save(root / "pipeline.json", pipes)
@@ -302,6 +330,12 @@ def main() -> int:
             ),
         )
         cohort.exchange("mappings-ready")
+        if config.copy_backend == "multibase":
+            from ascend_mempool.multibase_graph import verify_multibase_graph
+
+            save(root / "multibase-graph.json", verify_multibase_graph(d, cohort))
+        else:
+            save(root / "multibase-graph.json", dict(status="not-requested"))
         benchmark(d, cohort, root, settings["timeout"])
         evidence = []
         if session.contribution:

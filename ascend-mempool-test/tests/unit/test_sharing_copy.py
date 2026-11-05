@@ -3,6 +3,7 @@
 import unittest
 
 import torch
+from multibase_oracle import MappedKernel
 from page_first_oracle import read_rows, write_rows
 from test_pool import FakeBM
 
@@ -61,6 +62,9 @@ class TestSharedCopies(unittest.TestCase):
             block_dim=24,
             device="cpu",
             kernel=self.kernel,
+            read_kernel=MappedKernel(
+                {p: (self.views[p], t) for p, t in self.memory.items()}
+            ),
         )
 
     def test_shared_token_feature_and_layer_writes_preserve_guards(self):
@@ -161,6 +165,9 @@ class TestSharedCopies(unittest.TestCase):
             block_dim=24,
             device="cpu",
             kernel=self.kernel,
+            read_kernel=MappedKernel(
+                {p: (self.views[p], t) for p, t in self.memory.items()}
+            ),
             side_active=False,
         )
         before = {address: value.clone() for address, value in self.memory.items()}

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import argparse
-import json
 import importlib
+import json
 from pathlib import Path
 from statistics import median
 from typing import Any
@@ -17,10 +17,19 @@ def validate_versions(
     environments: dict[str, Any], source_confirmation: str = ""
 ) -> dict[str, Any]:
     values = list(environments.values())
-    for key in ("kernel_binaries", "torch", "torch_npu", "unidex_schema", "memfabric"):
+    for key in (
+        "kernel_binaries",
+        "torch",
+        "torch_npu",
+        "unidex_schema",
+        "memfabric",
+    ):
         observed = [e.get(key) for e in values]
         if not observed or not observed[0] or any(v != observed[0] for v in observed):
             raise ValueError(f"worker runtime identity differs or is missing: {key}")
+    plugin = [e.get("multibase_binary_sha256") for e in values]
+    if any(plugin) and (not all(plugin) or len(set(plugin)) != 1):
+        raise ValueError("multibase binary differs across workers")
     builds = {}
     for host in ("local", "peer"):
         observed = [
@@ -89,11 +98,15 @@ def finish_report(
         user_accepted=False,
     )
     conclusions = [
-        "# Ticket14 measured conclusions",
+        "# Ticket26 multibase measurements"
+        if config.copy_backend == "multibase"
+        else "# Ticket14 measured conclusions",
         "SDK identity: " + json.dumps(report["sdk_identity"], ensure_ascii=False),
         "",
         f"Scope: {config.suite}. This is not model-service or NPU user acceptance.",
-        "Timing: eager host submission through actual completion, including Python/SDK overhead.",
+        "Timing: host submission through device-event completion (graph replay), including Python overhead."
+        if config.copy_backend == "multibase"
+        else "Timing: eager host submission through actual completion, including Python/SDK overhead.",
         "Each rank uses its own host clock; aggregation only combines active ranks on one host.",
         "Logical KV bytes are distinct from physical traffic including replicas and Index K.",
         "Local/other NUMA are relative to rank 0; multi-reader cases span the configured rank topology.",

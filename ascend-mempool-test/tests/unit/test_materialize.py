@@ -9,11 +9,11 @@ from unittest.mock import patch
 
 import test_fetch
 import torch
-from ascend_sparse.config import SparseKVOffloadMode
-from ascend_sparse.fixture import allocate_cache
 from test_runtime import prefill_batch
 
 from ascend_mempool.runtime import KVWriteExpectation
+from ascend_sparse.config import SparseKVOffloadMode
+from ascend_sparse.fixture import allocate_cache
 
 
 class CPUStream:
@@ -55,11 +55,17 @@ class TestMaterialize(unittest.TestCase):
         kernel = ModuleType("sgl_kernel_npu.sparsity_driven_kv_offload")
         kernel.create_shm_tensor = None
         kernel.slot_map_lookup = cpu_lookup
-        kernel.unidex_copy_inplace = cpu_copy
         sdk = patch.dict(sys.modules, {kernel.__name__: kernel})
         sdk.start()
         self.addCleanup(sdk.stop)
         self.module = importlib.import_module("ascend_sparse.manager")
+        from test_multibase import cpu_multibase
+
+        backend = patch(
+            "ascend_mempool.multibase.load_kernel", return_value=cpu_multibase
+        )
+        backend.start()
+        self.addCleanup(backend.stop)
         npu = SimpleNamespace(
             stream=lambda stream: nullcontext(),
             current_stream=CPUStream,

@@ -1,0 +1,34 @@
+test_reserved_location_switch_and_invalidation_keep_fixed_storage (test_multibase.TestMultibase.test_reserved_location_switch_and_invalidation_keep_fixed_storage) ... ok
+test_preallocated_write_locations_enable_second_target_without_new_tables (test_multibase.TestMultibase.test_preallocated_write_locations_enable_second_target_without_new_tables) ... ERROR
+test_observation_checks_actual_refill_and_new_map_after_eviction (test_multibase_delivery.TestMultibaseDelivery.test_observation_checks_actual_refill_and_new_map_after_eviction) ... ok
+test_sixteen_writers_create_eight_remote_replicas_and_one_candidate_copy (test_multibase_delivery.TestMultibaseDelivery.test_sixteen_writers_create_eight_remote_replicas_and_one_candidate_copy) ... ok
+test_observation_trace (unittest.loader._FailedTest.test_observation_trace) ... ERROR
+
+======================================================================
+ERROR: test_preallocated_write_locations_enable_second_target_without_new_tables (test_multibase.TestMultibase.test_preallocated_write_locations_enable_second_target_without_new_tables)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_multibase.py", line 96, in test_preallocated_write_locations_enable_second_target_without_new_tables
+    manager = MempoolKVManager.create(PoolLayout(main, main, prefix_main=prefix), 0, bm_module=FakeBM(0))
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/layout.py", line 148, in __post_init__
+    raise ValueError("prefix requires all three P storage regions")
+ValueError: prefix requires all three P storage regions
+
+======================================================================
+ERROR: test_observation_trace (unittest.loader._FailedTest.test_observation_trace)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_observation_trace
+Traceback (most recent call last):
+  File "/Users/hibikid/Documents/my-work-lab/sayo/bilirecord/.python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/unittest/loader.py", line 137, in loadTestsFromName
+    module = __import__(module_name)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/tests/unit/test_observation_trace.py", line 8, in <module>
+    from analyze_k2_observation import step_timing, trace_ranges
+ModuleNotFoundError: No module named 'analyze_k2_observation'
+
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.052s
+
+FAILED (errors=2)

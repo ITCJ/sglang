@@ -3,6 +3,7 @@
 import unittest
 
 import torch
+from multibase_oracle import MappedKernel
 from test_pool import FakeBM
 
 from ascend_mempool.alive_pages import PageLease
@@ -69,7 +70,7 @@ class TestDeviceAlivePages(unittest.TestCase):
         inputs.positions.copy_(torch.tensor([[1, 2, 7]]))
         inputs.valid.fill_(True)
         reader = SparseKVCopy(
-            manager.view(0, 1), manager.view(1, 1), inputs, kernel=kernel
+            manager.view(0, 1), manager.view(1, 1), inputs, kernel=MappedKernel(bases)
         )
         self.assertEqual(
             reader.gather().flatten().tolist(), [101, 101, 102, 102, 203, 203]

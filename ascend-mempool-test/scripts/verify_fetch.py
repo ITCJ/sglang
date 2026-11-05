@@ -147,16 +147,6 @@ def fetch_checks(
         for block_index, blocks in enumerate(args.block_dims):
             outputs = graph_outputs
             copied = torch.zeros((layers, 2), dtype=torch.int64, device="npu")
-            source_ids = {
-                manager.view(rank, layer).device_base: (layer, rank)
-                for layer in range(layers)
-                for rank in (0, 1)
-            }
-
-            def measured_copy(*params: Any) -> None:
-                copied[source_ids[params[10]]] = params[4].sum()
-                torch.ops.npu.unidex_copy(*params)
-
             runtime = MempoolRuntime(
                 manager,
                 req_pool_rows=18,
@@ -165,8 +155,8 @@ def fetch_checks(
                 device="npu",
                 block_dim=blocks,
                 fetch_enabled=True,
-                fetch_kernel=measured_copy,
             )
+            runtime._fetch.count_sources = True
             cache = allocate_cache(
                 rows=18,
                 context=context,
@@ -200,6 +190,13 @@ def fetch_checks(
                         cache.slot_map_done,
                     ):
                         stream.wait_event(event)
+                    copier = runtime._fetch._copies[layer, args.graph_rows, args.topk]
+                    for side in (0, 1):
+                        copied[layer, side].copy_(
+                            (
+                                copier.transfer.valid & (copier.source_regions == side)
+                            ).sum()
+                        )
 
             # Capture with no bindings and both BM sources masked out. Replay
             # must still fetch real data after the same graph inputs are updated.

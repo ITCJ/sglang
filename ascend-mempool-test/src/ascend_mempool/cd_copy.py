@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from ascend_mempool.multibase import IndexedCopy
+
 from .cd_plan import BLOCK_DIM, TOPK, CDCase, indices, write_span
 from .sharing_copy import pattern_rows
 
@@ -32,7 +34,7 @@ class CDWorkload:
 
         self.pool, self.case, self.seed = pool, case, seed
         self.device, self.topk = device, topk
-        self.kernel = kernel if kernel is not None else torch.ops.npu.unidex_copy
+        self.kernel = kernel if kernel is not None else IndexedCopy()
         self.layout = pool.layout.layout_for_rank(pool.rank)
         self.dtype = torch.empty(1, dtype=torch.bfloat16)
         self.variant = 0

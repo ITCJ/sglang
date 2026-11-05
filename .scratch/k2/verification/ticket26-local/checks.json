@@ -1,0 +1,44 @@
+{
+  "base": "aa5852624e15df139df7c76bb8d757341b049713",
+  "phase1_cpu": 62,
+  "cpu_full": {
+    "tests": 598,
+    "passed_after_environment_retry": 592,
+    "existing_failed_methods": 6,
+    "full_runs": 1
+  },
+  "environment_retry": {
+    "methods": 24,
+    "status": "passed"
+  },
+  "new_checks": [
+    "12 sources and invalid masks",
+    "two HBM target tasks",
+    "reserved location fallback and handle reuse",
+    "preallocated production second write target",
+    "16 writers: 8 remote replicas and 1 prefix copy",
+    "actual refill and updated slot-map",
+    "one bad rank fails cache gate"
+  ],
+  "typecheck": {
+    "files": 22,
+    "status": "passed"
+  },
+  "static": {
+    "python_files": 44,
+    "status": "passed"
+  },
+  "legacy_entry_calls": 0,
+  "review": {
+    "Standards_unresolved": 0,
+    "Spec_unresolved": 0
+  },
+  "hardware": {
+    "plugin_build": "not-run",
+    "graph": "not-run",
+    "remote_visibility": "not-run",
+    "model_compute_overlap": "unknown"
+  },
+  "ticket_state": "open",
+  "ticket25_unlocked": false
+}

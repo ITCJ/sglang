@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,6 +9,7 @@ import torch
 from torch import Tensor
 
 from .manager import MempoolKVManager
+from .multibase import IndexedCopy
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,7 @@ class DecodeKV:
         kernel: Any = None,
     ) -> None:
         self.manager, self.writer = manager, writer
-        self.kernel = kernel
+        self.kernel = IndexedCopy(kernel)
         layout = manager.layout.decode
         self.current = torch.zeros(
             (layout.layers, rows, layout.heads, layout.dim),
@@ -51,9 +51,6 @@ class DecodeKV:
         )
 
     def copy(self, *args: Any) -> None:
-        if self.kernel is None:
-            importlib.import_module("sgl_kernel_npu.sparsity_driven_kv_offload")
-            self.kernel = torch.ops.npu.unidex_copy
         self.kernel(*args)
 
     def prepare(

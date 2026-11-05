@@ -5,6 +5,7 @@ import weakref
 from types import SimpleNamespace
 
 import torch
+from multibase_oracle import MappedKernel
 from test_offload import CPUWriteKernel
 from test_pool import FakeBM
 from test_runtime import ManualEvent, prefill_batch
@@ -33,12 +34,6 @@ class TestKVFetch(unittest.TestCase):
         }
         self.copy_counts = []
 
-        def copy(src, dst, si, di, valid, sr, dr, rb, count, block, sp, dp):
-            self.copy_counts.append(int(valid.sum()))
-            dst.reshape(dr, rb // 2)[di[valid]] = self.sources[sp].reshape(sr, rb // 2)[
-                si[valid]
-            ]
-
         self.events = []
 
         def event():
@@ -53,7 +48,7 @@ class TestKVFetch(unittest.TestCase):
             start_layer=5,
             device="cpu",
             fetch_enabled=True,
-            fetch_kernel=copy,
+            fetch_kernel=MappedKernel(self.sources, self.copy_counts),
             event_factory=event,
             kernels=[CPUWriteKernel(self.d, manager.view(1, 0))],
         )
