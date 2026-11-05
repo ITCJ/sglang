@@ -131,6 +131,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--describe", action="store_true")
     parser.add_argument("--replay-responses", type=Path)
     parser.add_argument("--page-allocation", action="store_true")
+    parser.add_argument(
+        "--component-reports", type=Path, nargs=2, metavar=("COPY", "FETCH")
+    )
     parser.add_argument("--observation-rounds", type=int, choices=(1, 2), default=1)
     args = parser.parse_args(argv)
     if (
@@ -147,6 +150,31 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         parser.error("logs must remain under /home/cryang/log/")
     args.config = args.config.resolve()
     return args
+
+
+def read_component_reports(paths, config, rank):
+    """Reuse successful component evidence for the same local rank and geometry."""
+    copy, fetch = [json.loads(path.read_text()) for path in paths]
+    if copy.get("status") != "passed" or fetch.get("status") != "passed":
+        raise ValueError("component reuse requires two passed reports")
+    cases = copy.get("cases", [])
+    layout = fetch.get("layout", {}).get("layout", {})
+    if (
+        len(cases) != 3
+        or any(
+            c.get("status") != "passed" or c.get("page_size") != config.page_size
+            for c in cases
+        )
+        or fetch.get("rank") != rank
+        or layout.get("prompt", {}).get("tokens") != config.page_size
+        or layout.get("decode", {}).get("tokens") != config.decode_capacity
+        or any(
+            layout.get(side, {}).get("page_size") != config.page_size
+            for side in ("prompt", "decode")
+        )
+    ):
+        raise ValueError("component reports do not match this rank and geometry")
+    return copy, fetch
 
 
 def service_environment(
@@ -467,6 +495,25 @@ class Runner:
         self.peer.barrier("preflight")
 
     def components(self) -> None:
+        previous = getattr(self.args, "component_reports", None)
+        if previous:
+            records = read_component_reports(
+                previous, self.config, 0 if self.is_p else 1
+            )
+            self.peer.barrier("reuse-components-ready")
+            for name, data, source in zip(
+                ("page-first-copy", "fetch"), records, previous
+            ):
+                root = self.root / name
+                write_json(root / "report.json", data)
+                write_json(root / "reused-from.json", dict(path=str(source.resolve())))
+                if self.is_p:
+                    receive_log(self.peer, root / "decode-report.json")
+                else:
+                    send_log(self.peer, root / "report.json")
+                self.report["stages"].append(name)
+            self.peer.barrier("reuse-components-done")
+            return
         if self.args.mode == "page-first-acceptance" or getattr(
             self.args, "page_allocation", False
         ):

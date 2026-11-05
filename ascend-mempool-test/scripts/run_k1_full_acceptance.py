@@ -57,6 +57,9 @@ def main() -> int:
     )
     parser.add_argument("--describe", action="store_true")
     parser.add_argument(
+        "--component-reports", type=Path, nargs=2, metavar=("COPY", "FETCH")
+    )
+    parser.add_argument(
         "--start-from",
         choices=[f"b{b}-sd{sd}" for b, sd in MATRIX],
         help="Resume at this combination; earlier results remain in the previous run",
@@ -118,6 +121,11 @@ def main() -> int:
                     "--log-root",
                     str(root),
                     *(["--page-allocation"] if args.page_allocation else []),
+                    *(
+                        ["--component-reports", *map(str, args.component_reports)]
+                        if args.component_reports
+                        else []
+                    ),
                 ]
             )
             code = child.wait()

@@ -26,6 +26,10 @@ def main() -> int:
     p.add_argument(
         "--stage", choices=("all", "phase1", "phase2", "benchmark"), default="all"
     )
+    p.add_argument(
+        "--phase1-component-run-id",
+        help="reuse passed page-first and fetch-retry reports from an earlier run",
+    )
     p.add_argument("--control-port", type=int, default=22000)
     p.add_argument("--describe", action="store_true")
     a = p.parse_args()
@@ -41,6 +45,7 @@ def main() -> int:
         regression="each phase: only b64-sd512; ticket12/18 cases and V1-V10",
         coverage="user-limited geometry; other three combinations not run",
         benchmark_repetitions=dict(samples=1, warmup=1, iterations=2),
+        phase1_component_run_id=a.phase1_component_run_id,
     )
     if a.describe:
         print(json.dumps(report, indent=2))
@@ -108,6 +113,24 @@ def main() -> int:
                 / "python/sglang/srt/hardware_backend/npu/mempool/kernels/unidex_multibase/build/libunidex_multibase.so"
             )
             if phase != "benchmark":
+                reused = []
+                if phase == "phase1" and a.phase1_component_run_id:
+                    previous = a.phase1_component_run_id
+                    reused = [
+                        "--component-reports",
+                        str(
+                            Path("/home/cryang/log/mempool-min")
+                            / f"{previous}-phase1"
+                            / f"{previous}-phase1-b64-sd512"
+                            / a.role
+                            / "page-first-copy/report.json"
+                        ),
+                        str(
+                            Path("/home/cryang/log/k2")
+                            / previous
+                            / f"fetch-retry-{a.role}.json"
+                        ),
+                    ]
                 config = json.loads(a.config.read_text())
                 config.update(observe=True, observe_trace=False)
                 generated = root / f"{phase}-{a.role}-config.json"
@@ -127,6 +150,7 @@ def main() -> int:
                         "--page-allocation",
                         "--start-from",
                         "b64-sd512",
+                        *reused,
                     ],
                     checkout,
                     env,

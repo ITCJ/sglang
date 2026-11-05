@@ -4,5 +4,6 @@
   "root_cause": "first gather in boundary_checks is captured without warmup; metadata creation uploaded Python lists synchronously",
   "fix": "device empty allocations and fill_ initialization in both phases",
   "cpu_checks": "cold/shape-changing descriptor test red before, green after; 5 related tests passed",
-  "hardware_retest": "pending; rerun paired fetch only with existing plugin"
+  "hardware_retest": "user reports ALL_CHECKS_PASSED on both 31 and 32 for paired fetch retry",
+  "scope": "phase1 fetch only; service, phase2 and multibase remote-write acceptance pending"
 }

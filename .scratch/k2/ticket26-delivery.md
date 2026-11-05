@@ -169,3 +169,10 @@ Standards与Spec两轴评审的已报告问题均已修复，最终未解决各0
 
 首次gather可发生在Graph capture内；BaseTable改用设备empty+fill_初始化，消除Python列表到设备的同步拷贝。两阶段同步。
 CPU检查通过，NPU重测待回传；先按[双机fetch重测](ticket26-fetch-retry.md)复用002插件，不重跑页拷贝或模型。
+
+## 002重测通过后续跑
+
+用户确认两侧fetch定向重测均ALL_CHECKS_PASSED。阶段1服务回归、阶段2、远端写仍未完成。
+原命令改用 `--run-id k2-ticket26-003` 并增加 `--phase1-component-run-id k2-ticket26-002`，即可复用阶段1已通过组件报告。
+本地会核对report的passed、rank和几何，归档原JSON与reused-from.json；缺失/失败报告不会跳过检查。
+阶段2不复用阶段1组件结果。只跑64/512及两次微测测量的约定不变。

@@ -60,3 +60,9 @@ Standards/Spec初审发现已修复，最终各0未解决。
 页拷贝通过并进入fetch；D边界测试首次gather在capture内创建BaseTable，torch.tensor从Python列表初始化触发同步H2D，报107030。
 改为设备empty和fill_，同步阶段1快照。首次调用/形状切换CPU回归先失败后通过，5项相关检查通过。
 设备重测待回传；先只重测双机fetch，复用已编译插件，见[ticket26-fetch-retry](../ticket26-fetch-retry.md)。
+
+### 002 fetch重测通过与续跑
+
+用户回报31/32均ALL_CHECKS_PASSED：阶段1双机fetch含Graph捕获/replay通过。未据此关闭26。
+新增--phase1-component-run-id复用此前成功页拷贝和fetch-retry JSON，校验通过状态、rank与几何，复制原报告并保留来源路径。
+003从阶段1服务回归继续，阶段2与远端写仍完整执行各自约定范围；仅64/512，微测测量两次。2项CPU检查与静态检查通过。
