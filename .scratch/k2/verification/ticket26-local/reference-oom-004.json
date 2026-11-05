@@ -1,0 +1,65 @@
+{
+  "run_id": "k2-ticket26-004",
+  "evidence_source": "user-pasted prefill/decode launcher tails and prelaunch npu-smi snapshots",
+  "prefill": {
+    "status": "weight initialization OOM",
+    "prelaunch_scheduler_host_pids": [
+      475550,
+      475551,
+      475552,
+      475553,
+      475554,
+      475555,
+      475556,
+      475557,
+      475609,
+      475610,
+      475611,
+      475612,
+      475613,
+      475614,
+      475615,
+      475616
+    ],
+    "prelaunch_python_host_pid": 440115,
+    "prelaunch_scheduler_container_pids": [
+      112,
+      113,
+      114,
+      115,
+      116,
+      117,
+      118,
+      119,
+      120,
+      121,
+      122,
+      123,
+      124,
+      125,
+      126,
+      127
+    ],
+    "scheduler_memory_mib_range": [
+      53832,
+      53834
+    ],
+    "weight_load_free_gib_range": [
+      7.96,
+      8.49
+    ],
+    "failed_allocation_mib": 194
+  },
+  "decode": {
+    "prelaunch": "no device processes; approximately 3 GiB/chip HBM used",
+    "weight_load_free_gib_range": [
+      60.77,
+      61.07
+    ],
+    "last_visible_progress": "35/96 shards; no independent exception in provided tail",
+    "acceptance": "not passed"
+  },
+  "conclusion": "Existing schedulers occupy 31 before the reference launcher starts; 32 has normal weight-loading headroom. Occupant job/container and restart policy remain unidentified.",
+  "next_step": "Identify live occupant container/job on host31 before any further acceptance run. Do not kill historical PIDs blindly.",
+  "ticket26": "open"
+}
