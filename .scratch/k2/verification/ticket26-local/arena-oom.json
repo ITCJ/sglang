@@ -1,0 +1,17 @@
+{
+  "run_id": "k2-ticket26-001",
+  "user_reported": {
+    "prefill": "page-first-copy allocation OOM: 10.97 GiB requested, 8.65 GiB free; small case passed",
+    "decode": "all three page-first-copy cases passed"
+  },
+  "fix": {
+    "test_main_slots_before": 16,
+    "test_main_slots_after": 8,
+    "arena_bytes": 5888802816,
+    "max_access_offset": 5888801664,
+    "production_layout": "unchanged",
+    "phase1_archive": "updated"
+  },
+  "cpu_regression": "red before fix, green after; both phases and page sizes; at most 8 GiB arena and accessed offset above uint32",
+  "hardware_retest": "pending"
+}

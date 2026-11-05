@@ -139,6 +139,14 @@ def check_geometry(layout, torch):
     )
 
 
+def geometries(page_size):
+    return [
+        KVLayout(3, 2, 256, 1, 16, page_size=page_size),
+        KVLayout(78, 8, 8192, 1, 576, page_size=page_size),
+        KVLayout(21, 16, 8192, 1, 128, page_size=page_size),
+    ]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--page-size", type=int, choices=(64, 128), default=128)
@@ -151,11 +159,7 @@ def main():
         import torch_npu  # noqa: F401
 
         torch.npu.set_device(0)
-        for geometry in [
-            KVLayout(3, 2, 256, 1, 16, page_size=args.page_size),
-            KVLayout(78, 16, 8192, 1, 576, page_size=args.page_size),
-            KVLayout(21, 16, 8192, 1, 128, page_size=args.page_size),
-        ]:
+        for geometry in geometries(args.page_size):
             result["cases"].append(check_geometry(geometry, torch))
             torch.npu.empty_cache()
         result["status"] = "passed"

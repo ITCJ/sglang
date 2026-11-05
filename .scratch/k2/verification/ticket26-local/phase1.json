@@ -29,7 +29,7 @@
     "python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/manager.py"
   ],
   "base_checkout_required": true,
-  "archive_sha256": "b8d9ed3bd143e1d9b566e63c55053fa19be92765b17fca33709dfd29bc8e200e",
+  "archive_sha256": "994639fba3c575acd6132f9ebad651d5e856c00c598e4ec38040f3f07143f845",
   "review_corrections": [
     "snapshot syntax",
     "build entry",
