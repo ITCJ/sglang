@@ -1,8 +1,6 @@
 # Ticket26：多基址后端实现交付
 
 2026-11-06。本地实现与评审完成，**State 仍为 open，等待用户实机验收**。
-**部署更新：使用 sgl-kernel-npu 分支 `feat/unidex-copy-slot-map-lookup-shm-allocator` 的 build.sh 构建 wheel，安装后直接调用算子。生产和验收均无独立插件加载或构建。**
-
 本票没有开启25双写业务，也没有解锁25；kernel远端可见性与真实计算重叠仍待实测。
 
 ## 已实现行为
@@ -82,15 +80,8 @@ Index K写表为0=P alive_index、1…8=prefix_index。
 ## 实机运行
 
 P/D各执行一条命令，使用同一个新run-id。需要已可运行的服务配置、模型和SDK。
-kernel提交 `0f56115` 因当前账号无上游写权限未推送（403）。两侧先在 sgl-kernel-npu 源码目录应用随本库交付的补丁，再构建：
-
-```bash
-git am /你的sglang目录/ascend-mempool-test/patches/sgl-kernel-npu-multibase.patch
-bash build.sh -a kernels Ascend910_9382
-python3 -m pip install --force-reinstall --no-deps output/sgl_kernel_npu-*.whl
-```
-
-验收直接使用安装后的 libsgl_kernel_npu.so，并记录其哈希。无需 --sgl-source。
+`--sgl-source`指向服务器现有sgl-kernel-npu源码目录；只读取其CMake/helper，不改写安装库。
+默认按CANN9.0.0与Ascend910_9382构建独立插件。不同构建配置先用build_multibase.py指定参数。
 
 ```bash
 python ascend-mempool-test/scripts/run_ticket26.py \
@@ -98,12 +89,13 @@ python ascend-mempool-test/scripts/run_ticket26.py \
   --config /path/to/prefill-config.json \
   --run-id k2-ticket26-001 \
   --sdk-build-id mf114-c01f3ad-ticket11-batchfix \
+  --sgl-source /path/to/sgl-kernel-npu \
   --prefill-host <P地址> --decode-host <D地址>
 ```
 
 D将role改为decode、config改为D配置，其余保持一致。
 日志在`/home/cryang/log/k2/<run-id>`；完整服务回归沿既有入口保存在`/home/cryang/log/mempool-min/<run-id>-phase1/phase2`。
-入口使用已安装算子，运行两阶段四配置完整回归、检查真实淘汰、运行两种写者规模微测并清理自身子进程。
+入口自动构建插件、运行两阶段四配置完整回归、检查真实淘汰、运行两种写者规模微测并清理自身子进程。
 阶段1独立clone当前仓库后回到基点aa5852624e，再覆盖归档；不会把阶段2源码混入阶段1。
 `--stage phase1|phase2|benchmark`可用于失败后的分阶段续跑，不删该阶段用例。
 每阶段保留12/18写读、Graph和过期表测试，以及09的A/B/C/E、V1–V10完整ID和字节检查。
@@ -139,11 +131,11 @@ python ascend-mempool-test/scripts/compare_multibase_observation.py \
 | sparsity_driven_kv_offload/attention.py | 稳定selected HBM的获取；既有等待/消费顺序保留 |
 | mempool/prefix.py | load_back与pool_copy关闭时的保留分支适配 |
 | mempool/observation_device.py | 设备源计数及缓存/slot-map实际检查 |
-| 相邻 sgl-kernel-npu 仓库 csrc/sparsity_driven_kv_offload/unidex_copy_multibase | 同一binary-v1核，纳入 kernels wheel；身份另附 |
+| mempool/kernels/unidex_multibase/host.cpp、kernel.cpp | 原样引入交接的独立binary-v1算子；身份另附 |
 
 ## 脚本、测试和文档
 
-- 构建/编排：run_ticket26.py、run_bandwidth.py、bandwidth_worker.py。
+- 构建/编排：build_multibase.py、run_ticket26.py、run_bandwidth.py、bandwidth_worker.py。
 - 设备工作负载：multibase_graph.py、multibase_write.py；bandwidth_device/report/summary适配新路径和分目标字节。
 - 既有验证入口：verify_graph/fetch/page_first_copy/pool_sdma及sharing_copy/cd_copy均迁移；不改变SDMA被测路径。
 - 观测分析：analyze_k2_observation.py、compare_multibase_observation.py。
@@ -162,5 +154,5 @@ python ascend-mempool-test/scripts/compare_multibase_observation.py \
 本地相关22个源码模块严格类型检查通过，改动Python静态检查及归档源码编译通过。
 Standards与Spec两轴评审的已报告问题均已修复，最终未解决各0项。
 
-本机未编译CANN库、未访问设备、未运行双机Graph/远端写/真实模型回归。
+本机未编译CANN插件、未访问设备、未运行双机Graph/远端写/真实模型回归。
 以上CPU和静态结果不替代实机验收；不勾选未实测验收项，不关闭26。

@@ -1,7 +1,5 @@
 # K2：sparse attention + KV cache offloading
 
-**26部署更新：多基址核已纳入 sgl-kernel-npu 的 build.sh kernels wheel；安装后直接调用，生产与验收不再构建或加载独立插件。实机验收仍待运行。**
-
 **2026-11-06 ticket26实施更新：当前状态以本段为准。**
 
 13/14/18已按约定验收范围关闭；26已完成本地实现与两轴评审，等待用户实机验收。

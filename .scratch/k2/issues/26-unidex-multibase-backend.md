@@ -42,9 +42,3 @@
 Standards/Spec初审发现已修复，最终各0未解决。
 [交付与命令](../ticket26-delivery.md)、[原始检查](../verification/ticket26-local/)。
 未在Mac编译CANN、未运行实机验证；State保持open，等待用户验收，不解锁25。
-
-### 部署修订
-
-按用户要求，kernel纳入sgl-kernel-npu现有分支的build.sh kernels wheel。
-生产与两阶段验收直接调用安装算子；删除独立插件构建脚本及--sgl-source参数。
-设备实现不变；实机编译和验收仍待用户运行。

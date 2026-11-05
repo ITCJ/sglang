@@ -20,6 +20,7 @@ def main() -> int:
     p.add_argument("--run-id", required=True)
     p.add_argument("--sdk-build-id", required=True)
     p.add_argument("--sdk-source-confirmation", default="")
+    p.add_argument("--sgl-source", type=Path, required=True)
     p.add_argument("--prefill-host", required=True)
     p.add_argument("--decode-host", required=True)
     p.add_argument(
@@ -90,7 +91,20 @@ def main() -> int:
                 )
                 with tarfile.open(archive) as bundle:
                     bundle.extractall(checkout)
+            run(
+                [
+                    sys.executable,
+                    "ascend-mempool-test/scripts/build_multibase.py",
+                    "--sgl-source",
+                    str(a.sgl_source.resolve()),
+                ],
+                checkout,
+            )
             env = dict(os.environ)
+            env["SGLANG_UNIDEX_MULTIBASE_LIBRARY"] = str(
+                checkout
+                / "python/sglang/srt/hardware_backend/npu/mempool/kernels/unidex_multibase/build/libunidex_multibase.so"
+            )
             if phase != "benchmark":
                 config = json.loads(a.config.read_text())
                 config.update(observe=True, observe_trace=False)
