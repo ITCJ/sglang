@@ -54,3 +54,9 @@ Standards/Spec初审发现已修复，最终各0未解决。
 32的阶段1 page-first-copy三例通过；31小例通过，主KV测试arena申请10.97 GiB失败，当时仅8.65 GiB空闲。
 验证脚本将主KV测试slot由16降至8，arena为5.48 GiB，保留78层、8192 token和超过4 GiB的实际访问偏移。
 同步阶段1归档；CPU回归先失败后通过。生产布局不变，实机重测待回传，26仍open。
+
+### 002 fetch Graph捕获失败
+
+页拷贝通过并进入fetch；D边界测试首次gather在capture内创建BaseTable，torch.tensor从Python列表初始化触发同步H2D，报107030。
+改为设备empty和fill_，同步阶段1快照。首次调用/形状切换CPU回归先失败后通过，5项相关检查通过。
+设备重测待回传；先只重测双机fetch，复用已编译插件，见[ticket26-fetch-retry](../ticket26-fetch-retry.md)。

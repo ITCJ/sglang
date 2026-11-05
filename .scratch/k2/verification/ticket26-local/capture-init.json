@@ -1,0 +1,8 @@
+{
+  "run_id": "k2-ticket26-002",
+  "failure": "decode fetch boundary Graph: BaseTable torch.tensor host-to-device copy rejected with aclrtMemcpy 107030",
+  "root_cause": "first gather in boundary_checks is captured without warmup; metadata creation uploaded Python lists synchronously",
+  "fix": "device empty allocations and fill_ initialization in both phases",
+  "cpu_checks": "cold/shape-changing descriptor test red before, green after; 5 related tests passed",
+  "hardware_retest": "pending; rerun paired fetch only with existing plugin"
+}

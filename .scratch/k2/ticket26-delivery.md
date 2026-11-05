@@ -164,3 +164,8 @@ Standards与Spec两轴评审的已报告问题均已修复，最终未解决各0
 31的page-first-copy验证arena因10.97 GiB申请超过8.65 GiB空闲而失败；32同检查通过。
 测试arena改为8 slots、5.48 GiB，实际访问仍跨4 GiB；两阶段一致，生产布局不变。
 新回归在修复前失败、修复后通过；实机结果待确认。重测使用新run-id `k2-ticket26-002`。
+
+## 002 fetch捕获修复
+
+首次gather可发生在Graph capture内；BaseTable改用设备empty+fill_初始化，消除Python列表到设备的同步拷贝。两阶段同步。
+CPU检查通过，NPU重测待回传；先按[双机fetch重测](ticket26-fetch-retry.md)复用002插件，不重跑页拷贝或模型。

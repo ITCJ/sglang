@@ -84,15 +84,16 @@ class BaseTable:
             ranges.append((cursor, cursor + count))
             cursor += count
         self.starts = tuple(begin for begin, _ in ranges)
-        self.bases = torch.tensor(
-            [p for p, _ in regions], dtype=torch.int64, device=device
-        )
-        self.ranges = torch.tensor(ranges, dtype=torch.int64, device=device).reshape(
-            -1, 2
-        )
-        self.valid = torch.tensor(
-            [p != 0 and n > 0 for p, n in regions], dtype=torch.bool, device=device
-        )
+        # Cold calls can occur inside Graph capture. Allocate on device and
+        # initialize with captured fills, avoiding synchronous H2D tensor uploads.
+        self.bases = torch.empty(len(regions), dtype=torch.int64, device=device)
+        self.ranges = torch.empty((len(regions), 2), dtype=torch.int64, device=device)
+        self.valid = torch.empty(len(regions), dtype=torch.bool, device=device)
+        for i, ((pointer, count), (begin, end)) in enumerate(zip(regions, ranges)):
+            self.bases[i].fill_(pointer)
+            self.ranges[i, 0].fill_(begin)
+            self.ranges[i, 1].fill_(end)
+            self.valid[i].fill_(pointer != 0 and count > 0)
 
     @property
     def metadata(self) -> tuple[Tensor, Tensor, Tensor]:
