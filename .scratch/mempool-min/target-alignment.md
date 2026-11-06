@@ -112,6 +112,26 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 
 ## D 名称、验收与实施票怎样对应
 
+**26第十六次：长生成仍推进时触发600秒总时限。**
+
+16rank均推进至第315步；512步按现有速度估算约16分钟。
+017显式延长本轮时限到1800秒，保留015的reference输出。
+
+新进程需重建有状态target六例；组件/reference不重跑。
+11项CPU与静态检查通过，Standards/Spec各0未解决；功能源码未改。
+完整target仍未通过，26保持open。见[017命令](../k2/ticket26-target-timeout-retry.md)。
+
+
+**26第十五次：双侧reference补跑通过。**
+
+31成功标记与32单段报告已回传，成对进程清理passed。
+组件未重跑；完整验收仍incomplete，26保持open。
+
+下一段016仅跑target，复用015原始输出并严格核对身份。
+用户确认资源清理后手动运行，不自动推进capacity或timeout。
+见[015结果与续跑说明](../k2/ticket26-reference-rebuild.md)。
+
+
 **26第十四次：预检配置错误已修复，reference尚未启动。**
 
 reference端口推导关闭共享，却保留by_segment；临时配置校验失败。

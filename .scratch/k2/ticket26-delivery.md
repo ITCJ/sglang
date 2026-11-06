@@ -265,3 +265,11 @@ CPU两组共10项检查通过，ruff通过，Standards/Spec各0未解决；NPU�
 reference临时端口配置关闭共享时遗漏读者分配字段，导致by_segment校验失败。
 验收脚本仅将临时prefix_read_assignment设auto；原target参数不变。严格校验复现，两项定向CPU通过。
 功能源码无改动；015重试reference，见[ticket26-reference-rebuild](ticket26-reference-rebuild.md)。
+
+
+## 016长生成总时限与017重试
+
+015 reference用户已确认通过；016 target第5请求仍推进时触发600秒总时限。
+新增显式--service-timeout 1800，只改变本次有效超时并记录reference差异，原精度对照及其它身份门禁保留。
+功能源码无改动；两份脚本及一份测试，一轮11项CPU通过。017只重试target有状态六例，不重跑reference/组件。
+[证据边界、源码说明与双侧命令](ticket26-target-timeout-retry.md)。

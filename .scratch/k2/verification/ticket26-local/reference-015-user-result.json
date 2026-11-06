@@ -1,0 +1,23 @@
+{
+  "source": "user-pasted prefill success marker, decode summary excerpt and reference/process-cleanup.json",
+  "run_id": "k2-ticket26-015-reference",
+  "delivered_commit": "2486f5fcfd",
+  "identity_report_not_collected": true,
+  "prefill_marker": "REFERENCE_PASSED; stopped for user cleanup confirmation",
+  "decode_summary": {
+    "status": "passed_execution_scope",
+    "stopped_after": "reference",
+    "stages": [
+      "reference"
+    ],
+    "components": "not-run; previous reports deleted by user",
+    "full_acceptance": "incomplete"
+  },
+  "decode_reference_cleanup": {
+    "status": "passed",
+    "paired": true
+  },
+  "coverage": "reference service only; target requests/Graph replay/accuracy comparison pending",
+  "manual_cleanup_confirmation": "user retains responsibility; script cleanup report received",
+  "ticket_state": "open"
+}

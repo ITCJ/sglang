@@ -191,3 +191,21 @@ Standards/Spec各0未解决。用户人工确认清理后执行[010命令](../ti
 本地msgspec0.20 replace不执行post-init，初次测试未触发；显式校验原派生配置复现同一异常。
 增强契约检查后，实际64/512两侧端口及原配置不变、残留19003阻断两项通过，ruff通过；Standards/Spec各0未解决。
 015只重试尚未执行的reference，用户原授权不变；26仍open。见[新命令](../ticket26-reference-rebuild.md)。
+
+
+### 015双侧reference通过，下一段016只跑target
+
+用户回传31 REFERENCE_PASSED、32 passed_execution_scope/stopped_after=reference及paired清理passed。
+组件未执行、完整验收incomplete；本轮只恢复了reference服务原始对照数据。
+下一段使用同版配置及--reference-service-report严格读取015各侧目录，只执行target后停止。
+用户确认资源清理后手动运行，不自动进入capacity/timeout；26仍open、25未解锁。
+用户反馈摘录见[015结果](../verification/ticket26-local/reference-015-user-result.json)。
+
+
+### 016 target长生成超过总时限，017显式延长至1800秒
+
+用户回传前四HTTP200；第五8192+512在600秒被Router fail-stop。16rank均推进至315步，末步晚于Router超时。
+直接失败为请求总时限，慢速原因未确认；原启动故障本轮未复现。整组target尚未通过。
+新增仅reference-service-report适用的--service-timeout，记录600→1800，旧reference输出不改，其他身份严格核对。
+六例共享prefix状态且最终联合校验，017需重建target目录并执行整组；组件/reference不重跑，进程清理由用户确认。
+仅脚本/测试改动，Mac一轮11项、ruff通过，Standards/Spec各0未解决。见[017说明](../ticket26-target-timeout-retry.md)。

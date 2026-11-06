@@ -1,0 +1,31 @@
+{
+  "source": "user-pasted router log, prefill tail, decode fault tail and per-rank step summaries",
+  "run_id": "k2-ticket26-016-target",
+  "status": "failed",
+  "request": "k2-ticket26-016-target-5",
+  "case": "long-generation",
+  "input_tokens": 8192,
+  "requested_output_tokens": 512,
+  "operation_timeout": 600,
+  "router_started": "2026-11-06 22:11:16",
+  "decode_ready_ack": "2026-11-06 22:11:21",
+  "router_timeout": "2026-11-06 22:21:16",
+  "decode_tp_fault": "2026-11-06 22:21:21",
+  "all_16_ranks": {
+    "step_records": 315,
+    "first_step": 1,
+    "first_time": "22:11:21",
+    "last_step": 315,
+    "last_time": "22:21:19"
+  },
+  "first_four_http_statuses": [
+    200,
+    200,
+    200,
+    200
+  ],
+  "conclusion": "request deadline expired while decode still progressed; whole target stage not passed",
+  "limits": "Step records are scheduling evidence, not proof of all device work completed or a precise throughput measurement. Slow decode cause remains unverified.",
+  "next": "explicit 1800s operation timeout; reuse reference015; retry only the stateful target stage",
+  "ticket_state": "open"
+}

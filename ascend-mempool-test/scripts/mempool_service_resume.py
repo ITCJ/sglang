@@ -37,6 +37,7 @@ def reuse_completed_stages(
     *,
     through: Literal["reference", "target"] = "target",
     include_components: bool = True,
+    service_timeout: float | None = None,
 ) -> list[dict[str, Any]]:
     previous = previous.resolve()
     if previous.name != role:
@@ -53,6 +54,22 @@ def reuse_completed_stages(
                 cwd=REPO,
                 text=True,
             ).strip()
+    timeout_change = None
+    if service_timeout is not None:
+        old_timeout = old_runtime["config"]["operation_timeout"]
+        if (
+            include_components
+            or through != "reference"
+            or new_runtime["config"]["operation_timeout"] != service_timeout
+            or service_timeout <= old_timeout
+        ):
+            raise ValueError(
+                "service timeout override must only increase the reference deadline"
+            )
+        timeout_change = dict(reference=old_timeout, target=service_timeout)
+        old_runtime["config"] = dict(
+            old_runtime["config"], operation_timeout=service_timeout
+        )
     if old_runtime != new_runtime:
         raise ValueError("resume requires matching runtime/config/model identity")
     summary = json.loads((previous / "summary.json").read_text())
@@ -91,6 +108,7 @@ def reuse_completed_stages(
                 components=list(components),
                 identity=prior,
                 runtime_identity_checked=True,
+                operation_timeout_override=timeout_change,
                 next_stage="target" if through == "reference" else "capacity",
             ),
             indent=2,

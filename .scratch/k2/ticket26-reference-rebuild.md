@@ -4,6 +4,14 @@
 用户已删除旧日志及reference原始响应，2026-11-06明确授权只补跑一次reference。
 历史已过组件不重跑，也不伪造组件通过报告；本轮范围只限服务证据，完整验收仍incomplete。
 
+## 015结果与016 target单段
+
+用户已回传双侧reference通过；32成对进程清理报告passed。组件not-run，完整验收incomplete。
+用户确认资源清理后，复制015/config.json至新目录016-target，并使用run_mempool_min.py full-acceptance。
+--reference-service-report指向015各自prefill/decode目录；入口只执行target，自动在target后停止。
+对照用例、输出及源码/配置/模型/包版本严格核对；保留015目录直到016精度对比完成。
+本轮无需重新编译插件或重跑reference。016尚未执行，不能据此标完整验收通过。
+
 ## 014预检失败后的015重试
 
 014在START launcher之前报by_segment requires shared prefix，尚未运行reference模型。

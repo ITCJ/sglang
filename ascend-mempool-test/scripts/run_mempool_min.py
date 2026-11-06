@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import signal
@@ -147,6 +148,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="run only target using a successful --reference-only report",
     )
+    parser.add_argument(
+        "--service-timeout",
+        type=float,
+        help="increase operation timeout for a reference-service-report target retry",
+    )
     parser.add_argument("--stop-after-target", action="store_true")
     parser.add_argument("--observation-rounds", type=int, choices=(1, 2), default=1)
     args = parser.parse_args(argv)
@@ -172,6 +178,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         if args.observation_rounds != 1:
             parser.error("single service stages require --observation-rounds 1")
         args.page_allocation = True
+    if args.service_timeout is not None and (
+        not args.reference_service_report
+        or not math.isfinite(args.service_timeout)
+        or args.service_timeout <= 0
+    ):
+        parser.error(
+            "service-timeout requires reference-service-report and finite positive seconds"
+        )
     if args.replay_responses is not None:
         args.replay_responses = args.replay_responses.resolve()
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", args.run_id):
@@ -1470,6 +1484,7 @@ class Runner:
                 self.args.role,
                 through="reference" if reference_only else "target",
                 include_components=not bool(reference_service),
+                service_timeout=getattr(self.args, "service_timeout", None),
             )
             if reference_only and self.is_p:
                 from transformers import AutoTokenizer
@@ -1648,6 +1663,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     config = RouterConfig.read(str(args.config))
     root = args.log_root / args.run_id / args.role
     requested = msgspec.to_builtins(config)
+    if args.service_timeout is not None:
+        config = msgspec.structs.replace(config, operation_timeout=args.service_timeout)
+
     if args.mode in (
         "prefix-acceptance",
         "reuse-acceptance",

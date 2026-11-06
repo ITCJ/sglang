@@ -187,6 +187,87 @@ class TestServiceResume(unittest.TestCase):
                     root, target=target, case_count=1
                 )
 
+    def test_timeout_override_preserves_other_identity_checks(self):
+        self.identity["config"]["operation_timeout"] = 1800.0
+        prior = copy.deepcopy(self.identity)
+        prior["config"]["operation_timeout"] = 600.0
+        self.write("identity.json", dict(prior, run_id="old"))
+        self.write(
+            "summary.json",
+            {
+                "status": "passed_execution_scope",
+                "stages": ["reference"],
+                "stopped_after": "reference",
+            },
+        )
+        before = copy.deepcopy(self.identity)
+        for changes in ({"page_size": 128}, {"model_path": "/other"}):
+            different = copy.deepcopy(self.identity)
+            different["config"].update(changes)
+            with self.assertRaisesRegex(ValueError, "identity"):
+                mempool_service_resume.reuse_completed_stages(
+                    self.previous,
+                    self.current,
+                    different,
+                    "prefill",
+                    through="reference",
+                    include_components=False,
+                    service_timeout=1800.0,
+                )
+        with self.assertRaisesRegex(ValueError, "identity"):
+            mempool_service_resume.reuse_completed_stages(
+                self.previous,
+                self.current,
+                self.identity,
+                "prefill",
+                through="reference",
+                include_components=False,
+            )
+        mempool_service_resume.reuse_completed_stages(
+            self.previous,
+            self.current,
+            self.identity,
+            "prefill",
+            through="reference",
+            include_components=False,
+            service_timeout=1800.0,
+        )
+        receipt = json.loads((self.current / "service-reused-from.json").read_text())
+        self.assertEqual(
+            receipt["operation_timeout_override"], {"reference": 600, "target": 1800}
+        )
+        self.assertEqual(self.identity, before)
+        self.assertEqual(receipt["identity"]["config"]["operation_timeout"], 600)
+
+    def test_timeout_override_public_cli_validates_scope_and_value(self):
+        import contextlib
+        import io
+
+        argv = [
+            "--role",
+            "prefill",
+            "--mode",
+            "full-acceptance",
+            "--config",
+            "config.json",
+            "--run-id",
+            "new",
+        ]
+        args = run_mempool_min.parse_args(
+            [*argv, "--reference-service-report", "old", "--service-timeout", "1800"]
+        )
+        self.assertEqual(args.service_timeout, 1800)
+        for extra in (
+            ["--reference-only", "--service-timeout", "1800"],
+            ["--reference-service-report", "old", "--service-timeout", "nan"],
+            ["--reference-service-report", "old", "--service-timeout", "-1"],
+        ):
+            with (
+                contextlib.redirect_stderr(io.StringIO()),
+                self.assertRaises(SystemExit),
+            ):
+                run_mempool_min.parse_args([*argv, *extra])
+
     def test_reference_only_runs_once_without_components_or_target(self):
         for role in ("prefill", "decode"):
             args = run_mempool_min.parse_args(
