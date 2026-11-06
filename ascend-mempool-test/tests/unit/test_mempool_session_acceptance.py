@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import msgspec
 import run_mempool_min
@@ -42,6 +42,67 @@ class TestSessionAcceptance(unittest.TestCase):
         config = RouterConfig("p", "d", "/model")
         for role in ("prefill", "decode"):
             self.assertIn(10000, run_mempool_min.service_ports(config, role))
+
+    def test_reference_transition_checks_all_private_stores_and_blocks_on_residue(self):
+        config = RouterConfig(
+            "p",
+            "d",
+            "/model",
+            prefix_pages=40,
+            prefill_shared=True,
+            decode_shared=True,
+            prefill_index_shared=True,
+            prefix_shared=True,
+        )
+        for occupied in (False, True):
+            with (
+                self.subTest(occupied=occupied),
+                tempfile.TemporaryDirectory() as folder,
+            ):
+                runner = run_mempool_min.Runner(
+                    SimpleNamespace(
+                        role="prefill",
+                        mode="full-acceptance",
+                        run_id="cpu",
+                        config=Path(folder) / "config.json",
+                    ),
+                    config,
+                    Mock(),
+                    Path(folder),
+                )
+                checked = []
+
+                def released(host, port, **kwargs):
+                    checked.append(port)
+                    if occupied and port == 19003:
+                        raise OSError(errno.EADDRINUSE, "reference TP3 still listening")
+
+                with (
+                    patch.object(run_mempool_min, "Processes"),
+                    patch.object(run_mempool_min, "wait_http"),
+                    patch.object(run_mempool_min, "receive_log"),
+                    patch.object(
+                        run_mempool_min.mempool_logical_cases,
+                        "check_stability",
+                        return_value={"status": "passed"},
+                    ),
+                    patch.object(
+                        run_mempool_min.verify_service,
+                        "check_logs",
+                        return_value={"status": "formal_service_passed"},
+                    ),
+                    patch.object(
+                        verify_mempool_session, "released_port", side_effect=released
+                    ),
+                ):
+                    if occupied:
+                        with self.assertRaisesRegex(OSError, "TP3 still listening"):
+                            runner.stage(target=False)
+                        self.assertNotIn("reference", runner.report["stages"])
+                    else:
+                        runner.stage(target=False)
+                        self.assertTrue(set(range(19000, 19016)) <= set(checked))
+                        self.assertIn("reference", runner.report["stages"])
 
     def test_prefix_cli_enables_single_segments_and_reports_both_budgets(self):
         with tempfile.TemporaryDirectory() as folder:

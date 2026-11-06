@@ -202,3 +202,11 @@ CPU检查通过，NPU重测待回传；先按[双机fetch重测](ticket26-fetch-
 新增逻辑仅在run_ticket26.py；test_ticket26_resume.py从公共CLI验证P/D各自不启动phase1、组件报告透传、继续两档rank数benchmark与报告范围。
 两项CPU检查、ruff/mypy通过，不重跑完整CPU或已通过设备测试。功能源码、SDK及默认退出没有变化。
 [31/32命令](ticket26-phase2-resume.md)，[失败证据](verification/ticket26-local/phase2-reference-port.json)。
+
+## 007后的阶段清理审计
+
+reference关闭共享，实际启动16个P/D会话；此前端口清理误用target共享布局，只验证单一BM store及共享NIC清单。
+run_mempool_min.py现按阶段选择私有/共享端口；包含reference的预检检查两套端口，清理按刚退出的服务检查。
+没有改变ticket10_processes的进程组清理、通用shutdown、SDK或kernel；保留现有TIME_WAIT有限等待，不用固定sleep冒充资源已释放。
+test_mempool_session_acceptance.py新增真实Runner.stage调用回归，验证占用19003会阻止reference完成；连同三项已有端口/TIME_WAIT检查通过。
+阶段1归档同步，功能源码字节未变。007最新32 target异常栈仍待回传，历史残留根因未证明。

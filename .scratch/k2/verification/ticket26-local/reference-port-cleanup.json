@@ -1,0 +1,22 @@
+{
+  "trigger": "user suspects incomplete cleanup or insufficient wait between services after run007 target failure",
+  "observed_cleanup": {
+    "signal": "SIGTERM to owned process groups",
+    "wait": "poll non-zombie members every 0.2s for up to 30s; forced stop is an error",
+    "paired": "both sides stopped then checked ports before advancing",
+    "device_release": "not checked by current runner"
+  },
+  "reproduced_gap": "reference launches private sessions, but port checks previously used target sharing configuration; single shared Index K checked only store19000 and omitted19001-19015 plus private NIC endpoints",
+  "regression": "Runner.stage(target=False) with an occupied19003 previously marked reference complete; now raises and does not mark completion",
+  "fix": "select actual reference/target layout for teardown ports; preflight covers both layouts when reference is planned; existing bounded TIME_WAIT handling retained",
+  "tests": {
+    "methods": 4,
+    "result": "passed",
+    "new_regression": "failed before fix; passed after fix",
+    "static": "2 files ruff passed; archive syntax passed; runtime sources unchanged"
+  },
+  "scope": "acceptance runner and tests only; no default shutdown/kernel/SDK change; no fixed sleep added",
+  "hardware_limit": "run007 decode target error stack still required; actual historical residual process/driver state unproven",
+  "completed_tests": "phase1, phase2 components and phase2 reference preserved; not rerun",
+  "ticket26": "open"
+}

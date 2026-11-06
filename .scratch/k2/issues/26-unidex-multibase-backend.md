@@ -101,3 +101,13 @@ Standards/Spec初审发现已修复，最终各0未解决。
 复用沿用已有passed/rank/geometry验证与原JSON归档；之后照常执行阶段2其余检查、cache gate和两档rank数微基准。
 修改仅run_ticket26.py和相关测试/文档；功能源码、SDK与默认退出不变。两项CPU定向检查覆盖双侧编排与组件证据拒绝，静态检查通过。
 26仍open，实机续跑待回传；本次没有宣称端口冲突已根治。见[阶段2续跑](../ticket26-phase2-resume.md)。
+
+### 007阶段切换审计：reference端口检查遗漏已复现并修复
+
+007的阶段2reference完成后，target由32报告服务退出137，原始异常栈尚未收到，不能认定本次根因。
+用户怀疑上一服务未完全释放或没有等待。代码审计发现：runner会等待自身进程组退出并两侧同步，但reference清理误用target共享布局端口清单。
+共享Index K模式只检查BM store19000，reference实际用16个独立store，19001–19015及部分NIC端口漏查；19003在漏查范围内。
+新增Runner.stage回归复现“19003仍占用而reference被标完成”；现按实际阶段推导端口，并在有reference的运行预检两套端口。
+沿用有上限的TIME_WAIT等待、原进程组清理和SGLang退出；没有加固定sleep或改变SDK。四项定向CPU检查通过，阶段1快照同步。
+此修复解决确定的验收检查缺口，不证明历史冲突来自旧worker，也不证明007失败已解决。
+已完成阶段保留；继续等007的32 target异常栈，26保持open。

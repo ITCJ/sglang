@@ -32,13 +32,14 @@
     "python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/manager.py"
   ],
   "base_checkout_required": true,
-  "archive_sha256": "ec75af880cb25216285388215da8e1f221cc6fbdb47a214084229112ed6c8635",
+  "archive_sha256": "d3cdaaebda5dace54ac8bb6a54059a103b4e4334a3640790aeb20feb5f8936bf",
   "review_corrections": [
     "snapshot syntax",
     "build entry",
     "bounded descriptor retention; call structure unchanged",
     "capture-safe BaseTable initialization using device fills",
     "resume service regression using passed component reports",
-    "capacity startup exit monitoring; resume completed service evidence before capacity"
+    "capacity startup exit monitoring; resume completed service evidence before capacity",
+    "check reference private-session ports during preflight and teardown"
   ]
 }

@@ -229,8 +229,18 @@ def service_environment(
     return env
 
 
-def service_ports(config: RouterConfig, role: str) -> set[int]:
+def service_ports(config: RouterConfig, role: str, *, target: bool = True) -> set[int]:
     """Check the endpoints this service owns, excluding gaps in NIC reservations."""
+    if not target:
+        # Reference has no RouterConfig in its environment: every TP rank owns
+        # a private P/D session, even when the following target shares pools.
+        config = msgspec.structs.replace(
+            config,
+            prefill_shared=False,
+            decode_shared=False,
+            prefill_index_shared=False,
+            prefix_shared=False,
+        )
     host = config.prefill_host if role == "prefill" else config.decode_host
     layout = MempoolConfig(
         prefill_capacity=config.prompt_capacity,
@@ -469,6 +479,13 @@ class Runner:
                 check=True,
             )
         ports = service_ports(self.config, self.args.role)
+        if (
+            not self.session_acceptance
+            and self.args.mode
+            not in ("serve", "numa-acceptance", "index-cold-diagnosis")
+            and not getattr(self.args, "resume_after_target", None)
+        ):
+            ports |= service_ports(self.config, self.args.role, target=False)
         if self.is_p:
             ports.update((self.config.bootstrap_port, 24670))
         deadline = time.monotonic() + self.config.operation_timeout
@@ -1175,7 +1192,7 @@ class Runner:
             or self.args.mode == "index-cold-diagnosis"
             or (self.full and self.config.prefix_shared)
         ):
-            ports = service_ports(self.config, self.args.role)
+            ports = service_ports(self.config, self.args.role, target=target)
             deadline = time.monotonic() + self.config.operation_timeout
             for port in sorted(ports):
                 verify_mempool_session.released_port(
