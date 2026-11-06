@@ -182,3 +182,12 @@ Standards/Spec各0未解决。用户人工确认清理后执行[010命令](../ti
 组件测试不执行、报告标not-run；身份与原始响应检查保留，完整验收不标passed。
 仅两份验收脚本及一份测试改动，功能源码与默认退出无变化；Mac首轮7项通过，评审修复后第二轮9项通过、ruff通过，Standards/Spec各0未解决。
 014待用户双机运行，013启动通过不替代服务精度结果；26保持open。见[补跑命令](../ticket26-reference-rebuild.md)。
+
+
+### 014预检配置矛盾：修正reference端口推导
+
+用户启动即报by_segment requires shared prefix，无START launcher。service_ports私有配置关闭prefix_shared却保留by_segment，严格校验失败。
+仅验收脚本派生配置设prefix_read_assignment=auto，原target配置不改；无功能源码/退出行为改动。
+本地msgspec0.20 replace不执行post-init，初次测试未触发；显式校验原派生配置复现同一异常。
+增强契约检查后，实际64/512两侧端口及原配置不变、残留19003阻断两项通过，ruff通过；Standards/Spec各0未解决。
+015只重试尚未执行的reference，用户原授权不变；26仍open。见[新命令](../ticket26-reference-rebuild.md)。

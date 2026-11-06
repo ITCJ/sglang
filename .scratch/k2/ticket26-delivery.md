@@ -258,3 +258,10 @@ CPU两组共10项检查通过，ruff通过，Standards/Spec各0未解决；NPU�
 用户删除旧日志且无备份，明确允许只补一次reference，随后人工确认清理再单独target。
 本轮功能源码无改动；两份验收脚本新增reference-only与service-only续跑，组件缺失明确not-run，保留严格身份核对。
 首轮7项、评审修复后第二轮9项CPU与ruff通过，Standards/Spec各0未解决；[源码说明与014双机命令](ticket26-reference-rebuild.md)。
+
+
+## 014预检修复
+
+reference临时端口配置关闭共享时遗漏读者分配字段，导致by_segment校验失败。
+验收脚本仅将临时prefix_read_assignment设auto；原target参数不变。严格校验复现，两项定向CPU通过。
+功能源码无改动；015重试reference，见[ticket26-reference-rebuild](ticket26-reference-rebuild.md)。

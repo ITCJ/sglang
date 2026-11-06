@@ -267,6 +267,7 @@ def service_ports(config: RouterConfig, role: str, *, target: bool = True) -> se
             decode_shared=False,
             prefill_index_shared=False,
             prefix_shared=False,
+            prefix_read_assignment="auto",
         )
     host = config.prefill_host if role == "prefill" else config.decode_host
     layout = MempoolConfig(

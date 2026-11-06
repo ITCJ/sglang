@@ -112,6 +112,15 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 
 ## D 名称、验收与实施票怎样对应
 
+**26第十四次：预检配置错误已修复，reference尚未启动。**
+
+reference端口推导关闭共享，却保留by_segment；临时配置校验失败。
+现同步切回auto，原target配置不变；两项CPU与静态检查通过。
+
+Standards/Spec各0未解决；015只重试reference，功能源码和默认清理未改。
+见[015命令](../k2/ticket26-reference-rebuild.md)。
+
+
 **26下一段：用户授权只重建一次reference。**
 
 旧输出无备份，014补跑reference后停止，保存原始响应。

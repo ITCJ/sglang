@@ -43,6 +43,35 @@ class TestSessionAcceptance(unittest.TestCase):
         for role in ("prefill", "decode"):
             self.assertIn(10000, run_mempool_min.service_ports(config, role))
 
+    def test_reference_ports_accept_actual_ticket26_segment_config(self):
+        from run_k1_full_acceptance import configurations
+
+        config = dict(configurations(RouterConfig("p", "d", "/model"), "sdk"))[
+            "b64-sd512"
+        ]
+        original = msgspec.json.encode(config)
+        replace = msgspec.structs.replace
+
+        def validated_replace(*args, **kwargs):
+            derived = replace(*args, **kwargs)
+            # Local msgspec does not run this hook on replace; require
+            # the same config contract as the deployed environment.
+            derived.__post_init__()
+            return derived
+
+        for side, role in enumerate(("prefill", "decode")):
+            with patch.object(
+                msgspec.structs, "replace", side_effect=validated_replace
+            ):
+                ports = run_mempool_min.service_ports(config, role, target=False)
+            expected = {10000, 8000 if role == "prefill" else 8001}
+            expected.update(25670 + 2 * rank + side for rank in range(16))
+            if role == "prefill":
+                expected.update((6699, 16700, *range(19000, 19016)))
+            self.assertEqual(ports, expected)
+        self.assertEqual(msgspec.json.encode(config), original)
+        self.assertEqual(config.prefix_read_assignment, "by_segment")
+
     def test_reference_transition_checks_all_private_stores_and_blocks_on_residue(self):
         config = RouterConfig(
             "p",
