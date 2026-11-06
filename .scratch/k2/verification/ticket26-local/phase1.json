@@ -5,6 +5,7 @@
   "hardware": "not-run",
   "files": [
     "ascend-mempool-test/scripts/build_multibase.py",
+    "ascend-mempool-test/scripts/mempool_service_resume.py",
     "ascend-mempool-test/scripts/run_k1_full_acceptance.py",
     "ascend-mempool-test/scripts/run_mempool_min.py",
     "ascend-mempool-test/scripts/verify_fetch.py",
@@ -31,12 +32,13 @@
     "python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/manager.py"
   ],
   "base_checkout_required": true,
-  "archive_sha256": "5bf2eb7f6b58ef15def287d551f23a20a75610461e5aa1f1c7588cd29b63894f",
+  "archive_sha256": "ec75af880cb25216285388215da8e1f221cc6fbdb47a214084229112ed6c8635",
   "review_corrections": [
     "snapshot syntax",
     "build entry",
     "bounded descriptor retention; call structure unchanged",
     "capture-safe BaseTable initialization using device fills",
-    "resume service regression using passed component reports"
+    "resume service regression using passed component reports",
+    "capacity startup exit monitoring; resume completed service evidence before capacity"
   ]
 }

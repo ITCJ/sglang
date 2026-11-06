@@ -1,0 +1,21 @@
+test_resume_rejects_incomplete_evidence_or_changed_runtime (test_service_resume.TestServiceResume.test_resume_rejects_incomplete_evidence_or_changed_runtime) ... ok
+test_run_full_resumes_with_capacity_and_keeps_original_evidence (test_service_resume.TestServiceResume.test_run_full_resumes_with_capacity_and_keeps_original_evidence) ... ok
+test_passed_reports_are_preserved_and_bad_evidence_rejected (test_component_reuse.TestComponentReuse.test_passed_reports_are_preserved_and_bad_evidence_rejected) ... ok
+test_capacity_startup_exit_stops_both_sides_before_registration_timeout (test_mempool_full.TestFullEntry.test_capacity_startup_exit_stops_both_sides_before_registration_timeout) ... ok
+test_capacity_rejection_requires_a_real_failure_exit_and_the_injected_rank (test_mempool_full.TestFullEntry.test_capacity_rejection_requires_a_real_failure_exit_and_the_injected_rank) ... ok
+test_decode_capacity_exit_is_expected_after_router_fault (test_mempool_full.TestFullEntry.test_decode_capacity_exit_is_expected_after_router_fault) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.437s
+
+OK
+
+After review: actual reference status and exit/status ordering; archive modules loaded.
+test_resume_rejects_incomplete_evidence_or_changed_runtime (test_service_resume.TestServiceResume.test_resume_rejects_incomplete_evidence_or_changed_runtime) ... ok
+test_run_full_resumes_with_capacity_and_keeps_original_evidence (test_service_resume.TestServiceResume.test_run_full_resumes_with_capacity_and_keeps_original_evidence) ... ok
+test_capacity_startup_exit_stops_both_sides_before_registration_timeout (test_mempool_full.TestFullEntry.test_capacity_startup_exit_stops_both_sides_before_registration_timeout) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.829s
+
+OK

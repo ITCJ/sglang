@@ -182,3 +182,15 @@ CPU检查通过，NPU重测待回传；先按[双机fetch重测](ticket26-fetch-
 用户回传的两份启动前npu-smi快照均显示已有SGLang scheduler每卡占约53,300 MiB，因此本次权重加载只剩约9 GiB并OOM。
 后续31已空闲；两侧确认空闲后，原续跑命令改用 `--run-id k2-ticket26-004`，仍保留 `--phase1-component-run-id k2-ticket26-002`。
 003没有服务验收通过结果。新增HBM缓冲的预算记账仍单独待核对。
+
+## 005 capacity 失败后的续跑
+
+005已完成reference/target，capacity因31的10000端口绑定冲突失败；runner漏查模型退出造成空等。
+修复仅涉及验收脚本，功能代码和算子不变。两侧注册等待均检测非预期退出，预期容量拒绝仍走原验收契约。
+使用新run-id 006与`--phase1-service-run-id k2-ticket26-005`，直接从capacity继续；不再重跑完成的组件/reference/target。
+核对配置、模型、包版本与功能源码后复制原证据到新目录，写service-reused-from.json；不符直接失败，不自动重跑。
+阶段1后继续阶段2和benchmark；两阶段各自的代码不同，未执行的阶段2仍须验证。
+脚本：run_ticket26.py与run_k1_full_acceptance.py透传续跑参数，run_mempool_min.py处理阶段跳过及退出检测，mempool_service_resume.py核对/复制证据。
+测试：test_service_resume.py覆盖跳过顺序、身份变化/缺失证据拒绝；test_mempool_full.py覆盖双侧启动失败与预期容量拒绝。
+本地六项定向检查通过；评审修复后三项受影响检查通过；归档脚本一致且功能源码字节未变。
+[两侧续跑命令](ticket26-capacity-resume.md)。完整实机验收仍未通过。

@@ -134,8 +134,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--component-reports", type=Path, nargs=2, metavar=("COPY", "FETCH")
     )
+    parser.add_argument("--resume-after-target", type=Path)
     parser.add_argument("--observation-rounds", type=int, choices=(1, 2), default=1)
     args = parser.parse_args(argv)
+    if args.resume_after_target and args.mode != "full-acceptance":
+        parser.error("resume-after-target requires full-acceptance")
     if (
         args.mode == "index-cold-diagnosis"
         and args.role == "prefill"
@@ -1230,9 +1233,12 @@ class Runner:
                     self.peer.check()
                     if router is not None:
                         jobs.alive("Router", router)
+                    server_exited = server.poll() is not None
                     after = request_json(base + "/status")
                     if after["fault"]:
                         break
+                    if server_exited:
+                        jobs.alive(f"NPU service (see {root / 'launcher.log'})", server)
                     if time.monotonic() >= deadline:
                         raise TimeoutError(
                             "capacity-limited registration did not fail-stop"
@@ -1253,7 +1259,17 @@ class Runner:
                 self.peer.send("capacity-fault")
                 worker_exit = self.peer.expect("capacity-exit")["returncode"]
             else:
-                self.peer.expect("capacity-fault")
+
+                def watch_registration() -> None:
+                    if server.poll() is not None:
+                        # A capacity rejection intentionally exits the worker.
+                        # Other startup exits must fail the paired run promptly.
+                        if not request_json(base + "/status")["fault"]:
+                            jobs.alive(
+                                f"NPU service (see {root / 'launcher.log'})", server
+                            )
+
+                self.peer.expect("capacity-fault", check=watch_registration)
                 worker_exit = server.wait(timeout=self.config.operation_timeout)
                 self.peer.send("capacity-exit", returncode=worker_exit)
         self.peer.barrier("capacity-stopped")
@@ -1369,12 +1385,28 @@ class Runner:
         self.report.update(status="passed", acceptance=acceptance, user_accepted=False)
 
     def run_full(self) -> None:
-        self.prepare_full_cases()
-        self.components()
-        self.stage(target=False)
-        if getattr(self.args, "observation_rounds", 1) == 2:
-            self.stage(target=True, restart=True)
-        self.stage(target=True)
+        previous = getattr(self.args, "resume_after_target", None)
+        if previous:
+            from mempool_service_resume import reuse_completed_stages
+
+            self.cases = reuse_completed_stages(
+                previous, self.root, self.report["identity"], self.args.role
+            )
+            self.peer.barrier("reuse-services-ready")
+            self.report["stages"].extend(["reference", "target"])
+            self.report["reused_from"] = str(previous.resolve())
+            write_json(self.root / "summary.json", self.report)
+            print(
+                f"REUSED components/reference/target from {previous}; next=capacity",
+                flush=True,
+            )
+        else:
+            self.prepare_full_cases()
+            self.components()
+            self.stage(target=False)
+            if getattr(self.args, "observation_rounds", 1) == 2:
+                self.stage(target=True, restart=True)
+            self.stage(target=True)
         self.capacity_stage()
         self.stage(target=True, fault_only=True)
         if self.is_p:

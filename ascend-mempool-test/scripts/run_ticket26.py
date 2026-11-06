@@ -30,6 +30,10 @@ def main() -> int:
         "--phase1-component-run-id",
         help="reuse passed page-first and fetch-retry reports from an earlier run",
     )
+    p.add_argument(
+        "--phase1-service-run-id",
+        help="reuse completed phase1 components/reference/target; start at capacity",
+    )
     p.add_argument("--control-port", type=int, default=22000)
     p.add_argument("--describe", action="store_true")
     a = p.parse_args()
@@ -46,6 +50,7 @@ def main() -> int:
         coverage="user-limited geometry; other three combinations not run",
         benchmark_repetitions=dict(samples=1, warmup=1, iterations=2),
         phase1_component_run_id=a.phase1_component_run_id,
+        phase1_service_run_id=a.phase1_service_run_id,
     )
     if a.describe:
         print(json.dumps(report, indent=2))
@@ -114,7 +119,18 @@ def main() -> int:
             )
             if phase != "benchmark":
                 reused = []
-                if phase == "phase1" and a.phase1_component_run_id:
+                if phase == "phase1" and a.phase1_service_run_id:
+                    previous = a.phase1_service_run_id
+                    reused = [
+                        "--resume-after-target",
+                        str(
+                            Path("/home/cryang/log/mempool-min")
+                            / f"{previous}-phase1"
+                            / f"{previous}-phase1-b64-sd512"
+                            / a.role
+                        ),
+                    ]
+                elif phase == "phase1" and a.phase1_component_run_id:
                     previous = a.phase1_component_run_id
                     reused = [
                         "--component-reports",

@@ -718,6 +718,77 @@ class TestFullEntry(unittest.TestCase):
             self.assertTrue(all(child.poll() is not None for child in children))
             self.assertEqual(main.status()["ledger"], {})
 
+    def test_capacity_startup_exit_stops_both_sides_before_registration_timeout(self):
+        for failed_role in ("prefill", "decode"):
+            with self.subTest(failed_role=failed_role):
+                config = RouterConfig(
+                    "p", "d", "/model", startup_timeout=0.5, operation_timeout=2
+                )
+                left, right = socket.socketpair()
+                with (
+                    tempfile.TemporaryDirectory() as folder,
+                    Peer(left, 2) as p,
+                    Peer(right, 2) as d,
+                ):
+                    instances = [
+                        run_mempool_min.Runner(
+                            SimpleNamespace(
+                                role=role,
+                                mode="full-acceptance",
+                                config=Path(folder) / "config.json",
+                                run_id="cpu",
+                            ),
+                            config,
+                            peer,
+                            Path(folder) / role,
+                        )
+                        for role, peer in (("prefill", p), ("decode", d))
+                    ]
+
+                    def launch(name, command):
+                        exited = name == "launcher" and failed_role in command
+                        return SimpleNamespace(
+                            returncode=17 if exited else None,
+                            poll=lambda: 17 if exited else None,
+                        )
+
+                    def run_side(instance):
+                        # Match main(): surface local failure to the paired runner.
+                        try:
+                            instance.capacity_stage()
+                        except Exception as exc:
+                            instance.peer.send("error", message=str(exc))
+                            raise
+
+                    alive = run_mempool_min.Processes.alive
+                    with (
+                        patch.object(run_mempool_min, "Processes") as processes,
+                        patch.object(
+                            run_mempool_min,
+                            "request_json",
+                            return_value={"fault": None},
+                        ),
+                        patch.object(
+                            run_mempool_min,
+                            "wait_http",
+                            side_effect=lambda url, timeout, check: check(),
+                        ),
+                        ThreadPoolExecutor(2) as workers,
+                    ):
+                        jobs = processes.return_value.__enter__.return_value
+                        jobs.start.side_effect = launch
+                        jobs.alive.side_effect = alive
+                        futures = [workers.submit(run_side, i) for i in instances]
+                        for future in futures:
+                            with self.assertRaisesRegex(
+                                RuntimeError, "NPU service.*exited unexpectedly with 17"
+                            ):
+                                future.result(timeout=4)
+                    for instance in instances:
+                        self.assertFalse(
+                            (instance.root / "capacity/evidence.json").exists()
+                        )
+
     def test_capacity_rejection_requires_a_real_failure_exit_and_the_injected_rank(
         self,
     ):
@@ -749,6 +820,46 @@ class TestFullEntry(unittest.TestCase):
             verify_mempool_full.check_capacity_rejection(
                 before, after, "", run_id="cpu", http_status=503, worker_exit=1
             )
+
+    def test_decode_capacity_exit_is_expected_after_router_fault(self):
+        from unittest.mock import Mock
+
+        with tempfile.TemporaryDirectory() as folder:
+            peer = Mock()
+
+            def expect(kind, check=lambda: None):
+                check()
+                return {"evidence": {"status": "passed"}}
+
+            peer.expect.side_effect = expect
+            runner = run_mempool_min.Runner(
+                SimpleNamespace(
+                    role="decode",
+                    mode="full-acceptance",
+                    run_id="cpu",
+                    config=Path(folder) / "config.json",
+                ),
+                RouterConfig("p", "d", "/model"),
+                peer,
+                Path(folder),
+            )
+            with (
+                patch.object(run_mempool_min, "Processes") as processes,
+                patch.object(
+                    run_mempool_min,
+                    "request_json",
+                    return_value={"fault": "native capacities"},
+                ),
+                patch.object(run_mempool_min, "send_log"),
+            ):
+                jobs = processes.return_value.__enter__.return_value
+                jobs.start.return_value.poll.return_value = 17
+                jobs.start.return_value.wait.return_value = 17
+                jobs.alive.side_effect = AssertionError(
+                    "expected rejection treated as unexpected exit"
+                )
+                runner.capacity_stage()
+            self.assertIn("capacity", runner.report["stages"])
 
     def test_long_output_requires_actual_decode_forwards(self):
         case = dict(kind="load-only", sampling_params=dict(max_new_tokens=128))

@@ -59,6 +59,7 @@ def main() -> int:
     parser.add_argument(
         "--component-reports", type=Path, nargs=2, metavar=("COPY", "FETCH")
     )
+    parser.add_argument("--resume-after-target", type=Path)
     parser.add_argument(
         "--start-from",
         choices=[f"b{b}-sd{sd}" for b, sd in MATRIX],
@@ -77,6 +78,8 @@ def main() -> int:
         ]
     if args.start_from:
         configs = configs[[name for name, _ in configs].index(args.start_from) :]
+    if args.resume_after_target and len(configs) != 1:
+        parser.error("resume-after-target requires a single geometry")
     if args.describe:
         print(
             json.dumps({name: msgspec.to_builtins(c) for name, c in configs}, indent=2)
@@ -124,6 +127,11 @@ def main() -> int:
                     *(
                         ["--component-reports", *map(str, args.component_reports)]
                         if args.component_reports
+                        else []
+                    ),
+                    *(
+                        ["--resume-after-target", str(args.resume_after_target)]
+                        if args.resume_after_target
                         else []
                     ),
                 ]

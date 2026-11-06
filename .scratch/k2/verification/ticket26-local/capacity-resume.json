@@ -1,0 +1,52 @@
+{
+  "run_id": "k2-ticket26-005",
+  "source": "user-pasted phase1 stage transitions and capacity launcher/router logs",
+  "completed_stages": [
+    "reference",
+    "target"
+  ],
+  "completion_basis": "runner entered capacity only after both stages and their cleanup returned successfully",
+  "failure": {
+    "role": "prefill",
+    "time": "2026-11-06 06:38:19 +0800",
+    "stage": "capacity",
+    "port": 10000,
+    "error": "torch.distributed.DistNetworkError EADDRINUSE",
+    "launcher_parent_pid": 1185519
+  },
+  "secondary_failure": "runner only checked Router while waiting for registration; P launcher exit was missed and D kept waiting for BM store :19000 through 07:49",
+  "port_owner": "unknown at failure time; later host ss showed no listener",
+  "fix": "monitor launcher exit before registration; read router fault after observing exit so expected capacity rejection remains allowed; propagate via existing paired error and cleanup path",
+  "resume": {
+    "new_run_id": "k2-ticket26-006",
+    "option": "--phase1-service-run-id k2-ticket26-005",
+    "reuse": [
+      "page-first-copy",
+      "fetch",
+      "reference",
+      "target"
+    ],
+    "start_at": "capacity",
+    "remaining": [
+      "phase1 timeout",
+      "phase2",
+      "benchmark"
+    ],
+    "identity": "same base commit, effective config, model, package versions and tracked/untracked runtime sources; only test-runner source changes allowed",
+    "actual_hardware_reuse": "not-run; original 005 identity/code.patch remain on hardware"
+  },
+  "local_checks": {
+    "focused_methods": 6,
+    "status": "passed",
+    "after_review": "3 affected methods passed with archive modules; archive runtime/kernel bytes unchanged",
+    "ruff_files": 6,
+    "mypy_files": 2,
+    "review": {
+      "Standards": 0,
+      "Spec": 0
+    },
+    "full_suite": "not repeated; prior 598-method result unchanged"
+  },
+  "test_limitations": "initial OS-process regression attempts were affected by local process cleanup permissions; final focused test models process exit at the process-handle boundary and uses real paired sockets; device restart/cleanup remains user-run",
+  "ticket26": "open"
+}
