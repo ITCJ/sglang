@@ -59,7 +59,10 @@ def main() -> int:
     parser.add_argument(
         "--component-reports", type=Path, nargs=2, metavar=("COPY", "FETCH")
     )
-    parser.add_argument("--resume-after-target", type=Path)
+    resume = parser.add_mutually_exclusive_group()
+    resume.add_argument("--resume-after-target", type=Path)
+    resume.add_argument("--resume-after-reference", type=Path)
+    parser.add_argument("--stop-after-target", action="store_true")
     parser.add_argument(
         "--start-from",
         choices=[f"b{b}-sd{sd}" for b, sd in MATRIX],
@@ -78,8 +81,10 @@ def main() -> int:
         ]
     if args.start_from:
         configs = configs[[name for name, _ in configs].index(args.start_from) :]
-    if args.resume_after_target and len(configs) != 1:
-        parser.error("resume-after-target requires a single geometry")
+    if (args.resume_after_target or args.resume_after_reference) and len(configs) != 1:
+        parser.error("service resume requires a single geometry")
+    if args.stop_after_target and not args.resume_after_reference:
+        parser.error("stop-after-target requires resume-after-reference")
     if args.describe:
         print(
             json.dumps({name: msgspec.to_builtins(c) for name, c in configs}, indent=2)
@@ -134,23 +139,48 @@ def main() -> int:
                         if args.resume_after_target
                         else []
                     ),
+                    *(
+                        ["--resume-after-reference", str(args.resume_after_reference)]
+                        if args.resume_after_reference
+                        else []
+                    ),
+                    *(["--stop-after-target"] if args.stop_after_target else []),
                 ]
             )
             code = child.wait()
             child = None
             entry = report["combinations"][name]
             entry["exit_code"] = code
-            entry["report"] = str(root / child_id / args.role / "v1-v10.json")
+            entry["report"] = str(
+                root
+                / child_id
+                / args.role
+                / ("summary.json" if args.stop_after_target else "v1-v10.json")
+            )
             entry["status"] = "failed"
             if code:
                 return 1
             evidence = json.loads(Path(entry["report"]).read_text())
+            if args.stop_after_target:
+                if (
+                    evidence.get("status") != "passed_execution_scope"
+                    or evidence.get("stopped_after") != "target"
+                ):
+                    raise ValueError(f"{name}: target-only evidence missing or failed")
+                entry["status"] = "passed_execution_scope"
+                continue
             if evidence.get("status") != "passed" or not evidence.get("k1"):
                 raise ValueError(f"{name}: full K1 evidence missing or failed")
             entry["status"] = "passed"
-        report["status"] = "passed"
+        report["status"] = (
+            "passed_execution_scope" if args.stop_after_target else "passed"
+        )
         report["coverage"] = (
-            "remaining combinations only" if args.start_from else "complete matrix"
+            "target only; capacity/timeout not run"
+            if args.stop_after_target
+            else "remaining combinations only"
+            if args.start_from
+            else "complete matrix"
         )
         return 0
     except (Exception, KeyboardInterrupt) as exc:

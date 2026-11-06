@@ -2,6 +2,7 @@
 
 import copy
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import run_mempool_min
+import mempool_service_resume
 
 from ascend_mempool_pd.mempool_router_protocol import RouterConfig
 
@@ -132,4 +134,136 @@ class TestServiceResume(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "identity"):
             reuse_completed_stages(
                 self.previous, self.current, self.identity, "prefill"
+            )
+
+    def test_target_resume_restores_reference_without_repeating_it_on_either_side(self):
+        self.write("summary.json", {"stages": ["reference"], "status": "failed"})
+        self.write("target/evidence.json", {"status": "failed"})
+        self.cases[0]["sampling_params"] = {"max_new_tokens": 1, "ignore_eos": True}
+        self.write("cases.json", self.cases)
+        results = [
+            {
+                "output_ids": [17],
+                "meta_info": {"prompt_tokens": 1, "completion_tokens": 1},
+            }
+        ]
+        self.write(
+            "reference/responses.json", {"cases": self.cases, "results": results}
+        )
+        self.write("reference/stability.json", {"status": "passed"})
+        for role in ("prefill", "decode"):
+            with self.subTest(role=role):
+                current = self.current.parent / ("retry-" + role) / role
+                current.mkdir(parents=True)
+                (current / "code.patch").write_text(self.runtime_patch)
+                previous = self.previous
+                if role == "decode":
+                    import shutil
+
+                    previous = self.previous.with_name("decode")
+                    shutil.copytree(self.previous, previous)
+                    (previous / "reference/responses.json").unlink()
+                runner = run_mempool_min.Runner(
+                    SimpleNamespace(
+                        role=role,
+                        mode="full-acceptance",
+                        run_id="new",
+                        resume_after_reference=previous,
+                        stop_after_target=True,
+                    ),
+                    RouterConfig("p", "d", "/model"),
+                    Mock(),
+                    current,
+                )
+                runner.report["identity"] = self.identity
+                order = []
+                tokenizer = Mock()
+
+                def stage(**kwargs):
+                    order.append(kwargs)
+                    if role == "prefill":
+                        self.assertEqual(runner.reference, results)
+                        self.assertIs(runner.tokenizer, tokenizer)
+
+                with (
+                    patch.dict(
+                        "sys.modules",
+                        {
+                            "transformers": SimpleNamespace(
+                                AutoTokenizer=Mock(
+                                    from_pretrained=Mock(return_value=tokenizer)
+                                )
+                            )
+                        },
+                    ),
+                    patch.object(runner, "prepare_full_cases") as fixtures,
+                    patch.object(runner, "components") as components,
+                    patch.object(runner, "stage", side_effect=stage),
+                    patch.object(
+                        runner,
+                        "capacity_stage",
+                        side_effect=lambda: order.append("capacity"),
+                    ),
+                    patch.object(
+                        run_mempool_min.verify_mempool_full,
+                        "summarize",
+                        return_value={"status": "passed"},
+                    ),
+                ):
+                    runner.run_full()
+                self.assertEqual(order, [{"target": True}])
+                self.assertEqual(runner.report["status"], "passed_execution_scope")
+                self.assertEqual(
+                    runner.report["remaining_service_stages"], ["capacity", "timeout"]
+                )
+                fixtures.assert_not_called()
+                components.assert_not_called()
+                self.assertEqual(runner.cases, self.cases)
+                receipt = json.loads((current / "service-reused-from.json").read_text())
+                self.assertEqual(receipt["stages"], ["reference"])
+                self.assertEqual(receipt["next_stage"], "target")
+                self.assertFalse((current / "target").exists())
+
+    def test_reference_resume_accepts_runner_only_commits_but_rejects_runtime_changes(
+        self,
+    ):
+        repo = Path(self.folder.name) / "repo"
+        repo.mkdir()
+
+        def git(*args):
+            return subprocess.check_output(["git", *args], cwd=repo, text=True).strip()
+
+        git("init", "-q")
+        git("config", "user.name", "Resume Test")
+        git("config", "user.email", "resume@example.invalid")
+        (repo / "python").mkdir()
+        (repo / "python/runtime.py").write_text("old runtime\n")
+        git("add", ".")
+        git("-c", "core.hooksPath=/dev/null", "commit", "-qm", "runtime")
+        old = git("rev-parse", "HEAD")
+        (repo / "runner.py").write_text("new runner\n")
+        git("add", ".")
+        git("-c", "core.hooksPath=/dev/null", "commit", "-qm", "runner only")
+        new = git("rev-parse", "HEAD")
+        prior = dict(self.identity, git_sha=old, run_id="old")
+        self.write("identity.json", prior)
+        self.write("summary.json", {"stages": ["reference"]})
+        with patch.object(mempool_service_resume, "REPO", repo):
+            (repo / "python/runtime.py").write_text("changed runtime\n")
+            git("add", ".")
+            git("-c", "core.hooksPath=/dev/null", "commit", "-qm", "runtime changed")
+            with self.assertRaisesRegex(ValueError, "identity"):
+                mempool_service_resume.reuse_completed_stages(
+                    self.previous,
+                    self.current,
+                    dict(self.identity, git_sha=git("rev-parse", "HEAD")),
+                    "prefill",
+                    through="reference",
+                )
+            mempool_service_resume.reuse_completed_stages(
+                self.previous,
+                self.current,
+                dict(self.identity, git_sha=new),
+                "prefill",
+                through="reference",
             )

@@ -112,6 +112,16 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 
 ## D 名称、验收与实施票怎样对应
 
+**26第七次运行：reference通过，target在32的Graph前预热失败。**
+
+启动前无NPU进程，捕获准备前仍余约30GB；报错为MallocPhysical/507899、drvRetCode=42。
+现有证据不支持直接认定HBM用尽或旧进程残留，根因仍待定位。
+
+用户要求先原配置复测，并逐段人工确认清理；008只运行target，复用007组件/reference。
+本段完成后退出，不进入capacity、timeout或微测；完整验收仍未完成，26保持open。
+六项定向CPU检查和静态检查通过，功能源码与默认退出不变。
+
+
 **26阶段切换审计：reference的BM端口检查遗漏已修复。**
 
 旧检查按target共享布局计算，漏掉reference的19001–19015及部分NIC端口。

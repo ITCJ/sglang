@@ -210,3 +210,13 @@ run_mempool_min.py现按阶段选择私有/共享端口；包含reference的预�
 没有改变ticket10_processes的进程组清理、通用shutdown、SDK或kernel；保留现有TIME_WAIT有限等待，不用固定sleep冒充资源已释放。
 test_mempool_session_acceptance.py新增真实Runner.stage调用回归，验证占用19003会阻止reference完成；连同三项已有端口/TIME_WAIT检查通过。
 阶段1归档同步，功能源码字节未变。007最新32 target异常栈仍待回传，历史残留根因未证明。
+
+## 008：只重试阶段2 target
+
+007 reference已过；32 target在Graph前预热报drvRetCode=42/507899。运行前无NPU进程、Graph准备前约30GB空闲，不能据此认定旧任务残留或HBM不足。
+用户改为逐段运行、人工确认清理。008使用--stage phase2 --phase2-reference-run-id k2-ticket26-007 --stop-after-target；只启动target，结束后不自动进入其它阶段。
+新增功能源码：无。Ascend/NPU专用与通用主线均无改动。默认进程清理保持原样。
+验收脚本：mempool_service_resume.py按reference/target边界复制已过证据，跨提交比较python树及未提交源码；run_mempool_min.py恢复原cases/responses/tokenizer并在target清理后退出；run_k1_full_acceptance.py验证部分报告；run_ticket26.py提供双侧公开入口。
+测试：test_service_resume.py覆盖双侧单段顺序和真实git身份拒绝；test_ticket26_resume.py覆盖公开CLI、矩阵透传与部分状态。六项CPU通过，ruff/mypy通过。
+phase1快照不变；此次只重试当前phase2。完整验收不标passed；剩余capacity/timeout/双rank/TP16待用户逐段确认。
+[31/32单段命令](ticket26-target-retry.md)。

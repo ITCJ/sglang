@@ -1,0 +1,47 @@
+{
+  "run": "k2-ticket26-007",
+  "stage": "phase2/target",
+  "role": "decode",
+  "hardware_status": "failed",
+  "observed": {
+    "startup_npu_processes": "none",
+    "pre_graph_available_gb": [
+      29.74,
+      30.04
+    ],
+    "stack": "npu_cudagraph_backend.py:103 eager warmup -> copy.py:202 torch.where -> aclrtMallocPhysical",
+    "runtime_error": 507899,
+    "driver_return_code": 42,
+    "physical_bytes": 2097152,
+    "later_aicpu_error": 507018
+  },
+  "root_cause": "unresolved; allocation site alone does not identify initial device failure",
+  "retry": {
+    "run": "k2-ticket26-008",
+    "scope": "phase2 target only",
+    "reuse": "007 components/reference",
+    "next_stages": [
+      "capacity",
+      "timeout",
+      "pair benchmark",
+      "TP16 benchmark"
+    ],
+    "transition": "user confirms cleanup before next stage",
+    "runtime_changes": false
+  },
+  "local_checks": {
+    "unittest_methods": 6,
+    "result": "passed",
+    "ruff_files": 6,
+    "mypy_files": 2,
+    "hardware_retry": "not-run"
+  },
+  "sources": [
+    "https://raw.githubusercontent.com/hicann/driver/master/pkg_inc/ascend_hal_error.h"
+  ],
+  "ticket_state": "open",
+  "review": {
+    "Standards": "0 unresolved",
+    "Spec": "0 unresolved"
+  }
+}

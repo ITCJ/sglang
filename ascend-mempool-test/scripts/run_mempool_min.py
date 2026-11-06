@@ -134,11 +134,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--component-reports", type=Path, nargs=2, metavar=("COPY", "FETCH")
     )
-    parser.add_argument("--resume-after-target", type=Path)
+    resume = parser.add_mutually_exclusive_group()
+    resume.add_argument("--resume-after-target", type=Path)
+    resume.add_argument("--resume-after-reference", type=Path)
+    parser.add_argument("--stop-after-target", action="store_true")
     parser.add_argument("--observation-rounds", type=int, choices=(1, 2), default=1)
     args = parser.parse_args(argv)
-    if args.resume_after_target and args.mode != "full-acceptance":
-        parser.error("resume-after-target requires full-acceptance")
+    if (
+        args.resume_after_target
+        or args.resume_after_reference
+        or args.stop_after_target
+    ) and args.mode != "full-acceptance":
+        parser.error("service resume/stop requires full-acceptance")
+    if args.stop_after_target and not args.resume_after_reference:
+        parser.error("stop-after-target requires resume-after-reference")
     if (
         args.mode == "index-cold-diagnosis"
         and args.role == "prefill"
@@ -484,6 +493,7 @@ class Runner:
             and self.args.mode
             not in ("serve", "numa-acceptance", "index-cold-diagnosis")
             and not getattr(self.args, "resume_after_target", None)
+            and not getattr(self.args, "resume_after_reference", None)
         ):
             ports |= service_ports(self.config, self.args.role, target=False)
         if self.is_p:
@@ -1402,28 +1412,71 @@ class Runner:
         self.report.update(status="passed", acceptance=acceptance, user_accepted=False)
 
     def run_full(self) -> None:
-        previous = getattr(self.args, "resume_after_target", None)
+        reference_only = getattr(self.args, "resume_after_reference", None)
+        previous = reference_only or getattr(self.args, "resume_after_target", None)
         if previous:
             from mempool_service_resume import reuse_completed_stages
 
             self.cases = reuse_completed_stages(
-                previous, self.root, self.report["identity"], self.args.role
+                previous,
+                self.root,
+                self.report["identity"],
+                self.args.role,
+                through="reference" if reference_only else "target",
             )
+            if reference_only and self.is_p:
+                from transformers import AutoTokenizer
+
+                responses = json.loads(
+                    (self.root / "reference/responses.json").read_text()
+                )
+                self.reference = responses["results"]
+                if responses["cases"] != self.cases or len(self.reference) != len(
+                    self.cases
+                ):
+                    raise ValueError(
+                        "saved reference responses do not match saved cases"
+                    )
+                for case, result in zip(self.cases, self.reference):
+                    verify_mempool_min.check_response(case, result)
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    self.config.model_path, trust_remote_code=True
+                )
+                if getattr(self.args, "observation_rounds", 1) == 2:
+                    self.reference_fork = json.loads(
+                        (self.root / "reference/observation-fork.json").read_text()
+                    )["result"]
             self.peer.barrier("reuse-services-ready")
-            self.report["stages"].extend(["reference", "target"])
+            self.report["stages"].extend(
+                ["reference"] if reference_only else ["reference", "target"]
+            )
             self.report["reused_from"] = str(previous.resolve())
             write_json(self.root / "summary.json", self.report)
             print(
-                f"REUSED components/reference/target from {previous}; next=capacity",
+                f"REUSED components/{'reference' if reference_only else 'reference/target'} from {previous}; next={'target' if reference_only else 'capacity'}",
                 flush=True,
             )
         else:
             self.prepare_full_cases()
             self.components()
             self.stage(target=False)
+        if not previous or reference_only:
             if getattr(self.args, "observation_rounds", 1) == 2:
                 self.stage(target=True, restart=True)
             self.stage(target=True)
+        if getattr(self.args, "stop_after_target", False):
+            self.report.update(
+                status="passed_execution_scope",
+                stopped_after="target",
+                remaining_service_stages=["capacity", "timeout"],
+                full_acceptance="incomplete",
+            )
+            write_json(self.root / "summary.json", self.report)
+            print(
+                "TARGET_PASSED; stopped for user cleanup confirmation; capacity/timeout not run",
+                flush=True,
+            )
+            return
         self.capacity_stage()
         self.stage(target=True, fault_only=True)
         if self.is_p:
@@ -1735,7 +1788,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(report["error"], file=sys.stderr)
         return 1
     finally:
-        if args.mode == "full-acceptance" and args.role == "prefill":
+        if (
+            args.mode == "full-acceptance"
+            and args.role == "prefill"
+            and report.get("status") != "passed_execution_scope"
+        ):
             if "acceptance" not in report:
                 report["acceptance"] = verify_mempool_full.summarize(
                     root,

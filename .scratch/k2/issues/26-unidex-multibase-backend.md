@@ -111,3 +111,15 @@ Standards/Spec初审发现已修复，最终各0未解决。
 沿用有上限的TIME_WAIT等待、原进程组清理和SGLang退出；没有加固定sleep或改变SDK。四项定向CPU检查通过，阶段1快照同步。
 此修复解决确定的验收检查缺口，不证明历史冲突来自旧worker，也不证明007失败已解决。
 已完成阶段保留；继续等007的32 target异常栈，26保持open。
+
+### 007 target错误与008单段重试
+
+用户回传32 target：Graph准备前各rank余29.74–30.04GB；启动前npu-smi无进程。10:35:55开始报aclrtMallocPhysical 507899，halMemCreate drvRetCode=42，2MiB申请失败。
+回溯npu_cudagraph_backend.py:103属于Graph前两次eager warmup，尚未进入torch.npu.graph；之后有507018/AICPU异常。
+公开CANN驱动头文件中42为DRV_ERROR_PROCESS_EXIT；现场驱动版本的更早异常尚未取得，不能把where分配点认定为首发错误或普通HBM OOM。
+用户要求先看原配置是否重现；剩余target/capacity/timeout/双rank/TP16共五段，一段一跑，中间由用户人工确认清理。
+新增phase2 reference证据复用与target-only停止入口，008复用007，不重复已过组件/reference；失败非零，不自动推进。
+仅修改四份验收脚本和两份CPU测试；无功能源码、SDK、kernel、通用shutdown改动。旧完整流程/容量续跑保留。
+六项CPU检查通过：双侧target单段边界、完整输出恢复、真实git runner-only提交允许/功能改动拒绝、公共CLI/矩阵透传；ruff六文件、mypy两文件通过。
+新增边界测试先在旧入口复现重复reference/未恢复输出；本地CPU不能证明507899已修复。26仍open，25不解锁。
+命令见[ticket26-target-retry](../ticket26-target-retry.md)，证据见[target-only-resume.json](../verification/ticket26-local/target-only-resume.json)。

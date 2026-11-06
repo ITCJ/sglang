@@ -40,13 +40,23 @@ def main() -> int:
         "--phase1-service-run-id",
         help="reuse completed phase1 components/reference/target; start at capacity",
     )
-    p.add_argument(
+    phase2_resume = p.add_mutually_exclusive_group()
+    phase2_resume.add_argument(
         "--phase2-component-run-id",
         help="reuse passed phase2 page-first/fetch reports; start service checks at reference",
     )
+    phase2_resume.add_argument(
+        "--phase2-reference-run-id",
+        help="reuse passed phase2 components/reference; start at target",
+    )
+    p.add_argument("--stop-after-target", action="store_true")
     p.add_argument("--control-port", type=int, default=22000)
     p.add_argument("--describe", action="store_true")
     a = p.parse_args()
+    if a.stop_after_target and (a.stage != "phase2" or not a.phase2_reference_run_id):
+        p.error(
+            "stop-after-target requires --stage phase2 and --phase2-reference-run-id"
+        )
     repo = Path(__file__).resolve().parents[2]
     root = Path("/home/cryang/log/k2") / a.run_id
     phases = ["phase1", "phase2", "benchmark"] if a.stage == "all" else [a.stage]
@@ -64,6 +74,8 @@ def main() -> int:
         phase1_component_run_id=a.phase1_component_run_id,
         phase1_service_run_id=a.phase1_service_run_id,
         phase2_component_run_id=a.phase2_component_run_id,
+        phase2_reference_run_id=a.phase2_reference_run_id,
+        stop_after_target=a.stop_after_target,
         start_from=a.start_from,
     )
     if a.describe:
@@ -161,19 +173,25 @@ def main() -> int:
                             / f"fetch-retry-{a.role}.json"
                         ),
                     ]
-                elif phase == "phase2" and a.phase2_component_run_id:
-                    previous = a.phase2_component_run_id
+                elif phase == "phase2" and (
+                    a.phase2_component_run_id or a.phase2_reference_run_id
+                ):
+                    previous = a.phase2_reference_run_id or a.phase2_component_run_id
                     previous_root = (
                         Path("/home/cryang/log/mempool-min")
                         / f"{previous}-phase2"
                         / f"{previous}-phase2-b64-sd512"
                         / a.role
                     )
-                    reused = [
-                        "--component-reports",
-                        str(previous_root / "page-first-copy/report.json"),
-                        str(previous_root / "fetch/report.json"),
-                    ]
+                    reused = (
+                        ["--resume-after-reference", str(previous_root)]
+                        if a.phase2_reference_run_id
+                        else [
+                            "--component-reports",
+                            str(previous_root / "page-first-copy/report.json"),
+                            str(previous_root / "fetch/report.json"),
+                        ]
+                    )
                 config = json.loads(a.config.read_text())
                 config.update(observe=True, observe_trace=False)
                 generated = root / f"{phase}-{a.role}-config.json"
@@ -194,6 +212,7 @@ def main() -> int:
                         "--start-from",
                         "b64-sd512",
                         *reused,
+                        *(["--stop-after-target"] if a.stop_after_target else []),
                     ],
                     checkout,
                     env,
@@ -248,7 +267,9 @@ def main() -> int:
                         repo,
                         env,
                     )
-            report["stages"][phase] = "passed"
+            report["stages"][phase] = (
+                "passed_execution_scope" if a.stop_after_target else "passed"
+            )
             report_file.write_text(json.dumps(report, indent=2) + "\n")
         report["status"] = "passed_execution_scope"
         return 0
