@@ -1,0 +1,51 @@
+{
+  "status": "passed",
+  "coverage": "eager counters only; no model/BM/Graph",
+  "device": "cpu",
+  "checks": [
+    {
+      "name": "all_padding/runtime_fetch_checks",
+      "status": "passed"
+    },
+    {
+      "name": "all_padding/observation_cache_updates",
+      "status": "passed"
+    },
+    {
+      "name": "all_padding/observation_refill_verified",
+      "status": "passed"
+    },
+    {
+      "name": "all_padding/observation_map_verified",
+      "status": "passed"
+    },
+    {
+      "name": "all_padding/runtime_fetch_sources",
+      "status": "passed"
+    },
+    {
+      "name": "one_active_padded/runtime_fetch_checks",
+      "status": "passed"
+    },
+    {
+      "name": "one_active_padded/observation_cache_updates",
+      "status": "passed"
+    },
+    {
+      "name": "one_active_padded/observation_refill_verified",
+      "status": "passed"
+    },
+    {
+      "name": "one_active_padded/observation_map_verified",
+      "status": "passed"
+    },
+    {
+      "name": "one_active_padded/runtime_fetch_sources",
+      "status": "passed"
+    }
+  ],
+  "current": "complete",
+  "torch": "2.8.0",
+  "allocator": null,
+  "task_queue": null
+}

@@ -220,3 +220,10 @@ test_mempool_session_acceptance.py新增真实Runner.stage调用回归，验证�
 测试：test_service_resume.py覆盖双侧单段顺序和真实git身份拒绝；test_ticket26_resume.py覆盖公开CLI、矩阵透传与部分状态。六项CPU通过，ruff/mypy通过。
 phase1快照不变；此次只重试当前phase2。完整验收不标passed；剩余capacity/timeout/双rank/TP16待用户逐段确认。
 [31/32单段命令](ticket26-target-retry.md)。
+
+## 008失败后的单卡诊断
+
+008 target仍在32失败，新增InplaceIndexAdd/AICPU设备记录；507899首因尚未确认。
+本次仅新增脚本diagnose_index_add.py，复用PageObservation逐调用同步并断言计数；功能源码无改动。
+CPU两组共10项检查通过，ruff通过，Standards/Spec各0未解决；NPU未运行。
+[32单卡命令与证据范围](ticket26-index-add-diagnosis.md)。31无需启动，已过阶段保留，26仍open。

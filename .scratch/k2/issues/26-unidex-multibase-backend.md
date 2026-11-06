@@ -123,3 +123,12 @@ Standards/Spec初审发现已修复，最终各0未解决。
 六项CPU检查通过：双侧target单段边界、完整输出恢复、真实git runner-only提交允许/功能改动拒绝、公共CLI/矩阵透传；ruff六文件、mypy两文件通过。
 新增边界测试先在旧入口复现重复reference/未恢复输出；本地CPU不能证明507899已修复。26仍open，25不解锁。
 命令见[ticket26-target-retry](../ticket26-target-retry.md)，证据见[target-only-resume.json](../verification/ticket26-local/target-only-resume.json)。
+
+### 008 target再次失败：新增InplaceIndexAdd线索
+
+用户回传32在15:43:33–34继续报507899/halMemCreate drvRetCode=42；Device7记录InplaceIndexAdd执行失败，随后报507018。
+008只启动target，不能继续用相邻阶段快速切换解释；异步报错尚不足以确认根因。
+新增单卡eager探针diagnose_index_add.py，逐调用同步真实PageObservation及runtime形状的五项index_add_计数。
+两组输入各一次；Mac CPU共10项通过，ruff通过，Standards/Spec各0项未解决；NPU探针待用户执行。
+未修改功能源码或清理行为，不重跑已过阶段、不推进后续。26仍open，25未解锁。
+详见[008诊断证据与32命令](../ticket26-index-add-diagnosis.md)。
