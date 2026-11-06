@@ -27,6 +27,41 @@ def records(output):
 
 
 class TestIndexDiagnosis(unittest.TestCase):
+    def test_asynchronous_startup_disables_inherited_diagnostics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = SimpleNamespace(
+                role="decode",
+                mode="serve",
+                run_id="diag",
+                config=root / "config.json",
+                without_index_sync=True,
+            )
+            runner = Runner(
+                args, RouterConfig("p", "d", "/model", observe=True), Mock(), root
+            )
+            jobs = Mock()
+            jobs.__enter__ = Mock(return_value=jobs)
+            jobs.__exit__ = Mock(return_value=False)
+            with (
+                patch.dict(os.environ, SGLANG_NPU_MEMPOOL_INDEX_DIAG="1"),
+                patch.object(
+                    diagnose_target_startup, "Processes", return_value=jobs
+                ) as processes,
+                patch.object(diagnose_target_startup, "wait_http"),
+                patch.object(
+                    diagnose_target_startup, "service_ports", return_value=set()
+                ),
+                patch.object(diagnose_target_startup, "check_warmups") as parser,
+            ):
+                diagnose_target_startup.startup(runner, root / "library.so")
+            self.assertEqual(
+                processes.call_args.args[1]["SGLANG_NPU_MEMPOOL_INDEX_DIAG"], "0"
+            )
+            parser.assert_not_called()
+            self.assertNotIn("warmups", runner.report)
+            self.assertEqual(runner.report["status"], "diagnostic_startup_passed")
+
     def test_existing_joined_rank_log_is_read_offline_without_starting_services(self):
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "launcher.log"

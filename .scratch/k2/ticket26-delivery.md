@@ -240,3 +240,13 @@ CPU两组共10项检查通过，ruff通过，Standards/Spec各0未解决；NPU�
 32报Extra data，31随peer失败；已本地复现完整JSON同一行拼接触发旧解析错误。
 仅diagnose_target_startup.py/test_index_diagnosis.py改动，新增离线--read-log；不修改功能源码或原验收报告。
 六项CPU与ruff通过，两轴各0未解决；实际009诊断片段尚待用户回传，只读取已有日志，不安排模型重跑。
+
+
+## 009证据恢复与010异步启动候选修复
+
+用户回传32组同步预热完整、每组390次index_add_，无错误；正式验收仍未通过。
+本轮只改NPU sparsity_driven_kv_offload/manager.py：为主stream临时索引登记miss/refill/map消费者，防止消费完成前allocator复用存储。
+通用主线源码无改动，无新增同步、缓冲池或shutdown改造；这仍是待NPU验证的候选根因。
+脚本diagnose_target_startup.py新增--without-index-sync，单次target startup关闭诊断同步；两份CPU测试验证所有权登记和启动开关。
+12+3项CPU通过，静态检查新增0问题，Standards/Spec各0未解决；硬件并发不能由CPU模拟证明。
+[本轮源码清单、证据限制和31/32命令](ticket26-startup-diagnosis.md)。已过阶段不重跑，26仍open。

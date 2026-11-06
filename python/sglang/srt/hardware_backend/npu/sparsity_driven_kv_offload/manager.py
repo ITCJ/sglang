@@ -41,6 +41,13 @@ def _wait_stream_event(stream, event) -> None:
         event.wait(stream)
 
 
+def _record_materialize_stream(stream, *tensors) -> None:
+    """Keep temporary input storage alive through its side-stream consumers."""
+    for tensor in tensors:
+        if tensor.device.type == "npu":
+            tensor.record_stream(stream)
+
+
 def normalize_batch_topk_indices(topk_indices: torch.Tensor) -> torch.Tensor:
     """Normalize DSA top-k indices to [batch, topk] for compact KV copies."""
     if topk_indices.dim() == 2:
@@ -1075,6 +1082,15 @@ class SparseKVCacheManager:
         # The existing miss_done still orders refill and attention.
         with torch.npu.stream(self._materialize_h2d_miss_stream):
             _wait_stream_event(self._materialize_h2d_miss_stream, copy_ready)
+            if mempool_runtime is not None:
+                _record_materialize_stream(
+                    self._materialize_h2d_miss_stream,
+                    device_cache_row_indices,
+                    topk_indices,
+                    miss_mask,
+                    hit_src_index,
+                    hit_valid_mask,
+                )
             if observe:
                 miss_range = torch.npu.mstx.range_start(
                     f"mempool:miss_io:{layer.layer_id}",
@@ -1113,6 +1129,14 @@ class SparseKVCacheManager:
         with torch.npu.stream(self._materialize_refill_stream):
             _wait_stream_event(self._materialize_refill_stream, self.hit_done)
             _wait_stream_event(self._materialize_refill_stream, self.miss_done)
+            if mempool_runtime is not None:
+                _record_materialize_stream(
+                    self._materialize_refill_stream,
+                    device_cache_row_indices,
+                    refill_src_index,
+                    refill_dst_index,
+                    refill_valid_mask,
+                )
             if observe:
                 refill_range = torch.npu.mstx.range_start(
                     f"mempool:cache_refill:{layer.layer_id}",
@@ -1147,6 +1171,19 @@ class SparseKVCacheManager:
         # entries use the max_context_len sentinel column to preserve shape.
         with torch.npu.stream(self._materialize_slot_map_stream):
             _wait_stream_event(self._materialize_slot_map_stream, copy_ready)
+            if mempool_runtime is not None:
+                # copy_ready orders production, but does not prevent allocator
+                # reuse after this function returns. Attention joins this stream
+                # later, after it has already allocated other main-stream tensors.
+                _record_materialize_stream(
+                    self._materialize_slot_map_stream,
+                    slot_map_row_indices,
+                    topk_indices,
+                    valid_topk_mask,
+                    device_cache_row_indices,
+                    slot_lookup_req_indices,
+                    slot_lookup_topk_indices,
+                )
             if observe:
                 map_range = torch.npu.mstx.range_start(
                     f"mempool:cache_map:{layer.layer_id}",

@@ -149,3 +149,15 @@ Standards/Spec初审发现已修复，最终各0未解决。
 新增--read-log离线入口，不启动服务、不改原summary/验收结果；必须32组有效warmup_complete且无错误才标证据完整。
 六项CPU检查通过、ruff通过，两轴各0未解决。仅脚本/测试/文档改动，无NPU功能源码变化。
 009原始日志待用户在验收容器读取，当前不能确认服务故障已消失；26保持open，不重跑已执行模型。
+
+
+### 009同步预热证据完整，补齐跨stream存储使用登记
+
+用户离线回传warmup_evidence_complete：16卡各两次、每次390个index_add_，无missing/failures/parse_errors。
+这只证明诊断同步条件下12,480次调用完成，不代表异步路径或target验收通过，原失败报告保留。
+代码审计发现主stream临时请求行号/索引在materialize返回后仍被refill/map使用；既有事件排序没有登记allocator跨stream使用。
+仅NPU sparse manager的mempool miss/refill/map路径增加record_stream，保留并行与默认清理，不改kernel或额外扩大池。
+该缺口是否为008根因尚未证明；下一轮010关闭诊断同步，只启动一次target到ready。
+12项materialization、3项启动CPU检查通过；脚本/测试ruff通过，manager历史8条lint新增0条。
+CPU生命周期测试模拟allocator保留，未复现NPU错误；新测试首轮为fixture失败，修正后通过，不作为驱动故障red/green证据。
+Standards/Spec各0未解决。用户人工确认清理后执行[010命令](../ticket26-startup-diagnosis.md)，不重跑已过阶段；26仍open、25未解锁。

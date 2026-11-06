@@ -1,4 +1,4 @@
-"""One paired target startup with synchronized index_add_ warmup diagnostics.
+"""One paired target startup with optional index_add_ warmup synchronization.
 
 Use the failed target's effective-config.json. No component/reference rerun,
 requests or acceptance results. Existing process ownership/cleanup is reused.
@@ -76,7 +76,10 @@ def startup(runner: Runner, library: Path) -> None:
     root, args, config, peer = runner.root, runner.args, runner.config, runner.peer
     env = service_environment(config, args, root, target=True)
     env["SGLANG_UNIDEX_MULTIBASE_LIBRARY"] = str(library)
-    env["SGLANG_NPU_MEMPOOL_INDEX_DIAG"] = "0" if runner.is_p else "1"
+    index_sync = not getattr(args, "without_index_sync", False)
+    env["SGLANG_NPU_MEMPOOL_INDEX_DIAG"] = (
+        "1" if not runner.is_p and index_sync else "0"
+    )
     # Graph construction still runs; suppress the later HTTP dummy request.
     env["SKIP_SERVER_WARMUP"] = "1"
     peer.barrier("diagnostic-start")
@@ -107,7 +110,7 @@ def startup(runner: Runner, library: Path) -> None:
             peer.check()
 
         wait_http(config.backend(args.role) + "/ready", config.startup_timeout, watch)
-        if not runner.is_p:
+        if not runner.is_p and index_sync:
             runner.report["warmups"] = check_warmups(root / "launcher.log")
         peer.send("diagnostic-ready")
         peer.expect("diagnostic-ready", check=watch)
@@ -138,6 +141,11 @@ def main() -> int:
     parser.add_argument("--role", choices=("prefill", "decode"))
     parser.add_argument("--config", type=Path)
     parser.add_argument("--run-id")
+    parser.add_argument(
+        "--without-index-sync",
+        action="store_true",
+        help="start target with the normal asynchronous path; no dispatch diagnostics",
+    )
     parser.add_argument(
         "--read-log", type=Path, help="read saved evidence only; never start jobs"
     )
@@ -206,11 +214,13 @@ def main() -> int:
         runner = Runner(args, config, peer, root)
         runner.report.update(
             mode="target-startup-diagnosis",
-            coverage="startup only; synchronized index_add_ in eager warmup; no requests",
+            coverage="startup only; normal asynchronous warmup; no requests"
+            if args.without_index_sync
+            else "startup only; synchronized index_add_ in eager warmup; no requests",
             target_acceptance="not-run",
             source_config=str(source_config),
             library_sha256=library_hash,
-            index_diagnosis=args.role == "decode",
+            index_diagnosis=args.role == "decode" and not args.without_index_sync,
             skip_http_warmup=True,
         )
         try:

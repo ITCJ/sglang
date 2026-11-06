@@ -4,6 +4,72 @@
 它覆盖两组单stream输入，不能证明模型、多stream和共享池环境中的同类调用正常。
 008的InplaceIndexAdd故障仍未定位，target未通过；本轮不重复相同完整验收。
 
+## 当前结论：009同步预热完成，010检查正常异步启动
+
+用户回传009离线读取结果：warmup_evidence_complete，32组完整预热，每组390次调用。
+missing、failures、parse_errors均为空，合计12,480次index_add_在诊断同步条件下完成。
+原始summary因解析异常失败；离线结果不改写它，也不证明正式target验收或双机清理通过。
+用户输出单独保存在[009证据](verification/ticket26-local/warmup-009-user-result.json)。
+
+代码审计发现：materialize_selected_kv在主stream创建临时请求行号、mask和拷贝索引，
+miss/refill/slot-map等stream继续读取；函数返回后，attention还会分配临时张量，然后才join回填/map。
+原copy_ready事件保证生产先于消费，但未登记这些主stream临时存储的跨stream使用。
+本轮在NPU manager的三条mempool消费路径补record_stream，让allocator等相应stream完成再复用存储。
+不添加全设备同步，不扩建KV/Index K缓冲，不改变kernel、计数、控制协议或默认退出行为。
+临时存储可能因此保留更久；内存峰值与Graph捕获行为仍需本轮实机核对。
+
+这是已确认的生命周期登记缺口及候选修复，尚未证明它就是008故障根因。
+另两项候选仍保留：AICPU算子并发问题、较早的拷贝破坏数据。
+010只改变生命周期登记，并关闭009诊断同步；若正常异步启动仍失败，不能继续用同步成功宣称修复。
+
+010前由用户人工确认31/32已清理。两侧各运行一次，下方31先启动等待32；无需重编译插件。
+沿用008有效配置；既有预检和自身进程清理继续执行。只启动target到ready，不发生成请求，
+不重跑组件/reference，不推进capacity、timeout或微测。结束后仍由用户人工确认清理。
+
+31验收容器：
+
+```bash
+cd /home/cryang/sglang &&
+git pull --ff-only &&
+python3 -u ascend-mempool-test/scripts/diagnose_target_startup.py \
+  --role prefill \
+  --config /home/cryang/log/mempool-min/k2-ticket26-008-phase2/k2-ticket26-008-phase2-b64-sd512/prefill/effective-config.json \
+  --run-id k2-ticket26-010-async \
+  --without-index-sync
+```
+
+32验收容器：
+
+```bash
+cd /home/cryang/sglang &&
+git pull --ff-only &&
+python3 -u ascend-mempool-test/scripts/diagnose_target_startup.py \
+  --role decode \
+  --config /home/cryang/log/mempool-min/k2-ticket26-008-phase2/k2-ticket26-008-phase2-b64-sd512/decode/effective-config.json \
+  --run-id k2-ticket26-010-async \
+  --without-index-sync
+```
+
+两侧日志位于/home/cryang/log/k2/k2-ticket26-010-async/{prefill,decode}/。
+预期summary.json中status=diagnostic_startup_passed、index_diagnosis=false；
+coverage写明normal asynchronous warmup，target_acceptance仍为not-run。
+成功标记TARGET_STARTUP_DIAGNOSED；失败非零。回传两侧summary和失败侧launcher.log首段异常。
+本轮成功仅允许继续正式target验收，不据此进入其它验收阶段或解锁25。
+
+本轮净改动阅读顺序：
+
+- Ascend/NPU功能源码：sparsity_driven_kv_offload/manager.py，在临时张量的消费者stream登记存储使用。
+- 通用主线功能源码：无改动。
+- 脚本：diagnose_target_startup.py新增--without-index-sync，显式关闭继承的诊断开关。
+- 测试：test_multibase_delivery.py用真实materialization入口核对延迟消费者的所有权登记；test_index_diagnosis.py检查异步启动开关和原失败清理。
+- 文档/证据：本说明、ticket26 issue/delivery、进度D，以及用户009结果记录。
+
+Mac检查：materialization相关12项、启动相关3项通过。
+新生命周期测试首次因fixture未启用count_sources失败，修正fixture后通过；没有在CPU复现NPU驱动故障。
+该测试模拟allocator持有存储，只验证调用方登记；硬件并发、allocator事件和Graph捕获仍待010验证；请求与Graph replay不在本轮范围。
+脚本/测试ruff通过，四份源码格式检查通过；manager保持8条历史lint，新增0条。
+Standards/Spec各0未解决；评审未重复运行测试。010未运行；26保持open、25不解锁。
+
 ## 009反馈后的离线读取
 
 009用户回传：32报JSONDecodeError Extra data line1 column69，31随后peer failed。

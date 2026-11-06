@@ -1,6 +1,7 @@
 """Check the measurement workload and cache evidence through CPU SDK boundaries."""
 
 import unittest
+import weakref
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -35,6 +36,69 @@ class CPUTorch:
 
 
 class TestMultibaseDelivery(unittest.TestCase):
+    def test_side_stream_observation_indices_survive_materialization_return(self):
+        fixture = materialize_fixture.TestMaterialize()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        helper, cache = fixture.helper, fixture.cache
+        helper.runtime.bind(1, slot=3, prompt_tokens=4, prompt_slot=2)
+        observer = PageObservation(1, 9, 24, 1, 4, (5,), 5, "cpu")
+        helper.runtime.observation_device = observer
+        helper.runtime._fetch.count_sources = True
+        torch.npu.mstx = SimpleNamespace(
+            range_start=lambda *args: 0, range_end=lambda *args: None
+        )
+        retained, reads = {}, []
+
+        def record(stream, *tensors):
+            # Model the allocator's ownership until the consumer completes.
+            retained.setdefault(stream, []).extend(tensors)
+
+        refill = observer.refill_verified
+        lookup = fixture.module.slot_map_lookup
+
+        def observe_refill(layer, rows, *args):
+            reads.append((cache._materialize_refill_stream, weakref.ref(rows)))
+            return refill(layer, rows, *args)
+
+        lookup_calls = 0
+
+        def observe_lookup(table, rows, positions):
+            nonlocal lookup_calls
+            lookup_calls += 1
+            if lookup_calls == 2:
+                reads.extend(
+                    (cache._materialize_slot_map_stream, weakref.ref(value))
+                    for value in (rows, positions)
+                )
+            return lookup(table, rows, positions)
+
+        batch = helper.start(offset=0)
+        helper.runtime.observer = object()
+        with (
+            patch.object(
+                fixture.module, "_record_materialize_stream", record, create=True
+            ),
+            patch.object(observer, "refill_verified", observe_refill),
+            patch.object(fixture.module, "slot_map_lookup", observe_lookup),
+        ):
+            cache.materialize_selected_kv(
+                SimpleNamespace(layer_id=5),
+                batch,
+                torch.tensor([[0, 1, -1, -1], [-1, -1, -1, -1]]),
+                torch.zeros((2, 4, 1, 4), dtype=torch.bfloat16),
+                CPUStream(),
+                mempool_runtime=helper.runtime,
+            )
+        # The caller has not yet joined refill/map. Locals may have gone out
+        # of scope, but each consumer's allocator ownership must still exist.
+        self.assertEqual(len(reads), 3)
+        for stream, reference in reads:
+            self.assertIsNotNone(
+                reference(), "main-stream indices died before side-stream join"
+            )
+            self.assertTrue(any(value is reference() for value in retained[stream]))
+
     def test_cache_gate_rejects_any_rank_error_even_when_another_rank_passes(self):
         import json
         import tempfile

@@ -1,0 +1,19 @@
+{
+  "source": "user-pasted offline reader output; full index-diagnosis.json not collected",
+  "run_id": "k2-ticket26-009-diag",
+  "startup_code_commit": "21a4775f34",
+  "reader_code_commit": "4bc7c4cbc2",
+  "host": "npu1-32",
+  "status": "warmup_evidence_complete",
+  "completed_pairs": 32,
+  "calls_per_warmup": [390],
+  "derived_total_index_add_calls": 12480,
+  "missing": [],
+  "failures": [],
+  "parse_errors": [],
+  "acceptance": "not-evaluated",
+  "report": "/home/cryang/log/k2/k2-ticket26-009-diag/decode/index-diagnosis.json",
+  "coverage": "16 devices, two eager warmups each, with diagnostic device synchronization",
+  "limits": "Does not prove normal asynchronous execution, Graph replay, target acceptance or paired cleanup",
+  "ticket_state": "open"
+}
