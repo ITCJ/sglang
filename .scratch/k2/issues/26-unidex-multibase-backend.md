@@ -141,3 +141,11 @@ Standards/Spec初审发现已修复，最终各0未解决。
 独立脚本复用008有效配置，双机仅启动target一次到ready即退出，不发请求、不重跑已过测试、不改默认清理。
 四项CPU检查通过；新增文件静态检查通过，既有graph backend九条历史lint保留；两轴评审各0未解决。
 本轮NPU尚未运行，诊断成功也不是验收通过，26仍open。见[009诊断命令](../ticket26-startup-diagnosis.md)。
+
+### 009诊断脚本解析失败，保留已有日志离线恢复
+
+用户回传32 JSONDecodeError Extra data line1 column69，31 peer failed；尚无原始诊断片段。
+本地两项新回归复现多rank完整JSON同一行导致旧解析失败，现逐marker raw_decode并显式保留损坏/failed记录。
+新增--read-log离线入口，不启动服务、不改原summary/验收结果；必须32组有效warmup_complete且无错误才标证据完整。
+六项CPU检查通过、ruff通过，两轴各0未解决。仅脚本/测试/文档改动，无NPU功能源码变化。
+009原始日志待用户在验收容器读取，当前不能确认服务故障已消失；26保持open，不重跑已执行模型。

@@ -28,18 +28,48 @@ from run_ticket10 import connect, wait_http
 from ticket10_processes import Peer, Processes
 
 
-def check_warmups(log: Path) -> list[dict]:
-    completed = []
-    for line in log.read_text(errors="replace").splitlines():
-        if "[MEMPOOL_INDEX_DIAG] " in line:
-            item = json.loads(line.split("[MEMPOOL_INDEX_DIAG] ", 1)[1])
+def read_warmups(log: Path) -> dict:
+    completed, failures, parse_errors = [], [], []
+    decoder = json.JSONDecoder()
+    for number, line in enumerate(log.read_text(errors="replace").splitlines(), 1):
+        # Workers share stdout. A newline may arrive after another rank's JSON
+        # or ordinary log text; decode each tagged object, not the whole line.
+        for chunk in line.split("[MEMPOOL_INDEX_DIAG] ")[1:]:
+            try:
+                item, _ = decoder.raw_decode(chunk.lstrip())
+            except json.JSONDecodeError as error:
+                parse_errors.append(
+                    dict(line=number, error=str(error), text=chunk[:500])
+                )
+                continue
             if item["phase"] == "warmup_complete":
                 completed.append(item)
+            elif item["phase"] in ("failed", "warmup_failed"):
+                failures.append(dict(line=number, **item))
     expected = {(device, warmup) for device in range(16) for warmup in range(2)}
     actual = {(item["device"], item["warmup"]) for item in completed if item["calls"]}
-    if actual != expected:
-        raise ValueError(f"missing TP16 warmup diagnosis: {sorted(expected - actual)}")
-    return completed
+    return dict(
+        status="warmup_evidence_complete"
+        if actual == expected and not failures and not parse_errors
+        else "warmup_evidence_incomplete",
+        acceptance="not-evaluated",
+        coverage="saved eager warmup records only; no startup/cleanup/Graph acceptance",
+        source=str(log.resolve()),
+        completed=completed,
+        missing=sorted(expected - actual),
+        failures=failures,
+        parse_errors=parse_errors,
+    )
+
+
+def check_warmups(log: Path) -> list[dict]:
+    report = read_warmups(log)
+    write_json(log.parent / "index-diagnosis.json", report)
+    if report["status"] != "warmup_evidence_complete":
+        raise ValueError(
+            f"missing TP16 warmup diagnosis or failed/damaged records; see {log.parent / 'index-diagnosis.json'}"
+        )
+    return report["completed"]
 
 
 def startup(runner: Runner, library: Path) -> None:
@@ -105,10 +135,43 @@ def startup(runner: Runner, library: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--role", choices=("prefill", "decode"), required=True)
-    parser.add_argument("--config", type=Path, required=True)
-    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--role", choices=("prefill", "decode"))
+    parser.add_argument("--config", type=Path)
+    parser.add_argument("--run-id")
+    parser.add_argument(
+        "--read-log", type=Path, help="read saved evidence only; never start jobs"
+    )
     args = parser.parse_args()
+    if args.read_log is not None:
+        report = read_warmups(args.read_log)
+        output = args.read_log.parent / "index-diagnosis.json"
+        write_json(output, report)
+        print(
+            json.dumps(
+                dict(
+                    status=report["status"],
+                    completed_pairs=len(
+                        {
+                            (r["device"], r["warmup"])
+                            for r in report["completed"]
+                            if r["calls"]
+                        }
+                    ),
+                    calls_per_warmup=sorted({r["calls"] for r in report["completed"]}),
+                    missing=report["missing"],
+                    failures=report["failures"],
+                    parse_errors=report["parse_errors"],
+                    acceptance="not-evaluated",
+                    report=str(output),
+                )
+            ),
+            flush=True,
+        )
+        return 0 if report["status"] == "warmup_evidence_complete" else 1
+    if not args.role or args.config is None or not args.run_id:
+        parser.error(
+            "startup requires --role, --config and --run-id; or use --read-log"
+        )
     if (
         not args.run_id
         or Path(args.run_id).name != args.run_id

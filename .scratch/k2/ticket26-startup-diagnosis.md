@@ -4,6 +4,27 @@
 它覆盖两组单stream输入，不能证明模型、多stream和共享池环境中的同类调用正常。
 008的InplaceIndexAdd故障仍未定位，target未通过；本轮不重复相同完整验收。
 
+## 009反馈后的离线读取
+
+009用户回传：32报JSONDecodeError Extra data line1 column69，31随后peer failed。
+本地已复现同样位置的错误：多个rank的完整JSON拼接到同一物理行，旧json.loads把整行当单个对象。
+实际009日志片段尚待用户从32验收容器回传；宿主机同路径不存在，不能据此判断日志丢失。
+解析改为逐marker读取一个JSON对象，并明确保留损坏/失败记录；仍要求16卡各两次完整预热记录。
+新增--read-log只离线读取已有日志，写独立index-diagnosis.json，不连接peer、不加载NPU、不改原summary。
+两项新回归先失败，修复后连同已有四项共六项通过；ruff通过，两轴评审各0未解决。
+
+32验收容器使用更新后的脚本读取009，31无需运行，无需重启模型：
+
+```bash
+cd /home/cryang/sglang &&
+python3 -u ascend-mempool-test/scripts/diagnose_target_startup.py \
+  --read-log /home/cryang/log/k2/k2-ticket26-009-diag/decode/launcher.log
+```
+
+完整证据输出warmup_evidence_complete及completed_pairs=32。
+这只确认保存的预热记录完整，不把原failed报告改成通过，不代表服务验收或清理已确认。
+下方保留009启动说明供追溯；本次不再执行启动命令。
+
 ## 正常执行路径与证据
 
 用户先人工确认31/32清理完毕，再各执行下面的一条命令，31先启动等待32。

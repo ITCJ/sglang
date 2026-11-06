@@ -27,6 +27,66 @@ def records(output):
 
 
 class TestIndexDiagnosis(unittest.TestCase):
+    def test_existing_joined_rank_log_is_read_offline_without_starting_services(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "launcher.log"
+            lines = [
+                "[MEMPOOL_INDEX_DIAG] "
+                + json.dumps(
+                    dict(
+                        pid=2420540 + device,
+                        phase="warmup_complete",
+                        device=device,
+                        warmup=warmup,
+                        calls=390,
+                    )
+                )
+                for device in range(16)
+                for warmup in range(2)
+            ]
+            # stdout from several workers may join records before any newline.
+            log.write_text("prefix " + "".join(lines) + "[TP0] unrelated log\n")
+            with (
+                patch.object(
+                    diagnose_target_startup.sys,
+                    "argv",
+                    ["diagnose", "--read-log", str(log)],
+                ),
+                patch.object(diagnose_target_startup, "connect") as connect,
+                patch.object(diagnose_target_startup, "startup") as startup,
+            ):
+                self.assertEqual(diagnose_target_startup.main(), 0)
+            connect.assert_not_called()
+            startup.assert_not_called()
+            evidence = json.loads((log.parent / "index-diagnosis.json").read_text())
+            self.assertEqual(evidence["status"], "warmup_evidence_complete")
+            self.assertEqual(len(evidence["completed"]), 32)
+            self.assertEqual(evidence["acceptance"], "not-evaluated")
+
+    def test_broken_or_failed_record_cannot_be_reported_as_complete(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "launcher.log"
+            complete = "".join(
+                "[MEMPOOL_INDEX_DIAG] "
+                + json.dumps(
+                    dict(
+                        phase="warmup_complete",
+                        device=device,
+                        warmup=warmup,
+                        calls=390,
+                    )
+                )
+                for device in range(16)
+                for warmup in range(2)
+            )
+            for suffix in (
+                '[MEMPOOL_INDEX_DIAG] {"phase":broken}',
+                '[MEMPOOL_INDEX_DIAG] {"phase":"failed","stage":"before_sync"}',
+            ):
+                log.write_text(complete + suffix)
+                with self.assertRaisesRegex(ValueError, "diagnosis"):
+                    diagnose_target_startup.check_warmups(log)
+
     def test_startup_failure_cleans_up_without_marking_success(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

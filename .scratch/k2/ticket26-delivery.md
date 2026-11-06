@@ -234,3 +234,9 @@ CPU两组共10项检查通过，ruff通过，Standards/Spec各0未解决；NPU�
 新增NPU index_diagnosis.py及graph backend预热hook，默认关闭；独立diagnose_target_startup.py只启动一次双机target。
 不修改通用主线、观测计数或shutdown。四项CPU检查通过，两轴评审各0未解决；NPU诊断待运行。
 源码阅读清单、31/32命令与结果边界见[009预热诊断](ticket26-startup-diagnosis.md)。26保持open。
+
+## 009日志解析修复
+
+32报Extra data，31随peer失败；已本地复现完整JSON同一行拼接触发旧解析错误。
+仅diagnose_target_startup.py/test_index_diagnosis.py改动，新增离线--read-log；不修改功能源码或原验收报告。
+六项CPU与ruff通过，两轴各0未解决；实际009诊断片段尚待用户回传，只读取已有日志，不安排模型重跑。
