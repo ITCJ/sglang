@@ -132,3 +132,12 @@ Standards/Spec初审发现已修复，最终各0未解决。
 两组输入各一次；Mac CPU共10项通过，ruff通过，Standards/Spec各0项未解决；NPU探针待用户执行。
 未修改功能源码或清理行为，不重跑已过阶段、不推进后续。26仍open，25未解锁。
 详见[008诊断证据与32命令](../ticket26-index-add-diagnosis.md)。
+
+### 单卡计数通过，继续真实服务预热边界诊断
+
+用户回传32探针十项全部PASS；这只覆盖单stream两组输入，不代表target已通过。
+核对git历史：cache_updates/refill_verified/map_verified三处index_add_由791469d8e0新增，runtime另外两处为旧代码。
+用户授权继续定位；新增默认关闭的NPU预热诊断，仅在eager warmup记录index_add_调用前后同步边界、位置、形状和索引。
+独立脚本复用008有效配置，双机仅启动target一次到ready即退出，不发请求、不重跑已过测试、不改默认清理。
+四项CPU检查通过；新增文件静态检查通过，既有graph backend九条历史lint保留；两轴评审各0未解决。
+本轮NPU尚未运行，诊断成功也不是验收通过，26仍open。见[009诊断命令](../ticket26-startup-diagnosis.md)。

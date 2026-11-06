@@ -227,3 +227,10 @@ phase1快照不变；此次只重试当前phase2。完整验收不标passed；�
 本次仅新增脚本diagnose_index_add.py，复用PageObservation逐调用同步并断言计数；功能源码无改动。
 CPU两组共10项检查通过，ruff通过，Standards/Spec各0未解决；NPU未运行。
 [32单卡命令与证据范围](ticket26-index-add-diagnosis.md)。31无需启动，已过阶段保留，26仍open。
+
+## 单卡通过后的预热诊断
+
+用户确认32单卡输出十项PASS；真实服务多stream路径仍待定位。
+新增NPU index_diagnosis.py及graph backend预热hook，默认关闭；独立diagnose_target_startup.py只启动一次双机target。
+不修改通用主线、观测计数或shutdown。四项CPU检查通过，两轴评审各0未解决；NPU诊断待运行。
+源码阅读清单、31/32命令与结果边界见[009预热诊断](ticket26-startup-diagnosis.md)。26保持open。

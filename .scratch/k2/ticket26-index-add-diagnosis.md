@@ -52,3 +52,6 @@ Mac CPU执行一次，共10项通过；验证输入构造与断言，未复现NP
 ruff检查及格式检查通过；Standards与Spec只读评审各0项未解决。
 CPU原始输出保存在[index-add-cpu.json](verification/ticket26-local/index-add-cpu.json)。
 26保持open，25不解锁；完整剩余五段仍是target、capacity、timeout、双rank微测、TP16微测。
+
+用户随后回传32单卡十项全部PASS；[终端结果记录](verification/ticket26-local/index-add-npu-user-result.json)。
+只确认该探针范围通过，服务故障仍未解决；下一步为[target预热边界诊断](ticket26-startup-diagnosis.md)。
