@@ -23,8 +23,14 @@ def main() -> int:
     p.add_argument("--sgl-source", type=Path, required=True)
     p.add_argument("--prefill-host", required=True)
     p.add_argument("--decode-host", required=True)
-    p.add_argument(
+    selection = p.add_mutually_exclusive_group()
+    selection.add_argument(
         "--stage", choices=("all", "phase1", "phase2", "benchmark"), default="all"
+    )
+    selection.add_argument(
+        "--start-from",
+        choices=("phase1", "phase2", "benchmark"),
+        help="run this phase and all following phases",
     )
     p.add_argument(
         "--phase1-component-run-id",
@@ -34,12 +40,18 @@ def main() -> int:
         "--phase1-service-run-id",
         help="reuse completed phase1 components/reference/target; start at capacity",
     )
+    p.add_argument(
+        "--phase2-component-run-id",
+        help="reuse passed phase2 page-first/fetch reports; start service checks at reference",
+    )
     p.add_argument("--control-port", type=int, default=22000)
     p.add_argument("--describe", action="store_true")
     a = p.parse_args()
     repo = Path(__file__).resolve().parents[2]
     root = Path("/home/cryang/log/k2") / a.run_id
     phases = ["phase1", "phase2", "benchmark"] if a.stage == "all" else [a.stage]
+    if a.start_from:
+        phases = phases[phases.index(a.start_from) :]
     report: dict[str, Any] = dict(
         status="not-run",
         stages={v: "not-run" for v in phases},
@@ -51,6 +63,8 @@ def main() -> int:
         benchmark_repetitions=dict(samples=1, warmup=1, iterations=2),
         phase1_component_run_id=a.phase1_component_run_id,
         phase1_service_run_id=a.phase1_service_run_id,
+        phase2_component_run_id=a.phase2_component_run_id,
+        start_from=a.start_from,
     )
     if a.describe:
         print(json.dumps(report, indent=2))
@@ -146,6 +160,19 @@ def main() -> int:
                             / previous
                             / f"fetch-retry-{a.role}.json"
                         ),
+                    ]
+                elif phase == "phase2" and a.phase2_component_run_id:
+                    previous = a.phase2_component_run_id
+                    previous_root = (
+                        Path("/home/cryang/log/mempool-min")
+                        / f"{previous}-phase2"
+                        / f"{previous}-phase2-b64-sd512"
+                        / a.role
+                    )
+                    reused = [
+                        "--component-reports",
+                        str(previous_root / "page-first-copy/report.json"),
+                        str(previous_root / "fetch/report.json"),
                     ]
                 config = json.loads(a.config.read_text())
                 config.update(observe=True, observe_trace=False)

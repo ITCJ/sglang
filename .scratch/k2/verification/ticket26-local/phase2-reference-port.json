@@ -1,0 +1,51 @@
+{
+  "run_id": "k2-ticket26-006",
+  "source": "user-pasted launcher logs on P/D and later host31 ss query",
+  "phase1": "execution completed: wrapper advanced to phase2 after successful phase1 return",
+  "phase2_completed": [
+    "page-first-copy",
+    "fetch"
+  ],
+  "phase2_failed": "reference startup",
+  "first_error": {
+    "time": "2026-11-06 08:34:34 +0800",
+    "role": "prefill",
+    "tp_rank": 3,
+    "pid": 1219953,
+    "address": "10.120.72.31:19003",
+    "error": "EADDRINUSE; AccLink address in use for bind listen; config store returned -2009"
+  },
+  "consequence": "P default shutdown after TP3 initialization failure; D config store handshake failed/reset at 08:34:36-37",
+  "later_port_state": "sudo ss -antp sport=:19003 returned no entries; no owner or TIME_WAIT at query time",
+  "root_cause_limit": "bind conflict confirmed; historical occupant unknown, not attributed to kernel correctness or another job",
+  "changes": "test runner arguments only; no runtime/kernel/BM initialization/shutdown change",
+  "resume": {
+    "run_id": "k2-ticket26-007",
+    "start_from": "phase2",
+    "phase2_component_run_id": "k2-ticket26-006",
+    "remaining": [
+      "phase2 reference",
+      "phase2 target",
+      "phase2 capacity",
+      "phase2 timeout",
+      "cache eviction gate",
+      "pair/TP16 benchmarks"
+    ]
+  },
+  "local_checks": {
+    "unit_methods": 2,
+    "public_entry_roles": [
+      "prefill",
+      "decode"
+    ],
+    "component_reuse": "passed/rank/geometry checks retained",
+    "ruff": "2 files passed",
+    "mypy": "1 file passed"
+  },
+  "hardware": "007 not-run; 26 remains open",
+  "review": {
+    "Standards": 0,
+    "Spec": 0,
+    "hardware": "not-run"
+  }
+}

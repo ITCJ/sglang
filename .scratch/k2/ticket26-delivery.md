@@ -194,3 +194,11 @@ CPU检查通过，NPU重测待回传；先按[双机fetch重测](ticket26-fetch-
 测试：test_service_resume.py覆盖跳过顺序、身份变化/缺失证据拒绝；test_mempool_full.py覆盖双侧启动失败与预期容量拒绝。
 本地六项定向检查通过；评审修复后三项受影响检查通过；归档脚本一致且功能源码字节未变。
 [两侧续跑命令](ticket26-capacity-resume.md)。完整实机验收仍未通过。
+
+## 006阶段2reference失败后的续跑
+
+阶段1执行已完成，阶段2copy/fetch通过。31 TP3绑定19003失败，导致reference启动退出及32握手连带失败；事后19003已空闲，历史占用者未知。
+007使用`--start-from phase2 --phase2-component-run-id k2-ticket26-006`，跳过阶段1并复用阶段2组件报告，直接从reference继续。
+新增逻辑仅在run_ticket26.py；test_ticket26_resume.py从公共CLI验证P/D各自不启动phase1、组件报告透传、继续两档rank数benchmark与报告范围。
+两项CPU检查、ruff/mypy通过，不重跑完整CPU或已通过设备测试。功能源码、SDK及默认退出没有变化。
+[31/32命令](ticket26-phase2-resume.md)，[失败证据](verification/ticket26-local/phase2-reference-port.json)。

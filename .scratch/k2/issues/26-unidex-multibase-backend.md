@@ -91,3 +91,13 @@ Standards/Spec初审发现已修复，最终各0未解决。
 当前新增六项定向检查通过，评审修改后三项受影响检查通过；阶段1归档同步且功能源码字节未变，Standards/Spec各0未解决。
 功能源码无改动；仅验收脚本、相关测试和交付说明变化。实机续跑待执行，26仍open。
 见[续跑说明](../ticket26-capacity-resume.md)、[证据](../verification/ticket26-local/capacity-resume.json)。
+
+### 006：阶段1执行完成，阶段2reference端口绑定冲突
+
+006推进至阶段2，说明阶段1剩余capacity/timeout及汇总已返回成功；阶段2copy/fetch也已返回成功。
+阶段2reference启动时，31 TP3在08:34:34绑定19003失败（EADDRINUSE，config store -2009），默认清理P进程；32随后握手连接被重置。
+用户事后在31宿主机查询19003，无任何监听/连接/TIME_WAIT记录，历史占用者未知。没有将端口冲突归因于kernel。
+新增--start-from phase2与--phase2-component-run-id；007复用006成功组件结果，直接从阶段2reference继续，阶段1不执行。
+复用沿用已有passed/rank/geometry验证与原JSON归档；之后照常执行阶段2其余检查、cache gate和两档rank数微基准。
+修改仅run_ticket26.py和相关测试/文档；功能源码、SDK与默认退出不变。两项CPU定向检查覆盖双侧编排与组件证据拒绝，静态检查通过。
+26仍open，实机续跑待回传；本次没有宣称端口冲突已根治。见[阶段2续跑](../ticket26-phase2-resume.md)。
