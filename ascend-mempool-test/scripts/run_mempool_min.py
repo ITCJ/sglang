@@ -137,6 +137,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     resume = parser.add_mutually_exclusive_group()
     resume.add_argument("--resume-after-target", type=Path)
     resume.add_argument("--resume-after-reference", type=Path)
+    resume.add_argument(
+        "--reference-only",
+        action="store_true",
+        help="rebuild only reference service evidence; omit component tests and stop",
+    )
+    resume.add_argument(
+        "--reference-service-report",
+        type=Path,
+        help="run only target using a successful --reference-only report",
+    )
     parser.add_argument("--stop-after-target", action="store_true")
     parser.add_argument("--observation-rounds", type=int, choices=(1, 2), default=1)
     args = parser.parse_args(argv)
@@ -144,9 +154,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         args.resume_after_target
         or args.resume_after_reference
         or args.stop_after_target
+        or args.reference_only
+        or args.reference_service_report
     ) and args.mode != "full-acceptance":
         parser.error("service resume/stop requires full-acceptance")
-    if args.stop_after_target and not args.resume_after_reference:
+    if args.stop_after_target and not (
+        args.resume_after_reference or args.reference_service_report
+    ):
         parser.error("stop-after-target requires resume-after-reference")
     if (
         args.mode == "index-cold-diagnosis"
@@ -154,6 +168,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         and args.replay_responses is None
     ):
         parser.error("prefill index-cold-diagnosis requires --replay-responses")
+    if args.reference_only or args.reference_service_report:
+        if args.observation_rounds != 1:
+            parser.error("single service stages require --observation-rounds 1")
+        args.page_allocation = True
     if args.replay_responses is not None:
         args.replay_responses = args.replay_responses.resolve()
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", args.run_id):
@@ -494,6 +512,7 @@ class Runner:
             not in ("serve", "numa-acceptance", "index-cold-diagnosis")
             and not getattr(self.args, "resume_after_target", None)
             and not getattr(self.args, "resume_after_reference", None)
+            and not getattr(self.args, "reference_service_report", None)
         ):
             ports |= service_ports(self.config, self.args.role, target=False)
         if self.is_p:
@@ -1147,6 +1166,14 @@ class Runner:
                             raise ValueError(
                                 "observation fork output IDs differ from formal reference"
                             )
+                    if getattr(self.args, "reference_only", False) or getattr(
+                        self.args, "reference_service_report", None
+                    ):
+                        from mempool_service_resume import check_service_answers
+
+                        check_service_answers(
+                            root, target=target, case_count=len(self.cases)
+                        )
                     self.peer.send("stage-control", action="done")
                 else:
                     while True:
@@ -1412,7 +1439,25 @@ class Runner:
         self.report.update(status="passed", acceptance=acceptance, user_accepted=False)
 
     def run_full(self) -> None:
-        reference_only = getattr(self.args, "resume_after_reference", None)
+        reference_service = getattr(self.args, "reference_service_report", None)
+        if getattr(self.args, "reference_only", False) or reference_service:
+            self.report.update(
+                coverage="reference/target service evidence only; component tests omitted",
+                components="not-run; previous reports deleted by user",
+                full_acceptance="incomplete",
+            )
+        if getattr(self.args, "reference_only", False):
+            self.prepare_full_cases()
+            self.stage(target=False)
+            self.report.update(
+                status="passed_execution_scope", stopped_after="reference"
+            )
+            write_json(self.root / "summary.json", self.report)
+            print("REFERENCE_PASSED; stopped for user cleanup confirmation", flush=True)
+            return
+        reference_only = reference_service or getattr(
+            self.args, "resume_after_reference", None
+        )
         previous = reference_only or getattr(self.args, "resume_after_target", None)
         if previous:
             from mempool_service_resume import reuse_completed_stages
@@ -1423,6 +1468,7 @@ class Runner:
                 self.report["identity"],
                 self.args.role,
                 through="reference" if reference_only else "target",
+                include_components=not bool(reference_service),
             )
             if reference_only and self.is_p:
                 from transformers import AutoTokenizer
@@ -1453,7 +1499,7 @@ class Runner:
             self.report["reused_from"] = str(previous.resolve())
             write_json(self.root / "summary.json", self.report)
             print(
-                f"REUSED components/{'reference' if reference_only else 'reference/target'} from {previous}; next={'target' if reference_only else 'capacity'}",
+                f"REUSED {'reference service' if reference_service else 'components/reference' if reference_only else 'components/reference/target'} from {previous}; next={'target' if reference_only else 'capacity'}",
                 flush=True,
             )
         else:
@@ -1464,7 +1510,7 @@ class Runner:
             if getattr(self.args, "observation_rounds", 1) == 2:
                 self.stage(target=True, restart=True)
             self.stage(target=True)
-        if getattr(self.args, "stop_after_target", False):
+        if reference_service or getattr(self.args, "stop_after_target", False):
             self.report.update(
                 status="passed_execution_scope",
                 stopped_after="target",
@@ -1792,6 +1838,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.mode == "full-acceptance"
             and args.role == "prefill"
             and report.get("status") != "passed_execution_scope"
+            and not args.reference_only
+            and not args.reference_service_report
         ):
             if "acceptance" not in report:
                 report["acceptance"] = verify_mempool_full.summarize(

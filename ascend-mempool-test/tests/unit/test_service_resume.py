@@ -2,6 +2,7 @@
 
 import copy
 import json
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -136,8 +137,123 @@ class TestServiceResume(unittest.TestCase):
                 self.previous, self.current, self.identity, "prefill"
             )
 
+    def test_single_service_cli_forces_page_controls_and_rejects_two_rounds(self):
+        import contextlib
+        import io
+
+        for option in (["--reference-only"], ["--reference-service-report", "old"]):
+            argv = [
+                "--role",
+                "prefill",
+                "--mode",
+                "full-acceptance",
+                "--config",
+                "config.json",
+                "--run-id",
+                "new",
+                *option,
+            ]
+            self.assertTrue(run_mempool_min.parse_args(argv).page_allocation)
+            with (
+                contextlib.redirect_stderr(io.StringIO()),
+                self.assertRaises(SystemExit),
+            ):
+                run_mempool_min.parse_args([*argv, "--observation-rounds", "2"])
+
+    def test_single_service_answer_gate_rejects_mismatch_and_unstable_reference(self):
+        root = self.previous / "reference"
+        for target, answers, stability, error in (
+            (False, [{"status": "passed"}], "passed", None),
+            (False, [{"status": "passed"}], "anomaly", "stability"),
+            (True, [{"status": "passed", "ids": {"equal": True}}], "passed", None),
+            (True, [{"status": "passed", "ids": {"equal": False}}], "passed", "IDs"),
+            (
+                True,
+                [{"status": "target-failed", "ids": {"equal": True}}],
+                "passed",
+                "answers",
+            ),
+            (False, [], "passed", "answers"),
+        ):
+            self.write("reference/answers.json", answers)
+            self.write("reference/stability.json", {"status": stability})
+            if error:
+                with self.assertRaisesRegex(ValueError, error):
+                    mempool_service_resume.check_service_answers(
+                        root, target=target, case_count=1
+                    )
+            else:
+                mempool_service_resume.check_service_answers(
+                    root, target=target, case_count=1
+                )
+
+    def test_reference_only_runs_once_without_components_or_target(self):
+        for role in ("prefill", "decode"):
+            args = run_mempool_min.parse_args(
+                [
+                    "--role",
+                    role,
+                    "--mode",
+                    "full-acceptance",
+                    "--config",
+                    "config.json",
+                    "--run-id",
+                    "new",
+                    "--reference-only",
+                    "--page-allocation",
+                ]
+            )
+            runner = run_mempool_min.Runner(
+                args, RouterConfig("p", "d", "/model"), Mock(), self.current
+            )
+            with (
+                patch.object(runner, "prepare_full_cases") as fixtures,
+                patch.object(runner, "components") as components,
+                patch.object(runner, "stage") as stage,
+                patch.object(runner, "capacity_stage") as capacity,
+            ):
+                runner.run_full()
+            fixtures.assert_called_once_with()
+            stage.assert_called_once_with(target=False)
+            components.assert_not_called()
+            capacity.assert_not_called()
+            self.assertEqual(runner.report["stopped_after"], "reference")
+            self.assertEqual(runner.report["status"], "passed_execution_scope")
+            self.assertTrue(runner.report["components"].startswith("not-run"))
+
+    def test_reference_service_resume_without_component_files(self):
+        self._target_resume(service_only=True)
+
+    def test_reference_service_resume_rejects_unsuccessful_reference(self):
+        self.write(
+            "summary.json",
+            {"status": "failed", "stages": ["reference"], "stopped_after": "reference"},
+        )
+        with self.assertRaisesRegex(ValueError, "successful reference-only"):
+            mempool_service_resume.reuse_completed_stages(
+                self.previous,
+                self.current,
+                self.identity,
+                "prefill",
+                through="reference",
+                include_components=False,
+            )
+
     def test_target_resume_restores_reference_without_repeating_it_on_either_side(self):
-        self.write("summary.json", {"stages": ["reference"], "status": "failed"})
+        self._target_resume()
+
+    def _target_resume(self, service_only=False):
+        self.write(
+            "summary.json",
+            {
+                "stages": ["reference"],
+                "status": "passed_execution_scope" if service_only else "failed",
+                "stopped_after": "reference" if service_only else None,
+            },
+        )
+        if service_only:
+            for name in ("page-first-copy", "fetch"):
+                shutil.rmtree(self.previous / name)
         self.write("target/evidence.json", {"status": "failed"})
         self.cases[0]["sampling_params"] = {"max_new_tokens": 1, "ignore_eos": True}
         self.write("cases.json", self.cases)
@@ -158,8 +274,6 @@ class TestServiceResume(unittest.TestCase):
                 (current / "code.patch").write_text(self.runtime_patch)
                 previous = self.previous
                 if role == "decode":
-                    import shutil
-
                     previous = self.previous.with_name("decode")
                     shutil.copytree(self.previous, previous)
                     (previous / "reference/responses.json").unlink()
@@ -168,8 +282,9 @@ class TestServiceResume(unittest.TestCase):
                         role=role,
                         mode="full-acceptance",
                         run_id="new",
-                        resume_after_reference=previous,
-                        stop_after_target=True,
+                        resume_after_reference=None if service_only else previous,
+                        reference_service_report=previous if service_only else None,
+                        stop_after_target=not service_only,
                     ),
                     RouterConfig("p", "d", "/model"),
                     Mock(),
@@ -223,6 +338,10 @@ class TestServiceResume(unittest.TestCase):
                 self.assertEqual(receipt["stages"], ["reference"])
                 self.assertEqual(receipt["next_stage"], "target")
                 self.assertFalse((current / "target").exists())
+                if service_only:
+                    self.assertEqual(receipt["components"], [])
+                    self.assertFalse((current / "fetch").exists())
+                    self.assertTrue(runner.report["components"].startswith("not-run"))
 
     def test_reference_resume_accepts_runner_only_commits_but_rejects_runtime_changes(
         self,

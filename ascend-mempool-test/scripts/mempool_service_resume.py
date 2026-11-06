@@ -36,6 +36,7 @@ def reuse_completed_stages(
     role: str,
     *,
     through: Literal["reference", "target"] = "target",
+    include_components: bool = True,
 ) -> list[dict[str, Any]]:
     previous = previous.resolve()
     if previous.name != role:
@@ -55,13 +56,21 @@ def reuse_completed_stages(
     if old_runtime != new_runtime:
         raise ValueError("resume requires matching runtime/config/model identity")
     summary = json.loads((previous / "summary.json").read_text())
+    if not include_components and (
+        through != "reference"
+        or summary.get("status") != "passed_execution_scope"
+        or summary.get("stopped_after") != "reference"
+        or summary.get("stages") != ["reference"]
+    ):
+        raise ValueError(
+            "service-only resume requires a successful reference-only report"
+        )
+    components = ("page-first-copy", "fetch") if include_components else ()
     stages = ("reference",) if through == "reference" else ("reference", "target")
     if any(stage not in summary.get("stages", []) for stage in stages):
         raise ValueError(f"resume requires completed stages: {stages}")
     receipts = {f"{stage}/process-cleanup.json": "passed" for stage in stages}
-    receipts.update(
-        {"page-first-copy/report.json": "passed", "fetch/report.json": "passed"}
-    )
+    receipts.update({f"{stage}/report.json": "passed" for stage in components})
     if role == "prefill":
         receipts["reference/evidence.json"] = "formal_service_passed"
         if through == "target":
@@ -70,7 +79,7 @@ def reuse_completed_stages(
         if json.loads((previous / name).read_text()).get("status") != expected:
             raise ValueError(f"resume requires passed evidence: {name}")
     cases = json.loads((previous / "cases.json").read_text())
-    for stage in ("page-first-copy", "fetch", *stages):
+    for stage in (*components, *stages):
         shutil.copytree(previous / stage, current / stage)
     shutil.copyfile(previous / "cases.json", current / "cases.json")
     (current / "service-reused-from.json").write_text(
@@ -79,7 +88,7 @@ def reuse_completed_stages(
                 path=str(previous),
                 run_id=prior["run_id"],
                 stages=list(stages),
-                components=["page-first-copy", "fetch"],
+                components=list(components),
                 identity=prior,
                 runtime_identity_checked=True,
                 next_stage="target" if through == "reference" else "capacity",
@@ -89,3 +98,19 @@ def reuse_completed_stages(
         + "\n"
     )
     return cases
+
+
+def check_service_answers(root: Path, *, target: bool, case_count: int) -> None:
+    """Apply the answer gates before a single service stage can report success."""
+    answers = json.loads((root / "answers.json").read_text())
+    if (
+        len(answers) != case_count
+        or not answers
+        or any(item.get("status") != "passed" for item in answers)
+    ):
+        raise ValueError("single service stage has failed or incomplete answers")
+    if target:
+        if any(not item.get("ids", {}).get("equal") for item in answers):
+            raise ValueError("full output IDs differ from formal reference")
+    elif json.loads((root / "stability.json").read_text()).get("status") != "passed":
+        raise ValueError("reference stability failed; preserve outputs for diagnosis")

@@ -4,6 +4,14 @@
 它覆盖两组单stream输入，不能证明模型、多stream和共享池环境中的同类调用正常。
 008的InplaceIndexAdd故障仍未定位，target未通过；本轮不重复相同完整验收。
 
+## 最新结果：013正常异步启动通过
+
+用户确认31成功标记，32报告diagnostic_startup_passed、cleanup=passed。
+版本7358ebc26e，index_diagnosis=false；正常异步预热与Graph启动完成。
+本轮没有生成请求，Graph replay和正式target仍未验收；单次成功支持候选修复方向，未证明唯一根因。
+旧日志已由用户删除，原reference响应/报告不再可用；正式续跑需先确认备份及源码变化后的证据适用性。
+本轮不重跑已过阶段、不自动推进下游。证据见[013用户结果](verification/ticket26-local/async-013-user-result.json)。
+
 ## 当前结论：009同步预热完成，010检查正常异步启动
 
 用户回传009离线读取结果：warmup_evidence_complete，32组完整预热，每组390次调用。

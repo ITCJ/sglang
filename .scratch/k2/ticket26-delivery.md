@@ -250,3 +250,11 @@ CPU两组共10项检查通过，ruff通过，Standards/Spec各0未解决；NPU�
 脚本diagnose_target_startup.py新增--without-index-sync，单次target startup关闭诊断同步；两份CPU测试验证所有权登记和启动开关。
 12+3项CPU通过，静态检查新增0问题，Standards/Spec各0未解决；硬件并发不能由CPU模拟证明。
 [本轮源码清单、证据限制和31/32命令](ticket26-startup-diagnosis.md)。已过阶段不重跑，26仍open。
+
+
+## 013通过后重建reference
+
+013用户确认双侧正常异步启动及脚本清理通过，诊断同步关闭；尚无生成请求验收。
+用户删除旧日志且无备份，明确允许只补一次reference，随后人工确认清理再单独target。
+本轮功能源码无改动；两份验收脚本新增reference-only与service-only续跑，组件缺失明确not-run，保留严格身份核对。
+首轮7项、评审修复后第二轮9项CPU与ruff通过，Standards/Spec各0未解决；[源码说明与014双机命令](ticket26-reference-rebuild.md)。

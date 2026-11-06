@@ -1,0 +1,32 @@
+{
+  "source": "user-pasted prefill success marker and decode summary; selected fields transcribed, not a raw report copy",
+  "run_id": "k2-ticket26-013-async",
+  "git_sha": "7358ebc26e98807bd697d7ca06d75fe30517fd72",
+  "prefill_marker": "TARGET_STARTUP_DIAGNOSED; not an acceptance result",
+  "decode_status": "diagnostic_startup_passed",
+  "coverage": "startup only; normal asynchronous warmup; no requests",
+  "index_diagnosis": false,
+  "skip_http_warmup": true,
+  "cleanup": "passed",
+  "target_acceptance": "not-run",
+  "identity_check": "passed",
+  "tracked_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "library_sha256": "f93cc00d01d4304d6aadf82e48e91ec391296bdb89e04825c14e6a80e1c06107",
+  "versions": {
+    "torch": "2.10.0+cpu",
+    "torch-npu": "2.10.0",
+    "sgl-kernel-npu": "2026.9.0",
+    "memfabric-hybrid": "1.1.4"
+  },
+  "geometry": {
+    "page_size": 64,
+    "decode_capacity": 512,
+    "context_length": 8832,
+    "prefix_pages": 80,
+    "observe": true,
+    "observe_trace": false
+  },
+  "limits": "One asynchronous startup passed; no request/Graph replay or full acceptance; does not establish unique root cause",
+  "prior_evidence": "User deleted old log directories. Saved reference responses and full identity/cleanup reports are not available for formal resume.",
+  "ticket_state": "open"
+}

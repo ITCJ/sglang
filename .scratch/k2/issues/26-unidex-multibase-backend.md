@@ -161,3 +161,24 @@ Standards/Spec初审发现已修复，最终各0未解决。
 12项materialization、3项启动CPU检查通过；脚本/测试ruff通过，manager历史8条lint新增0条。
 CPU生命周期测试模拟allocator保留，未复现NPU错误；新测试首轮为fixture失败，修正后通过，不作为驱动故障red/green证据。
 Standards/Spec各0未解决。用户人工确认清理后执行[010命令](../ticket26-startup-diagnosis.md)，不重跑已过阶段；26仍open、25未解锁。
+
+
+### 013：正常异步启动诊断通过，正式请求验收待执行
+
+用户回传31成功标记及32完整summary：7358ebc26e、无tracked diff，index_diagnosis=false，diagnostic_startup_passed、cleanup=passed。
+保持64/512、观测开启与原插件hash；正常异步预热及启动完成，本轮未复现007/008故障。
+这支持生命周期修复方向，不能由单次成功确认唯一根因；未发生成请求，Graph replay与正式target仍not-run。
+010因启动前显存占用在模型加载前失败；随后用户删除旧日志，011配置读取失败，未启动服务。
+013从原始配置按既有configurations恢复到新目录，未重跑组件/reference。
+旧007/008报告和reference输出已删除，正式resume当前缺少原始对照证据；不得伪造通过或自动重跑已过阶段。
+下一步先确认有无备份；即使有备份，7358ebc26e含功能源码变化，复用仍须单独核对适用性，不能绕过身份检查。
+26保持open、25未解锁；见[用户证据摘录](../verification/ticket26-local/async-013-user-result.json)。
+
+
+### 用户授权重建一次reference，恢复正式target精度对照
+
+旧报告无备份，用户明确允许只补一次reference；这是对“已过测试不重跑”的本次例外。
+新增--reference-only运行原服务用例一次后停止；下一段--reference-service-report恢复响应并单独运行target。
+组件测试不执行、报告标not-run；身份与原始响应检查保留，完整验收不标passed。
+仅两份验收脚本及一份测试改动，功能源码与默认退出无变化；Mac首轮7项通过，评审修复后第二轮9项通过、ruff通过，Standards/Spec各0未解决。
+014待用户双机运行，013启动通过不替代服务精度结果；26保持open。见[补跑命令](../ticket26-reference-rebuild.md)。
