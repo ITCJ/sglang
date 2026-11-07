@@ -1,0 +1,14 @@
+{
+  "source": "user-pasted both launch outputs and decode/rank-0.log tail",
+  "run_id": "k2-ticket26-020-pair",
+  "status": "failed",
+  "decode_error": "AttributeError: 'types.SimpleNamespace' object has no attribute 'extend_seq_lens'",
+  "location": "multibase_graph.verify_multibase_graph -> runtime.write_layer, empty decode warmup before stale-version replay test",
+  "preceeding_sdk_logs": "GVA to VA conversion failed; later runtime entry reached; not established as this exit cause",
+  "measurements": "22-case bandwidth loop not reached; graph checks incomplete",
+  "local_reproduction": "real runtime.write_layer with original microtest dummy batch reproduces exact AttributeError",
+  "fix": "supply four optional ForwardBatch fields as None in microtest fixture only",
+  "cpu_regression": "red exact AttributeError; green empty warmup/capture leaves KV and write counts unchanged, stale page version still fails before replay",
+  "npu_retest": "pending; k2-ticket26-021-pair",
+  "ticket_state": "open"
+}

@@ -1,5 +1,5 @@
 {
-  "source": "user-pasted prefill success marker",
+  "source": "user-pasted prefill and subsequent decode success markers",
   "run_id": "k2-ticket26-019-timeout",
   "delivered_commit": "f51d1f7d0e",
   "identity_report_not_collected": true,
@@ -13,5 +13,6 @@
   ],
   "remaining_evidence": "migration observation comparison and model compute overlap remain unverified; old deleted reports cannot be reconstructed from markers",
   "next_run_id": "k2-ticket26-020-pair",
-  "ticket_state": "open"
+  "ticket_state": "open",
+  "decode_marker": "TIMEOUT_PASSED; stopped for user cleanup confirmation"
 }

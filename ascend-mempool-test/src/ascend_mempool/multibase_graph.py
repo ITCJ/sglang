@@ -25,6 +25,20 @@ else:
     from .runtime import KVWriteExpectation, MempoolRuntime
 
 
+def decode_capture_batch(rows: Any) -> SimpleNamespace:
+    """Build the padded decode batch used by the runtime graph check."""
+    return SimpleNamespace(
+        req_pool_indices=rows,
+        seq_lens=rows,
+        forward_mode=SimpleNamespace(is_decode=lambda: True),
+        out_cache_loc=rows,
+        extend_seq_lens=None,
+        extend_prefix_lens=None,
+        extend_seq_lens_cpu=None,
+        global_num_token_non_padded_cpu=None,
+    )
+
+
 def verify_multibase_graph(device: Any, cohort: Any) -> dict[str, Any]:
     d, t, c = device, device.torch, device.config
     group_size = c.tp_size // c.groups
@@ -168,12 +182,7 @@ def verify_multibase_graph(device: Any, cohort: Any) -> dict[str, Any]:
         )
         rows = t.zeros(1, dtype=t.int64, device="npu")
         values = t.zeros((1, 576), dtype=t.bfloat16, device="npu")
-        batch = SimpleNamespace(
-            req_pool_indices=rows,
-            seq_lens=rows,
-            forward_mode=SimpleNamespace(is_decode=lambda: True),
-            out_cache_loc=rows,
-        )
+        batch = decode_capture_batch(rows)
 
         def write_layers() -> None:
             for layer in range(c.layers):

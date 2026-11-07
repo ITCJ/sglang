@@ -304,3 +304,15 @@ ruff通过，Standards/Spec各0未解决；硬件018待运行，26仍open、25�
 双侧CLI计划检查确认22档、同配置；未运行NPU。仅更新说明与用户结果，功能源码/脚本/测试无修改。
 模型计算重叠仍未知，迁移观测同负载对照尚未归档；两档微测也不能单独宣称整个26通过或解锁25。
 见[020双机命令](ticket26-pair-benchmark.md)。26仍open。
+
+
+## 020微测batch契约修复与021重试
+
+用户补回019 decode TIMEOUT_PASSED；020双侧失败，D真实runtime.write_layer访问缺失的extend_seq_lens抛AttributeError。
+微测SimpleNamespace未提供四个正式ForwardBatch默认可选字段；提取同一个batch构造函数用于CPU复现，补None。
+一项定向CPU测试先红（同一AttributeError）后绿；真实runtime空写不改KV/计数，过期页表仍在replay前拒绝。
+生产Ascend/NPU与通用主线源码无改动；仅测试支持multibase_graph.py及test_multibase_delivery.py。
+22档带宽尚未启动；前置GVA日志单独保留，不能据此认定SDK根因或已修复。
+021复用插件，仅重试两rank微测，命令见[微测说明](ticket26-pair-benchmark.md)。26仍open，TP16不自动启动。
+
+本轮ruff通过；Standards与Spec评审各0项未解决。

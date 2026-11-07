@@ -36,6 +36,36 @@ class CPUTorch:
 
 
 class TestMultibaseDelivery(unittest.TestCase):
+    def test_graph_dummy_batch_reaches_runtime_write_and_stale_replay_guard(self):
+        from test_runtime import TestMempoolRuntime
+
+        from ascend_mempool.alive_pages import PageLease
+        from ascend_mempool.multibase_graph import decode_capture_batch
+        from ascend_mempool.runtime import KVWriteExpectation
+
+        fixture = TestMempoolRuntime()
+        self.addCleanup(fixture.doCleanups)
+        runtime, targets, _ = fixture.make_runtime(rank=1, page_size=2)
+        manager = runtime.manager
+        manager.enable_page_tables("cpu")
+        for side in (0, 1):
+            manager.install_pages(side, 0, PageLease("graph-negative", 1, (0, 1)))
+        batch = decode_capture_batch(torch.zeros(1, dtype=torch.int64))
+        values = torch.zeros((1, 4), dtype=torch.bfloat16)
+        # Exercise the same empty warmup/capture forwards as the NPU microtest,
+        # keeping real row derivation, writes, counters and replay validation.
+        for _ in range(2):
+            runtime.begin_forward([], capture=True)
+            for layer in range(5, 7):
+                runtime.write_layer(layer, values[:, :2], values[:, 2:], batch)
+            runtime.end_forward()
+        self.assertTrue(all(torch.all(target == -1) for target in targets))
+        self.assertEqual(torch.count_nonzero(runtime._write_counts).item(), 0)
+        runtime.bind(1, slot=0, prompt_tokens=2, prompt_slot=0)
+        manager.active_page_versions[1, 0] = 2
+        with self.assertRaisesRegex(RuntimeError, "stale request page table"):
+            runtime.begin_forward([KVWriteExpectation(1, 2, 1)], replay=True)
+
     def test_side_stream_observation_indices_survive_materialization_return(self):
         fixture = materialize_fixture.TestMaterialize()
         fixture.setUp()
