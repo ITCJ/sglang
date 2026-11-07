@@ -1,7 +1,7 @@
-"""One paired target startup with optional index_add_ warmup synchronization.
+"""One paired startup, optionally collecting a saved request and device trace.
 
-Use the failed target's effective-config.json. No component/reference rerun,
-requests or acceptance results. Existing process ownership/cleanup is reused.
+Startup-only remains the default. Sampling reuses owned-process cleanup and
+never runs component/reference acceptance or marks full acceptance passed.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from run_mempool_min import (
     SCRIPTS,
     RouterConfig,
     Runner,
+    request_json,
     service_environment,
     service_ports,
     verify_mempool_session,
@@ -72,10 +73,75 @@ def check_warmups(log: Path) -> list[dict]:
     return report["completed"]
 
 
-def startup(runner: Runner, library: Path) -> None:
+def sample_request(runner: Runner, watch) -> None:
+    """One saved request, then export the existing paired observation trace."""
+    root, config, peer = runner.root, runner.config, runner.peer
+    payload = json.loads(runner.args.sample_json.read_text())
+    peer.send("sample-input", payload=payload)
+    if peer.expect("sample-input")["payload"] != payload:
+        raise ValueError("P/D sampling inputs differ")
+    write_json(root / "sample-input.json", payload)
+    base = f"http://{config.prefill_host}:{config.main_port}"
+    if runner.is_p:
+        watch()
+        result = request_json(
+            base + "/generate", payload=payload, timeout=config.operation_timeout
+        )
+        write_json(root / "sample-response.json", result)
+        if (
+            len(result.get("output_ids", []))
+            != payload["sampling_params"]["max_new_tokens"]
+        ):
+            raise ValueError(
+                "sample response did not complete the requested output length"
+            )
+        peer.send("sample-response", result=result)
+        request_json(base + "/observation/flush", payload={})
+        deadline = time.monotonic() + config.operation_timeout
+        while True:
+            watch()
+            status = request_json(base + "/status")
+            if status.get("fault"):
+                raise RuntimeError(status["fault"])
+            if status.get("observation_flushed") == ["decode", "prefill"]:
+                break
+            if time.monotonic() >= deadline:
+                raise TimeoutError("paired observation export did not finish")
+            time.sleep(0.2)
+    else:
+        result = peer.expect("sample-response", check=watch)["result"]
+        write_json(root / "sample-response.json", result)
+    peer.send("sample-exported")
+    peer.expect("sample-exported", check=watch)
+    traces = sorted(root.rglob("trace_view.json"))
+    # Existing trace layout is one directory per TP rank, on each host.
+    missing = [
+        rank
+        for rank in range(16)
+        if not any(
+            (root / "observe" / f"trace-{runner.args.role}-{rank}").rglob(
+                "trace_view.json"
+            )
+        )
+    ]
+    write_json(
+        root / "sample-traces.json",
+        dict(files=[str(p.relative_to(root)) for p in traces], missing_ranks=missing),
+    )
+    if missing:
+        raise ValueError(f"sample trace export missing ranks: {missing}")
+    runner.report["sample"] = dict(
+        requests=1, output_tokens=len(result["output_ids"]), traces=len(traces)
+    )
+
+
+def startup(runner: Runner, library: Path | None) -> None:
     root, args, config, peer = runner.root, runner.args, runner.config, runner.peer
     env = service_environment(config, args, root, target=True)
-    env["SGLANG_UNIDEX_MULTIBASE_LIBRARY"] = str(library)
+    if library is not None:
+        env["SGLANG_UNIDEX_MULTIBASE_LIBRARY"] = str(library)
+    else:
+        env.pop("SGLANG_UNIDEX_MULTIBASE_LIBRARY", None)
     index_sync = not getattr(args, "without_index_sync", False)
     env["SGLANG_NPU_MEMPOOL_INDEX_DIAG"] = (
         "1" if not runner.is_p and index_sync else "0"
@@ -120,6 +186,8 @@ def startup(runner: Runner, library: Path) -> None:
                 config.startup_timeout,
                 watch,
             )
+        if getattr(args, "sample_json", None):
+            sample_request(runner, watch)
         peer.send("diagnostic-finished")
         peer.expect("diagnostic-finished", check=watch)
     peer.barrier("diagnostic-stopped")
@@ -133,7 +201,12 @@ def startup(runner: Runner, library: Path) -> None:
             check=peer.check,
         )
     peer.barrier("diagnostic-ports-released")
-    runner.report.update(status="diagnostic_startup_passed", cleanup="passed")
+    runner.report.update(
+        status="sample_collected"
+        if getattr(args, "sample_json", None)
+        else "diagnostic_startup_passed",
+        cleanup="passed",
+    )
 
 
 def main() -> int:
@@ -141,6 +214,16 @@ def main() -> int:
     parser.add_argument("--role", choices=("prefill", "decode"))
     parser.add_argument("--config", type=Path)
     parser.add_argument("--run-id")
+    parser.add_argument(
+        "--sample-json",
+        type=Path,
+        help="one saved request followed by paired trace export; not acceptance",
+    )
+    parser.add_argument(
+        "--legacy-kernel",
+        action="store_true",
+        help="sampling an isolated pre-migration checkout without a multibase plugin",
+    )
     parser.add_argument(
         "--without-index-sync",
         action="store_true",
@@ -189,6 +272,8 @@ def main() -> int:
     config = RouterConfig.read(str(args.config))
     if not config.observe:
         parser.error("use the observed target's effective-config.json")
+    if args.sample_json and (not args.without_index_sync or not config.observe_trace):
+        parser.error("sample requires --without-index-sync and observe_trace=true")
     root = Path("/home/cryang/log/k2") / args.run_id / args.role
     root.mkdir(parents=True, exist_ok=False)
     source_config = args.config.resolve()
@@ -203,7 +288,9 @@ def main() -> int:
         REPO
         / "python/sglang/srt/hardware_backend/npu/mempool/kernels/unidex_multibase/build/libunidex_multibase.so"
     )
-    library_hash = hashlib.sha256(library.read_bytes()).hexdigest()
+    if args.legacy_kernel:
+        library = None
+    library_hash = hashlib.sha256(library.read_bytes()).hexdigest() if library else None
 
     def stop(signum, frame):
         raise KeyboardInterrupt(f"diagnosis interrupted by signal {signum}")
@@ -223,10 +310,23 @@ def main() -> int:
             index_diagnosis=args.role == "decode" and not args.without_index_sync,
             skip_http_warmup=True,
         )
+        if args.sample_json:
+            runner.report.update(
+                mode="migration-short-sample",
+                coverage="one saved request with trace; capture/warmup also recorded; not full acceptance or compute-overlap proof",
+                sample_input_sha256=hashlib.sha256(
+                    args.sample_json.read_bytes()
+                ).hexdigest(),
+            )
         try:
             runner.preflight()
             startup(runner, library)
-            print("TARGET_STARTUP_DIAGNOSED; not an acceptance result", flush=True)
+            print(
+                "MIGRATION_SAMPLE_COLLECTED; stopped for user cleanup confirmation"
+                if args.sample_json
+                else "TARGET_STARTUP_DIAGNOSED; not an acceptance result",
+                flush=True,
+            )
             return 0
         except (Exception, KeyboardInterrupt) as error:
             runner.report.update(status="failed", error=repr(error))

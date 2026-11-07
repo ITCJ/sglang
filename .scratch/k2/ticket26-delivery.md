@@ -357,3 +357,15 @@ baseline/phase1原始观测已删除，现存phase2计数无法证明迁移前�
 已提出每版本一个同负载短请求的补采方案，等待用户确认是否允许三版本短采样；不自动重跑完整验收。
 本轮只整理证据、阅读代码，不修改功能源码或测试、不访问NPU。
 26保持open，25未解锁。证据：verification/ticket26-local/observation-023-user-result.json。
+
+
+## 024准备：用户允许三版本短采样
+
+新增隔离源码准备入口，baseline固定aa5852624e，phase1使用归档，phase2取准备时HEAD。
+沿用015第一例input_ids，各版本4096输入/32输出、一个请求；config开启trace，时限1800秒。
+仅修改验收脚本及测试，生产源码和默认退出不变；不自动推进版本。
+复用原配对flush，导出全部16rank trace后退出；sample_collected不标记迁移一致或重叠已证明。
+历史版本还含后续修复差异，短采样不证明25生产双写计算隐藏。
+5项CPU通过、ruff通过，baseline/phase1旧源码导入检查通过。
+Standards/Spec评审各0项未解决；硬件待用户。
+见ticket26-short-sampling.md。26保持open、25未解锁。
