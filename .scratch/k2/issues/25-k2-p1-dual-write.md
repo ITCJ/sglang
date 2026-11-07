@@ -72,3 +72,5 @@ P零页绑定、直接prefix读取、主KV两目标写、候选Index K写、完�
 Standards 3项建议修复，Spec 4项问题修复，静态剩余0。
 双机off入口已文档化，未实际执行；不安排on。真实kernel、远端可见性、Graph、
 计算重叠均未验证。State保持open，不勾选NPU验收，不解锁20/23。
+
+- 2026-11-07用户回传off-002两轮通过；明确授权双写on、observe off。单服务功能smoke已补齐，待实机，票仍open。详见TICKET25.md。

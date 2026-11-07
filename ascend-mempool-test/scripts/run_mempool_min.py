@@ -416,7 +416,9 @@ class Runner:
             status="running",
             role=args.role,
             mode=args.mode,
-            coverage="one saved Index K input without prefix reuse; diagnosis only"
+            coverage="Ticket25 dual-write functional smoke"
+            if config.dual_write
+            else "one saved Index K input without prefix reuse; diagnosis only"
             if args.mode == "index-cold-diagnosis"
             else "K1-12 page-first reduced functional acceptance"
             if args.mode == "page-first-acceptance"
@@ -899,6 +901,7 @@ class Runner:
             and (
                 not self.full or fault_only or (self.session_acceptance and not restart)
             )
+            and not self.config.dual_write
             and self.args.mode != "index-cold-diagnosis"
         )
         root = self.root / name
@@ -1114,6 +1117,7 @@ class Runner:
                                     prompt_capacity=self.config.prompt_capacity,
                                     decode_capacity=self.config.decode_capacity,
                                     prefix=bool(self.config.prefix_pages),
+                                    dual_write=self.config.dual_write,
                                 )
                                 if target
                                 else verify_service.check_logs(
@@ -1128,7 +1132,13 @@ class Runner:
                                     ),
                                 )
                             )
-                            if target and self.config.prefix_pages:
+                            if target and self.config.dual_write:
+                                import verify_dual_write
+
+                                evidence["prefix"] = verify_dual_write.check_stage(
+                                    root, self.config
+                                )
+                            elif target and self.config.prefix_pages:
                                 check = (
                                     verify_mempool_reuse.check_reuse
                                     if self.config.match_prefix
@@ -1420,6 +1430,20 @@ class Runner:
     def run_session(self) -> None:
         self.prepare_full_cases()
         self.components()
+        if self.config.dual_write:
+            import verify_dual_write
+
+            self.stage(target=True)
+            if self.is_p:
+                acceptance = verify_dual_write.summarize(self.root, self.config)
+                self.peer.send("dual-write-result", acceptance=acceptance)
+            else:
+                acceptance = self.peer.expect("dual-write-result")["acceptance"]
+            write_json(self.root / "dual-write-smoke.json", acceptance)
+            self.report.update(
+                status="passed", acceptance=acceptance, user_accepted=False
+            )
+            return
         for phase in verify_mempool_session.SERVICE_STAGES:
             self.stage(target=True, restart=phase == "restart")
         if self.is_p:
@@ -1773,16 +1797,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                     in ("full-acceptance", "numa-acceptance", *SESSION_MODES)
                     else "strict full output IDs",
                     acceptance_controls=(
-                        "one skipped allocator page; fill submitted after native_freed"
+                        "one skipped allocator page; direct prefix reads; no fill"
+                        if config.dual_write
+                        else "one skipped allocator page; fill submitted after native_freed"
                         if config.match_prefix and config.verify_prefix
                         else "none"
                     ),
                     service_rounds=1
-                    if args.mode == "index-cold-diagnosis"
+                    if config.dual_write or args.mode == "index-cold-diagnosis"
                     else len(verify_mempool_session.SERVICE_STAGES)
                     if args.mode in SESSION_MODES
                     else None,
                     stages=[
+                        "paired preflight and copy/fetch components",
+                        "one service start: ABCE + load/EOS; dual-write counters, direct prefix reads, publish/free",
+                        "paired process/port cleanup; no restart or fault injection",
+                    ]
+                    if config.dual_write
+                    else [
                         "paired preflight; one P/D/mixed fetch smoke (48, one replay)",
                         "round 1: ABCE + load/EOS, registration and accounting, then fail-stop",
                         "round 2: same-port restart, ABCE + load/EOS, default process cleanup",

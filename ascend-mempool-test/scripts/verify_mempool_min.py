@@ -94,6 +94,7 @@ def check_target(
     prompt_capacity: int,
     decode_capacity: int,
     prefix: bool = False,
+    dual_write: bool = False,
 ) -> dict[str, Any]:
     """Require per-rank Graph, transfer, completion and explicit release evidence."""
     ranks = set(range(16))
@@ -186,7 +187,14 @@ def check_target(
     request_evidence = []
     previous: dict[tuple[str, int], int] = {}
     for index, (snapshot, case) in enumerate(zip(snapshots, cases)):
-        check_pages(snapshot, case, page_size, prompt_capacity, decode_capacity)
+        check_pages(
+            snapshot,
+            case,
+            page_size,
+            prompt_capacity,
+            decode_capacity,
+            dual_write=dual_write,
+        )
         if (
             snapshot["fault"]
             or snapshot["active"] is not None
@@ -257,6 +265,13 @@ def check_target(
             )
             if not data.get("source_evidence"):
                 raise ValueError("P/D source evidence was not captured")
+            if dual_write and (
+                data.get("p_alive_bm_rows") != 0
+                or data.get("prefix_bm_rows") != data["prompt_bm_rows"]
+                or data.get("d_local_bm_rows") != data["decode_bm_rows"]
+                or (not done["hit_len"] and data["prefix_bm_rows"] != 0)
+            ):
+                raise ValueError("dual-write read-source evidence is invalid")
             source_rows["prompt"] += data["prompt_bm_rows"]
             source_rows["decode"] += data["decode_bm_rows"]
             decode_sentinel_rows += data.get("shared_decode", {}).get("checked_rows", 0)
@@ -296,12 +311,18 @@ def check_pages(
     page_size: int,
     prompt_capacity: int,
     decode_capacity: int,
+    *,
+    dual_write: bool = False,
 ) -> None:
     """Audit the real registrations, logical pages and native reservation."""
     done = snapshot["completed"][-1]
     for role, capacity, ledger in (
         ("prefill", prompt_capacity, "p_alive"),
-        ("decode", decode_capacity, "d_alive"),
+        (
+            "decode",
+            decode_capacity + prompt_capacity if dual_write else decode_capacity,
+            "d_alive",
+        ),
     ):
         registrations = snapshot["registrations"][role]["ranks"]
         allocations = done["allocations"][role]
@@ -325,6 +346,12 @@ def check_pages(
                 if role == "prefill"
                 else case["sampling_params"]["max_new_tokens"]
             )
+            if dual_write:
+                tokens = (
+                    0
+                    if role == "prefill"
+                    else tokens + len(case["input_ids"]) - done["hit_len"]
+                )
             count = (
                 (tokens + page_size - 1) // page_size
                 if paged

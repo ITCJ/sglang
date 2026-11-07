@@ -55,7 +55,7 @@ def check_page_first_registration(
                     if prefix
                     else config.prompt_capacity
                     if role == "prefill"
-                    else config.decode_capacity,
+                    else config.decode_storage_capacity,
                     heads=1,
                     dim=dim,
                     dtype=row["dtype"],

@@ -106,3 +106,28 @@ Ascend/NPU 专用（路径相对 `python/sglang/srt/`）：
 用 `transfer.source_rows` 和 `source_table.ranges` 统计有效 P/D 行。
 执行实际统计循环的 CPU 检查通过：左右边界正确，排除 cache/current HBM 和无效行。
 未修改功能源码或放宽 Graph/数据检查。待第二轮 ticket25-off-002，票仍 open。
+
+## 双写 on 功能 smoke（2026-11-07）
+
+用户回传 ticket25-off-002 两轮各6请求通过，reader count归零。
+随后明确授权 dual_write=true、observe=false。Ticket仍open，待on实机结果。
+page-first-acceptance 在双写开启时只启动一次模型服务：组件copy/fetch，
+六个ABCE/load/EOS请求，Graph，P零页/D扩容，双写行数与字节，
+无fill，候选owner无拷贝发布，读源和引用/账本释放，进程及端口清理。
+不跑restart或故障注入。报告dual-write-smoke.json，不代表完整验收。
+性能、计算重叠、物理NUMA、独立远端可见性探针、完整DRAM读回均未覆盖。
+
+本次仅修改验收脚本run_mempool_min、verify_mempool_min、verify_mempool_shared，
+新增verify_dual_write及报告检查用例，无功能源码修改。
+本地相关15项测试通过（一次导入失败补齐scripts搜索路径后通过），
+CLI describe及页预算正反检查通过。未再次运行完整CPU套件或访问NPU。
+
+两机从已有ticket25-off.json复制生成ticket25-on.json，设置：
+`dual_write=true, observe=false, observe_trace=false, prefill_shared=true,
+decode_shared=true, prefill_index_shared=true, prefix_shared=true,
+prefix_admit_mode=owners, prefix_pages=5120/page_size`。
+使用同一入口，31 role=prefill、32 role=decode，mode=page-first-acceptance，
+config=/home/cryang/ticket25-on.json，run-id=ticket25-on-001，
+log-root=/home/cryang/log/k2。先31后32，后续自动协调。
+预期退出0且summary及dual-write-smoke status=passed；失败非零。
+回传prefill报告及失败阶段日志，日志位于上述log-root/run-id下。
