@@ -1,5 +1,7 @@
 # Ticket26：三版本各一次短采样
 
+**已停止使用：用户报告trace超过100G，取消observe/trace并跳过phase1。请改用ticket26-normal-performance.md，不执行下列历史命令。**
+
 用户在023清点后允许baseline、phase1、phase2各一次同负载短采样。
 每段只发一个4096-token输入、32-token输出请求；服务启动/Graph预热仍保留，HTTP额外warmup关闭。
 逐段人工确认清理，不自动推进下一个版本，不重跑完整验收。

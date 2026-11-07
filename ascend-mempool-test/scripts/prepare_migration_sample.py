@@ -47,21 +47,18 @@ def prepare(variant: str, root: Path, config_path: Path, cases_path: Path) -> di
     subprocess.run(
         ["git", "checkout", "--detach", source_commit], cwd=source, check=True
     )
-    archive_hash = None
-    if variant == "phase1":
-        archive_path = (
-            REPO / ".scratch/k2/verification/ticket26-local/phase1-source.tar.gz"
-        )
-        archive_hash = hashlib.sha256(archive_path.read_bytes()).hexdigest()
-        with tarfile.open(archive_path) as archive:
-            archive.extractall(source, filter="data")
-    # Same current preparation/preflight/cleanup tooling on all three versions;
+    # Same current preparation/preflight/cleanup tooling on both versions;
     # production python/ stays at the selected version, never overlaid here.
     extract_git(
         harness, source, ["ascend-mempool-test/scripts", "ascend-mempool-test/src"]
     )
     config = json.loads(config_path.read_text())
-    config.update(observe=True, observe_trace=True, operation_timeout=1800.0)
+    config.update(
+        observe=False,
+        observe_trace=False,
+        verify_prefix=False,
+        operation_timeout=1800.0,
+    )
     payload = sampling_input(json.loads(cases_path.read_text()))
     for filename, data in (("config.json", config), ("request.json", payload)):
         (root / filename).write_text(json.dumps(data, indent=2) + "\n")
@@ -69,7 +66,6 @@ def prepare(variant: str, root: Path, config_path: Path, cases_path: Path) -> di
         variant=variant,
         source_commit=source_commit,
         harness_commit=harness,
-        phase1_archive_sha256=archive_hash,
         source_config=str(config_path),
         source_cases=str(cases_path),
         request_sha256=hashlib.sha256((root / "request.json").read_bytes()).hexdigest(),
@@ -77,7 +73,9 @@ def prepare(variant: str, root: Path, config_path: Path, cases_path: Path) -> di
         requests=1,
         prompt_tokens=4096,
         output_tokens=32,
-        trace="includes capture/warmup; analyze only real request markers",
+        observe=False,
+        trace=False,
+        measurement="Router TTFT/TPOT and client E2E, one normal request",
         hardware="not-run",
     )
     (root / "source-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
@@ -86,9 +84,7 @@ def prepare(variant: str, root: Path, config_path: Path, cases_path: Path) -> di
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--variant", choices=("baseline", "phase1", "phase2"), required=True
-    )
+    parser.add_argument("--variant", choices=("baseline", "phase2"), required=True)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--cases", type=Path, required=True)

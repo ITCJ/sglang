@@ -369,3 +369,16 @@ baseline/phase1原始观测已删除，现存phase2计数无法证明迁移前�
 5项CPU通过、ruff通过，baseline/phase1旧源码导入检查通过。
 Standards/Spec评审各0项未解决；硬件待用户。
 见ticket26-short-sampling.md。26保持open、25未解锁。
+
+
+## 026准备：取消trace/observe，改普通请求延迟测量
+
+用户报告024 trace超过100G、内存不足，明确取消trace/observe；phase1也已取消。
+baseline/当前版各一个4096输入32输出请求，阶段间人工确认清理。
+准备脚本强制observe/observe_trace/verify_prefix=false，采样分支不再flush/读取trace。
+新增验收专用Router适配器读取D原生SSE，记录同一P时钟的Router TTFT/TPOT；另记客户端E2E。
+首块多token则精确TTFT=null；不把完整非流式响应时间当首token时间。
+生产代码与默认退出均未修改；首轮7项、第二轮8项CPU及baseline导入检查通过。
+Standards/Spec各0项未解决；硬件性能测量等待用户执行。
+024不记通过；取消的迁移trace和计算重叠缺口保留，26仍open、25未解锁。
+双机命令与口径见ticket26-normal-performance.md。

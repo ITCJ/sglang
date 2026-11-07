@@ -1,4 +1,4 @@
-"""One paired startup, optionally collecting a saved request and device trace.
+"""One paired startup, optionally measuring a saved request without observation.
 
 Startup-only remains the default. Sampling reuses owned-process cleanup and
 never runs component/reference acceptance or marks full acceptance passed.
@@ -74,7 +74,7 @@ def check_warmups(log: Path) -> list[dict]:
 
 
 def sample_request(runner: Runner, watch) -> None:
-    """One saved request, then export the existing paired observation trace."""
+    """One normal request with Router SSE timing, no observers or trace export."""
     root, config, peer = runner.root, runner.config, runner.peer
     payload = json.loads(runner.args.sample_json.read_text())
     peer.send("sample-input", payload=payload)
@@ -84,54 +84,31 @@ def sample_request(runner: Runner, watch) -> None:
     base = f"http://{config.prefill_host}:{config.main_port}"
     if runner.is_p:
         watch()
+        started = time.monotonic()
         result = request_json(
             base + "/generate", payload=payload, timeout=config.operation_timeout
         )
+        elapsed = time.monotonic() - started
         write_json(root / "sample-response.json", result)
-        if (
-            len(result.get("output_ids", []))
-            != payload["sampling_params"]["max_new_tokens"]
-        ):
+        count = len(result.get("output_ids", []))
+        if count != payload["sampling_params"]["max_new_tokens"]:
             raise ValueError(
                 "sample response did not complete the requested output length"
             )
+        metrics = result["performance"]
+        metrics.update(
+            client_e2e_ms=elapsed * 1000,
+            client_e2e_per_output_token_ms=elapsed * 1000 / count,
+            client_output_tokens_per_second=count / elapsed,
+        )
         peer.send("sample-response", result=result)
-        request_json(base + "/observation/flush", payload={})
-        deadline = time.monotonic() + config.operation_timeout
-        while True:
-            watch()
-            status = request_json(base + "/status")
-            if status.get("fault"):
-                raise RuntimeError(status["fault"])
-            if status.get("observation_flushed") == ["decode", "prefill"]:
-                break
-            if time.monotonic() >= deadline:
-                raise TimeoutError("paired observation export did not finish")
-            time.sleep(0.2)
     else:
         result = peer.expect("sample-response", check=watch)["result"]
-        write_json(root / "sample-response.json", result)
-    peer.send("sample-exported")
-    peer.expect("sample-exported", check=watch)
-    traces = sorted(root.rglob("trace_view.json"))
-    # Existing trace layout is one directory per TP rank, on each host.
-    missing = [
-        rank
-        for rank in range(16)
-        if not any(
-            (root / "observe" / f"trace-{runner.args.role}-{rank}").rglob(
-                "trace_view.json"
-            )
-        )
-    ]
-    write_json(
-        root / "sample-traces.json",
-        dict(files=[str(p.relative_to(root)) for p in traces], missing_ranks=missing),
-    )
-    if missing:
-        raise ValueError(f"sample trace export missing ranks: {missing}")
+    write_json(root / "sample-response.json", result)
+    write_json(root / "performance.json", result["performance"])
+    runner.report["performance"] = result["performance"]
     runner.report["sample"] = dict(
-        requests=1, output_tokens=len(result["output_ids"]), traces=len(traces)
+        requests=1, output_tokens=len(result["output_ids"]), observe=False, trace=False
     )
 
 
@@ -157,8 +134,11 @@ def startup(runner: Runner, library: Path | None) -> None:
                 [
                     sys.executable,
                     "-u",
-                    "-m",
-                    "sglang.srt.disaggregation.ascend.mempool_router",
+                    *(
+                        [str(SCRIPTS / "measure_mempool_router.py")]
+                        if getattr(args, "sample_json", None)
+                        else ["-m", "sglang.srt.disaggregation.ascend.mempool_router"]
+                    ),
                     "--config",
                     str(args.config),
                     "--run-id",
@@ -202,7 +182,7 @@ def startup(runner: Runner, library: Path | None) -> None:
         )
     peer.barrier("diagnostic-ports-released")
     runner.report.update(
-        status="sample_collected"
+        status="performance_measured"
         if getattr(args, "sample_json", None)
         else "diagnostic_startup_passed",
         cleanup="passed",
@@ -217,7 +197,7 @@ def main() -> int:
     parser.add_argument(
         "--sample-json",
         type=Path,
-        help="one saved request followed by paired trace export; not acceptance",
+        help="one saved request with TTFT/TPOT/E2E timing; observe and trace must be off",
     )
     parser.add_argument(
         "--legacy-kernel",
@@ -270,10 +250,15 @@ def main() -> int:
     ):
         parser.error("run-id must be a new directory name")
     config = RouterConfig.read(str(args.config))
-    if not config.observe:
-        parser.error("use the observed target's effective-config.json")
-    if args.sample_json and (not args.without_index_sync or not config.observe_trace):
-        parser.error("sample requires --without-index-sync and observe_trace=true")
+    if args.sample_json and (
+        not args.without_index_sync
+        or config.observe
+        or config.observe_trace
+        or config.verify_prefix
+    ):
+        parser.error(
+            "sample requires --without-index-sync and observe/observe_trace/verify_prefix=false"
+        )
     root = Path("/home/cryang/log/k2") / args.run_id / args.role
     root.mkdir(parents=True, exist_ok=False)
     source_config = args.config.resolve()
@@ -312,8 +297,8 @@ def main() -> int:
         )
         if args.sample_json:
             runner.report.update(
-                mode="migration-short-sample",
-                coverage="one saved request with trace; capture/warmup also recorded; not full acceptance or compute-overlap proof",
+                mode="migration-performance",
+                coverage="one saved request; observation and trace disabled; Router TTFT, TPOT and client E2E; not full acceptance",
                 sample_input_sha256=hashlib.sha256(
                     args.sample_json.read_bytes()
                 ).hexdigest(),
@@ -321,8 +306,13 @@ def main() -> int:
         try:
             runner.preflight()
             startup(runner, library)
+            if args.sample_json:
+                print(
+                    json.dumps(runner.report["performance"], ensure_ascii=False),
+                    flush=True,
+                )
             print(
-                "MIGRATION_SAMPLE_COLLECTED; stopped for user cleanup confirmation"
+                "PERFORMANCE_MEASURED; stopped for user cleanup confirmation"
                 if args.sample_json
                 else "TARGET_STARTUP_DIAGNOSED; not an acceptance result",
                 flush=True,
