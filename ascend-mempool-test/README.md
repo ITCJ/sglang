@@ -708,3 +708,8 @@ find /home/cryang/log/k2 -type d \
   \( -name 'trace-*' -o -name 'profile' -o -name '*_ascend_pt' \) \
   -prune -exec rm -rf -- {} +
 ```
+
+## Ticket27 LRU 与安装库
+
+当前 multibase 使用 Docker 已安装的 `sgl_kernel_npu`，运行入口不再编译独立扩展。
+LRU 默认关闭；环境变量、双机自运行验收命令及证据范围见 [TICKET27.md](TICKET27.md)。

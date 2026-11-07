@@ -99,8 +99,6 @@ class TestTicket26Resume(unittest.TestCase):
                     "new",
                     "--sdk-build-id",
                     "sdk",
-                    "--sgl-source",
-                    str(root),
                     "--prefill-host",
                     "p",
                     "--decode-host",

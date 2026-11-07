@@ -13,6 +13,59 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def get_sparsity_driven_kv_offload_device_cache_capacity(
+    *, sparse_context_len: int, enable_lru: bool
+) -> int:
+    """Keep attention top-k independent of the physical cache capacity."""
+    from sglang.srt.environ import envs
+
+    if not enable_lru:
+        return sparse_context_len
+    if sparse_context_len != 2048:
+        raise ValueError("SGLANG_NPU_SPARSE_KV_ENABLE_LRU requires DSA index_topk=2048")
+    factor = int(envs.SGLANG_NPU_SPARSE_KV_DEVICE_CACHE_FACTOR.get())
+    if not 1 <= factor <= 4:
+        raise ValueError("SGLANG_NPU_SPARSE_KV_DEVICE_CACHE_FACTOR must be in [1, 4]")
+    return factor * 2048
+
+
+def get_sparsity_driven_kv_offload_fixed_memory_size(
+    *,
+    mode: SparseKVOffloadMode,
+    request_rows: int,
+    max_context_len: int,
+    sparse_context_len: int,
+    device_cache_capacity: int,
+    enable_lru: bool,
+    kv_head_dim: int,
+    num_layers: int,
+    element_size: int,
+    page_size: int,
+) -> int:
+    """Reserve the manager's persistent HBM, including padding and templates.
+
+    ``request_rows`` is the physical request-pool row count (including decode
+    preallocation and row zero), independent of padded Graph batch width.
+    Transient selected KV/copy tensors remain part of activation headroom.
+    """
+    if not mode.uses_sparse_kv_cache:
+        return 0
+    kv_tokens = request_rows * device_cache_capacity
+    if mode.uses_pd_decode_staging:
+        kv_tokens += (max_context_len + page_size - 1) // page_size * page_size
+    kv_bytes = kv_tokens * kv_head_dim * num_layers * element_size
+    # Per-layer map plus the shared all-minus-one template; sentinel row/column.
+    map_bytes = (
+        (request_rows + 1) * (max_context_len // 8 + 1) * 8 * 4 * (num_layers + 1)
+    )
+    metadata_bytes = (
+        (3 * request_rows * num_layers + 1) * device_cache_capacity * 4
+        if enable_lru
+        else 0
+    )
+    return kv_bytes + map_bytes + metadata_bytes + sparse_context_len * 8
+
+
 class SparseKVOffloadMode(str, Enum):
     DISABLED = "disabled"
     LOCAL_OFFLOAD = "local_offload"

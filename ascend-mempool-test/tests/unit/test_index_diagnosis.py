@@ -41,7 +41,7 @@ class TestIndexDiagnosis(unittest.TestCase):
                 ),
                 patch.object(diagnose_target_startup, "check_warmups") as parser,
             ):
-                diagnose_target_startup.startup(runner, root / "library.so")
+                diagnose_target_startup.startup(runner)
             self.assertEqual(
                 processes.call_args.args[1]["SGLANG_NPU_MEMPOOL_INDEX_DIAG"], "0"
             )
@@ -132,7 +132,7 @@ class TestIndexDiagnosis(unittest.TestCase):
                 ),
             ):
                 with self.assertRaises(RuntimeError) as raised:
-                    diagnose_target_startup.startup(runner, root / "library.so")
+                    diagnose_target_startup.startup(runner)
             self.assertIs(raised.exception, failure)
             jobs.__exit__.assert_called_once()
             self.assertNotEqual(runner.report["status"], "diagnostic_startup_passed")
@@ -173,7 +173,7 @@ class TestIndexDiagnosis(unittest.TestCase):
                         diagnose_target_startup, "service_ports", return_value=set()
                     ),
                 ):
-                    diagnose_target_startup.startup(runner, root / "library.so")
+                    diagnose_target_startup.startup(runner)
                 commands = [call.args[0] for call in jobs.start.call_args_list]
                 self.assertEqual(
                     commands,

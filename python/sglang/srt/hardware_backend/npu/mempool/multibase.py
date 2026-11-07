@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import importlib
-import os
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Any
 
 import torch
@@ -29,19 +26,10 @@ def view_regions(views: Sequence[Any], row_bytes: int) -> list[tuple[int, int]]:
 
 
 def load_kernel() -> Any:
-    """Load the standalone extension without replacing the installed SGL library."""
-    importlib.import_module("sgl_kernel_npu.sparsity_driven_kv_offload")
+    """Use the multibase operator exported by the installed SGL kernel package."""
+    from sgl_kernel_npu.sparsity_driven_kv_offload import unidex_copy_multibase
 
-    if not hasattr(torch.ops.npu, "unidex_copy_multibase"):
-        library = os.environ.get(
-            "SGLANG_UNIDEX_MULTIBASE_LIBRARY",
-            str(
-                Path(__file__).parent
-                / "kernels/unidex_multibase/build/libunidex_multibase.so"
-            ),
-        )
-        torch.ops.load_library(library)
-    return torch.ops.npu.unidex_copy_multibase
+    return unidex_copy_multibase
 
 
 class BaseTable:

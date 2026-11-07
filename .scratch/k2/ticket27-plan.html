@@ -1,0 +1,795 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="blueprint" data-mode="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Answer me with HTML 0.4.3">
+<title>Ticket 27：最小 LRU 移植与 kernel 库接入</title>
+<style>
+html[data-theme="blueprint"], html[data-theme="blueprint"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 0px;
+  --shadow: none;
+  --bw: 1.5px;
+  --head-font: var(--font-sans);
+  --bg: #f6f6f3;
+  --paper: #ffffff;
+  --ink: #16181d;
+  --ink-2: #4b5260;
+  --ink-3: #8b929e;
+  --line: #1d2026;
+  --line-2: #d6dae1;
+  --fill: #f3f5f8;
+  --accent: #1d5fbf;
+  --accent-bg: #e4ecf8;
+  --ok: #1d5fbf;
+  --ok-bg: #e4ecf8;
+  --err: #c62828;
+  --err-bg: #fbeaea;
+  --warn: #a8620a;
+  --warn-bg: #fdf3e2;
+  --head-bg: #16181d;
+  --head-fg: #ffffff;
+}
+html[data-theme="blueprint"][data-mode="dark"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="blueprint"][data-mode="auto"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+}
+
+html[data-theme="shadcn"], html[data-theme="shadcn"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 8px;
+  --shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --bw: 1px;
+  --head-font: var(--font-sans);
+  --bg: #fafafa;
+  --paper: #ffffff;
+  --ink: #09090b;
+  --ink-2: #71717a;
+  --ink-3: #a1a1aa;
+  --line: #e4e4e7;
+  --line-2: #f0f0f2;
+  --fill: #f4f4f5;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --ok: #16a34a;
+  --ok-bg: #f0fdf4;
+  --err: #dc2626;
+  --err-bg: #fef2f2;
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --head-bg: #18181b;
+  --head-fg: #fafafa;
+}
+html[data-theme="shadcn"][data-mode="dark"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="shadcn"][data-mode="auto"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+}
+
+/* Answer me with HTML base — 只引用主题变量，禁止写死颜色（主题 token 见 themes/index.js） */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd { font-family: var(--font-mono); }
+
+/* ── 工具栏 ─────────────────────────────── */
+.am-toolbar {
+  position: fixed; top: 12px; right: 12px; z-index: 10; display: flex; gap: 6px;
+}
+.am-btn {
+  font: 12px/1 var(--font-sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding: 7px 10px; cursor: pointer;
+}
+.am-btn:hover { border-color: var(--ink-3); }
+.am-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── 页头 ───────────────────────────────── */
+.am-head { margin: 0 0 20px; padding-right: 260px; }
+.am-head h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; }
+.am-sub { margin: 4px 0 0; color: var(--ink-2); }
+.am-head-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 12px; color: var(--ink-2); }
+.am-head-meta b { font-family: var(--font-mono); font-weight: 400; color: var(--ink-3); margin-right: 6px; }
+.am-intro { margin-top: 12px; max-width: 80ch; }
+
+/* ── sheet 图纸板 ────────────────────────── */
+.am-sheet { max-width: 1680px; margin: 0 auto; padding: 32px 28px 40px; }
+.am-frame { position: relative; }
+.am-grid {
+  display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 20px; align-items: start;
+}
+.am-ruler { display: none; }
+html[data-theme="blueprint"] .am-frame { border: 1px solid var(--line); padding: 30px; }
+html[data-theme="blueprint"] .am-frame::before {
+  content: ""; position: absolute; inset: 18px; border: 1px solid var(--line); pointer-events: none;
+}
+html[data-theme="blueprint"] .am-ruler {
+  display: flex; position: absolute; font: 10px/1 var(--font-mono); color: var(--ink-3);
+}
+.am-ruler span { flex: 1; display: flex; align-items: center; justify-content: center; }
+.am-ruler--top, .am-ruler--bottom { left: 18px; right: 18px; height: 18px; }
+.am-ruler--top { top: 0; }
+.am-ruler--bottom { bottom: 0; }
+.am-ruler--left, .am-ruler--right { top: 18px; bottom: 18px; width: 18px; flex-direction: column; }
+.am-ruler--left { left: 0; }
+.am-ruler--right { right: 0; }
+.am-ruler--top span + span, .am-ruler--bottom span + span { border-left: 1px solid var(--line); }
+.am-ruler--left span + span, .am-ruler--right span + span { border-top: 1px solid var(--line); }
+
+/* ── 面板 ───────────────────────────────── */
+.am-panel {
+  background: var(--paper); border: var(--bw) solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); min-width: 0; overflow: hidden;
+}
+.am-panel-head {
+  display: flex; align-items: stretch; gap: 0; border-bottom: var(--bw) solid var(--line); min-height: 34px;
+}
+.am-panel-id {
+  display: flex; align-items: center; justify-content: center; min-width: 34px; padding: 0 8px;
+  background: var(--head-bg); color: var(--head-fg); font-weight: 600; font-size: 14px;
+}
+html[data-theme="shadcn"] .am-panel-id { border-radius: 6px; min-width: 24px; height: 24px; margin: 9px 0 9px 14px; font-size: 12px; }
+html[data-theme="shadcn"] .am-panel-head { border-bottom-width: 1px; }
+.am-panel-head h2 { margin: 0; padding: 7px 12px; font-size: 15px; font-weight: 600; flex: 1; display: flex; align-items: center; }
+.am-panel-meta { align-self: center; padding: 0 12px; font: 11px/1.3 var(--font-mono); color: var(--ink-2); text-align: right; }
+.am-panel-body { padding: 14px 16px 16px; }
+.am-panel-body > * + * { margin-top: 12px; }
+
+/* ── Markdown 正文 ───────────────────────── */
+.am-md > :first-child { margin-top: 0; }
+.am-md > :last-child { margin-bottom: 0; }
+.am-md p { margin: 0 0 8px; }
+.am-md ul, .am-md ol { margin: 0 0 8px; padding-left: 20px; }
+.am-md li + li { margin-top: 3px; }
+.am-md h3, .am-md h4 { margin: 14px 0 6px; font-size: 13px; }
+.am-md a { color: var(--accent); }
+.am-md blockquote { margin: 0 0 8px; padding: 2px 12px; border-left: 3px solid var(--line-2); color: var(--ink-2); }
+.am-md :not(pre) > code { font-size: 0.9em; background: var(--fill); padding: 1px 5px; border-radius: 4px; }
+.am-md hr { border: 0; border-top: 1px solid var(--line-2); margin: 12px 0; }
+.am-md table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.am-md th {
+  text-align: left; font: 11px/1.3 var(--font-mono); color: var(--ink-2); font-weight: 400;
+  padding: 6px 10px; border-bottom: 1px solid var(--line-2);
+}
+.am-md td { padding: 7px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.am-md tbody tr:nth-child(even) td { background: var(--fill); }
+.am-table-wrap { overflow-x: auto; }
+.am-code {
+  margin: 0; padding: 12px 14px; background: var(--fill); border: 1px solid var(--line-2);
+  border-radius: var(--radius); overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+}
+
+/* ── 状态徽章 ok / no / warn ──────────────── */
+.am-status { white-space: nowrap; font-weight: 500; }
+.am-status--ok { color: var(--ok); }
+.am-status--no { color: var(--err); }
+.am-status--warn { color: var(--warn); }
+.am-status-icon { display: inline-block; width: 1.1em; font-weight: 700; }
+
+/* ── callout ─────────────────────────────── */
+.am-callout {
+  border: 1px solid var(--line-2); border-left: 3px solid var(--accent); background: var(--accent-bg);
+  padding: 10px 14px; border-radius: var(--radius);
+}
+.am-callout--ok { border-left-color: var(--ok); background: var(--ok-bg); }
+.am-callout--warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.am-callout--err { border-left-color: var(--err); background: var(--err-bg); }
+.am-callout-title { font-weight: 600; margin-bottom: 4px; }
+
+/* ── kv 标题栏格 ─────────────────────────── */
+.am-kv {
+  display: grid; grid-template-columns: repeat(var(--kv-cols, 2), minmax(0, 1fr)); margin: 0;
+  border-top: var(--bw) solid var(--line); border-left: var(--bw) solid var(--line);
+}
+.am-kv-cell { border-right: var(--bw) solid var(--line); border-bottom: var(--bw) solid var(--line); padding: 6px 10px 8px; min-width: 0; }
+.am-kv-cell--wide { grid-column: 1 / -1; }
+.am-kv dt { font: 11px/1.4 var(--font-mono); color: var(--ink-2); }
+.am-kv dd { margin: 2px 0 0; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.am-kv-cell--wide dd { font-size: 17px; font-weight: 600; }
+html[data-theme="shadcn"] .am-kv { border-color: var(--line); border-radius: var(--radius); overflow: hidden; }
+
+/* ── timeline ────────────────────────────── */
+.am-timeline { list-style: none; margin: 0; padding: 0; }
+.am-timeline--h { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); padding-top: 4px; }
+.am-timeline--h li { position: relative; text-align: center; padding: 0 6px; }
+.am-timeline--h li::before {
+  content: ""; position: absolute; top: 31px; left: 0; right: 0; border-top: var(--bw) solid var(--line);
+}
+.am-timeline--h li:first-child::before { left: 50%; }
+.am-timeline--h li:last-child::before { right: 50%; }
+.am-tl-when { display: block; font-size: 15px; font-weight: 500; height: 24px; }
+.am-tl-dot {
+  position: relative; display: block; width: 11px; height: 11px; margin: 2px auto 8px;
+  border: var(--bw) solid var(--line); border-radius: 50%; background: var(--paper);
+}
+.am-tl-item--hi .am-tl-dot { background: var(--accent); border-color: var(--accent); }
+.am-tl-title { display: block; font-size: 12.5px; font-weight: 500; }
+.am-tl-text { display: block; font-size: 12px; color: var(--ink-2); line-height: 1.45; }
+.am-timeline--v li { position: relative; padding: 0 0 14px 22px; }
+.am-timeline--v li::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: -6px; border-left: var(--bw) solid var(--line-2); }
+.am-timeline--v li:last-child::before { display: none; }
+.am-timeline--v .am-tl-dot { position: absolute; left: 0; top: 4px; margin: 0; }
+.am-timeline--v .am-tl-when { display: inline; height: auto; font: 12px var(--font-mono); color: var(--ink-2); margin-right: 8px; }
+.am-timeline--v .am-tl-title { display: inline; font-size: 14px; }
+.am-timeline--v .am-tl-text { margin-top: 2px; }
+
+/* ── annot 句子标注 ──────────────────────── */
+.am-annot + .am-annot { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.am-annot-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.am-annot-meta { font: 11px var(--font-mono); font-weight: 400; color: var(--ink-2); }
+.am-annot-scroll { overflow-x: auto; }
+.am-annot-line {
+  position: relative; display: inline-block; white-space: pre; font: 14px/1.6 var(--font-mono);
+  padding-bottom: calc(var(--rows, 0) * 17px + 14px);
+}
+.am-annot-line--wrap { display: block; white-space: normal; padding-bottom: 10px; }
+.am-annot-line--wrap .am-seg { white-space: nowrap; }
+.am-seg { position: relative; }
+.am-seg::after {
+  content: ""; position: absolute; left: 1px; right: 1px; top: calc(100% + 1px); height: 5px;
+  border: 1px solid var(--accent); border-top: 0;
+}
+.am-seg-n {
+  position: absolute; left: 0; top: calc(100% + 8px + var(--row, 0) * 17px);
+  font: 11px/16px var(--font-sans); color: var(--accent); white-space: nowrap;
+}
+.am-seg--err { color: var(--err); }
+.am-seg--err::after { border-color: var(--err); }
+.am-seg--err .am-seg-n { color: var(--err); }
+.am-annot-caption { font-size: 12px; color: var(--ink-2); }
+
+/* ── limits 限值条 ───────────────────────── */
+.am-lim + .am-lim { margin-top: 14px; }
+.am-lim-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; margin-bottom: 4px; }
+.am-lim-val { font: 12px var(--font-mono); color: var(--accent); white-space: nowrap; }
+.am-lim-track { position: relative; height: 12px; border: 1px solid var(--line-2); background: var(--fill); border-radius: calc(var(--radius) / 2); }
+.am-lim-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-bg); border-right: 1px solid var(--accent); }
+.am-lim-mark { position: absolute; top: -4px; bottom: -4px; border-left: 2px solid var(--accent); }
+.am-lim.is-over .am-lim-fill { background: var(--err-bg); border-right-color: var(--err); }
+.am-lim.is-over .am-lim-val { color: var(--err); }
+.am-lim-ticks { position: relative; height: 16px; font: 10px/16px var(--font-mono); color: var(--ink-3); }
+.am-lim-ticks span { position: absolute; transform: translateX(-50%); }
+.am-lim-ticks span:first-child { transform: none; }
+.am-lim-note { font-size: 11px; color: var(--ink-2); margin-left: 6px; }
+
+/* ── tree 结构树 ─────────────────────────── */
+.am-tree { font-size: 13px; }
+.am-tree-root { display: flex; justify-content: center; position: relative; padding-bottom: 18px; }
+.am-tree-root::after { content: ""; position: absolute; bottom: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-root--solo { padding-bottom: 12px; }
+.am-tree-root--solo::after { display: none; }
+.am-tree-box {
+  border: var(--bw) solid var(--line); background: var(--paper); padding: 6px 14px; text-align: center;
+  border-radius: var(--radius); font-weight: 600;
+}
+.am-tree-box small { display: block; font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.am-tree-box--root { background: var(--accent-bg); font-size: 15px; padding: 8px 28px; }
+.am-tree-cols { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
+.am-tree-col { position: relative; padding: 18px 8px 0; min-width: 0; }
+.am-tree-col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; border-top: var(--bw) solid var(--line); }
+.am-tree-col:first-child::before { left: 50%; }
+.am-tree-col:last-child::before { right: 50%; }
+.am-tree-col::after { content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-list, .am-tree-list ul { list-style: none; margin: 0; padding: 0; }
+.am-tree-col > .am-tree-list { margin: 8px 0 0 14px; }
+.am-tree-list ul { margin-left: 16px; }
+.am-tree-list li { position: relative; padding: 3px 0 3px 18px; }
+.am-tree-list li::before { content: ""; position: absolute; left: 0; top: 0.95em; width: 12px; border-top: 1px solid var(--ink-3); }
+.am-tree-list li::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1px solid var(--ink-3); }
+.am-tree-list li:last-child::after { bottom: auto; height: 0.95em; }
+.am-tree-tag { font: 11px var(--font-mono); color: var(--ink-3); margin-right: 4px; }
+.am-tree code { font: 12px var(--font-mono); }
+.am-tree-sub { display: block; font-size: 11.5px; color: var(--ink-2); }
+.am-tree-hi > .am-tree-label { color: var(--accent); font-weight: 600; }
+
+/* ── 图（flow / sequence）───────────────── */
+.am-diagram { margin: 0; overflow-x: auto; text-align: center; }
+.am-diagram svg { max-width: 100%; height: auto; font-family: var(--font-sans); }
+.am-diagram text { fill: var(--ink); font-size: 13px; }
+.am-node-shape { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-node--hi .am-node-shape { fill: var(--accent-bg); stroke: var(--accent); }
+.am-node--hi text { fill: var(--accent); font-weight: 600; }
+.am-edge { fill: none; stroke: var(--ink-2); stroke-width: 1.3; }
+.am-edge--dashed { stroke-dasharray: 5 4; }
+.am-arrow { fill: var(--ink-2); }
+.am-edge-label rect { fill: var(--paper); }
+.am-diagram .am-edge-label text { fill: var(--accent); font-size: 11.5px; }
+.am-cluster { fill: var(--fill); stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 4 3; }
+.am-diagram .am-cluster-label { fill: var(--ink-2); font: 11px var(--font-mono); }
+.am-lifeline { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 4 4; }
+.am-actor { fill: var(--paper); stroke: var(--line); stroke-width: var(--bw); }
+.am-note { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 1; }
+.am-diagram .am-step { fill: var(--ink-3); font: 10px var(--font-mono); }
+
+/* ── doc 线性讲解 ────────────────────────── */
+.am-doc { max-width: 1120px; margin: 0 auto; padding: 40px 28px 64px; }
+.am-doc-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
+.am-doc-layout--notoc { grid-template-columns: minmax(0, 1fr); max-width: 860px; }
+.am-toc { position: sticky; top: 24px; font-size: 13px; }
+.am-toc a { display: block; color: var(--ink-2); text-decoration: none; padding: 4px 0 4px 10px; border-left: 2px solid var(--line-2); }
+.am-toc a:hover { color: var(--ink); border-left-color: var(--accent); }
+.am-doc-body > .am-panel + .am-panel { margin-top: 20px; }
+
+/* ── 响应式与打印 ─────────────────────────── */
+@media (max-width: 1100px) {
+  .am-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .am-grid > .am-panel { grid-column: auto !important; }
+  .am-grid > .am-panel.am-span-wide { grid-column: 1 / -1 !important; }
+}
+@media (max-width: 760px) {
+  .am-sheet, .am-doc { padding: 56px 12px 24px; }
+  .am-head { padding-right: 0; }
+  .am-grid { grid-template-columns: minmax(0, 1fr); }
+  .am-grid > .am-panel.am-span-wide { grid-column: auto !important; }
+  html[data-theme="blueprint"] .am-frame { padding: 0; border: 0; }
+  html[data-theme="blueprint"] .am-frame::before, html[data-theme="blueprint"] .am-ruler { display: none; }
+  .am-doc-layout { grid-template-columns: minmax(0, 1fr); }
+  .am-toc { position: static; }
+  .am-timeline--h { grid-template-columns: minmax(0, 1fr); }
+  .am-tree-cols { grid-template-columns: minmax(0, 1fr); }
+}
+.am-colophon { text-align: center; padding: 0 0 28px; font: 11px var(--font-mono); color: var(--ink-3); }
+
+@media print {
+  .am-toolbar { display: none; }
+  body { background: var(--paper); }
+  .am-panel { break-inside: avoid; box-shadow: none; }
+}
+.am-panel--bare { border: 0; background: transparent; box-shadow: none; }
+.am-panel--bare > .am-panel-body { padding: 0; }
+.am-panel--bare .am-kv { background: var(--paper); }
+
+</style>
+</head>
+<body>
+<div class="am-toolbar">
+<button class="am-btn" type="button" data-am="theme" data-labels="{&quot;blueprint&quot;:&quot;主题：图纸&quot;,&quot;shadcn&quot;:&quot;主题：卡片&quot;}">主题：图纸</button>
+<button class="am-btn" type="button" data-am="mode" data-labels="{&quot;auto&quot;:&quot;明暗：跟随系统&quot;,&quot;light&quot;:&quot;明暗：亮&quot;,&quot;dark&quot;:&quot;明暗：暗&quot;}">明暗：跟随系统</button>
+<button class="am-btn" type="button" data-am="copy" data-done="已复制 ✓">复制源稿</button>
+</div>
+<main class="am-doc">
+<header class="am-head"><h1>Ticket 27：最小 LRU 移植与 kernel 库接入</h1><p class="am-sub">规划记录；现已实施，用户 NPU 验收待运行</p></header>
+<div class="am-doc-layout">
+<nav class="am-toc" aria-label="目录"><a href="#panel-A">A · 结论</a><a href="#panel-B">B · 先补齐 kernel 依赖</a><a href="#panel-C">C · 容量要拆成两个数</a><a href="#panel-D">D · 保留当前数据路径</a><a href="#panel-E">E · 最小文件范围</a><a href="#panel-F">F · 实施与验收边界</a></nav><div class="am-doc-body">
+<section class="am-panel" id="panel-A">
+<header class="am-panel-head"><span class="am-panel-id">A</span><h2>结论</h2></header>
+<div class="am-panel-body"><div class="am-md"><p><strong>状态更新：27已实现。</strong> <a href="../../ascend-mempool-test/TICKET27.md">运行说明</a>包含最终源码与验收命令。
+下列规划保留来源依据，实施与检查结论以票据Comments为准。</p>
+<p>你的四项划分基本正确。还需请求复用重置，以及 Graph 和跨流同步。
+当前已有上一轮 top-k 缓存；本票将其升级为 PR 的 LRU 策略。
+建议独立一票，不合并整个 PR 分支。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>项目</th>
+<th>核对结果</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>当前分支</td>
+<td>cryang/dev/mempool-min，659b949ece</td>
+</tr>
+<tr>
+<td>LRU 来源</td>
+<td>cryang/pr/sparsity-pd-disagg-LRU，d8422c1d76</td>
+</tr>
+<tr>
+<td>新 kernel</td>
+<td>feat/unidex-copy-multibase，fe23057，已 fetch</td>
+</tr>
+<tr>
+<td>当前缓存</td>
+<td>每轮替换为 selected top-k</td>
+</tr>
+<tr>
+<td>目标缓存</td>
+<td>timestamp-LRU + probation，仅回填 miss</td>
+</tr>
+<tr>
+<td>当前状态</td>
+<td>Ticket 27 已建，needs-info/open</td>
+</tr>
+</tbody></table></div>
+</div></div>
+</section>
+<section class="am-panel" id="panel-B">
+<header class="am-panel-head"><span class="am-panel-id">B</span><h2>先补齐 kernel 依赖</h2></header>
+<div class="am-panel-body"><div class="am-md"><p>新分支提供 multibase，但缺少 PR 的 LRU 接口。</p>
+<div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>接口</th>
+<th>multibase 分支</th>
+<th>本地 LRU kernel ref</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>unidex_copy_multibase</td>
+<td><span class="am-status am-status--ok"><span class="am-status-icon" aria-hidden="true">✓</span>有</span></td>
+<td>未作为组合库验证</td>
+</tr>
+<tr>
+<td>fused_timestamp_lru_metadata_update_with_probation</td>
+<td><span class="am-status am-status--no"><span class="am-status-icon" aria-hidden="true">✗</span>无</span></td>
+<td><span class="am-status am-status--ok"><span class="am-status-icon" aria-hidden="true">✓</span>有</span></td>
+</tr>
+<tr>
+<td>parallel_lru_metadata_write</td>
+<td><span class="am-status am-status--no"><span class="am-status-icon" aria-hidden="true">✗</span>无</span></td>
+<td><span class="am-status am-status--ok"><span class="am-status-icon" aria-hidden="true">✓</span>有</span></td>
+</tr>
+<tr>
+<td>slot_map_lookup 的 pos_mask_size</td>
+<td><span class="am-status am-status--no"><span class="am-status-icon" aria-hidden="true">✗</span>无</span></td>
+<td><span class="am-status am-status--ok"><span class="am-status-icon" aria-hidden="true">✓</span>有</span></td>
+</tr>
+</tbody></table></div>
+<p>LRU kernel 参考为 <code>origin/bw/pr/feat_lru_with_probation</code>，e7a9cb60。
+该 ref 本轮未刷新；最终库版本需重新固定。
+用户同事将 fork 此 LRU 分支，再合入 multibase。
+agent 不执行合并，按同事最终交付库接入。</p>
+<p>最终 fork、branch 和 commit 尚待交付。
+<code>build.sh -a kernels</code> 产出 wheel，之后还需安装 wheel。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-C">
+<header class="am-panel-head"><span class="am-panel-id">C</span><h2>容量要拆成两个数</h2></header>
+<div class="am-panel-body"><div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>数量</th>
+<th>用途</th>
+<th>PR 约束</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>top-k</td>
+<td>当前 attention 的 selected KV</td>
+<td>LRU 模式固定 2048</td>
+</tr>
+<tr>
+<td>cache capacity</td>
+<td>每请求每层驻留的历史 KV</td>
+<td>factor × 2048，factor 为 1–4</td>
+</tr>
+<tr>
+<td>request storage rows</td>
+<td>cache 的请求行数</td>
+<td>含实际 request-pool padding 等行</td>
+</tr>
+<tr>
+<td>Graph batch width</td>
+<td>计算与索引模板的批宽</td>
+<td>不扩大整份历史 cache</td>
+</tr>
+</tbody></table></div>
+<p>默认 factor=2，cache 为 4096；selected KV 仍为 2048。
+预留固定 HBM 后再计算 Index K 容量。
+三张新增 int32 表也应计入预算。
+PR 预算只判断 host offload，移植时须覆盖 mempool decode。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-D">
+<header class="am-panel-head"><span class="am-panel-id">D</span><h2>保留当前数据路径</h2></header>
+<div class="am-panel-body"><figure class="am-diagram am-flow"><svg viewBox="0 0 209 657" width="209" height="657" role="img" aria-label="流程图：top-k、slot-map查询、四来源物化、selected-KV、LRU更新、miss回填、后续读取" xmlns="http://www.w3.org/2000/svg"><defs><marker id="am1-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="am-arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs><g></g><g><g data-step="0"><path class="am-edge" d="M104.1,49 L104.1,65 Q104.1,81 104.1,97 L104.1,113" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="76.1" y="72" width="56" height="18" rx="3"/><text x="104.1" y="81" text-anchor="middle" dominant-baseline="central">命中位置</text></g></g><g data-step="1"><path class="am-edge" d="M104.1,148 L104.1,164 Q104.1,180 104.1,196 L104.1,212" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="15" y="171" width="178.1" height="18" rx="3"/><text x="104.1" y="180" text-anchor="middle" dominant-baseline="central">cache/current HBM 与 P/D BM</text></g></g><g data-step="2"><path class="am-edge" d="M104.1,247 L104.1,263 Q104.1,279 104.1,295 L104.1,311" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="64.6" y="270" width="79" height="18" rx="3"/><text x="104.1" y="279" text-anchor="middle" dominant-baseline="central">等待物化完成</text></g></g><g data-step="3"><path class="am-edge" d="M104.1,346 L104.1,362 Q104.1,378 104.1,394 L104.1,410" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="44.2" y="369" width="119.7" height="18" rx="3"/><text x="104.1" y="378" text-anchor="middle" dominant-baseline="central">选 victim 并更新映射</text></g></g><g data-step="4"><path class="am-edge" d="M104.1,445 L104.1,461 Q104.1,477 104.1,493 L104.1,509" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="28.8" y="468" width="150.5" height="18" rx="3"/><text x="104.1" y="477" text-anchor="middle" dominant-baseline="central">从 selected HBM 写 cache</text></g></g><g data-step="5"><path class="am-edge" d="M104.1,544 L104.1,560 Q104.1,576 104.1,592 L104.1,608" marker-end="url(#am1-arrow)"/><g class="am-edge-label"><rect x="47.3" y="567" width="113.5" height="18" rx="3"/><text x="104.1" y="576" text-anchor="middle" dominant-baseline="central">等待回填与映射完成</text></g></g></g><g><g class="am-node am-node--rect" data-key="top-k" data-step="0"><rect class="am-node-shape" x="72.1" y="14" width="64" height="35" rx="3"/><text x="104.1" y="31.5" text-anchor="middle" dominant-baseline="central">top-k</text></g><g class="am-node am-node--rect" data-key="slot-map查询" data-step="0"><rect class="am-node-shape" x="49.1" y="113" width="109.9" height="35" rx="3"/><text x="104.1" y="130.5" text-anchor="middle" dominant-baseline="central">slot-map查询</text></g><g class="am-node am-node--rect" data-key="四来源物化" data-step="1"><rect class="am-node-shape" x="57.6" y="212" width="93" height="35" rx="3"/><text x="104.1" y="229.5" text-anchor="middle" dominant-baseline="central">四来源物化</text></g><g class="am-node am-node--rect" data-key="selected-KV" data-step="2"><rect class="am-node-shape" x="51.6" y="311" width="105" height="35" rx="3"/><text x="104.1" y="328.5" text-anchor="middle" dominant-baseline="central">selected-KV</text></g><g class="am-node am-node--rect" data-key="LRU更新" data-step="3"><rect class="am-node-shape" x="63.8" y="410" width="80.5" height="35" rx="3"/><text x="104.1" y="427.5" text-anchor="middle" dominant-baseline="central">LRU更新</text></g><g class="am-node am-node--rect" data-key="miss回填" data-step="4"><rect class="am-node-shape" x="62.1" y="509" width="83.9" height="35" rx="3"/><text x="104.1" y="526.5" text-anchor="middle" dominant-baseline="central">miss回填</text></g><g class="am-node am-node--rect" data-key="后续读取" data-step="5"><rect class="am-node-shape" x="64.1" y="608" width="80" height="35" rx="3"/><text x="104.1" y="625.5" text-anchor="middle" dominant-baseline="central">后续读取</text></g></g></svg></figure>
+<div class="am-md"><p>hit 保留原物理槽；miss 才回填。
+新取入项使用 probation，默认 age=4。
+请求行复用时重置映射、slot 顺序及时间戳。
+保留当前 token、绑定、已写前缀和 padding 的有效性规则。
+保持现有 attention 接口，不移植额外 overlap 重构。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-E">
+<header class="am-panel-head"><span class="am-panel-id">E</span><h2>最小文件范围</h2></header>
+<div class="am-panel-body"><div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>分类</th>
+<th>文件</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>NPU</td>
+<td>sparsity_driven_kv_offload/config.py</td>
+<td>容量及固定 HBM 预算</td>
+</tr>
+<tr>
+<td>NPU</td>
+<td>memory_pool_npu.py</td>
+<td>NPU 预算适配</td>
+</tr>
+<tr>
+<td>NPU</td>
+<td>sparsity_driven_kv_offload/manager.py</td>
+<td>分配、LRU、回填、重置</td>
+</tr>
+<tr>
+<td>NPU</td>
+<td>mempool/multibase.py</td>
+<td>使用安装库</td>
+</tr>
+<tr>
+<td>NPU</td>
+<td>mempool/runtime.py</td>
+<td>如实记录容量和策略</td>
+</tr>
+<tr>
+<td>通用</td>
+<td>environ.py</td>
+<td>注册三个既有 PR 环境变量</td>
+</tr>
+<tr>
+<td>通用</td>
+<td>mem_cache/kv_cache_configurator.py</td>
+<td>定容前调用 NPU 预算</td>
+</tr>
+</tbody></table></div>
+<p>通用预算入口掌握原始字节预算，manager 分配发生得更晚。
+因此需要一个小调用，算法仍放在 NPU 目录。</p>
+<p>预计七个功能源码文件；旧扩展、脚本与测试清理另列。
+ENABLE_LRU 默认关闭，FACTOR 默认 2，PROBATION_AGE 默认 4。</p>
+<p>旧编译路径整体清理：C++/CMake、构建脚本、加载兜底和路径注入。
+诊断与 Graph 报告改为记录安装库身份。
+保留有用的行为测试与历史验收证据。
+本地未发现独立扩展 build 产物；Docker 未检查。</p>
+</div></div>
+</section>
+<section class="am-panel" id="panel-F">
+<header class="am-panel-head"><span class="am-panel-id">F</span><h2>实施与验收边界</h2></header>
+<div class="am-panel-body"><div class="am-md"><ol>
+<li>用户已授权当前分支实施，按两个kernel分支原接口接入。</li>
+<li>用户已允许26关闭前实施，kernel合并由同事执行。</li>
+<li>精简 TDD 验证预算、回填、复用及 padding。</li>
+<li>用户跑算子 Graph 和定向服务对照。</li>
+<li>完成双轴评审、独立 commit 与用户验收。</li>
+</ol>
+<p>26与27均未关闭，用户NPU验收尚未运行。
+本票覆盖 22 的容量/策略子集；跨请求合并和性能对比仍留 22。</p>
+<p>沿用已接受的输出判据，日志放 <code>/home/cryang/log/</code>。
+不再现场编译；不扩展性能排查或通用退出流程。</p>
+<p>完整约束、源码基点和验收项见 <a href="issues/27-lru-cache-library-integration.md">Ticket 27</a>。</p>
+</div></div>
+</section>
+</div>
+</div>
+</main>
+<footer class="am-colophon">Generated by Answer me with HTML 0.4.3 · 2026-11-07 19:05</footer>
+<textarea id="am-source" hidden readonly aria-hidden="true">---
+title: Ticket 27：最小 LRU 移植与 kernel 库接入
+subtitle: 规划记录；现已实施，用户 NPU 验收待运行
+template: doc
+theme: blueprint
+lang: zh
+---
+
+## A 结论
+
+**状态更新：27已实现。** [运行说明](../../ascend-mempool-test/TICKET27.md)包含最终源码与验收命令。
+下列规划保留来源依据，实施与检查结论以票据Comments为准。
+
+你的四项划分基本正确。还需请求复用重置，以及 Graph 和跨流同步。
+当前已有上一轮 top-k 缓存；本票将其升级为 PR 的 LRU 策略。
+建议独立一票，不合并整个 PR 分支。
+
+| 项目 | 核对结果 |
+|---|---|
+| 当前分支 | cryang/dev/mempool-min，659b949ece |
+| LRU 来源 | cryang/pr/sparsity-pd-disagg-LRU，d8422c1d76 |
+| 新 kernel | feat/unidex-copy-multibase，fe23057，已 fetch |
+| 当前缓存 | 每轮替换为 selected top-k |
+| 目标缓存 | timestamp-LRU + probation，仅回填 miss |
+| 当前状态 | Ticket 27 已建，needs-info/open |
+
+## B 先补齐 kernel 依赖
+
+新分支提供 multibase，但缺少 PR 的 LRU 接口。
+
+| 接口 | multibase 分支 | 本地 LRU kernel ref |
+|---|---|---|
+| unidex_copy_multibase | ok 有 | 未作为组合库验证 |
+| fused_timestamp_lru_metadata_update_with_probation | no 无 | ok 有 |
+| parallel_lru_metadata_write | no 无 | ok 有 |
+| slot_map_lookup 的 pos_mask_size | no 无 | ok 有 |
+
+LRU kernel 参考为 `origin/bw/pr/feat_lru_with_probation`，e7a9cb60。
+该 ref 本轮未刷新；最终库版本需重新固定。
+用户同事将 fork 此 LRU 分支，再合入 multibase。
+agent 不执行合并，按同事最终交付库接入。
+
+最终 fork、branch 和 commit 尚待交付。
+`build.sh -a kernels` 产出 wheel，之后还需安装 wheel。
+
+## C 容量要拆成两个数
+
+| 数量 | 用途 | PR 约束 |
+|---|---|---|
+| top-k | 当前 attention 的 selected KV | LRU 模式固定 2048 |
+| cache capacity | 每请求每层驻留的历史 KV | factor × 2048，factor 为 1–4 |
+| request storage rows | cache 的请求行数 | 含实际 request-pool padding 等行 |
+| Graph batch width | 计算与索引模板的批宽 | 不扩大整份历史 cache |
+
+默认 factor=2，cache 为 4096；selected KV 仍为 2048。
+预留固定 HBM 后再计算 Index K 容量。
+三张新增 int32 表也应计入预算。
+PR 预算只判断 host offload，移植时须覆盖 mempool decode。
+
+## D 保留当前数据路径
+
+```flow
+top-k -&gt; slot-map查询: 命中位置
+slot-map查询 -&gt; 四来源物化: cache/current HBM 与 P/D BM
+四来源物化 -&gt; selected-KV: 等待物化完成
+selected-KV -&gt; LRU更新: 选 victim 并更新映射
+LRU更新 -&gt; miss回填: 从 selected HBM 写 cache
+miss回填 -&gt; 后续读取: 等待回填与映射完成
+```
+
+hit 保留原物理槽；miss 才回填。
+新取入项使用 probation，默认 age=4。
+请求行复用时重置映射、slot 顺序及时间戳。
+保留当前 token、绑定、已写前缀和 padding 的有效性规则。
+保持现有 attention 接口，不移植额外 overlap 重构。
+
+## E 最小文件范围
+
+| 分类 | 文件 | 用途 |
+|---|---|---|
+| NPU | sparsity_driven_kv_offload/config.py | 容量及固定 HBM 预算 |
+| NPU | memory_pool_npu.py | NPU 预算适配 |
+| NPU | sparsity_driven_kv_offload/manager.py | 分配、LRU、回填、重置 |
+| NPU | mempool/multibase.py | 使用安装库 |
+| NPU | mempool/runtime.py | 如实记录容量和策略 |
+| 通用 | environ.py | 注册三个既有 PR 环境变量 |
+| 通用 | mem_cache/kv_cache_configurator.py | 定容前调用 NPU 预算 |
+
+通用预算入口掌握原始字节预算，manager 分配发生得更晚。
+因此需要一个小调用，算法仍放在 NPU 目录。
+
+预计七个功能源码文件；旧扩展、脚本与测试清理另列。
+ENABLE_LRU 默认关闭，FACTOR 默认 2，PROBATION_AGE 默认 4。
+
+旧编译路径整体清理：C++/CMake、构建脚本、加载兜底和路径注入。
+诊断与 Graph 报告改为记录安装库身份。
+保留有用的行为测试与历史验收证据。
+本地未发现独立扩展 build 产物；Docker 未检查。
+
+## F 实施与验收边界
+
+1. 用户已授权当前分支实施，按两个kernel分支原接口接入。
+2. 用户已允许26关闭前实施，kernel合并由同事执行。
+3. 精简 TDD 验证预算、回填、复用及 padding。
+4. 用户跑算子 Graph 和定向服务对照。
+5. 完成双轴评审、独立 commit 与用户验收。
+
+26与27均未关闭，用户NPU验收尚未运行。
+本票覆盖 22 的容量/策略子集；跨请求合并和性能对比仍留 22。
+
+沿用已接受的输出判据，日志放 `/home/cryang/log/`。
+不再现场编译；不扩展性能排查或通用退出流程。
+
+完整约束、源码基点和验收项见 [Ticket 27](issues/27-lru-cache-library-integration.md)。
+</textarea>
+<script>
+(() => {
+  const root = document.documentElement;
+  const cycle = (list, cur) => list[(list.indexOf(cur) + 1) % list.length];
+  const label = (btn, value) => {
+    const map = JSON.parse(btn.dataset.labels || '{}');
+    btn.textContent = map[value] || value;
+  };
+  const bind = (name, attr, values) => {
+    const btn = document.querySelector(`[data-am="${name}"]`);
+    if (!btn) return;
+    label(btn, root.getAttribute(attr));
+    btn.addEventListener('click', () => {
+      const next = cycle(values, root.getAttribute(attr));
+      root.setAttribute(attr, next);
+      label(btn, next);
+    });
+  };
+  bind('theme', 'data-theme', ['blueprint', 'shadcn']);
+  bind('mode', 'data-mode', ['auto', 'light', 'dark']);
+
+  const copyBtn = document.querySelector('[data-am="copy"]');
+  copyBtn?.addEventListener('click', async () => {
+    const text = document.getElementById('am-source').value;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = Object.assign(document.createElement('textarea'), { value: text });
+      document.body.append(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    const original = copyBtn.textContent;
+    copyBtn.textContent = copyBtn.dataset.done;
+    setTimeout(() => { copyBtn.textContent = original; }, 1400);
+  });
+})();
+</script>
+</body>
+</html>

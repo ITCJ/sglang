@@ -15,7 +15,6 @@ import time
 from pathlib import Path
 
 from run_mempool_min import (
-    REPO,
     SCRIPTS,
     RouterConfig,
     Runner,
@@ -112,13 +111,9 @@ def sample_request(runner: Runner, watch) -> None:
     )
 
 
-def startup(runner: Runner, library: Path | None) -> None:
+def startup(runner: Runner) -> None:
     root, args, config, peer = runner.root, runner.args, runner.config, runner.peer
     env = service_environment(config, args, root, target=True)
-    if library is not None:
-        env["SGLANG_UNIDEX_MULTIBASE_LIBRARY"] = str(library)
-    else:
-        env.pop("SGLANG_UNIDEX_MULTIBASE_LIBRARY", None)
     # The production warmup hook was rolled back; retain offline log reading.
     env["SGLANG_NPU_MEMPOOL_INDEX_DIAG"] = "0"
     # Graph construction still runs; suppress the later HTTP dummy request.
@@ -265,13 +260,9 @@ def main() -> int:
     args.prefill_host = config.prefill_host
     args.control_port = config.runner_port
     args.timeout = config.startup_timeout
-    library = (
-        REPO
-        / "python/sglang/srt/hardware_backend/npu/mempool/kernels/unidex_multibase/build/libunidex_multibase.so"
-    )
-    if args.legacy_kernel:
-        library = None
-    library_hash = hashlib.sha256(library.read_bytes()).hexdigest() if library else None
+    from ascend_sparse.kernel_library import kernel_identity
+
+    library_info = None if args.legacy_kernel else kernel_identity(require_lru=False)
 
     def stop(signum, frame):
         raise KeyboardInterrupt(f"diagnosis interrupted by signal {signum}")
@@ -285,7 +276,7 @@ def main() -> int:
             coverage="startup only; normal asynchronous warmup; no requests",
             target_acceptance="not-run",
             source_config=str(source_config),
-            library_sha256=library_hash,
+            kernel_library=library_info,
             index_diagnosis=False,
             skip_http_warmup=True,
         )
@@ -299,7 +290,7 @@ def main() -> int:
             )
         try:
             runner.preflight()
-            startup(runner, library)
+            startup(runner)
             if args.sample_json:
                 print(
                     json.dumps(runner.report["performance"], ensure_ascii=False),

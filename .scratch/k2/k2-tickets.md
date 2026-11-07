@@ -2,6 +2,8 @@
 
 本文件是 K2 的执行文本：十三张票（13–25），每票写清位置、目标、改动、不变、验收与证据、风险；每票一个上下文窗口能装下，单独可验收。设计依据：`../paperwriting-sparse/`（第 13 轮收窄、`13-roadmap-and-measurements.md` 第 3、4、7 节、`14-hit-page-placement.md` 第 4、8 节、`00-discussion-log.md` 13.6 / 13.7）、`../mempool-design/discussion.md`（C13、C21、C32、C41、C43、C58、C59、C62、C64、C67、C68、C100、C101、U4、U5）、`discussion.md`（M15、M23、M26、M30、M32、M54、M57–M59）、`k1-tickets.md`（第 1、3 节的术语与共同规则继续适用）。每票另有一个票文件（`.scratch/k2/issues/`，按编号 13–25），票文件只写要做什么和验收标准，机制细节以本文件为准。K1 的两张旁路票并入：04 并入 14，10 并入 13。
 
+**2026-11-07 新增独立票27（已实现，待NPU验收）：** [LRU cache与安装库接入](issues/27-lru-cache-library-integration.md)，K2共15张票。27为22容量/策略部分的窄移植，跨请求合并和对比仍属22。用户授权在26未关闭前独立实施；按两个kernel分支原接口接入，合并由同事执行。旧独立构建已清理，26/27仍open。
+
 ## 0 依据、目标与边界
 
 **依据**

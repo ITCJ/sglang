@@ -7,6 +7,9 @@ from sglang.srt.constants import GPU_MEMORY_TYPE_KV_CACHE
 from sglang.srt.environ import envs
 from sglang.srt.hardware_backend.npu.sparsity_driven_kv_offload.config import (
     SparseKVOffloadMode,
+    get_sparsity_driven_kv_offload_device_cache_capacity,
+    get_sparsity_driven_kv_offload_fixed_memory_size,
+    get_sparsity_driven_kv_offload_sparse_context_len,
     resolve_sparse_kv_offload_mode,
 )
 from sglang.srt.mem_cache.memory_pool import (
@@ -22,11 +25,61 @@ from sglang.srt.utils.common import is_npu
 
 if TYPE_CHECKING:
     from sglang.srt.layers.radix_attention import RadixAttention
+    from sglang.srt.mem_cache.kv_cache_configurator import KVCacheConfigurator
+    from sglang.srt.model_executor.pool_configurator import (
+        MemoryPoolConfig,
+        MemoryPoolConfigurator,
+    )
 
 if is_npu():
     import torch_npu
 
 logger = logging.getLogger(__name__)
+
+
+def adjust_sparse_kv_config(
+    kvc: "KVCacheConfigurator",
+    configurator: "MemoryPoolConfigurator",
+    config: "MemoryPoolConfig",
+    budget_bytes: int,
+) -> "MemoryPoolConfig":
+    """Charge fixed sparse HBM before sizing the token-scaled Index K pool."""
+    from sglang.srt.mem_cache.allocation_sizing import (
+        get_req_to_token_extra_context_len,
+    )
+    from sglang.srt.runtime_context import get_disagg, get_schedule
+
+    mode = kvc.sparse_kv_offload_mode
+    if mode is None or not mode.uses_sparse_kv_cache:
+        return config
+    schedule, disagg = get_schedule(), get_disagg()
+    request_rows = schedule.max_running_requests // kvc.ps.attn_dp_size + 1
+    if disagg.disaggregation_mode == "decode":
+        request_rows += disagg.disaggregation_decode_extra_slots
+    topk = get_sparsity_driven_kv_offload_sparse_context_len(
+        model_config=kvc.model_config
+    )
+    enable_lru = envs.SGLANG_NPU_SPARSE_KV_ENABLE_LRU.get()
+    fixed_bytes = get_sparsity_driven_kv_offload_fixed_memory_size(
+        mode=mode,
+        request_rows=request_rows,
+        max_context_len=kvc.model_config.context_len
+        + get_req_to_token_extra_context_len(),
+        sparse_context_len=topk,
+        device_cache_capacity=get_sparsity_driven_kv_offload_device_cache_capacity(
+            sparse_context_len=topk, enable_lru=enable_lru
+        ),
+        enable_lru=enable_lru,
+        kv_head_dim=kvc.model_config.kv_lora_rank + kvc.model_config.qk_rope_head_dim,
+        num_layers=kvc.layer_info.num_effective_layers,
+        element_size=torch._utils._element_size(kvc.kv_cache_dtype),
+        page_size=schedule.page_size,
+    )
+    # Recalculate from the original budget: charge upstream scratch once and
+    # reapply page alignment after the fixed sparse allocation.
+    return configurator.calculate_pool_sizes(
+        budget_bytes - fixed_bytes, schedule.page_size
+    )
 
 
 def _mla_fia_nz_scatter_indices(

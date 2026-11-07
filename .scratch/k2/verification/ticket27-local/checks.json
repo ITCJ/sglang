@@ -1,0 +1,125 @@
+{
+  "base": "659b949ecec88e7d25d5c8a4fd7517fddb8ee32a",
+  "npu": "not run; user acceptance pending",
+  "new_tests_passed": 6,
+  "full_collection": {
+    "tests": 649,
+    "initial_failures": 8,
+    "initial_errors": 35
+  },
+  "targeted_retry": {
+    "tests": 25,
+    "passed": 25,
+    "reason": "24 sandbox process/socket cases and 1 repaired new test loader"
+  },
+  "additional_host_lru_test": {
+    "tests": 1,
+    "passed": 1
+  },
+  "aggregate": {
+    "distinct_tests": 650,
+    "passed": 643,
+    "baseline_failing_methods": 7
+  },
+  "baseline_reproduction": {
+    "tests": 7,
+    "failures": 8,
+    "errors": 6,
+    "source": "read-only git archive of base"
+  },
+  "remaining": [
+    {
+      "test": "test_mempool_min_entry.TestPreflightIdentity.test_matching_identities_keep_preflight_enabled",
+      "category": "baseline-candidate",
+      "detail": "AttributeError: <module 'run_mempool_min' from '/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/scripts/run_mempool_min.py'> does not have the attribute 'available_port'"
+    },
+    {
+      "test": "test_mempool_min_entry.TestPreflightIdentity.test_mismatch_keeps_both_identities_and_names_the_differing_field",
+      "category": "baseline-candidate",
+      "detail": "AttributeError: <module 'run_mempool_min' from '/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/scripts/run_mempool_min.py'> does not have the attribute 'available_port'"
+    },
+    {
+      "test": "test_mempool_min_entry.TestPreflightIdentity.test_mismatch_keeps_both_identities_and_names_the_differing_field",
+      "category": "baseline-candidate",
+      "detail": "AttributeError: <module 'run_mempool_min' from '/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/scripts/run_mempool_min.py'> does not have the attribute 'available_port'"
+    },
+    {
+      "test": "test_mempool_min_entry.TestPreflightIdentity.test_mismatch_keeps_both_identities_and_names_the_differing_field",
+      "category": "baseline-candidate",
+      "detail": "AttributeError: <module 'run_mempool_min' from '/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/scripts/run_mempool_min.py'> does not have the attribute 'available_port'"
+    },
+    {
+      "test": "test_mempool_min_entry.TestPreflightIdentity.test_peer_disconnect_still_preserves_local_identity",
+      "category": "baseline-candidate",
+      "detail": "AttributeError: <module 'run_mempool_min' from '/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/ascend-mempool-test/scripts/run_mempool_min.py'> does not have the attribute 'available_port'"
+    },
+    {
+      "test": "test_page_first_arena.TestPageFirstArena.test_both_phases_fit_eight_gib_and_access_above_uint32",
+      "category": "baseline-candidate",
+      "detail": "ImportError: cannot import name 'IndexedCopy' from 'ascend_mempool.multibase' (/Users/hibikid/Documents/sparsekv-ascend-sglang/sglang-mempool-min/python/sglang/srt/hardware_backend/npu/mempool/multibase.py). Did you mean: 'indexed_copy'?"
+    },
+    {
+      "test": "test_config.TestMempoolConfig.test_defaults_and_unsupported_model_storage",
+      "category": "baseline-candidate",
+      "detail": "AssertionError: ValueError not raised"
+    },
+    {
+      "test": "test_mempool_session_acceptance.TestSessionAcceptance.test_cleanup_checks_actual_session_ports_not_reserved_range",
+      "category": "baseline-candidate",
+      "detail": "10000"
+    },
+    {
+      "test": "test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints",
+      "category": "baseline-candidate",
+      "detail": "10000"
+    },
+    {
+      "test": "test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints",
+      "category": "baseline-candidate",
+      "detail": "10000"
+    },
+    {
+      "test": "test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints",
+      "category": "baseline-candidate",
+      "detail": "10000"
+    },
+    {
+      "test": "test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints",
+      "category": "baseline-candidate",
+      "detail": "10000"
+    },
+    {
+      "test": "test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints",
+      "category": "baseline-candidate",
+      "detail": "10000"
+    },
+    {
+      "test": "test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints",
+      "category": "baseline-candidate",
+      "detail": "FAILED (failures=8, errors=35)"
+    }
+  ],
+  "typecheck": {
+    "related_files": 8,
+    "result": "passed with external missing imports ignored",
+    "wider_mempool": "not clean: unavailable SDK/triton and existing type/platform errors"
+  },
+  "review": {
+    "Standards": "1 found, fixed, 0 unresolved",
+    "Spec": "same finding fixed; 0 unresolved"
+  },
+  "cleanup": {
+    "executable_old_build_references": 0,
+    "historical_scratch": "retained",
+    "docker_files": "not accessed"
+  },
+  "commands": {
+    "full": "PYTHONPATH=ascend-mempool-test/src /tmp/ticket18-venv/bin/python -m unittest discover -s ascend-mempool-test/tests/unit -v",
+    "typecheck": "mypy --config-file ascend-mempool-test/pyproject.toml --ignore-missing-imports [8 relevant files]",
+    "raw_local_logs": [
+      "/tmp/ticket27-cpu.log",
+      "/tmp/ticket27-retry.log",
+      "/tmp/ticket27-baseline.log"
+    ]
+  }
+}

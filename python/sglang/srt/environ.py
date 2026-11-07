@@ -961,6 +961,9 @@ class Envs:
     # Set to 0 to restore the separate SiTU + npu_dynamic_mx_quant path.
     SGLANG_NPU_MOE_SITU_MXFP8_FUSED = EnvBool(True)
     SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD = EnvBool(False)
+    SGLANG_NPU_SPARSE_KV_ENABLE_LRU = EnvBool(False)
+    SGLANG_NPU_SPARSE_KV_DEVICE_CACHE_FACTOR = EnvInt(2)
+    SGLANG_NPU_SPARSE_KV_PROBATION_AGE = EnvInt(4)
     SGLANG_NPU_ENABLE_MEMPOOL = EnvBool(False)
     # Local NUMA IDs, e.g. 0,2,4,6; assign contiguous, balanced TP-rank blocks.
     # Unset or invalid: warn for invalid values and use default BM allocation.

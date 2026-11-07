@@ -1492,7 +1492,7 @@ def initialize_for_model_runner(model_runner: Any) -> None:
         runtime.observation_page_size = config.page_size
         runtime.observation_config = router
         runtime.observation_hot_cache_tokens = (
-            sparse.sparse_context_len if sparse else 0
+            sparse.device_cache_capacity if sparse else 0
         )
         runtime.observation_producers = tuple(native_pool.indexer_layer_ids)
         if runtime._fetch is not None:
@@ -1513,9 +1513,11 @@ def initialize_for_model_runner(model_runner: Any) -> None:
         runtime.observer.emit(
             "run",
             page_size_tokens=config.page_size,
-            hot_cache_tokens=sparse.sparse_context_len if sparse else 0,
+            hot_cache_tokens=sparse.device_cache_capacity if sparse else 0,
             top_k=getattr(model_runner.model_config.hf_config, "index_topk", None),
-            replacement_policy="replace_selected",
+            replacement_policy="timestamp_lru_probation"
+            if sparse and sparse.enable_lru
+            else "replace_selected",
             reader_numa=manager.numa_node,
             sharing_group=list(session.region_members(manager.rank))
             if session

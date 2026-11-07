@@ -1,5 +1,16 @@
 # K2 当前记忆
 
+**2026-11-07 ticket27实现交付：LRU与安装库。**
+
+用户授权26未关闭前独立实施27；仅移植22的容量/策略子集。
+当前cryang/dev/mempool-min已接timestamp-LRU+probation、HBM固定预算和miss refill。
+默认关闭；factor1–4，默认2，top-k2048不变，复用请求重置全部元数据。
+保留26四来源物化；旧独立扩展和构建兜底已移除，安装库由同事合并后用户构建安装。
+新增6项CPU通过；650项执行汇总643通过，7个基线失败方法已在659b949ece复现。
+双轴评审最终0未解决；27/26仍open，等待用户执行NPU，22其他范围不变。
+见[27](issues/27-lru-cache-library-integration.md)与[运行说明](../../ascend-mempool-test/TICKET27.md)。
+
+
 **2026-11-06 ticket26本地交付：当前状态以本段为准。**
 
 13/14/18按用户约定范围已关闭。26统一多基址与四路物化已实现，fill/admit保持SDMA。

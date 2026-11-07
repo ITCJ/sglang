@@ -35,6 +35,8 @@ def allocate_cache(
         from .manager import SparseKVCacheManager
 
     cache = SparseKVCacheManager.__new__(SparseKVCacheManager)
+    cache.enable_lru = False
+    cache.device_cache_capacity = topk
     cache.mode = SparseKVOffloadMode.PD_DECODE_MEMPOOL
     cache.size, cache.max_context_len, cache.sparse_context_len = rows, context, topk
     cache.start_layer, cache.layer_num, cache.device = start_layer, layers, device

@@ -23,6 +23,9 @@ from ascend_sparse.config import SparseKVOffloadMode as Mode
 
 class TestSparseResources(unittest.TestCase):
     def setUp(self):
+        from test_lru_budget import load_env
+
+        self.enterContext(patch.dict(sys.modules, {"sglang.srt.environ": load_env()}))
         kernel = ModuleType("sgl_kernel_npu.sparsity_driven_kv_offload")
         kernel.create_shm_tensor = None
         kernel.slot_map_lookup = cpu_lookup
@@ -319,10 +322,9 @@ class TestSparseResources(unittest.TestCase):
 
         # Use the same method loader as the existing native-release tests. Only
         # the parent transport and device imports are substituted on this host.
-        environ = ModuleType("sglang.srt.environ")
-        environ.envs = SimpleNamespace(
-            SGLANG_NPU_ENABLE_MEMPOOL=SimpleNamespace(get=lambda: False)
-        )
+        from test_lru_budget import load_env
+
+        environ = load_env()
         self.enterContext(patch.dict(sys.modules, {environ.__name__: environ}))
         for mode in (
             Mode.PD_DECODE_MEMPOOL,

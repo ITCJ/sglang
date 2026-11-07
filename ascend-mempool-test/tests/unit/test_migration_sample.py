@@ -60,7 +60,7 @@ class TestMigrationSample(unittest.TestCase):
                 patch.object(diagnostic, "service_ports", return_value=set()),
                 patch.object(diagnostic, "request_json", side_effect=http),
             ):
-                diagnostic.startup(runner, None)
+                diagnostic.startup(runner)
             self.assertEqual([u.rsplit("/", 1)[-1] for u in calls], ["generate"])
             jobs.__exit__.assert_called_once()
             self.assertEqual(runner.report["status"], "performance_measured")
