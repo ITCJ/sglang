@@ -111,3 +111,11 @@ Mac实际验证：新增6个测试全部通过。一次完整CPU集合649项，�
 /code-review两轴：Standards发现1项组件可能导入旧checkout，已修复并静态复核，最终0未解决；Spec同一项已复核修复，最终0未解决。组件进程固定当前repo/python并报告源HEAD。
 
 [用户运行说明与源码阅读清单](../../../ascend-mempool-test/TICKET27.md)提供每台一条命令：安装库预检、B1 eager/B16 Graph组件、LRU off/on完整输出token对照，复用现有Processes/端口清理，日志在/home/cryang/log/k2/。--components-only明确为smoke。未访问NPU、未安装或合并kernel，实际最终库commit由运行参数记录，ABI/hash来自安装包；用户NPU验收仍全部待办。27/26保持open，22其余范围未完成。
+
+### 2026-11-07：001 NPU组件失败与捕获stream修复
+
+31回传verify_lru_cache在torch.npu.graph.__enter__报“must be captured on a non-default stream”。此前B1 eager步骤已走完；B16尚未开始capture，双机服务对照未运行。末尾internal-format warning不是此次异常。
+
+仅修改组件入口：独立capture stream先等待输入准备stream，step接收capture stream，捕获后caller等待该stream。生产manager/kernel不变。新增公开capture helper回归两轮red/green复现同一错误并通过，单文件mypy和diff检查通过。实际NPU修复效果待用户复测，27仍open。
+
+下一轮先单独运行verify_lru_cache.py，报告使用ticket27-002，保留001日志；不重启模型、不自动重跑完整服务。

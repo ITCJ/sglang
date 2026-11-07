@@ -84,6 +84,18 @@ class SelectedSources:
         )
 
 
+def capture_step(torch: Any, step: Any) -> Any:
+    """Capture on a side stream, ordered after input preparation."""
+    current = torch.npu.current_stream()
+    stream = torch.npu.Stream()
+    stream.wait_stream(current)
+    graph = torch.npu.NPUGraph()
+    with torch.npu.graph(graph, stream=stream, auto_dispatch_capture=True):
+        step(stream)
+    current.wait_stream(stream)
+    return graph
+
+
 def verify(device_id: int) -> list[dict[str, Any]]:
     import torch
 
@@ -151,7 +163,7 @@ def verify(device_id: int) -> list[dict[str, Any]]:
                 [0, 4096, 8191, 7000, -2, 8192], dtype=torch.int32, device=device
             )
 
-        def step() -> None:
+        def step(stream: Any = stream) -> None:
             output.fill_(-9)
             cache.materialize_selected_kv(
                 SimpleNamespace(layer_id=0),
@@ -176,9 +188,7 @@ def verify(device_id: int) -> list[dict[str, Any]]:
         if graph_mode:
             seed()
             torch.npu.synchronize()
-            graph = torch.npu.NPUGraph()
-            with torch.npu.graph(graph, stream=stream, auto_dispatch_capture=True):
-                step()
+            graph = capture_step(torch, step)
         seed()
         torch.npu.synchronize()
         graph.replay() if graph is not None else step()
