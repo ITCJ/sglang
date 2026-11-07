@@ -148,6 +148,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="run only target using a successful --reference-only report",
     )
+    resume.add_argument(
+        "--capacity-only",
+        action="store_true",
+        help="run only capacity rejection and paired cleanup, then stop",
+    )
     parser.add_argument(
         "--service-timeout",
         type=float,
@@ -161,6 +166,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         or args.resume_after_reference
         or args.stop_after_target
         or args.reference_only
+        or args.capacity_only
         or args.reference_service_report
     ) and args.mode != "full-acceptance":
         parser.error("service resume/stop requires full-acceptance")
@@ -528,6 +534,7 @@ class Runner:
             and not getattr(self.args, "resume_after_target", None)
             and not getattr(self.args, "resume_after_reference", None)
             and not getattr(self.args, "reference_service_report", None)
+            and not getattr(self.args, "capacity_only", False)
         ):
             ports |= service_ports(self.config, self.args.role, target=False)
         if self.is_p:
@@ -1454,6 +1461,23 @@ class Runner:
         self.report.update(status="passed", acceptance=acceptance, user_accepted=False)
 
     def run_full(self) -> None:
+        if getattr(self.args, "capacity_only", False):
+            self.report.update(
+                coverage="capacity rejection and paired cleanup only",
+                components="not-run",
+                full_acceptance="incomplete",
+            )
+            self.prepare_full_cases()
+            self.capacity_stage()
+            self.report.update(
+                status="passed_execution_scope", stopped_after="capacity"
+            )
+            write_json(self.root / "summary.json", self.report)
+            print(
+                "CAPACITY_PASSED; stopped for user cleanup confirmation; timeout not run",
+                flush=True,
+            )
+            return
         reference_service = getattr(self.args, "reference_service_report", None)
         if getattr(self.args, "reference_only", False) or reference_service:
             self.report.update(
@@ -1859,6 +1883,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             and report.get("status") != "passed_execution_scope"
             and not args.reference_only
             and not args.reference_service_report
+            and not args.capacity_only
         ):
             if "acceptance" not in report:
                 report["acceptance"] = verify_mempool_full.summarize(

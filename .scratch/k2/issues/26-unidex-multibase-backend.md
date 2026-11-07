@@ -209,3 +209,14 @@ Standards/Spec各0未解决。用户人工确认清理后执行[010命令](../ti
 新增仅reference-service-report适用的--service-timeout，记录600→1800，旧reference输出不改，其他身份严格核对。
 六例共享prefix状态且最终联合校验，017需重建target目录并执行整组；组件/reference不重跑，进程清理由用户确认。
 仅脚本/测试改动，Mac一轮11项、ruff通过，Standards/Spec各0未解决。见[017说明](../ticket26-target-timeout-retry.md)。
+
+
+### 017 target通过，018独立容量拒绝检查
+
+用户回传31/32 TARGET_PASSED，32 summary停止于target且成对清理passed。
+这支持017服务验收完成；完整验收仍incomplete，缓存淘汰专项需离线读取现有JSONL。
+新增--capacity-only，只执行既有capacity_stage与成对清理后停止；不重跑reference/target，不自动启动timeout。
+Ascend/NPU及通用主线功能源码均无改动；仅run_mempool_min.py入口与test_service_resume.py检查。
+新增单段入口CPU检查通过；现有成对容量拒绝检查首次受沙箱ps限制，获准沙箱外重试通过。首次选择旧测试类名有误，未执行测试体。
+ruff通过，Standards/Spec各0未解决；硬件018待运行，26仍open、25未解锁。
+见[018命令及证据边界](../ticket26-capacity-only.md)。

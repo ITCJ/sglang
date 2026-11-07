@@ -273,3 +273,14 @@ reference临时端口配置关闭共享时遗漏读者分配字段，导致by_se
 新增显式--service-timeout 1800，只改变本次有效超时并记录reference差异，原精度对照及其它身份门禁保留。
 功能源码无改动；两份脚本及一份测试，一轮11项CPU通过。017只重试target有状态六例，不重跑reference/组件。
 [证据边界、源码说明与双侧命令](ticket26-target-timeout-retry.md)。
+
+
+## 017 target通过，018独立容量拒绝检查
+
+用户回传31/32 TARGET_PASSED，32 summary停止于target且成对清理passed。
+这支持017服务验收完成；完整验收仍incomplete，缓存淘汰专项需离线读取现有JSONL。
+新增--capacity-only，只执行既有capacity_stage与成对清理后停止；不重跑reference/target，不自动启动timeout。
+Ascend/NPU及通用主线功能源码均无改动；仅run_mempool_min.py入口与test_service_resume.py检查。
+新增单段入口CPU检查通过；现有成对容量拒绝检查首次受沙箱ps限制，获准沙箱外重试通过。首次选择旧测试类名有误，未执行测试体。
+ruff通过，Standards/Spec各0未解决；硬件018待运行，26仍open、25未解锁。
+见[018命令及证据边界](ticket26-capacity-only.md)。

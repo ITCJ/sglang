@@ -268,6 +268,62 @@ class TestServiceResume(unittest.TestCase):
             ):
                 run_mempool_min.parse_args([*argv, *extra])
 
+    def test_capacity_only_public_entry_stops_on_each_side(self):
+        import contextlib
+        import io
+
+        for role in ("prefill", "decode"):
+            args = run_mempool_min.parse_args(
+                [
+                    "--role",
+                    role,
+                    "--mode",
+                    "full-acceptance",
+                    "--config",
+                    "config.json",
+                    "--run-id",
+                    "capacity",
+                    "--capacity-only",
+                ]
+            )
+            runner = run_mempool_min.Runner(
+                args, RouterConfig("p", "d", "/model"), Mock(), self.current
+            )
+            with (
+                patch.object(runner, "prepare_full_cases") as fixtures,
+                patch.object(runner, "components") as components,
+                patch.object(runner, "stage") as stage,
+                patch.object(runner, "capacity_stage") as capacity,
+            ):
+                runner.run_full()
+                fixtures.assert_called_once_with()
+                capacity.assert_called_once_with()
+                components.assert_not_called()
+                stage.assert_not_called()
+                self.assertEqual(runner.report["status"], "passed_execution_scope")
+                self.assertEqual(runner.report["stopped_after"], "capacity")
+                self.assertEqual(runner.report["full_acceptance"], "incomplete")
+                capacity.side_effect = ValueError("wrong rejection")
+                runner.report["status"] = "running"
+                with self.assertRaisesRegex(ValueError, "wrong rejection"):
+                    runner.run_full()
+                self.assertNotEqual(runner.report["status"], "passed_execution_scope")
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            run_mempool_min.parse_args(
+                [
+                    "--role",
+                    "prefill",
+                    "--mode",
+                    "full-acceptance",
+                    "--config",
+                    "config.json",
+                    "--run-id",
+                    "capacity",
+                    "--capacity-only",
+                    "--reference-only",
+                ]
+            )
+
     def test_reference_only_runs_once_without_components_or_target(self):
         for role in ("prefill", "decode"):
             args = run_mempool_min.parse_args(

@@ -1,0 +1,27 @@
+{
+  "source": "user-pasted prefill/decode success markers, decode summary excerpt and target/process-cleanup.json",
+  "run_id": "k2-ticket26-017-target",
+  "delivered_commit": "6e23b192aa",
+  "identity_report_not_collected": true,
+  "prefill_marker": "TARGET_PASSED; stopped for user cleanup confirmation; capacity/timeout not run",
+  "decode_marker": "TARGET_PASSED; stopped for user cleanup confirmation; capacity/timeout not run",
+  "decode_summary": {
+    "status": "passed_execution_scope",
+    "stopped_after": "target",
+    "stages": [
+      "reference",
+      "target"
+    ],
+    "full_acceptance": "incomplete"
+  },
+  "decode_target_cleanup": {
+    "status": "passed",
+    "paired": true
+  },
+  "service_timeout": 1800,
+  "reference_run_id": "k2-ticket26-015-reference",
+  "cache_eviction_offline_check": "pending user result",
+  "remaining": "capacity, timeout and outstanding component/microbenchmark evidence; full acceptance incomplete",
+  "manual_cleanup_confirmation": "user confirms resources between stages",
+  "ticket_state": "open"
+}
