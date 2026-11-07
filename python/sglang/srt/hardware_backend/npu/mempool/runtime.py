@@ -6,9 +6,9 @@ import json
 import logging
 import os
 from collections import deque
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Sequence
 from contextlib import contextmanager, nullcontext
-from typing import Any, Protocol
+from typing import Any, Iterator, Optional, Protocol
 
 import msgspec
 import torch
@@ -59,7 +59,7 @@ class KVRowBinding(msgspec.Struct, frozen=True, eq=False):
     req_pool_idx: int
     slot: int
     prompt_tokens: int
-    prompt_slot: int | None = None
+    prompt_slot: Optional[int] = None
     write_start: int = 0
     page_versions: tuple[tuple[int, int, int], ...] = ()
 
@@ -110,12 +110,12 @@ class _Completion(msgspec.Struct):
     totals: tuple[int, ...]
     slot_totals: tuple[int, ...]
     replay: bool
-    fetch: Tensor | None
-    sources: Tensor | None = None
-    index_snapshot: Tensor | None = None
+    fetch: Optional[Tensor]
+    sources: Optional[Tensor] = None
+    index_snapshot: Optional[Tensor] = None
     retained: tuple[Tensor, ...] = ()
-    range_errors: Tensor | None = None
-    index_totals: tuple[int, ...] | None = None
+    range_errors: Optional[Tensor] = None
+    index_totals: Optional[tuple[int, ...]] = None
     observation: Any = None
 
 
@@ -142,18 +142,18 @@ class MempoolRuntime:
         device: str,
         mlapo_enabled: bool = False,
         block_dim: int = 48,
-        kernels: Sequence[Any] | None = None,
-        event_factory: Callable[[], WriteEvent] | None = None,
-        wait_event: Callable[[WriteEvent], None] | None = None,
+        kernels: Optional[Sequence[Any]] = None,
+        event_factory: Optional[Callable[[], WriteEvent]] = None,
+        wait_event: Optional[Callable[[WriteEvent], None]] = None,
         fetch_enabled: bool = False,
         fetch_kernel: Any = None,
         source_evidence: bool = False,
         index_pool: Any = None,
-        index_kernels: Sequence[Any] | None = None,
-        prefix_store: PrefixStore | None = None,
-        page_writer: PageWriter | None = None,
-        index_writer: PageWriter | None = None,
-        decode_writer: DecodeWriter | None = None,
+        index_kernels: Optional[Sequence[Any]] = None,
+        prefix_store: Optional[PrefixStore] = None,
+        page_writer: Optional[PageWriter] = None,
+        index_writer: Optional[PageWriter] = None,
+        decode_writer: Optional[DecodeWriter] = None,
     ) -> None:
         """Allocate stable bindings/counters after BM mappings are ready."""
         if mlapo_enabled:
@@ -162,7 +162,7 @@ class MempoolRuntime:
         positive_int("max_context_len", max_context_len)
         if type(start_layer) is not int or start_layer < 0:
             raise ValueError("start_layer must be a nonnegative integer")
-        self.config: MempoolConfig | None = None
+        self.config: Optional[MempoolConfig] = None
         self.observer: Any = None
         self.observation_device: Any = None
         self.observation_forward: dict[int, dict[str, Any]] = {}
@@ -240,7 +240,7 @@ class MempoolRuntime:
         )
         self._index_pool = index_pool
         self._index_writers: dict[int, MempoolKVOffload] = {}
-        self._index_counts: Tensor | None = None
+        self._index_counts: Optional[Tensor] = None
         index_layout = manager.layout.prompt_index if manager.rank == 0 else None
         if index_layout is not None:
             if index_pool is None or index_pool.index_k_scale_buffer is not None:
@@ -279,16 +279,16 @@ class MempoolRuntime:
             else:
                 wait_event = lambda event: None
         self._wait_event = wait_event
-        self.fault: str | None = None
-        self._prepared: tuple[KVWriteExpectation, ...] | None = None
+        self.fault: Optional[str] = None
+        self._prepared: Optional[tuple[KVWriteExpectation, ...]] = None
         self._bindings: dict[int, _Binding] = {}
         self._slot_totals = [0] * self.layout.slots
         self._index_slot_totals = [0] * self.layout.slots
         self._pending: deque[_Completion] = deque()
-        self._active: _Forward | None = None
+        self._active: Optional[_Forward] = None
         self._capture_validated = False
         self._logged_replay = False
-        self._binding_update: WriteEvent | None = None
+        self._binding_update: Optional[WriteEvent] = None
         self._record_binding_update()
 
     @property
@@ -319,7 +319,7 @@ class MempoolRuntime:
         *,
         slot: int,
         prompt_tokens: int,
-        prompt_slot: int | None = None,
+        prompt_slot: Optional[int] = None,
         start_position: int = 0,
     ) -> KVRowBinding:
         """Install an approved allocation and return its local attachment identity."""
@@ -412,7 +412,7 @@ class MempoolRuntime:
         self._record_binding_update()
         return receipt
 
-    def assert_bound(self, req_pool_idx: int, binding: KVRowBinding | None) -> None:
+    def assert_bound(self, req_pool_idx: int, binding: Optional[KVRowBinding]) -> None:
         """Check a real row against the attachment saved for its approved attempt.
 
         The service projects req.kv.req_pool_idx and filters existing fake
@@ -769,7 +769,7 @@ class MempoolRuntime:
         cache_rows: Tensor | None = None,
         cache_valid: Tensor | None = None,
     ) -> None:
-        """Fill only BM misses after selected_kv_valid and this layer's write.
+        """Fuse cache hits, current HBM and BM misses after the layer's write.
 
         Submit on the miss stream after copy_ready; publish miss_done only after
         this call. Attention/refill must wait for that event and the hit stream.
@@ -813,7 +813,7 @@ class MempoolRuntime:
                 current_mask.flatten(),
             ),
         )
-        copier = self._fetch.gather(
+        self._fetch.gather(
             layer,
             req_rows,
             positions,
@@ -830,9 +830,6 @@ class MempoolRuntime:
             from .observation_device import device_range
 
             with device_range(f"observer_io:{layer_id}"):
-                self.observation_device.materialized(
-                    layer_id, safe, copier.source_regions, copier.transfer.valid
-                )
                 self.observation_device.io(
                     layer_id, req_rows, positions, misses, self.row_prompt_len
                 )
@@ -854,7 +851,9 @@ class MempoolRuntime:
             self._fetch_sources[layer].index_add_(0, safe_rows, counts)
         active.fetch_layers.add(layer)
 
-    def completion_report(self, binding: KVRowBinding | None) -> dict[str, Any] | None:
+    def completion_report(
+        self, binding: Optional[KVRowBinding]
+    ) -> Optional[dict[str, Any]]:
         """Report validated decode completion before detaching its binding."""
         if not self.fetch_enabled:
             return None
@@ -946,11 +945,6 @@ class MempoolRuntime:
             observation = dict(
                 rows={row: dict(self.observation_forward[row]) for row in rows},
                 pages=self.observation_device.snapshot(
-                    torch.tensor(rows, dtype=torch.int64, device=self.row_slot.device)
-                )
-                if self.observation_device is not None
-                else None,
-                materialization=self.observation_device.materialization_snapshot(
                     torch.tensor(rows, dtype=torch.int64, device=self.row_slot.device)
                 )
                 if self.observation_device is not None
@@ -1057,16 +1051,6 @@ class MempoolRuntime:
             snapshot["source_rows"].cpu().tolist()
             if snapshot.get("source_rows") is not None
             else None
-        )
-        materialization = snapshot.get("materialization")
-        cache_validation = (
-            materialization[2].cpu().tolist() if materialization is not None else None
-        )
-        material_rows = (
-            materialization[0].cpu().tolist() if materialization is not None else None
-        )
-        cache_changes = (
-            materialization[1].cpu().tolist() if materialization is not None else None
         )
         for row_index, (row, identity) in enumerate(snapshot["rows"].items()):
             owned_rows = (
@@ -1193,48 +1177,6 @@ class MempoolRuntime:
                             has_hit=bool(hit),
                             sources=source,
                         )
-                    )
-                if (
-                    material_rows is not None
-                    and cache_changes is not None
-                    and cache_validation is not None
-                ):
-                    names = [
-                        "P_alive",
-                        "D_alive",
-                        *[f"prefix_{i}" for i in range(8)],
-                        "HBM_cache",
-                        "HBM_current",
-                    ]
-                    source_payload = dict(zip(names, material_rows[layer][row_index]))
-                    evicted, refilled, mapped = cache_changes[layer][row_index]
-                    self.observer.emit(
-                        "materialization",
-                        **identity,
-                        layer_id=layer_id,
-                        source_rows=source_payload,
-                        source_bytes={
-                            k: v * self.layout.row_bytes
-                            for k, v in source_payload.items()
-                        },
-                        current_dram_rows=0,
-                        refill_dram_bytes=0,
-                        refill_hbm_bytes=refilled * self.layout.row_bytes,
-                        cache_refill_checked_rows=cache_validation[layer][row_index][0],
-                        cache_refill_errors=cache_validation[layer][row_index][1],
-                        slot_map_checked_rows=cache_validation[layer][row_index][2],
-                        slot_map_missing=cache_validation[layer][row_index][3],
-                        slot_map_stale=cache_validation[layer][row_index][4],
-                        evicted_entries=evicted,
-                        refilled_rows=refilled,
-                        slot_map_updates=mapped,
-                        copy_launches=dict(materialize=1, refill=1, slot_map=1),
-                        materialize_ns=None,
-                        miss_exposed_upper_ns=None,
-                        materialize_wait_ns=None,
-                        source_time_ns=None,
-                        source_time_reason="fused",
-                        timing_reason="device trace required; no host submit timing",
                     )
                 self.observer.emit(
                     "layer_pages",
@@ -1555,7 +1497,6 @@ def initialize_for_model_runner(model_runner: Any) -> None:
         runtime.observation_producers = tuple(native_pool.indexer_layer_ids)
         if runtime._fetch is not None:
             runtime._fetch.observe = router.observe_trace
-            runtime._fetch.count_sources = router.observe
             runtime._fetch.start_layer = runtime.start_layer
         if sparse is not None and runtime.fetch_enabled:
             runtime.observation_device = PageObservation(

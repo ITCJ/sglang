@@ -10,13 +10,13 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
 from .bandwidth import PRODUCERS, BenchmarkConfig, Case, write_pages
+from .multibase_fixture import BenchmarkCopy
 
 if TYPE_CHECKING:
     from sglang.srt.hardware_backend.npu.mempool.layout import KVLayout, PoolLayout
     from sglang.srt.hardware_backend.npu.mempool.manager import (
         MempoolKVView,
     )
-    from sglang.srt.hardware_backend.npu.mempool.multibase import IndexedCopy
     from sglang.srt.hardware_backend.npu.mempool.sharing_plan import (
         HostTopology,
         MempoolNumaConfig,
@@ -24,7 +24,6 @@ if TYPE_CHECKING:
 else:
     from .layout import KVLayout, PoolLayout
     from .manager import MempoolKVView
-    from .multibase import IndexedCopy
     from .sharing_plan import HostTopology, MempoolNumaConfig
 
 
@@ -87,7 +86,7 @@ class Device:
         self.side, self.rank, self.device_id = side, rank, device_id
         self.handle = pool._handle
         self.placeholder = torch.empty(1, dtype=torch.bfloat16)
-        self.kernel = IndexedCopy()
+        self.kernel = BenchmarkCopy()
 
     def view(
         self, side: int, segment: int, layer: int = 0, region: str = "alive_main"

@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Optional, Union
 
 import torch
 from sgl_kernel_npu.sparsity_driven_kv_offload import (
     create_shm_tensor,
     slot_map_lookup,
+    unidex_copy_inplace,
 )
 from sglang.srt.hardware_backend.npu.kv_rows import derive_kv_rows
-from sglang.srt.hardware_backend.npu.mempool.multibase import TensorCopy
 
 from .config import SparseKVOffloadMode
 
@@ -41,13 +41,6 @@ def _wait_stream_event(stream, event) -> None:
         event.wait(stream)
 
 
-def _record_materialize_stream(stream, *tensors) -> None:
-    """Keep temporary input storage alive through its side-stream consumers."""
-    for tensor in tensors:
-        if tensor.device.type == "npu":
-            tensor.record_stream(stream)
-
-
 def normalize_batch_topk_indices(topk_indices: torch.Tensor) -> torch.Tensor:
     """Normalize DSA top-k indices to [batch, topk] for compact KV copies."""
     if topk_indices.dim() == 2:
@@ -70,7 +63,7 @@ def normalize_batch_topk_indices(topk_indices: torch.Tensor) -> torch.Tensor:
 class SparseKVCacheManager:
     copy_stream = None
     miss_shm_cpu_tensor: list = []
-    miss_shm_dev_ptr: int | None = None
+    miss_shm_dev_ptr: Optional[int] = None
     miss_shm_shape: list = []
     miss_shm_dtype: list = []
 
@@ -91,8 +84,6 @@ class SparseKVCacheManager:
         if not mode.uses_sparse_kv_cache:
             raise ValueError("SparseKVCacheManager requires a sparse HBM cache mode")
         self.mode = mode
-        self.tensor_copy = TensorCopy()
-        self.selected_buffers = {}
         enable_memory_saver = False
         memory_saver_adapter = TorchMemorySaverAdapter.create(
             enable=enable_memory_saver
@@ -193,7 +184,7 @@ class SparseKVCacheManager:
         self.host_ptr_list: list[int] = []
         self.dev_ptr_list: list[int] = []
 
-        self.host_kv_ctx_len: torch.Tensor | None = None
+        self.host_kv_ctx_len: Optional[torch.Tensor] = None
         if mode.uses_host_kv_offload:
             host_kv_shape = (
                 self.size,
@@ -229,8 +220,8 @@ class SparseKVCacheManager:
             self.sparse_context_len, dtype=torch.long, device=self.device
         )
         self._slot_map_width = (self.max_context_len // 8 + 1) * 8
-        self.pd_decode_k_staging: list[torch.Tensor] | None = None
-        self.pd_decode_v_staging: list[torch.Tensor] | None = None
+        self.pd_decode_k_staging: Optional[list[torch.Tensor]] = None
+        self.pd_decode_v_staging: Optional[list[torch.Tensor]] = None
         self._pd_decode_staging_token_capacity = self.max_context_len
         self._pd_decode_copy_stream = (
             torch.npu.Stream() if mode.uses_pd_decode_staging else None
@@ -252,17 +243,6 @@ class SparseKVCacheManager:
             raise RuntimeError(
                 f"Sparse PD decode staging is disabled in mode={self.mode.value}"
             )
-
-    def selected_buffer(self, layer_id, shape, dtype, device):
-        """Keep each graph shape's materialization storage alive before capture."""
-        if self.mode is not SparseKVOffloadMode.PD_DECODE_MEMPOOL:
-            return torch.zeros(shape, dtype=dtype, device=device)
-        # Attention joins refill/map before returning; sequential layers can
-        # reuse one selected arena for each captured batch shape.
-        key = tuple(shape)
-        if key not in self.selected_buffers:
-            self.selected_buffers[key] = torch.empty(shape, dtype=dtype, device=device)
-        return self.selected_buffers[key].zero_()
 
     def _raise_buffer_allocation_error(
         self,
@@ -325,7 +305,7 @@ class SparseKVCacheManager:
     def ensure_pd_decode_staging_buffers(
         self,
         slot_count: int = 1,
-        page_size: int | None = None,
+        page_size: Optional[int] = None,
     ) -> None:
         self._require_pd_decode_staging()
         slot_count = int(slot_count)
@@ -381,7 +361,7 @@ class SparseKVCacheManager:
 
     def get_pd_decode_transfer_buf_infos(
         self,
-        page_size: int | None = None,
+        page_size: Optional[int] = None,
     ) -> tuple[list[int], list[int], list[int]]:
         self._require_pd_decode_staging()
         if self.pd_decode_k_staging is None or self.pd_decode_v_staging is None:
@@ -408,7 +388,7 @@ class SparseKVCacheManager:
         self._require_pd_decode_staging()
         return int(self._pd_decode_staging_token_capacity)
 
-    def get_pd_decode_pages_per_slot(self, page_size: int | None = None) -> int:
+    def get_pd_decode_pages_per_slot(self, page_size: Optional[int] = None) -> int:
         transfer_page_size = int(page_size or self.paged_kv_cache.page_size)
         if transfer_page_size <= 0:
             raise ValueError(
@@ -426,7 +406,7 @@ class SparseKVCacheManager:
             return
         room = int(bootstrap_room)
         pool_idx = int(req_pool_idx)
-        input_len = len(req.origin_input_ids)
+        input_len = int(len(req.origin_input_ids))
         old_room = self._pd_req_pool_idx_to_room.get(pool_idx)
         if old_room is not None and old_room != room:
             self.clear_pd_request_metadata(bootstrap_room=old_room)
@@ -436,8 +416,8 @@ class SparseKVCacheManager:
 
     def clear_pd_request_metadata(
         self,
-        bootstrap_room: int | None = None,
-        req_pool_idx: int | None = None,
+        bootstrap_room: Optional[int] = None,
+        req_pool_idx: Optional[int] = None,
     ) -> None:
         if bootstrap_room is None and req_pool_idx is not None:
             bootstrap_room = self._pd_req_pool_idx_to_room.pop(int(req_pool_idx), None)
@@ -480,7 +460,7 @@ class SparseKVCacheManager:
         slot_id: int,
         req_pool_idx: int,
         token_count: int,
-        stream: torch.npu.Stream | None = None,
+        stream: Optional[torch.npu.Stream] = None,
     ) -> None:
         self._require_pd_decode_staging()
         if self.pd_decode_k_staging is None or self.pd_decode_v_staging is None:
@@ -538,7 +518,7 @@ class SparseKVCacheManager:
             self.host_kv_ctx_len[rid] = len(req.origin_input_ids)
         self.reset_requests([rid])
 
-    def reset_requests(self, req_ids: list[int]) -> None:
+    def reset_requests(self, req_ids: List[int]) -> None:
         if not req_ids:
             return
 
@@ -552,17 +532,17 @@ class SparseKVCacheManager:
         original_alloc = getattr(
             req_to_token_pool, "_sparse_kv_original_alloc", req_to_token_pool.alloc
         )
-        req_to_token_pool._sparse_kv_original_alloc = original_alloc
+        setattr(req_to_token_pool, "_sparse_kv_original_alloc", original_alloc)
         original_free = getattr(
             req_to_token_pool, "_sparse_kv_original_free", req_to_token_pool.free
         )
-        req_to_token_pool._sparse_kv_original_free = original_free
+        setattr(req_to_token_pool, "_sparse_kv_original_free", original_free)
         original_clear = getattr(
             req_to_token_pool, "_sparse_kv_original_clear", req_to_token_pool.clear
         )
-        req_to_token_pool._sparse_kv_original_clear = original_clear
+        setattr(req_to_token_pool, "_sparse_kv_original_clear", original_clear)
 
-        def alloc_with_sparse_reset(reqs: list[Req]) -> list[int] | None:
+        def alloc_with_sparse_reset(reqs: list[Req]) -> Optional[List[int]]:
             newly_allocated = [req.kv.req_pool_idx is None for req in reqs]
             req_pool_indices = original_alloc(reqs)
             if req_pool_indices is not None:
@@ -589,9 +569,9 @@ class SparseKVCacheManager:
                 self.host_kv_ctx_len.zero_()
             return original_clear()
 
-        req_to_token_pool.alloc = alloc_with_sparse_reset
-        req_to_token_pool.free = free_with_sparse_clear
-        req_to_token_pool.clear = clear_with_sparse_clear
+        setattr(req_to_token_pool, "alloc", alloc_with_sparse_reset)
+        setattr(req_to_token_pool, "free", free_with_sparse_clear)
+        setattr(req_to_token_pool, "clear", clear_with_sparse_clear)
 
     def offload(
         self,
@@ -694,7 +674,7 @@ class SparseKVCacheManager:
         # torch.npu.synchronize()
         actual_stream = stream if stream is not None else torch.npu.current_stream()
         with torch.npu.stream(actual_stream):
-            self.tensor_copy(
+            unidex_copy_inplace(
                 kv_device,
                 self.host_kv_buffer[layer_idx],
                 src_token_indices,
@@ -702,7 +682,6 @@ class SparseKVCacheManager:
                 valid_mask,
                 1,  # kv_device: [token_slot, nhead, 2*dim]
                 2,  # host_kv_buffer: [num_req, max_context_len, nhead, 2*dim]
-                copy_key=("offload_v1", layer_idx),
                 block_dim=48,
                 dst_ptr=self.dev_ptr_list[layer_idx],
             )
@@ -766,7 +745,7 @@ class SparseKVCacheManager:
 
         actual_stream = stream if stream is not None else torch.npu.current_stream()
         with torch.npu.stream(actual_stream):
-            self.tensor_copy(
+            unidex_copy_inplace(
                 src_tensor,
                 dst_tensor,
                 src_index,
@@ -774,16 +753,15 @@ class SparseKVCacheManager:
                 valid_mask,
                 1,  # src_tensor: [num_new_tokens, nhead, head_dim]
                 2,  # dst_tensor: [num_req, max_context_len, nhead, head_dim]
-                copy_key=("offload_v2", layer_idx),
                 block_dim=48,
                 dst_ptr=self.dev_ptr_list[layer_idx],
             )
 
     def get_forward_kv(
         self,
-        layer: RadixAttention | int,
+        layer: Union[RadixAttention, int],
         forward_batch: ForwardBatch,
-        stream: torch.npu.Stream | None = None,
+        stream: Optional[torch.npu.Stream] = None,
     ):
         """Gather full request KV from sparse storage as compact TND tensors.
 
@@ -878,7 +856,7 @@ class SparseKVCacheManager:
 
         actual_stream = stream if stream is not None else torch.npu.current_stream()
         with torch.npu.stream(actual_stream):
-            self.tensor_copy(
+            unidex_copy_inplace(
                 self.host_kv_buffer[layer_idx],
                 kv_cat,
                 src_index,
@@ -886,7 +864,6 @@ class SparseKVCacheManager:
                 valid_mask,
                 2,  # host_kv_buffer: [num_req, max_context_len, nhead, head_dim]
                 1,  # kv_cat: [total_tokens, nhead, head_dim]
-                copy_key=("forward", layer_idx),
                 block_dim=48,
                 src_ptr=self.dev_ptr_list[layer_idx],
             )
@@ -902,7 +879,7 @@ class SparseKVCacheManager:
         selected_kv_buffer: torch.Tensor,
         stream: torch.npu.Stream,
         *,
-        mempool_runtime: MempoolRuntime | None = None,
+        mempool_runtime: Optional[MempoolRuntime] = None,
     ) -> torch.Tensor:
         """Materialize top-k KV entries and refresh the device cache metadata."""
         if (mempool_runtime is not None) != (
@@ -990,18 +967,6 @@ class SparseKVCacheManager:
                     valid_topk_mask,
                     token_on_device,
                 )
-                mempool_runtime.observation_device.cache_updates(
-                    layer.layer_id,
-                    device_cache_row_indices,
-                    (
-                        self.device_slot_map[layer_idx][
-                            slot_map_row_indices, : self.max_context_len
-                        ]
-                        >= 0
-                    ).sum(1),
-                    token_on_device,
-                    valid_topk_mask,
-                )
                 torch.npu.mstx.range_end(sample_range)
                 cache_range = torch.npu.mstx.range_start(
                     f"mempool:cache_manage:{layer.layer_id}", stream
@@ -1041,14 +1006,6 @@ class SparseKVCacheManager:
             )
             refill_valid_mask = valid_topk_mask.reshape(-1).contiguous()
 
-            if observe and mempool_runtime.observation_trace is not None:
-                ready_range = torch.npu.mstx.range_start(
-                    f"mempool:materialize_ready:{layer.layer_id}", stream
-                )
-                # Reuse the actual selection metadata to mark the device ready
-                # boundary only in observation mode. No host timing/sync.
-                refill_valid_mask.copy_(refill_valid_mask.clone())
-                torch.npu.mstx.range_end(ready_range)
             copy_ready = torch.npu.Event()
             if observe:
                 torch.npu.mstx.range_end(cache_range)
@@ -1063,34 +1020,38 @@ class SparseKVCacheManager:
                     self._materialize_d2d_hit_stream,
                 )
             if mempool_runtime is None:
-                self.tensor_copy(
+                unidex_copy_inplace(
                     self.device_kv_buffer[layer_idx],
                     selected_kv_buffer,
                     hit_src_index,
                     hit_dst_index,
                     hit_valid_mask,
                     2,
-                    2,
-                    copy_key=("hit", layer_idx),
+                    2,  #
                     block_dim=24,
                 )
             if observe:
                 torch.npu.mstx.range_end(hit_range)
             _record_stream_event(self._materialize_d2d_hit_stream, self.hit_done)
 
-        # The mempool launch materializes cache/current HBM and all DRAM sources.
-        # The existing miss_done still orders refill and attention.
+        # One mempool launch now includes the cache/current HBM sources.
+        # Keep miss_done as the existing attention/refill completion boundary.
         with torch.npu.stream(self._materialize_h2d_miss_stream):
             _wait_stream_event(self._materialize_h2d_miss_stream, copy_ready)
             if mempool_runtime is not None:
-                _record_materialize_stream(
-                    self._materialize_h2d_miss_stream,
+                # The fused consumer also reads hit metadata on the miss stream.
+                # Its event orders execution; record_stream protects allocation.
+                for tensor in (
                     device_cache_row_indices,
                     topk_indices,
                     miss_mask,
                     hit_src_index,
                     hit_valid_mask,
-                )
+                    self.device_kv_buffer[layer_idx],
+                    selected_kv_buffer,
+                ):
+                    if tensor.device.type == "npu":
+                        tensor.record_stream(self._materialize_h2d_miss_stream)
             if observe:
                 miss_range = torch.npu.mstx.range_start(
                     f"mempool:miss_io:{layer.layer_id}",
@@ -1108,7 +1069,7 @@ class SparseKVCacheManager:
                     cache_valid=hit_valid_mask,
                 )
             else:
-                self.tensor_copy(
+                unidex_copy_inplace(
                     self.host_kv_buffer[layer_idx],
                     selected_kv_buffer,
                     miss_src_index,
@@ -1116,7 +1077,6 @@ class SparseKVCacheManager:
                     miss_valid_mask,
                     2,
                     2,
-                    copy_key=("miss", layer_idx),
                     block_dim=24,
                     src_ptr=self.dev_ptr_list[layer_idx],
                 )
@@ -1129,20 +1089,12 @@ class SparseKVCacheManager:
         with torch.npu.stream(self._materialize_refill_stream):
             _wait_stream_event(self._materialize_refill_stream, self.hit_done)
             _wait_stream_event(self._materialize_refill_stream, self.miss_done)
-            if mempool_runtime is not None:
-                _record_materialize_stream(
-                    self._materialize_refill_stream,
-                    device_cache_row_indices,
-                    refill_src_index,
-                    refill_dst_index,
-                    refill_valid_mask,
-                )
             if observe:
                 refill_range = torch.npu.mstx.range_start(
                     f"mempool:cache_refill:{layer.layer_id}",
                     self._materialize_refill_stream,
                 )
-            self.tensor_copy(
+            unidex_copy_inplace(
                 selected_kv_buffer,
                 self.device_kv_buffer[layer_idx],
                 refill_src_index,
@@ -1150,40 +1102,16 @@ class SparseKVCacheManager:
                 refill_valid_mask,
                 2,
                 2,
-                copy_key=("refill", layer_idx),
                 block_dim=24,
             )
             if observe:
                 torch.npu.mstx.range_end(refill_range)
-            if observe:
-                mempool_runtime.observation_device.refill_verified(
-                    layer.layer_id,
-                    device_cache_row_indices,
-                    valid_topk_mask,
-                    self.device_kv_buffer[layer_idx][
-                        device_cache_row_indices, :topk_len
-                    ],
-                    selected_kv_buffer,
-                )
             _record_stream_event(self._materialize_refill_stream, self.refill_done)
 
         # Replace the slot-map row with the current top-k mapping. Invalid
         # entries use the max_context_len sentinel column to preserve shape.
         with torch.npu.stream(self._materialize_slot_map_stream):
             _wait_stream_event(self._materialize_slot_map_stream, copy_ready)
-            if mempool_runtime is not None:
-                # copy_ready orders production, but does not prevent allocator
-                # reuse after this function returns. Attention joins this stream
-                # later, after it has already allocated other main-stream tensors.
-                _record_materialize_stream(
-                    self._materialize_slot_map_stream,
-                    slot_map_row_indices,
-                    topk_indices,
-                    valid_topk_mask,
-                    device_cache_row_indices,
-                    slot_lookup_req_indices,
-                    slot_lookup_topk_indices,
-                )
             if observe:
                 map_range = torch.npu.mstx.range_start(
                     f"mempool:cache_map:{layer.layer_id}",
@@ -1205,7 +1133,7 @@ class SparseKVCacheManager:
                 slot_map_row_indices.unsqueeze(1) * self._slot_map_width
                 + slot_map_token_indices
             ).reshape(-1)
-            self.tensor_copy(
+            unidex_copy_inplace(
                 slot_map_slot_values.reshape(-1, 1).contiguous(),
                 self.device_slot_map[layer_idx].view(-1, 1),
                 torch.arange(
@@ -1217,36 +1145,15 @@ class SparseKVCacheManager:
                 valid_topk_mask.reshape(-1),
                 1,
                 1,
-                copy_key=("slot_map", layer_idx),
                 block_dim=48,
             )
             if observe:
                 torch.npu.mstx.range_end(map_range)
-            if observe:
-                found, actual_slots = slot_map_lookup(
-                    self.device_slot_map[layer_idx],
-                    slot_lookup_req_indices,
-                    slot_lookup_topk_indices,
-                )
-                mempool_runtime.observation_device.map_verified(
-                    layer.layer_id,
-                    device_cache_row_indices,
-                    valid_topk_mask,
-                    found.bool(),
-                    actual_slots,
-                    cache_slot_ids,
-                    (
-                        self.device_slot_map[layer_idx][
-                            slot_map_row_indices, : self.max_context_len
-                        ]
-                        >= 0
-                    ).sum(1),
-                )
             _record_stream_event(self._materialize_slot_map_stream, self.slot_map_done)
         return valid_topk_mask
 
 
-_global_sparse_kv_manager: SparseKVCacheManager | None = None
+_global_sparse_kv_manager: Optional[SparseKVCacheManager] = None
 
 
 def register_sparse_kv_manager(manager: SparseKVCacheManager) -> None:
@@ -1254,7 +1161,7 @@ def register_sparse_kv_manager(manager: SparseKVCacheManager) -> None:
     _global_sparse_kv_manager = manager
 
 
-def get_sparse_kv_manager() -> SparseKVCacheManager | None:
+def get_sparse_kv_manager() -> Optional[SparseKVCacheManager]:
     return _global_sparse_kv_manager
 
 

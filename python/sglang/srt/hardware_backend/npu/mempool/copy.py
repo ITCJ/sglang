@@ -8,7 +8,7 @@ import msgspec
 
 from .layout import UINT32_MAX, positive_int
 from .manager import MempoolKVManager, MempoolKVView
-from .multibase import BaseTable, MultibaseCopy, mapped_regions, view_regions
+from .multibase import BaseTable, MultibaseCopy, view_regions
 
 if TYPE_CHECKING:
     from torch import Tensor
@@ -90,7 +90,7 @@ class SparseKVCopy:
                 "copy output must be contiguous BF16 storage matching the selection"
             )
         self.output = output
-        self.views = mapped_regions(prompt.owner, prompt.layer)
+        self.views = (prompt, decode)
         regions = view_regions(self.views, prompt.layout.row_bytes)
         for tensor in extra_sources:
             regions.append(
@@ -116,8 +116,6 @@ class SparseKVCopy:
             block_dim=block_dim,
             kernel=kernel,
         )
-        self.count_sources = False
-        self.source_regions: Tensor | None = None
 
     def routes(self) -> tuple[CopyIndices, CopyIndices]:
         """Mask unwritten positions and translate each role's independent slot."""
@@ -174,34 +172,11 @@ class SparseKVCopy:
 
         source_rows = torch.zeros_like(self.inputs.dst_index)
         valid = torch.zeros_like(source_rows, dtype=torch.bool)
-        region_ids = (
-            torch.zeros_like(source_rows) if observe or self.count_sources else None
-        )
-        for side, (view, route) in enumerate(
-            zip((self.prompt, self.decode), self.routes())
-        ):
-            locations = view.owner.page_locations.get(side)
-            if locations is None:
-                regions = torch.full_like(route.src_index, side)
-                physical = view.map_rows(route.src_index)
-                enabled = route.valid
-            else:
-                handle = route.src_index // view.token_capacity
-                position = route.src_index % view.token_capacity
-                regions, page, page_valid = locations.resolve(
-                    handle, position // view.layout.page_size
-                )
-                physical = (
-                    page * view.layout.layers * view.layout.page_size
-                    + position % view.layout.page_size
-                )
-                enabled = route.valid & page_valid
-            start = self.source_table.ranges[regions, 0]
-            end = self.source_table.ranges[regions, 1]
-            enabled = enabled & (physical >= 0) & (physical < end - start)
+        for side, (view, route) in enumerate(zip(self.views, self.routes())):
+            physical = view.map_rows(route.src_index)
+            start, end = self.source_table.ranges[side]
+            enabled = route.valid & (physical >= 0) & (physical < end - start)
             source_rows = torch.where(enabled, start + physical, source_rows)
-            if region_ids is not None:
-                region_ids = torch.where(enabled, regions, region_ids)
             valid |= enabled
         for offset, route in enumerate(extra_routes):
             region = len(self.views) + offset
@@ -210,11 +185,7 @@ class SparseKVCopy:
                 route.src_index + self.source_table.starts[region],
                 source_rows,
             )
-            if region_ids is not None:
-                region_ids = torch.where(route.valid, region, region_ids)
             valid |= route.valid
-        # Counts use the same selected tasks, never an additional DRAM read.
-        self.source_regions = region_ids
         if observe:
             stamp = torch.npu.mstx.range_start(
                 f"mempool:materialize:{layer_id}", torch.npu.current_stream()
@@ -235,7 +206,6 @@ class KVFetch:
         self.block_dim = block_dim
         self.kernel = kernel
         self.observe = False
-        self.count_sources = False
         self.start_layer = 0
         self._copies: dict[tuple[int, int, int], SparseKVCopy] = {}
         self._captured: dict[tuple[int, int, int, int], SparseKVCopy] = {}
@@ -298,6 +268,5 @@ class KVFetch:
         inputs.active.copy_(row_valid & (row_decode_slot[safe_rows] >= 0))
         if output.device.type == "npu" and torch.npu.is_current_stream_capturing():
             self._captured[(*key, output.data_ptr())] = copier
-        copier.count_sources = self.count_sources
         copier.gather(self.observe, layer + self.start_layer, extra_routes)
         return copier

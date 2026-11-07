@@ -15,7 +15,7 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock, patch
 
 import torch
-from test_materialize import CPUEvent, CPUStream, cpu_lookup
+from test_materialize import CPUEvent, CPUStream, cpu_copy, cpu_lookup
 from test_native_release import load_methods
 
 from ascend_sparse.config import SparseKVOffloadMode as Mode
@@ -26,6 +26,7 @@ class TestSparseResources(unittest.TestCase):
         kernel = ModuleType("sgl_kernel_npu.sparsity_driven_kv_offload")
         kernel.create_shm_tensor = None
         kernel.slot_map_lookup = cpu_lookup
+        kernel.unidex_copy_inplace = cpu_copy
         constants = ModuleType("sglang.srt.constants")
         constants.GPU_MEMORY_TYPE_KV_CACHE = "kv_cache"
         memory = ModuleType("sglang.srt.mem_cache.memory_pool")
@@ -40,19 +41,12 @@ class TestSparseResources(unittest.TestCase):
             )
         )
         self.module = importlib.import_module("ascend_sparse.manager")
-        from test_multibase import cpu_multibase
-
-        backend = patch(
-            "ascend_mempool.multibase.load_kernel", return_value=cpu_multibase
-        )
-        backend.start()
-        self.addCleanup(backend.stop)
         self.shm = self.enterContext(
             patch.object(
                 self.module, "create_shm_tensor", side_effect=self.allocate_shm
             )
         )
-
+        self.enterContext(patch.object(self.module, "unidex_copy_inplace", cpu_copy))
         self.enterContext(
             patch.object(
                 torch,

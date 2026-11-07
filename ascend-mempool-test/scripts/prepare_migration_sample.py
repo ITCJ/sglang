@@ -69,7 +69,7 @@ def prepare(variant: str, root: Path, config_path: Path, cases_path: Path) -> di
         source_config=str(config_path),
         source_cases=str(cases_path),
         request_sha256=hashlib.sha256((root / "request.json").read_bytes()).hexdigest(),
-        production_tree_note="historical snapshots; later fixes differ too, not a kernel-only causal comparison",
+        production_tree_note="production pinned by source_commit; compare its diff with baseline; kernel-only causality is not established",
         requests=1,
         prompt_tokens=4096,
         output_tokens=32,

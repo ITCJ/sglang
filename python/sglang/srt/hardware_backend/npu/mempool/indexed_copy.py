@@ -45,15 +45,7 @@ def copy_rows(
         source_rows = (
             source_view.map_rows(source_rows // chunks) * chunks + source_rows % chunks
         )
-    from .multibase import IndexedCopy
-
-    routed_write = (
-        target_view is not None
-        and isinstance(kernel, IndexedCopy)
-        and (target_view.rank, target_view.region) in target_view.owner.write_locations
-        and bool(kernel.target_views)
-    )
-    if target_view is not None and not routed_write:
+    if target_view is not None:
         chunks = target_view.layout.row_bytes // row_bytes
         target_rows = (
             target_view.map_rows(target_rows // chunks) * chunks + target_rows % chunks
@@ -65,9 +57,8 @@ def copy_rows(
         & (source_rows >= 0)
         & (source_rows < src_count)
         & (target_rows >= 0)
-        & ((target_rows < dst_count) if not routed_write else True)
+        & (target_rows < dst_count)
     )
-    kwargs = {"target_view": target_view} if routed_write else {}
     kernel(
         source,
         target,
@@ -81,5 +72,4 @@ def copy_rows(
         block_dim,
         src_ptr,
         dst_ptr,
-        **kwargs,
     )

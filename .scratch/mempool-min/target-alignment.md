@@ -112,6 +112,26 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 
 ## D 名称、验收与实施票怎样对应
 
+**26第二十八次准备：仅保留四来源物化，其他生产代码回退。**
+
+用户回传026/027普通请求性能，TPOT为452.108/1236.298ms。
+两者均单请求，不能据此归因某个kernel。
+交接hybrid与当前插件源码相同，上层复制范围不同。
+
+本轮只保留P/D DRAM、cache/current HBM一次物化。
+八个生产文件恢复baseline原文，写回/refill/map走原生。
+撤销12源预留、正副本表、selected复用及额外观察诊断。
+必要页寻址复用baseline；保留Graph存活和融合stream依赖。
+
+代码回退与逐字范围核对完成，60项不同CPU测试通过。
+仅重复修正1项；Standards/Spec各0未解决。
+
+保留轻量测量口径，observe/trace关闭，硬件尚未运行。
+下一轮仅4096输入、32输出，P eager、D Graph。
+baseline不重跑，中间清理由用户确认。
+26保持open；详见[物化回退分析](../k2/ticket26-materialize-only.md)。
+
+
 **26第二十六次准备：取消trace，测普通请求延迟。**
 
 用户报告trace超过100G，明确关闭observe与trace。

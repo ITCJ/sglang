@@ -8,10 +8,9 @@ import importlib
 import json
 import logging
 import os
-from collections.abc import Callable
 from contextlib import nullcontext
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import msgspec
 import torch
@@ -20,7 +19,6 @@ from torch import Tensor
 from .indexed_copy import copy_rows
 from .layout import check_index, positive_int
 from .manager import MempoolKVManager
-from .multibase import IndexedCopy
 from .observation import write_evidence
 from .page_write import PageWriter
 from .pool_copy import CopyBlock, CopyTask, PoolCopyExecutor
@@ -988,7 +986,7 @@ class PrefixStore:
     def _copy(self, *args: Any) -> None:
         if self._kernel is None:
             importlib.import_module("sgl_kernel_npu.sparsity_driven_kv_offload")
-            self._kernel = IndexedCopy()
+            self._kernel = torch.ops.npu.unidex_copy
         self._kernel(*args)
 
     def _copy_region(

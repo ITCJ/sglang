@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import importlib
-from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator, Optional
 
 import torch
 from torch import Tensor
@@ -33,24 +32,10 @@ class PageObservation:
         self.counts = torch.zeros(
             (layers, rows, self.page_count, 6), dtype=torch.int64, device=device
         )
-        self.sources = torch.zeros((layers, rows, 12), dtype=torch.int64, device=device)
-        self.cache_changes = torch.zeros(
-            (layers, rows, 3), dtype=torch.int64, device=device
-        )
-        self.refill_check = torch.zeros(
-            (layers, rows, 2), dtype=torch.int64, device=device
-        )
-        self.map_check = torch.zeros(
-            (layers, rows, 3), dtype=torch.int64, device=device
-        )
         self.equal = torch.zeros((layers, rows), dtype=torch.int64, device=device)
         self.previous = torch.full((rows, topk), -1, dtype=torch.int64, device=device)
 
     def reset(self) -> None:
-        self.refill_check.zero_()
-        self.map_check.zero_()
-        self.sources.zero_()
-        self.cache_changes.zero_()
         self.counts.zero_()
         self.equal.zero_()
         self.previous.fill_(-1)
@@ -111,64 +96,7 @@ class PageObservation:
             5,
         )
 
-    def materialized(
-        self, layer_id: int, rows: Tensor, regions: Tensor, valid: Tensor
-    ) -> None:
-        layer = layer_id - self.start_layer
-        keys = (
-            rows.long()[:, None].expand(-1, regions.numel() // rows.numel()).flatten()
-            * 12
-            + regions
-        )
-        self.sources[layer].view(-1).scatter_add_(0, keys, valid.long())
-
-    def cache_updates(
-        self, layer_id: int, rows: Tensor, previous: Tensor, hits: Tensor, valid: Tensor
-    ) -> None:
-        layer = layer_id - self.start_layer
-        changes = torch.stack(
-            ((previous - hits.sum(1)).clamp(min=0), valid.sum(1), valid.sum(1)), dim=1
-        )
-        self.cache_changes[layer].index_add_(0, rows.long(), changes)
-
-    def refill_verified(
-        self,
-        layer_id: int,
-        rows: Tensor,
-        valid: Tensor,
-        actual: Tensor,
-        selected: Tensor,
-    ) -> None:
-        errors = (actual != selected).flatten(2).any(2) & valid
-        self.refill_check[layer_id - self.start_layer].index_add_(
-            0, rows.long(), torch.stack((valid.sum(1), errors.sum(1)), dim=1)
-        )
-
-    def map_verified(
-        self,
-        layer_id: int,
-        rows: Tensor,
-        valid: Tensor,
-        found: Tensor,
-        positions: Tensor,
-        expected: Tensor,
-        present: Tensor,
-    ) -> None:
-        missing = valid & (~found | (positions != expected))
-        stale = (present - valid.sum(1)).clamp(min=0)
-        self.map_check[layer_id - self.start_layer].index_add_(
-            0, rows.long(), torch.stack((valid.sum(1), missing.sum(1), stale), dim=1)
-        )
-
-    def materialization_snapshot(self, rows: Tensor) -> tuple[Tensor, Tensor, Tensor]:
-        checks = torch.cat((self.refill_check, self.map_check), dim=2)
-        return (
-            self.sources.index_select(1, rows),
-            self.cache_changes.index_select(1, rows),
-            checks.index_select(1, rows),
-        )
-
-    def snapshot(self, rows: Tensor | None = None) -> tuple[Tensor, Tensor]:
+    def snapshot(self, rows: Optional[Tensor] = None) -> tuple[Tensor, Tensor]:
         if rows is None:
             return self.counts.clone(), self.equal.clone()
         return self.counts.index_select(1, rows), self.equal.index_select(1, rows)

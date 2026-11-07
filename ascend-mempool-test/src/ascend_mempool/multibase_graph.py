@@ -10,19 +10,19 @@ if TYPE_CHECKING:
     from sglang.srt.hardware_backend.npu.mempool.multibase import (
         BaseTable,
         MultibaseCopy,
-        mapped_regions,
         view_regions,
     )
-    from sglang.srt.hardware_backend.npu.mempool.page_locations import PageLocations
     from sglang.srt.hardware_backend.npu.mempool.runtime import (
         KVWriteExpectation,
         MempoolRuntime,
     )
 else:
     from .alive_pages import PageLease
-    from .multibase import BaseTable, MultibaseCopy, mapped_regions, view_regions
-    from .page_locations import PageLocations
+    from .multibase import BaseTable, MultibaseCopy, view_regions
     from .runtime import KVWriteExpectation, MempoolRuntime
+
+
+from .multibase_fixture import PageLocations, mapped_regions
 
 
 def decode_capture_batch(rows: Any) -> SimpleNamespace:
@@ -213,8 +213,6 @@ def verify_multibase_graph(device: Any, cohort: Any) -> dict[str, Any]:
                 raise AssertionError("stale page table reached replay")
             stream.synchronize()
         d.pool.page_tables.clear()
-        d.pool.page_locations.clear()
-        d.pool.write_locations.clear()
         d.pool.page_leases.clear()
         d.pool.active_page_versions.clear()
     cohort.exchange("multibase-graph/verified")

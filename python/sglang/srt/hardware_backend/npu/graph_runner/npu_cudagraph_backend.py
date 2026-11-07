@@ -20,12 +20,10 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 import numpy as np
 import torch
+
 from sglang.srt.constants import GPU_MEMORY_TYPE_CUDA_GRAPH
 from sglang.srt.distributed.device_communicators.pynccl_allocator import (
     set_graph_pool_id,
-)
-from sglang.srt.hardware_backend.npu.mempool.index_diagnosis import (
-    warmup_index_diagnosis,
 )
 from sglang.srt.hardware_backend.npu.mempool.runtime import model_forward_scope
 from sglang.srt.model_executor.runner.shape_key import ShapeKey
@@ -98,13 +96,10 @@ class NPUCudaGraphBackend(BaseCudaGraphBackend):
 
         # Two warmups so kernels are loaded and one-time setup is paid before capture.
         # post_warmup_hook lets the attention backend reset state that warmup mutated.
-        for warmup in range(2):
+        for _ in range(2):
             self._device_module.synchronize()
             self._tp_group.barrier()
-            with (
-                warmup_index_diagnosis(warmup),
-                model_forward_scope(self._attn_backend, capture=True),
-            ):
+            with model_forward_scope(self._attn_backend, capture=True):
                 forward_fn()
             if post_warmup_hook is not None:
                 post_warmup_hook()

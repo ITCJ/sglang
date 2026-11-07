@@ -5,7 +5,7 @@ import sys
 import unittest
 from contextlib import nullcontext
 from types import ModuleType, SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import test_fetch
 import torch
@@ -55,6 +55,7 @@ class TestMaterialize(unittest.TestCase):
         kernel = ModuleType("sgl_kernel_npu.sparsity_driven_kv_offload")
         kernel.create_shm_tensor = None
         kernel.slot_map_lookup = cpu_lookup
+        kernel.unidex_copy_inplace = cpu_copy
         sdk = patch.dict(sys.modules, {kernel.__name__: kernel})
         sdk.start()
         self.addCleanup(sdk.stop)
@@ -90,6 +91,61 @@ class TestMaterialize(unittest.TestCase):
             device="cpu",
             start_layer=5,
         )
+
+    def test_four_sources_use_one_launch_and_native_refill_and_slot_map(self):
+        from ascend_mempool.decode_write import DecodeKV, DecodeWriter
+
+        h = self.helper
+        h.runtime._decode = DecodeKV(h.runtime.manager, DecodeWriter(0, 1), 9, "cpu")
+        h.runtime.bind(1, slot=3, prompt_tokens=4, prompt_slot=2)
+        h.p[2, 0], h.p[2, 1] = 999, 102
+        fused = Mock(wraps=h.runtime._fetch.kernel)
+        h.runtime._fetch.kernel = fused
+        with patch.object(self.module, "unidex_copy_inplace", wraps=cpu_copy) as native:
+            for step in range(2):
+                self.cache.device_slot_map[0].fill_(-1)
+                self.cache.device_slot_map[0][1, 0] = 0
+                self.cache.device_kv_buffer[0][1, 0] = 111
+                batch = h.start(offset=step)
+                h.d[3, step] = -777  # Current must not read the shared DRAM row.
+                positions = torch.tensor([[0, 1, 4, 5 if step else -1], [-1] * 4])
+                output = torch.zeros((2, 4, 1, 4), dtype=torch.bfloat16)
+                self.cache.materialize_selected_kv(
+                    SimpleNamespace(layer_id=5),
+                    batch,
+                    positions,
+                    output,
+                    CPUStream(),
+                    mempool_runtime=h.runtime,
+                )
+                self.assertEqual(
+                    output[0, :, 0, 0].tolist(), [111, 102, 201, 202 if step else 0]
+                )
+                self.assertTrue((output[1] == 0).all())
+                self.assertEqual(fused.call_count, step + 1)
+                self.assertEqual(native.call_count, 2 * (step + 1))
+                sb, _, _, db, _, _, si, _, mask, width, blocks = fused.call_args.args
+                self.assertEqual(
+                    (sb.numel(), db.numel(), si.numel(), width, blocks),
+                    (4, 1, 8, 8, 48),
+                )
+                self.assertEqual(mask.sum().item(), 4 if step else 3)
+                self.assertEqual(
+                    [c.kwargs["block_dim"] for c in native.call_args_list[-2:]],
+                    [24, 48],
+                )
+                rows = 4 if step else 3
+                torch.testing.assert_close(
+                    self.cache.device_kv_buffer[0][1, :rows], output[0, :rows]
+                )
+                self.assertEqual(
+                    self.cache.device_slot_map[0][1, :6].tolist(),
+                    [0, 1, -1, -1, 2, 3 if step else -1],
+                )
+                h.runtime.end_forward()
+                h.events[-1].done = True
+                h.runtime.poll_completed()
+                h.d[3, step] = 201 + step
 
     def test_bm_misses_refill_cache_and_become_hits_on_next_forward(self):
         h = self.helper

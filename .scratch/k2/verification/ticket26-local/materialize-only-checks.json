@@ -1,0 +1,102 @@
+{
+  "baseline": "aa5852624e15df139df7c76bb8d757341b049713",
+  "restored_files": {
+    "python/sglang/srt/hardware_backend/npu/graph_runner/npu_cudagraph_backend.py": {
+      "byte_equal": true,
+      "sha256": "4afa762bec0b1c71ade04c7979313fc71811c74f483ef397bffe70ea248b253a"
+    },
+    "python/sglang/srt/hardware_backend/npu/mempool/decode_write.py": {
+      "byte_equal": true,
+      "sha256": "a6b6768db212c25131f9e4faf513b3f7e38647d25c021b17dbb66e2bb7e3ff2d"
+    },
+    "python/sglang/srt/hardware_backend/npu/mempool/indexed_copy.py": {
+      "byte_equal": true,
+      "sha256": "1e90e26b998630b8e06cc83897329ef5a349085ef61a16b4e030080748386ebd"
+    },
+    "python/sglang/srt/hardware_backend/npu/mempool/manager.py": {
+      "byte_equal": true,
+      "sha256": "c9d7c7a631fa1e6cc75c8029b4289cb46f2d0e79d57a4725caeb93963a45666e"
+    },
+    "python/sglang/srt/hardware_backend/npu/mempool/observation_device.py": {
+      "byte_equal": true,
+      "sha256": "95be9d8d77a9617f6e5510f8f7151d374c3117bd41bbe7c7b0f83d8893984e18"
+    },
+    "python/sglang/srt/hardware_backend/npu/mempool/offload.py": {
+      "byte_equal": true,
+      "sha256": "51997f57e219cf3cccfb93402cb0434d758f310358777192a47595a3dc3096ad"
+    },
+    "python/sglang/srt/hardware_backend/npu/mempool/prefix.py": {
+      "byte_equal": true,
+      "sha256": "873a6b68f62d22690f6fdd69791f29dbb64fc3b436f7a93fff45e8be9dbcc7fb"
+    },
+    "python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/attention.py": {
+      "byte_equal": true,
+      "sha256": "2c737307156e4cf78a250ddd5a057df7f74697f0368148608fa4a48de49ead48"
+    }
+  },
+  "remaining_production_diff": [
+    "python/sglang/srt/hardware_backend/npu/mempool/copy.py",
+    "python/sglang/srt/hardware_backend/npu/mempool/kernels/unidex_multibase/CMakeLists.txt",
+    "python/sglang/srt/hardware_backend/npu/mempool/kernels/unidex_multibase/host.cpp",
+    "python/sglang/srt/hardware_backend/npu/mempool/kernels/unidex_multibase/kernel.cpp",
+    "python/sglang/srt/hardware_backend/npu/mempool/kernels/unidex_multibase/source-identity.json",
+    "python/sglang/srt/hardware_backend/npu/mempool/multibase.py",
+    "python/sglang/srt/hardware_backend/npu/mempool/runtime.py",
+    "python/sglang/srt/hardware_backend/npu/sparsity_driven_kv_offload/manager.py"
+  ],
+  "mempool/runtime.py": {
+    "only_changed_method": "fetch_selected_kv",
+    "unchanged_methods": 28
+  },
+  "sparsity_driven_kv_offload/manager.py": {
+    "only_changed_method": "materialize_selected_kv",
+    "unchanged_methods": 22,
+    "refill_and_slot_map_tail_byte_equal": true
+  },
+  "kernel_matches_handoff": true,
+  "unrelated_initial_dirty_files_unchanged": true,
+  "status": "passed_static_scope",
+  "cpu": {
+    "unique_tests": 60,
+    "passed": 60,
+    "round1": {
+      "tests": 46,
+      "passed": 45,
+      "failed": 1,
+      "reason": "new test wrongly expected invalid refill slots to be cleared; corrected to the baseline valid-mask contract"
+    },
+    "followup": {
+      "tests": 15,
+      "passed": 15,
+      "repeated_tests": 1,
+      "new_tests": 14
+    },
+    "hardware": "not-run"
+  },
+  "reviews": {
+    "standards_unresolved": 0,
+    "spec_unresolved": 0,
+    "spec_fixed": "sharing benchmark read_kernel kept separate from native write kernel"
+  },
+  "validation_limits": [
+    "CPU kernel/event boundaries simulated; not NPU Graph evidence",
+    "No NPU trace or observe",
+    "Do not rerun baseline; user runs one materialize-only request"
+  ],
+  "measurement_code_unchanged": "ascend-mempool-test/scripts/measure_mempool_router.py",
+  "user_reported_performance": {
+    "026_baseline": {
+      "router_ttft_ms": 14189.55709086731,
+      "tpot_ms": 452.1077906772975,
+      "decode_tokens_per_second": 2.2118619068738266,
+      "client_e2e_ms": 36436.43684592098
+    },
+    "027_broad": {
+      "router_ttft_ms": 14300.690159900114,
+      "tpot_ms": 1236.2983030672635,
+      "decode_tokens_per_second": 0.8088662724190383,
+      "client_e2e_ms": 61593.908549053594
+    }
+  },
+  "next_run": "k2-ticket26-028-materialize-perf"
+}

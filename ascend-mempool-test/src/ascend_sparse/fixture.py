@@ -34,11 +34,7 @@ def allocate_cache(
         from .config import SparseKVOffloadMode
         from .manager import SparseKVCacheManager
 
-    from ascend_mempool.multibase import TensorCopy
-
     cache = SparseKVCacheManager.__new__(SparseKVCacheManager)
-    cache.tensor_copy = TensorCopy()
-    cache.selected_buffers = {}
     cache.mode = SparseKVOffloadMode.PD_DECODE_MEMPOOL
     cache.size, cache.max_context_len, cache.sparse_context_len = rows, context, topk
     cache.start_layer, cache.layer_num, cache.device = start_layer, layers, device

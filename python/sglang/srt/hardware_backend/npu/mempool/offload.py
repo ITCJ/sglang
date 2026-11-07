@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any
 from .indexed_copy import copy_rows
 from .layout import UINT32_MAX, positive_int
 from .manager import MempoolKVView
-from .multibase import IndexedCopy, mapped_regions
 
 if TYPE_CHECKING:
     from torch import Tensor
@@ -91,17 +90,7 @@ class MempoolKVOffload:
             if values.device.type != "npu":
                 raise ValueError("KV offload requires an NPU source")
             importlib.import_module("sgl_kernel_npu.sparsity_driven_kv_offload")
-            self._kernel = IndexedCopy(
-                task_factor=2,
-                target_views=mapped_regions(
-                    self.target.owner,
-                    self.target.layer,
-                    self.target.region.removeprefix("alive_"),
-                ),
-                target_slot=self.target.rank
-                if self.target.region == "alive_main"
-                else 0,
-            )
+            self._kernel = torch.ops.npu.unidex_copy
 
         valid = (
             valid

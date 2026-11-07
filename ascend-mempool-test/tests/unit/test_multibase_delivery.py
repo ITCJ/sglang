@@ -1,11 +1,9 @@
 """Check the measurement workload and cache evidence through CPU SDK boundaries."""
 
 import unittest
-import weakref
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import test_materialize as materialize_fixture
 import torch
 from test_materialize import CPUStream
 from test_multibase import cpu_multibase
@@ -13,7 +11,6 @@ from test_multibase import cpu_multibase
 from ascend_mempool.bandwidth import BenchmarkConfig, Case
 from ascend_mempool.layout import KVLayout
 from ascend_mempool.multibase_write import MultibaseWriteWork
-from ascend_mempool.observation_device import PageObservation
 from ascend_mempool.prefix_layout import PrefixLayout
 
 
@@ -65,69 +62,6 @@ class TestMultibaseDelivery(unittest.TestCase):
         manager.active_page_versions[1, 0] = 2
         with self.assertRaisesRegex(RuntimeError, "stale request page table"):
             runtime.begin_forward([KVWriteExpectation(1, 2, 1)], replay=True)
-
-    def test_side_stream_observation_indices_survive_materialization_return(self):
-        fixture = materialize_fixture.TestMaterialize()
-        fixture.setUp()
-        self.addCleanup(fixture.doCleanups)
-        helper, cache = fixture.helper, fixture.cache
-        helper.runtime.bind(1, slot=3, prompt_tokens=4, prompt_slot=2)
-        observer = PageObservation(1, 9, 24, 1, 4, (5,), 5, "cpu")
-        helper.runtime.observation_device = observer
-        helper.runtime._fetch.count_sources = True
-        torch.npu.mstx = SimpleNamespace(
-            range_start=lambda *args: 0, range_end=lambda *args: None
-        )
-        retained, reads = {}, []
-
-        def record(stream, *tensors):
-            # Model the allocator's ownership until the consumer completes.
-            retained.setdefault(stream, []).extend(tensors)
-
-        refill = observer.refill_verified
-        lookup = fixture.module.slot_map_lookup
-
-        def observe_refill(layer, rows, *args):
-            reads.append((cache._materialize_refill_stream, weakref.ref(rows)))
-            return refill(layer, rows, *args)
-
-        lookup_calls = 0
-
-        def observe_lookup(table, rows, positions):
-            nonlocal lookup_calls
-            lookup_calls += 1
-            if lookup_calls == 2:
-                reads.extend(
-                    (cache._materialize_slot_map_stream, weakref.ref(value))
-                    for value in (rows, positions)
-                )
-            return lookup(table, rows, positions)
-
-        batch = helper.start(offset=0)
-        helper.runtime.observer = object()
-        with (
-            patch.object(
-                fixture.module, "_record_materialize_stream", record, create=True
-            ),
-            patch.object(observer, "refill_verified", observe_refill),
-            patch.object(fixture.module, "slot_map_lookup", observe_lookup),
-        ):
-            cache.materialize_selected_kv(
-                SimpleNamespace(layer_id=5),
-                batch,
-                torch.tensor([[0, 1, -1, -1], [-1, -1, -1, -1]]),
-                torch.zeros((2, 4, 1, 4), dtype=torch.bfloat16),
-                CPUStream(),
-                mempool_runtime=helper.runtime,
-            )
-        # The caller has not yet joined refill/map. Locals may have gone out
-        # of scope, but each consumer's allocator ownership must still exist.
-        self.assertEqual(len(reads), 3)
-        for stream, reference in reads:
-            self.assertIsNotNone(
-                reference(), "main-stream indices died before side-stream join"
-            )
-            self.assertTrue(any(value is reference() for value in retained[stream]))
 
     def test_cache_gate_rejects_any_rank_error_even_when_another_rank_passes(self):
         import json
@@ -241,41 +175,6 @@ class TestMultibaseDelivery(unittest.TestCase):
                     )
             for item in work:
                 item.verify()
-
-    def test_observation_checks_actual_refill_and_new_map_after_eviction(self):
-        fixture = materialize_fixture.TestMaterialize()
-        fixture.setUp()
-        self.addCleanup(fixture.doCleanups)
-        helper, cache = fixture.helper, fixture.cache
-        helper.runtime.bind(1, slot=3, prompt_tokens=4, prompt_slot=2)
-        helper.p[2, :4] = torch.tensor([11, 12, 13, 14])[:, None, None]
-        observer = PageObservation(1, 9, 24, 1, 4, (5,), 5, "cpu")
-        helper.runtime.observation_device = observer
-        helper.runtime._fetch.count_sources = True
-        torch.npu.mstx = SimpleNamespace(
-            range_start=lambda *args: 0, range_end=lambda *args: None
-        )
-        for step, chosen in enumerate(([0, 1, -1, -1], [2, 3, -1, -1])):
-            batch = helper.start(offset=step)
-            helper.runtime.observer = object()
-            output = torch.zeros((2, 4, 1, 4), dtype=torch.bfloat16)
-            cache.materialize_selected_kv(
-                SimpleNamespace(layer_id=5),
-                batch,
-                torch.tensor([chosen, [-1] * 4]),
-                output,
-                CPUStream(),
-                mempool_runtime=helper.runtime,
-            )
-            helper.runtime.observer = None
-            helper.runtime.end_forward()
-            helper.events[-1].done = True
-            helper.runtime.poll_completed()
-        _, changes, checked = observer.materialization_snapshot(torch.tensor([1]))
-        self.assertEqual(changes[0, 0, 0].item(), 2)
-        self.assertEqual(checked[0, 0].tolist(), [2, 0, 2, 0, 0])
-        self.assertEqual(cache.device_slot_map[0][1, :4].tolist(), [-1, -1, 0, 1])
-        self.assertEqual(cache.device_kv_buffer[0][1, :2, 0, 0].tolist(), [13, 14])
 
 
 if __name__ == "__main__":

@@ -65,7 +65,6 @@ def worker(args, report):
     from ascend_mempool.indexed_copy import copy_rows
     from ascend_mempool.layout import KVLayout, PoolLayout
     from ascend_mempool.manager import MempoolKVManager
-    from ascend_mempool.multibase import IndexedCopy
     from ascend_mempool.pool_copy import (
         BMTransfer,
         CopyBlock,
@@ -224,7 +223,7 @@ def worker(args, report):
         for layer in range(layers):
             src = manager.view(0, layer, region=region, segment=segment)
             copy_rows(
-                IndexedCopy(),
+                torch.ops.npu.unidex_copy,
                 torch.empty(1, dtype=torch.bfloat16),
                 output[layer],
                 logical,

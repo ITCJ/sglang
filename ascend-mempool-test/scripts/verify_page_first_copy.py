@@ -15,7 +15,6 @@ from ascend_mempool.alive_pages import PageLease
 from ascend_mempool.indexed_copy import copy_rows
 from ascend_mempool.layout import KVLayout, PoolLayout
 from ascend_mempool.manager import MempoolKVManager, MempoolKVView
-from ascend_mempool.multibase import IndexedCopy
 from ascend_mempool.offload import MempoolKVOffload
 
 
@@ -52,7 +51,7 @@ def check_geometry(layout, torch):
     dtype = torch.empty(1, dtype=torch.bfloat16)
     destination = torch.arange(3, dtype=torch.int64, device="npu")
     writer = MempoolKVOffload(view)
-    kernel = IndexedCopy()
+    kernel = torch.ops.npu.unidex_copy
     stream = torch.npu.Stream()
     stream.wait_stream(torch.npu.current_stream())
     with torch.npu.stream(stream):

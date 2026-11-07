@@ -318,3 +318,17 @@ baseline/当前版各一个4096输入32输出请求，阶段间人工确认清�
 Standards/Spec各0项未解决；硬件性能测量等待用户执行。
 024不记通过；取消的迁移trace和计算重叠缺口保留，26仍open、25未解锁。
 双机命令与口径见ticket26-normal-performance.md。
+
+## 028：用户指定最小回退，只保留四来源物化
+
+026/027单请求实测TPOT为452.108/1236.298ms，不能归因单个kernel。
+按用户本轮要求，先读取交接包并说明代码对照，再实施限定范围回退。
+本轮范围优先于上方历史“五类统一”方案：只保留P/D DRAM、HBM cache/current一次物化。
+其余生产路径逐字恢复aa5852624e；删除通用TensorCopy/IndexedCopy、未来位置表和预热诊断。
+八个完整文件、runtime其余28个方法、稀疏manager其余22个方法及refill/map尾段均核对一致。
+微测候选拓扑仅留测试夹具，不接入生产；默认退出与通用主线未改。
+60项不同CPU测试通过，仅重复修正1项；Ruff通过，Standards/Spec各0未解决。
+逐文件用途、交接差异和028两侧命令见[物化回退](../ticket26-materialize-only.md)。
+原始范围审计及用户性能数值见[检查记录](../verification/ticket26-local/materialize-only-checks.json)。
+028仅一个4096→32请求，P eager、D Graph；observe/trace关闭，baseline不重跑。
+资源由用户确认，尚未运行028硬件；不重新认定旧NPU通过覆盖新版本，26仍open、25未解锁。

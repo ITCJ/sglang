@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import torch
 import torch_npu
@@ -44,9 +44,9 @@ def forward_sparsity_driven_kv_offload(
     layer: RadixAttention,
     forward_batch: ForwardBatch,
     save_kv_cache: bool = True,
-    q_rope: torch.Tensor | None = None,
-    k_rope: torch.Tensor | None = None,
-    topk_indices: torch.Tensor | None = None,
+    q_rope: Optional[torch.Tensor] = None,
+    k_rope: Optional[torch.Tensor] = None,
+    topk_indices: Optional[torch.Tensor] = None,
 ):
     """Run sparse attention using compact MLA KV from the selected startup mode."""
     del v
@@ -167,8 +167,7 @@ def forward_sparsity_driven_kv_offload(
         # device-cache hits and BM/host misses are copied into this buffer, the
         # device cache is refilled from it, and sparse attention consumes it
         # directly.
-        selected_kv_buffer = sparse_kv_manager.selected_buffer(
-            layer.layer_id,
+        selected_kv_buffer = torch.zeros(
             (
                 batch_size,
                 selected_kv_length,
