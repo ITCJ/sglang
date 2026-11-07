@@ -62,3 +62,14 @@ D过期页表检查仍需passed；保留每rank报告，不以单rank代替全�
 Mac实际CLI计划核对双侧配置一致、22档；BM主机贡献P193GiB、D176GiB，不是HBM预算。
 本轮无代码改动、无新CPU测试；硬件由用户运行。
 物理NUMA未验证、模型计算重叠未知、迁移同负载观测对照未完成；本段通过不自动关闭26或解锁25。
+
+
+## 022 TP16通过及性能归档
+
+用户回传31完成标记、prefill report/runner和32份本地/peer Graph汇总；32终端完成标记未单独回传。
+报告passed_measurement_scope、cleanup passed；32份Graph均passed，容量12、活跃源11、full_shape=true，无缺失。
+128K远端写287.839GB/s、双写314.699GB/s；相对021分别6.67倍、3.93倍。
+D读基线6.037ms；128K远端写干扰12.626ms（2.092倍），双写9.001ms（1.491倍）。
+本轮仅归档用户硬件证据和文档，无功能源码、脚本、测试改动或硬件重跑。
+迁移同负载观测对照仍待整理，模型计算重叠未知；物理NUMA落点未验证。
+26保持open，25未解锁。见ticket26-performance-021-022.md及verification/ticket26-local/tp16-022-user-result.json。

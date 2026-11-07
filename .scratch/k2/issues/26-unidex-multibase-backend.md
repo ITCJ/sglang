@@ -263,3 +263,14 @@ D读p99基线1.163ms，128K remote干扰2.479ms、dual干扰2.994ms。物理落�
 022只运行TP16微测，原22档与Graph检查保留；真实CLI双侧计划核对通过，未运行硬件。
 本轮仅文档与证据记录，无功能源码、脚本或测试改动。26仍open、25未解锁。
 [022命令](../ticket26-tp16-benchmark.md)。
+
+
+## 022 TP16通过及性能归档
+
+用户回传31完成标记、prefill report/runner和32份本地/peer Graph汇总；32终端完成标记未单独回传。
+报告passed_measurement_scope、cleanup passed；32份Graph均passed，容量12、活跃源11、full_shape=true，无缺失。
+128K远端写287.839GB/s、双写314.699GB/s；相对021分别6.67倍、3.93倍。
+D读基线6.037ms；128K远端写干扰12.626ms（2.092倍），双写9.001ms（1.491倍）。
+本轮仅归档用户硬件证据和文档，无功能源码、脚本、测试改动或硬件重跑。
+迁移同负载观测对照仍待整理，模型计算重叠未知；物理NUMA落点未验证。
+26保持open，25未解锁。见ticket26-performance-021-022.md及verification/ticket26-local/tp16-022-user-result.json。

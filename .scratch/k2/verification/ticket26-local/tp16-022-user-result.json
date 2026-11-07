@@ -1,0 +1,79 @@
+{
+  "source": "user-pasted prefill completion marker, report/runner/conclusions and aggregate of all 32 local+peer graph reports; decode terminal marker not separately pasted",
+  "run_id": "k2-ticket26-022-tp16",
+  "status": "passed_measurement_scope",
+  "scope": "remote-write",
+  "tp_size": 16,
+  "nodes": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "samples": 1,
+  "iterations": 2,
+  "warmup": 1,
+  "copy_backend": "multibase",
+  "runner": {
+    "status": "measured",
+    "cleanup": "passed"
+  },
+  "graph": {
+    "reports": 32,
+    "missing": [],
+    "status": "passed",
+    "source_capacity": 12,
+    "post25_active_sources": 11,
+    "full_shape": true,
+    "captures": 1,
+    "replays": 5,
+    "decode_stale_before_replay": "passed"
+  },
+  "physical_numa_verified": false,
+  "overlap": "not_proven_by_transfer_only_microbenchmark",
+  "sdk_identity": "source_confirmed_separate_builds",
+  "ticket_state": "open",
+  "dread_p99_baseline_ms": 6.037,
+  "measurements": [
+    {
+      "tokens": 4096,
+      "remote_GBps": 57.603,
+      "dual_GBps": 95.849,
+      "remote_first_group_ms": 0.818,
+      "dual_first_group_ms": 0.644,
+      "dread_remote_p99_ms": 7.409,
+      "dread_dual_p99_ms": 6.731
+    },
+    {
+      "tokens": 8192,
+      "remote_GBps": 128.013,
+      "dual_GBps": 123.284,
+      "remote_first_group_ms": 0.833,
+      "dual_first_group_ms": 1.002,
+      "dread_remote_p99_ms": 8.074,
+      "dread_dual_p99_ms": 7.258
+    },
+    {
+      "tokens": 32768,
+      "remote_GBps": 211.35,
+      "dual_GBps": 267.302,
+      "remote_first_group_ms": 1.784,
+      "dual_first_group_ms": 1.426,
+      "dread_remote_p99_ms": 8.404,
+      "dread_dual_p99_ms": 8.43
+    },
+    {
+      "tokens": 131072,
+      "remote_GBps": 287.839,
+      "dual_GBps": 314.699,
+      "remote_first_group_ms": 4.371,
+      "dual_first_group_ms": 4.734,
+      "dread_remote_p99_ms": 12.626,
+      "dread_dual_p99_ms": 9.001
+    }
+  ]
+}
