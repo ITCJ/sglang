@@ -338,3 +338,22 @@ D读基线6.037ms；128K远端写干扰12.626ms（2.092倍），双写9.001ms（
 本轮仅归档用户硬件证据和文档，无功能源码、脚本、测试改动或硬件重跑。
 迁移同负载观测对照仍待整理，模型计算重叠未知；物理NUMA落点未验证。
 26保持open，25未解锁。见ticket26-performance-021-022.md及verification/ticket26-local/tp16-022-user-result.json。
+
+
+## 023：017离线观测清点
+
+用户回传16份JSONL，共732,576条materialization及同数量layer_pages。
+每rank45,786条，合计9,392个forward记录×78层；source_rows字段缺失为0。
+96条request_tracked是6请求×16rank，不能解释为96个独立请求。
+来源计数：P_alive 280,470,816，D_alive 3,565,280，HBM_cache 1,206,643,520，HBM_current 725,312；prefix八槽均0。
+这是跨请求、rank、层、step累计的有效任务行数，不是去重KV容量或硬件事务流量。
+
+当前26不启用25的直接prefix读路由，017的prefix槽为0不否定已有prefix load_back/复用行为。
+022专项已单独验证未来11源形状；不能把专项形状当作017服务实际使用形状。
+runtime.collect_observation将current_dram_rows/refill_dram_bytes直接写0；它们不是独立设备测量，不以字段为0单独证明无DRAM重读。
+没有trace_view.json，设备物化耗时及计算重叠保持未知；host事件不能替代设备窗口。
+baseline/phase1原始观测已删除，现存phase2计数无法证明迁移前后一致。
+
+已提出每版本一个同负载短请求的补采方案，等待用户确认是否允许三版本短采样；不自动重跑完整验收。
+本轮只整理证据、阅读代码，不修改功能源码或测试、不访问NPU。
+26保持open，25未解锁。证据：verification/ticket26-local/observation-023-user-result.json。
