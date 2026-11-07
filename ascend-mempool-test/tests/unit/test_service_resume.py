@@ -268,13 +268,13 @@ class TestServiceResume(unittest.TestCase):
             ):
                 run_mempool_min.parse_args([*argv, *extra])
 
-    def test_capacity_only_public_entry_stops_on_each_side(self):
+    def test_fault_only_public_entries_stop_on_each_side(self):
         import contextlib
         import io
 
-        for role in ("prefill", "decode"):
-            args = run_mempool_min.parse_args(
-                [
+        for name in ("capacity", "timeout"):
+            for role in ("prefill", "decode"):
+                argv = [
                     "--role",
                     role,
                     "--mode",
@@ -282,47 +282,49 @@ class TestServiceResume(unittest.TestCase):
                     "--config",
                     "config.json",
                     "--run-id",
-                    "capacity",
-                    "--capacity-only",
+                    name,
+                    f"--{name}-only",
                 ]
-            )
-            runner = run_mempool_min.Runner(
-                args, RouterConfig("p", "d", "/model"), Mock(), self.current
-            )
-            with (
-                patch.object(runner, "prepare_full_cases") as fixtures,
-                patch.object(runner, "components") as components,
-                patch.object(runner, "stage") as stage,
-                patch.object(runner, "capacity_stage") as capacity,
-            ):
-                runner.run_full()
-                fixtures.assert_called_once_with()
-                capacity.assert_called_once_with()
-                components.assert_not_called()
-                stage.assert_not_called()
-                self.assertEqual(runner.report["status"], "passed_execution_scope")
-                self.assertEqual(runner.report["stopped_after"], "capacity")
-                self.assertEqual(runner.report["full_acceptance"], "incomplete")
-                capacity.side_effect = ValueError("wrong rejection")
-                runner.report["status"] = "running"
-                with self.assertRaisesRegex(ValueError, "wrong rejection"):
+                args = run_mempool_min.parse_args(argv)
+                runner = run_mempool_min.Runner(
+                    args, RouterConfig("p", "d", "/model"), Mock(), self.current
+                )
+                with (
+                    patch.object(runner, "prepare_full_cases") as fixtures,
+                    patch.object(runner, "components") as components,
+                    patch.object(runner, "stage") as stage,
+                    patch.object(runner, "capacity_stage") as capacity,
+                ):
                     runner.run_full()
-                self.assertNotEqual(runner.report["status"], "passed_execution_scope")
-        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-            run_mempool_min.parse_args(
-                [
-                    "--role",
-                    "prefill",
-                    "--mode",
-                    "full-acceptance",
-                    "--config",
-                    "config.json",
-                    "--run-id",
-                    "capacity",
-                    "--capacity-only",
+                    fixtures.assert_called_once_with()
+                    components.assert_not_called()
+                    if name == "capacity":
+                        capacity.assert_called_once_with()
+                        stage.assert_not_called()
+                        selected = capacity
+                    else:
+                        stage.assert_called_once_with(target=True, fault_only=True)
+                        capacity.assert_not_called()
+                        selected = stage
+                    self.assertEqual(runner.report["status"], "passed_execution_scope")
+                    self.assertEqual(runner.report["stopped_after"], name)
+                    self.assertEqual(runner.report["full_acceptance"], "incomplete")
+                    selected.side_effect = ValueError("fault check failed")
+                    runner.report["status"] = "running"
+                    with self.assertRaisesRegex(ValueError, "fault check failed"):
+                        runner.run_full()
+                    self.assertNotEqual(
+                        runner.report["status"], "passed_execution_scope"
+                    )
+                for other in (
                     "--reference-only",
-                ]
-            )
+                    "--timeout-only" if name == "capacity" else "--capacity-only",
+                ):
+                    with (
+                        contextlib.redirect_stderr(io.StringIO()),
+                        self.assertRaises(SystemExit),
+                    ):
+                        run_mempool_min.parse_args([*argv, other])
 
     def test_reference_only_runs_once_without_components_or_target(self):
         for role in ("prefill", "decode"):

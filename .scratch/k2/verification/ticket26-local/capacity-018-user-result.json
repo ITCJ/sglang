@@ -1,0 +1,18 @@
+{
+  "source": "user-pasted 31 capacity success marker and 017 offline cache-eviction summary",
+  "run_id": "k2-ticket26-018-capacity",
+  "delivered_commit": "6f15655a52",
+  "identity_report_not_collected": true,
+  "prefill_marker": "CAPACITY_PASSED; stopped for user cleanup confirmation; timeout not run",
+  "paired_evidence": "prefill marker follows paired capacity verification, process and port cleanup barriers",
+  "decode_summary": "not yet pasted",
+  "target_cache_eviction": {
+    "run_id": "k2-ticket26-017-target",
+    "status": "passed",
+    "evidence_entries": 16,
+    "reason": null
+  },
+  "full_acceptance": "incomplete",
+  "next_stage": "timeout only, after user resource cleanup confirmation",
+  "ticket_state": "open"
+}

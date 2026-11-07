@@ -284,3 +284,13 @@ Ascend/NPU及通用主线功能源码均无改动；仅run_mempool_min.py入口�
 新增单段入口CPU检查通过；现有成对容量拒绝检查首次受沙箱ps限制，获准沙箱外重试通过。首次选择旧测试类名有误，未执行测试体。
 ruff通过，Standards/Spec各0未解决；硬件018待运行，26仍open、25未解锁。
 见[018命令及证据边界](ticket26-capacity-only.md)。
+
+
+## 018容量结果与019独立超时检查
+
+用户回传31 CAPACITY_PASSED，经过成对容量证据、进程与端口清理屏障；32 summary未单独回传。
+017缓存淘汰离线检查passed/evidence_entries=16，更新原结果记录；不重复已过服务。
+新增--timeout-only，复用原stage(target=True,fault_only=True)，仅故障注入及双侧清理后停止。
+原600秒operation_timeout不改；功能源码/设备算子/通用退出路径不改。
+两项CPU检查一轮通过，ruff通过，Standards/Spec各0未解决；019硬件验收待执行。
+脚本和测试清单、双侧命令见[019说明](ticket26-timeout-only.md)。26仍open，25未解锁。

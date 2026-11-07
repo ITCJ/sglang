@@ -153,6 +153,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="run only capacity rejection and paired cleanup, then stop",
     )
+    resume.add_argument(
+        "--timeout-only",
+        action="store_true",
+        help="run only timeout fail-stop and paired cleanup, then stop",
+    )
     parser.add_argument(
         "--service-timeout",
         type=float,
@@ -167,6 +172,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         or args.stop_after_target
         or args.reference_only
         or args.capacity_only
+        or args.timeout_only
         or args.reference_service_report
     ) and args.mode != "full-acceptance":
         parser.error("service resume/stop requires full-acceptance")
@@ -535,6 +541,7 @@ class Runner:
             and not getattr(self.args, "resume_after_reference", None)
             and not getattr(self.args, "reference_service_report", None)
             and not getattr(self.args, "capacity_only", False)
+            and not getattr(self.args, "timeout_only", False)
         ):
             ports |= service_ports(self.config, self.args.role, target=False)
         if self.is_p:
@@ -1461,20 +1468,25 @@ class Runner:
         self.report.update(status="passed", acceptance=acceptance, user_accepted=False)
 
     def run_full(self) -> None:
-        if getattr(self.args, "capacity_only", False):
+        capacity_only = getattr(self.args, "capacity_only", False)
+        timeout_only = getattr(self.args, "timeout_only", False)
+        if capacity_only or timeout_only:
+            name = "capacity" if capacity_only else "timeout"
             self.report.update(
-                coverage="capacity rejection and paired cleanup only",
+                coverage=f"{name} fault check and paired cleanup only",
                 components="not-run",
                 full_acceptance="incomplete",
             )
             self.prepare_full_cases()
-            self.capacity_stage()
-            self.report.update(
-                status="passed_execution_scope", stopped_after="capacity"
-            )
+            if capacity_only:
+                self.capacity_stage()
+            else:
+                self.stage(target=True, fault_only=True)
+            self.report.update(status="passed_execution_scope", stopped_after=name)
             write_json(self.root / "summary.json", self.report)
             print(
-                "CAPACITY_PASSED; stopped for user cleanup confirmation; timeout not run",
+                f"{name.upper()}_PASSED; stopped for user cleanup confirmation"
+                + ("; timeout not run" if capacity_only else ""),
                 flush=True,
             )
             return
@@ -1884,6 +1896,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             and not args.reference_only
             and not args.reference_service_report
             and not args.capacity_only
+            and not args.timeout_only
         ):
             if "acceptance" not in report:
                 report["acceptance"] = verify_mempool_full.summarize(
