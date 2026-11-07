@@ -48,7 +48,11 @@ class Timing:
         return e
 
     def begin(self, name):
+        if name == "main":
+            self.started_ns = time.monotonic_ns()
         self.cursor[name] = (self.event(), time.monotonic_ns())
+        if name == "main":
+            self.origin = self.cursor[name][0]
 
     def call(self, stream, name, fn, *args, **kwargs):
         host_end = time.monotonic_ns()
@@ -233,11 +237,34 @@ class Work:
         return raw, expected, data["counts"]
 
     def run(self, variant, raw):
-        t, rt = self.t, self.runtimes[variant]
+        t = self.t
         output = self.outputs[variant]
         output.fill_(-99)
         t.npu.synchronize()
         timer = Timing(t)
+        done = self.execute(variant, raw, timer)
+        done.synchronize()
+        end = time.monotonic_ns()
+        origin = timer.origin
+        start = timer.started_ns
+        expected_names = (
+            ["HBM_cache", "current", "P_alive", "D_alive"]
+            if variant == "baseline"
+            else ["multibase"]
+        )
+        if [name for name, _, _ in timer.kernels] != expected_names:
+            raise AssertionError("unexpected materialization copy launch count/order")
+        return dict(
+            copy_launches=len(timer.kernels),
+            start_ns=start,
+            end_ns=end,
+            total_ms=(end - start) / 1e6,
+            **timer.result(origin),
+        )
+
+    def execute(self, variant, raw, timer):
+        t, rt = self.t, self.runtimes[variant]
+        output = self.outputs[variant]
         rt._active = SimpleNamespace(
             replay=False, layers={0}, selection_layers={0}, fetch_layers=set()
         )
@@ -250,9 +277,7 @@ class Work:
         else:
             names = iter(("P_alive", "D_alive"))
             copier._kernel = lambda *a: timer.call("miss", next(names), self.native, *a)
-        start = time.monotonic_ns()
         timer.begin("main")
-        origin = timer.cursor["main"][0]
         # Rebuild selected-copy metadata each iteration from upstream selection.
         valid = (raw["positions"] >= 0) & (raw["positions"] < 8704)
         lookup_rows = raw["rows"].to(dtype=t.int32).contiguous()
@@ -302,22 +327,7 @@ class Work:
             self.main.wait_event(hit_done)
         self.main.wait_event(miss_done)
         done = timer.event()
-        done.synchronize()
-        end = time.monotonic_ns()
-        expected_names = (
-            ["HBM_cache", "current", "P_alive", "D_alive"]
-            if variant == "baseline"
-            else ["multibase"]
-        )
-        if [name for name, _, _ in timer.kernels] != expected_names:
-            raise AssertionError("unexpected materialization copy launch count/order")
-        return dict(
-            copy_launches=len(timer.kernels),
-            start_ns=start,
-            end_ns=end,
-            total_ms=(end - start) / 1e6,
-            **timer.result(origin),
-        )
+        return done
 
 
 def main():
@@ -363,10 +373,19 @@ def main():
         }
         samples, setups = [], {}
         for batch in (1, 16):
-            work = Work(t, pool, baseline, batch) if side else None
+            if cfg.get("graph"):
+                from swapin_graph import GraphWork
+
+                work_type = GraphWork
+            else:
+                work_type = Work
+            work = work_type(t, pool, baseline, batch) if side else None
             if work:
                 setups[str(batch)] = work.setup
             for variant in ("baseline", "materialize"):
+                if work and cfg.get("graph"):
+                    work.capture(variant)
+                cohort.exchange(f"b{batch}/{variant}/prepared")
                 for iteration in range(ITERATIONS):
                     if work:
                         raw, expected, counts = work.raw(iteration)

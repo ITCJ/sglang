@@ -170,4 +170,6 @@ PY
 ```
 
 029首轮在B1 baseline current-copy入口失败，未产生有效测量。
-029-r2尚未执行。26保持open；不自动解锁25。
+用户已回传029-r2、030、031均measured且cleanup passed，每case每rank100轮。
+汇总见[后续Graph对照说明](ticket26-graph-swapin.md#e-已收到的-eager-结果)。
+26保持open；不自动解锁25。

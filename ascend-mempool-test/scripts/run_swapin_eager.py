@@ -39,6 +39,9 @@ def parse_args(argv=None):
     p.add_argument("--log-root", type=Path, default=Path("/home/cryang/log/k2"))
     p.add_argument("--control-port", type=int, default=22900)
     p.add_argument("--timeout", type=float, default=3600)
+    p.add_argument(
+        "--graph", action="store_true", help="measure whole swap-in graph replay"
+    )
     p.add_argument("--describe", action="store_true")
     args = p.parse_args(argv)
     if Path(args.run_id).name != args.run_id or args.run_id in ("", ".", ".."):
@@ -73,12 +76,20 @@ def describe(args):
         ],
         baseline=BASELINE,
         baseline_eager_adapter="current src_index.contiguous before copy-start; cost included in metadata and total",
-        graph=False,
+        graph=args.graph,
         observe=False,
         trace=False,
-        timing="eager event brackets include host dispatch gaps; not profiler kernel-exclusive time",
+        timing=(
+            "whole graph device event span and replay-through-completion wall; input staging excluded"
+            if args.graph
+            else "eager event brackets include host dispatch gaps; not profiler kernel-exclusive time"
+        ),
         metadata="per-call lookup/routes/masks/task updates rebuilt; immutable base tables initialized separately",
-        order="B1 baseline100/materialize100 then B16 baseline100/materialize100; no copy warmup",
+        order=(
+            "B1 baseline100/materialize100 then B16 baseline100/materialize100; each graph: 3 eager warmups, 1 capture, 1 untimed replay"
+            if args.graph
+            else "B1 baseline100/materialize100 then B16 baseline100/materialize100; no copy warmup"
+        ),
         scope="synthetic source proportions on real BM; not replay of original locality or model-service acceptance",
     )
 
@@ -135,6 +146,7 @@ def run(args):
                     children = []
                     for rank in range(args.tp_size):
                         cfg = dict(
+                            graph=args.graph,
                             tp=args.tp_size,
                             side=side,
                             rank=rank,
@@ -199,7 +211,7 @@ def run(args):
                 report.update(
                     status="measured",
                     plan=identity["plan"],
-                    comparison=summarize(ranks),
+                    comparison=summarize(ranks, graph=args.graph),
                 )
             except BaseException as error:
                 try:
@@ -215,7 +227,7 @@ def run(args):
             server.close()
         write_json(root / "report.json", report)
     print(
-        f"SWAPIN_EAGER_MEASURED report={root / 'report.json'}; stopped for user cleanup confirmation",
+        f"SWAPIN_{'GRAPH' if args.graph else 'EAGER'}_MEASURED report={root / 'report.json'}; stopped for user cleanup confirmation",
         flush=True,
     )
 
@@ -235,7 +247,11 @@ def main(argv=None):
         run(args)
         return 0
     except Exception as error:
-        print(f"SWAPIN_EAGER_FAILED {error}", file=sys.stderr, flush=True)
+        print(
+            f"SWAPIN_{'GRAPH' if args.graph else 'EAGER'}_FAILED {error}",
+            file=sys.stderr,
+            flush=True,
+        )
         return 1
 
 

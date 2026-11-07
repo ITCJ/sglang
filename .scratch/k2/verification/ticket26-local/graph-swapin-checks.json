@@ -1,0 +1,24 @@
+{
+  "scope": "test harness only; production unchanged",
+  "cpu_tests": {
+    "new_distinct": 3,
+    "first_run": "3 passed",
+    "after_adapter_decoupling": "1 relevant test passed on second run"
+  },
+  "static": "ruff and AST passed",
+  "hardware": "not-run; user executes TP1 then TP2 then TP16 after cleanup confirmation",
+  "timing": "whole graph external event span plus replay-through-completion wall; no trace, no observe",
+  "known_limits": [
+    "CPU checks do not prove NPU capture compatibility",
+    "external event span may include replay submission gap",
+    "group elapsed includes launch skew; staging before per-rank start"
+  ],
+  "review": {
+    "standards_unresolved": 0,
+    "spec_blockers": 0,
+    "fixed": [
+      "preserve eager total timer after fixture setup",
+      "standalone GraphDispatch adapter"
+    ]
+  }
+}

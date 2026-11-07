@@ -366,3 +366,12 @@ B1 expand().flatten()保留stride=0；尚未产生有效性能测量，不归因
 生产文件及baseline快照逐字不变，没有新增同步或退出路径。
 新回归真实调用DecodeKV.supply_current，B1/B16在两轮内red/green通过，Ruff通过。
 Standards/Spec各0未解决；029-r2重试待用户清理确认，26保持open。
+
+### 2026-11-07：eager三组测量完成，新增Graph整图对照
+
+用户回传029-r2/030/031均measured且cleanup passed，每case每rank100轮。
+合并版eager单rank总耗时均值降低3%–17%；不能推断模型Graph收益。
+按用户要求增加--graph，只保留整图event与完成墙钟，无生产改动、observe或trace。
+两版均每轮更新固定输入、图内重算metadata，保留baseline双stream和原block_dim。
+3项新增CPU检查通过；Graph硬件待用户执行，26仍open，不解锁25。
+详见[整图对照交付](../ticket26-graph-swapin.md)。

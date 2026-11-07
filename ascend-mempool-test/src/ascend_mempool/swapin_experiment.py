@@ -103,7 +103,7 @@ def stats(values: list[float]) -> dict:
     )
 
 
-def summarize(ranks: list[dict]) -> dict:
+def summarize(ranks: list[dict], *, graph=False) -> dict:
     result = {}
     for variant, batch in (
         (v, b) for b in (1, 16) for v in ("baseline", "materialize")
@@ -118,19 +118,24 @@ def summarize(ranks: list[dict]) -> dict:
             if len(rows) != ITERATIONS:
                 raise ValueError("expected 100 complete samples per D rank and version")
             names = (
-                "total_ms",
-                "metadata_host_ms",
-                "metadata_device_span_ms",
-                "kernel_sum_ms",
-                "copy_envelope_ms",
+                ("total_ms", "graph_ms")
+                if graph
+                else (
+                    "total_ms",
+                    "metadata_host_ms",
+                    "metadata_device_span_ms",
+                    "kernel_sum_ms",
+                    "copy_envelope_ms",
+                )
             )
             per_rank[str(rank["rank"])] = {
                 name: stats([r[name] for r in rows]) for name in names
             }
-            per_rank[str(rank["rank"])]["kernels_ms"] = {
-                k: stats([r["kernels_ms"][k] for r in rows])
-                for k in rows[0]["kernels_ms"]
-            }
+            if not graph:
+                per_rank[str(rank["rank"])]["kernels_ms"] = {
+                    k: stats([r["kernels_ms"][k] for r in rows])
+                    for k in rows[0]["kernels_ms"]
+                }
         # D ranks share one host monotonic clock. No P/D clock subtraction.
         group = []
         for iteration in range(ITERATIONS):

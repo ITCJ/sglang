@@ -112,6 +112,18 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 
 ## D 名称、验收与实施票怎样对应
 
+**26：eager三组已测，新增整图swap-in对照入口。**
+
+用户回传029-r2/030/031均measured、cleanup passed，每case每rank100轮。
+合并版单rank总均值相对baseline下降约3%–17%，不能据此归因模型Graph性能。
+
+新增--graph，复用相同B1/B16和三组拓扑；图内包含metadata更新与copy。
+每轮固定地址输入更新，capture/预热/输入staging排除，只计整图event和完成墙钟。
+block_dim保持cache24、current/P/D/multibase48；生产源码不变，observe/trace关闭。
+
+3项新增CPU检查通过；NPU Graph待用户逐组运行和确认清理。
+[口径、文件与032双机指令](../k2/ticket26-graph-swapin.md)。26仍open，25不解锁。
+
 **29首轮失败与修复：B1 current索引连续性。**
 
 32在baseline current-copy入口报src_index must be contiguous。
