@@ -356,3 +356,13 @@ baseline原文快照调用四次copy，对照版一次四来源物化；真实BM
 两轮标准上限例外仅对应用户授权的一项第3轮；不能记最终全绿。
 Standards/Spec发现的问题已修复，复核各0剩余。NPU尚未执行，26仍open。
 详见[实施、口径和逐组指令](../ticket26-eager-swapin.md)。
+
+
+## 029首轮失败：B1 current copy索引非连续
+
+用户回传32 rank0的src_index must be contiguous；失败位于baseline DecodeKV.supply_current。
+B1 expand().flatten()保留stride=0；尚未产生有效性能测量，不归因BM或kernel性能。
+仅微测Timing.current_copy增加contiguous，放在copy-start前，计入metadata和总耗时。
+生产文件及baseline快照逐字不变，没有新增同步或退出路径。
+新回归真实调用DecodeKV.supply_current，B1/B16在两轮内red/green通过，Ruff通过。
+Standards/Spec各0未解决；029-r2重试待用户清理确认，26保持open。

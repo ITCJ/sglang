@@ -1,0 +1,23 @@
+{
+  "run_id": "k2-ticket26-029-eager-tp1",
+  "evidence": "user-returned decode/rank-0/failure.json and log",
+  "error": "RuntimeError: src_index must be contiguous",
+  "stage": "baseline B1 current copy before any completed performance sample",
+  "cause": "B1 expanded source indices retain stride zero after flatten",
+  "fix": "standalone Timing.current_copy source_rows.contiguous before copy-start event",
+  "timing": "conversion charged to metadata and total; copy event excludes conversion",
+  "production_changes": false,
+  "kernel_changes": false,
+  "baseline_snapshot_changes": false,
+  "test": "test_swapin_eager.TestSwapinEager.test_current_index_is_contiguous_before_copy_timing",
+  "test_runs": 2,
+  "red": "same contiguous-index assertion",
+  "green": "B1 and B16 content, launch boundary and invalid rows passed",
+  "reviews": {
+    "standards": 0,
+    "spec": 0
+  },
+  "npu_retry": "not-run",
+  "retry_run_id": "k2-ticket26-029-eager-tp1-r2",
+  "cleanup_confirmation": "pending"
+}

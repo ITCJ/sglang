@@ -72,6 +72,7 @@ def describe(args):
             sum(p.session(r).contribution for r in range(args.tp_size)) for p in plans
         ],
         baseline=BASELINE,
+        baseline_eager_adapter="current src_index.contiguous before copy-start; cost included in metadata and total",
         graph=False,
         observe=False,
         trace=False,

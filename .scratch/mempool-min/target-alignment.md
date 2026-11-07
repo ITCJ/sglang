@@ -112,6 +112,18 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 
 ## D 名称、验收与实施票怎样对应
 
+**29首轮失败与修复：B1 current索引连续性。**
+
+32在baseline current-copy入口报src_index must be contiguous。
+expand().flatten()在B1保留零步长，首轮没有有效性能结果。
+只改微测适配器，复制前转连续；成本计入metadata和总耗时。
+生产代码、baseline快照、kernel及同步/清理路径保持不变。
+
+新回归调用真实DecodeKV.supply_current，B1/B16两轮red/green通过。
+Standards/Spec复核各0未解决；旧夹具BF16检查未额外重跑。
+用户确认资源清理后仅重试029-r2，保留首轮日志，不进入030。
+详见[重试命令](../k2/ticket26-eager-swapin.md)。
+
 **26第二十九次准备：eager swap-in分项微测。**
 
 用户要求三组拓扑：P/D各1、2、16rank，分别使用NUMA0、0、0–7。

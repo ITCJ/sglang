@@ -104,9 +104,19 @@ Baseline保留hit stream与miss stream并行，current/P/D在miss stream顺序�
 Standards/Spec复核各0项未解决；NPU尚未运行。
 CPU模拟结果不证明NPU event计时、远端BM或原生kernel正确。
 
-## E 第一组029命令
+029实机失败：baseline B1的expand().flatten()保留零步长。
+原生copy拒绝非连续src_index，尚未得到有效性能结果。
+只在微测current-copy适配层调用contiguous，不改baseline源码。
+转换位于copy-start event之前，其成本计入metadata与总耗时。
 
-用户确认028已清理、设备资源可用后，先31再32。
+新增回归测试调用真实DecodeKV.supply_current，覆盖B1/B16。
+两轮内完成red/green，检查连续性、内容和无效行不变。
+本次Standards/Spec复核各0未解决；NPU重试待用户执行。
+
+## E 第一组029-r2重试命令
+
+用户确认029失败进程已清理、设备资源可用后，先31再32。
+本次仅改Python适配器，沿用已编译的kernel。
 运行结束停在当前组，不自动启动030或031。
 每侧自动新建目录，run-id不能重复使用。
 
@@ -115,12 +125,9 @@ CPU模拟结果不证明NPU event计时、远端BM或原生kernel正确。
 ```bash
 cd /home/cryang/sglang &&
 git pull --ff-only &&
-python3 ascend-mempool-test/scripts/build_multibase.py \
-  --sgl-source /home/cryang/sgl-kernel-npu \
-  --cann /usr/local/Ascend/cann-9.0.0 &&
 python3 -u ascend-mempool-test/scripts/run_swapin_eager.py \
   --role prefill --tp-size 1 \
-  --run-id k2-ticket26-029-eager-tp1 --control-port 22900
+  --run-id k2-ticket26-029-eager-tp1-r2 --control-port 22900
 ```
 
 32容器：
@@ -128,15 +135,12 @@ python3 -u ascend-mempool-test/scripts/run_swapin_eager.py \
 ```bash
 cd /home/cryang/sglang &&
 git pull --ff-only &&
-python3 ascend-mempool-test/scripts/build_multibase.py \
-  --sgl-source /home/cryang/sgl-kernel-npu \
-  --cann /usr/local/Ascend/cann-9.0.0 &&
 python3 -u ascend-mempool-test/scripts/run_swapin_eager.py \
   --role decode --tp-size 1 \
-  --run-id k2-ticket26-029-eager-tp1 --control-port 22900
+  --run-id k2-ticket26-029-eager-tp1-r2 --control-port 22900
 ```
 
-日志位于/home/cryang/log/k2/k2-ticket26-029-eager-tp1/{prefill,decode}/。
+日志位于/home/cryang/log/k2/k2-ticket26-029-eager-tp1-r2/{prefill,decode}/。
 成功标记SWAPIN_EAGER_MEASURED；报告report.json须为measured且cleanup=passed。
 失败返回非零，查看report.json、rank-N.log及rank-N/failure.json。
 每rank的result.json保留所有原始样本与setup时间，两侧交换报告。
@@ -155,7 +159,7 @@ python3 -u ascend-mempool-test/scripts/run_swapin_eager.py \
 python3 - <<'PY'
 import json
 from pathlib import Path
-p = Path('/home/cryang/log/k2/k2-ticket26-029-eager-tp1/prefill/report.json')
+p = Path('/home/cryang/log/k2/k2-ticket26-029-eager-tp1-r2/prefill/report.json')
 r = json.loads(p.read_text())
 print('STATUS:', r['status'], 'CLEANUP:', r['cleanup'])
 for name, data in r.get('comparison', {}).items():
@@ -165,4 +169,5 @@ for name, data in r.get('comparison', {}).items():
 PY
 ```
 
-029尚未执行。26保持open；不自动解锁25。
+029首轮在B1 baseline current-copy入口失败，未产生有效测量。
+029-r2尚未执行。26保持open；不自动解锁25。

@@ -61,6 +61,12 @@ class Timing:
         self.kernels.append((name, start, end))
         self.cursor[stream] = (end, time.monotonic_ns())
 
+    def current_copy(self, fn, source, target, source_rows, *args):
+        # B=1 expand().flatten() retains stride zero in the frozen baseline.
+        # Charge the eager ABI conversion to metadata, before copy-start events.
+        source_rows = source_rows.contiguous()
+        self.call("miss", "current", fn, source, target, source_rows, *args)
+
     def finish(self, name):
         host_end = time.monotonic_ns()
         end = self.event()
@@ -235,7 +241,7 @@ class Work:
         rt._active = SimpleNamespace(
             replay=False, layers={0}, selection_layers={0}, fetch_layers=set()
         )
-        rt._decode.kernel = lambda *a: timer.call("miss", "current", self.native, *a)
+        rt._decode.kernel = lambda *a: timer.current_copy(self.native, *a)
         copier = rt._fetch._copies[0, self.batch, TOPK]
         if variant == "materialize":
             copier.transfer.kernel = lambda *a: timer.call(

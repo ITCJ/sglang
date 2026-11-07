@@ -70,6 +70,48 @@ class TestSwapinEager(unittest.TestCase):
         with self.assertRaises(ValueError):
             summarize(ranks)
 
+    def test_current_index_is_contiguous_before_copy_timing(self):
+        import torch
+        from ascend_mempool.decode_write import DecodeKV, DecodeWriter
+        from ascend_mempool.layout import KVLayout, PoolLayout
+
+        layout = PoolLayout(
+            KVLayout(layers=1, slots=16, tokens=8, heads=1, dim=4),
+            KVLayout(layers=1, slots=16, tokens=16, heads=1, dim=4),
+        )
+        decode = DecodeKV(SimpleNamespace(layout=layout), DecodeWriter(0, 1), 17, "cpu")
+        decode.current[0, :, 0, :] = torch.arange(17)[:, None]
+        timer = Timing(None)
+        observed = []
+
+        def native(src, dst, si, di, valid, *rest):
+            dst.reshape(-1, 4)[di[valid]] = src.reshape(-1, 4)[si[valid]]
+
+        def copy_boundary(stream, name, fn, src, dst, si, *rest):
+            # Assert at copy-start: contiguous conversion belongs to metadata.
+            self.assertTrue(si.is_contiguous(), "src_index must be contiguous")
+            observed.append((stream, name, si.clone()))
+            fn(src, dst, si, *rest)
+
+        timer.call = copy_boundary
+        decode.kernel = lambda *args: timer.current_copy(native, *args)
+        for batch in (1, 16):
+            rows = torch.arange(1, batch + 1)
+            expanded = rows[:, None].expand(batch, 2048).flatten()
+            self.assertEqual(expanded.is_contiguous(), batch != 1)
+            positions = torch.full((batch, 2048), -1)
+            positions[:, 0] = 4
+            misses = positions >= 0
+            output = torch.full((batch, 2048, 1, 4), -9, dtype=torch.bfloat16)
+            remaining = decode.supply_current(
+                0, rows, positions, misses, output, torch.full((17,), 5)
+            )
+            self.assertFalse(remaining.any())
+            self.assertEqual(output[:, 0, 0, 0].tolist(), rows.tolist())
+            self.assertTrue((output[:, 1:] == -9).all())
+            self.assertEqual(observed[-1][:2], ("miss", "current"))
+        self.assertEqual(len(observed), 2)
+
     def test_snapshot_failure_still_writes_report(self):
         import json
         from unittest.mock import patch
