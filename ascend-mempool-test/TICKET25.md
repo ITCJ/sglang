@@ -98,3 +98,11 @@ Ascend/NPU 专用（路径相对 `python/sglang/srt/`）：
 - `tests/unit/test_dual_write_service.py`：上述三个公开服务边界用例。
 - 本文件、`.scratch/k2/ticket25-implementation-plan.md`、本票与验证记录。
 - `.scratch/mempool-min/target-alignment.md` 及生成HTML：代码/CPU/NPU状态分开记录。
+
+## off 首轮反馈与修复（2026-11-07）
+
+用户运行 ticket25-off-001，D fetch 因验收脚本访问已移除的
+`SparseKVCopy.source_regions` 而失败。修正 `scripts/verify_fetch.py`，
+用 `transfer.source_rows` 和 `source_table.ranges` 统计有效 P/D 行。
+执行实际统计循环的 CPU 检查通过：左右边界正确，排除 cache/current HBM 和无效行。
+未修改功能源码或放宽 Graph/数据检查。待第二轮 ticket25-off-002，票仍 open。

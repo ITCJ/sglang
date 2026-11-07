@@ -192,9 +192,12 @@ def fetch_checks(
                         stream.wait_event(event)
                     copier = runtime._fetch._copies[layer, args.graph_rows, args.topk]
                     for side in (0, 1):
+                        start, end = copier.source_table.ranges[side]
                         copied[layer, side].copy_(
                             (
-                                copier.transfer.valid & (copier.source_regions == side)
+                                copier.transfer.valid
+                                & (copier.transfer.source_rows >= start)
+                                & (copier.transfer.source_rows < end)
                             ).sum()
                         )
 
