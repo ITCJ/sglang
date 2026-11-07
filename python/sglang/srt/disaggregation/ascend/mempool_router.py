@@ -108,12 +108,14 @@ class MainRouter:
             pp_size=1,
             slots=16,
             prompt_capacity=self.config.prompt_capacity,
-            decode_capacity=self.config.decode_capacity,
+            decode_capacity=self.config.decode_storage_capacity,
             page_size=self.config.page_size,
             hbm_page_size=self.config.page_size,
             replicas=self.config.replicas(role),
             graph=role == "decode",
         )
+        if self.config.dual_write:
+            expected["dual_write"] = True
         if self.config.prefix_pages:
             expected.update(
                 prefix_pages=self.config.prefix_pages if role == "prefill" else 0,
@@ -189,7 +191,7 @@ class MainRouter:
                     16 * self.config.prompt_capacity // self.config.page_size
                 ),
                 d_alive=Quota(
-                    16 * self.config.decode_capacity // self.config.page_size
+                    16 * self.config.decode_storage_capacity // self.config.page_size
                 ),
                 d_hbm=Quota(min(r["hbm_pages"] for r in d)),
                 d_rows=Quota(min(r["request_rows"] for r in d)),
@@ -275,6 +277,26 @@ class MainRouter:
             hit_len=self._match_prefix(hashes),
             page_size=page_size,
         )
+        if self.config.dual_write:
+            hit_pages = request["hit_len"] // page_size
+            candidates = [
+                i
+                for i, value in enumerate(hashes)
+                if i >= hit_pages
+                and self.directory.get(value, {}).get("prefix") is None
+            ]
+            if len(candidates) > self.ledger["p_prefix"].snapshot()["free"]:
+                candidates = []
+            request["candidate_sources"] = candidates
+            request["prefix_sources"] = [
+                self.directory[value]["prefix"]["locations"][0]
+                for value in hashes[:hit_pages]
+            ]
+            needed["p_alive"] = 0
+            needed["d_alive"] += len(hashes) - hit_pages
+            needed["p_prefix"] = len(candidates)
+            if self.ledger["d_alive"].snapshot()["free"] < needed["d_alive"]:
+                raise RequestRejected("insufficient D alive capacity", 429)
         for key, n in needed.items():
             self.ledger[key].change(n)
         self.active = dict(
@@ -322,6 +344,9 @@ class MainRouter:
                 locations=[],
             )
             parent = hash_value
+        if self.config.dual_write:
+            for value in hashes[: request["hit_len"] // page_size]:
+                self.directory[value]["prefix"]["lock_ops"].append(request["rid"])
         # D first supplies signed local leases; P then chooses its own minimum
         # slot and signs the complete pair. Main never chooses either slot.
         self._command("decode", "alloc", request=request)
@@ -411,7 +436,8 @@ class MainRouter:
                     raise ValueError("load_back lacks complete native token indices")
         if kind == "load_back":
             # Protect the next read before releasing this operation's source hold.
-            self._plan_read("fill")
+            if not self.config.dual_write:
+                self._plan_read("fill")
             active["phase"] = "running"
             self.launches.append(active["request"])
         for value in active["hashes"][: hit // self.config.page_size]:
@@ -568,7 +594,14 @@ class MainRouter:
                     "prefill", "alloc", request=active["request"], bindings=ranks
                 )
             else:
-                for index, hash_value in enumerate(active["hashes"]):
+                if self.config.dual_write:
+                    targets = ranks[0]["candidate_pages"]
+                    if any(r["candidate_pages"] != targets for r in ranks):
+                        raise ValueError("candidate pages differ across ranks")
+                    active["candidate_pages"] = targets
+                for index, hash_value in enumerate(
+                    active["hashes"] if not self.config.dual_write else []
+                ):
                     locations = []
                     for rank in ranks:
                         page = rank["pages"][index]
@@ -600,9 +633,13 @@ class MainRouter:
                 or len(active["dispatch"]) != 2
             ):
                 raise ValueError("prompt became ready before both dispatches")
-            if active["request"]["hit_len"] and (
-                "fill" not in active["reads"]
-                or self.operations[active["reads"]["fill"]]["ack"] is None
+            if (
+                not self.config.dual_write
+                and active["request"]["hit_len"]
+                and (
+                    "fill" not in active["reads"]
+                    or self.operations[active["reads"]["fill"]]["ack"] is None
+                )
             ):
                 raise ValueError("prompt became ready before all fill replicas")
             for hash_value in active["hashes"]:
@@ -676,6 +713,9 @@ class MainRouter:
         if "prefill:native_freed" not in active["events"]:
             return
         active["save_planned"] = True
+        if self.config.dual_write:
+            self._plan_publish()
+            return
         missing = [
             i
             for i, value in enumerate(active["hashes"])
@@ -737,6 +777,51 @@ class MainRouter:
         if not pages:
             active["admit_complete"] = True
             self._free_after_save()
+
+    def _plan_publish(self) -> None:
+        active = self.active
+        assert active is not None
+        request = active["request"]
+        planned = request["candidate_sources"]
+        pages = [
+            i for i in planned if self.directory[active["hashes"][i]]["prefix"] is None
+        ]
+        discarded = [
+            target
+            for source, target in zip(planned, active["candidate_pages"])
+            if source not in pages
+        ]
+        self.ledger["p_prefix"].change(-len(discarded))
+        targets = [
+            target
+            for source, target in zip(planned, active["candidate_pages"])
+            if source in pages
+        ]
+        op_id = self.next_op + 1
+        hashes = [active["hashes"][i] for i in pages]
+        for value in hashes:
+            node = self.directory[value]
+            node["lock_ref"] += 1
+            node["source_ops"].append(op_id)
+            node["prefix"] = dict(
+                state="writing", op_id=op_id, locations=[], lock_ops=[]
+            )
+        active["admit"] = dict(op_id=op_id, hashes=hashes, parents=[])
+        self._command(
+            "prefill",
+            "admit",
+            source_pages=pages,
+            hashes=hashes,
+            target_pages=targets,
+            discarded_pages=discarded,
+            sources=[],
+        )
+        for value in active["hashes"]:
+            node = self.directory[value]
+            node["owner"] = None
+            node["lock_ref"] -= 1
+            if not node["lock_ref"]:
+                node["state"] = "draining"
 
     def _publish_prefix(
         self, command: dict[str, Any], ranks: list[dict[str, Any]]
@@ -830,6 +915,12 @@ class MainRouter:
         assert active is not None
         if any(self.directory[value]["lock_ref"] for value in active["hashes"]):
             raise RuntimeError("alive source remains protected")
+        if self.config.dual_write:
+            request = active["request"]
+            for value in active["hashes"][
+                : request["hit_len"] // self.config.page_size
+            ]:
+                self.directory[value]["prefix"]["lock_ops"].remove(request["rid"])
         active["phase"] = "freeing"
         for side in ROLES:
             self._command(side, "free")

@@ -30,7 +30,7 @@ class AlivePages:
         count = (tokens + self.page_size - 1) // self.page_size
         if request in self._leases:
             raise RuntimeError("request already owns alive pages")
-        if count <= 0 or count > self.free_count:
+        if count < 0 or count > self.free_count:
             raise ValueError("alive page capacity exhausted")
         pages = tuple(sorted(self._free)[:count])
         self._version += 1

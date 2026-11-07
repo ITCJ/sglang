@@ -107,6 +107,7 @@ class MempoolKVManager:
         self.session: PoolSession | None = None
         self.owners = (0, 1)
         self.contribution = layout.contribution_bytes(rank)
+        self.dual_write: Any = None
         self.page_tables: dict[tuple[int, str], Any] = {}
         self.page_leases: dict[tuple[int, int], PageLease] = {}
         self.active_page_versions: dict[tuple[int, int], int] = {}
@@ -754,6 +755,8 @@ class MempoolKVView(msgspec.Struct, frozen=True):
             "logical page", logical_page, self.token_capacity // self.layout.page_size
         )
         if (self.rank, self.region) in self.owner.page_tables:
+            if self.rank == 1 and self.owner.dual_write is not None:
+                logical_page += int(self.owner.dual_write.decode_offsets[handle].item())
             return self.owner.page_leases[self.rank, handle].pages[logical_page]
         return handle * (self.layout.tokens // self.layout.page_size) + logical_page
 
@@ -763,7 +766,10 @@ class MempoolKVView(msgspec.Struct, frozen=True):
             return self.layout.physical_rows(rows)
         handle = rows // self.token_capacity
         position = rows % self.token_capacity
-        page = table[handle, position // self.layout.page_size]
+        logical = position // self.layout.page_size
+        if self.rank == 1 and self.owner.dual_write is not None:
+            logical = logical + self.owner.dual_write.decode_offsets[handle]
+        page = table[handle, logical]
         return (
             page * (self.layout.layers * self.layout.page_size)
             + position % self.layout.page_size

@@ -643,9 +643,17 @@ class MempoolRuntime:
             write_range = torch.npu.mstx.range_start(
                 f"mempool:write_through:{layer_id}", torch.npu.current_stream()
             )
-        self._writers[layer].write(
-            values, slots=slots, positions=local_pos, valid=main_valid
-        )
+        dual = self.manager.dual_write if self.manager.rank == 0 else None
+        if dual is not None:
+            transfer, main_valid = dual.write(
+                layer, values, slots, local_pos, valid, main_valid
+            )
+            active.retained.extend(transfer.metadata)
+            active.retained.append(values)
+        else:
+            self._writers[layer].write(
+                values, slots=slots, positions=local_pos, valid=main_valid
+            )
         if self.observer is not None:
             torch.npu.mstx.range_end(write_range)
         safe_slot = torch.where(valid, slots, 0)
@@ -665,7 +673,11 @@ class MempoolRuntime:
         if active.writes and layer_id in self._index_writers:
             active.index_layers.add(layer_id)
             owns_index = self.index_writer is None or self.index_writer.member >= 0
-            if not owns_index and not (self.prefix_store and self.prefix_store.verify):
+            if (
+                not owns_index
+                and dual is None
+                and not (self.prefix_store and self.prefix_store.verify)
+            ):
                 return
             writer = self._index_writers[layer_id]
             native = self._index_pool.get_index_k_buffer(layer_id).reshape(
@@ -679,10 +691,25 @@ class MempoolRuntime:
             if self.index_writer is not None and owns_index:
                 owned_index = owned_index & self.index_writer.mask(local_pos, prompt)
             assert self._index_counts is not None
-            if owns_index:
-                writer.write(
-                    index_values, slots=slots, positions=local_pos, valid=owned_index
+            if dual is not None:
+                transfer, _ = dual.write(
+                    writer.target.layer,
+                    index_values,
+                    slots,
+                    local_pos,
+                    index_valid,
+                    owned_index,
+                    index=True,
                 )
+                active.retained.extend(transfer.metadata)
+            if owns_index:
+                if dual is None:
+                    writer.write(
+                        index_values,
+                        slots=slots,
+                        positions=local_pos,
+                        valid=owned_index,
+                    )
                 self._index_counts[writer.target.layer].scatter_add_(
                     0, safe_slot, owned_index.to(torch.int32)
                 )
@@ -831,7 +858,18 @@ class MempoolRuntime:
 
             with device_range(f"observer_io:{layer_id}"):
                 self.observation_device.io(
-                    layer_id, req_rows, positions, misses, self.row_prompt_len
+                    layer_id,
+                    req_rows,
+                    positions,
+                    misses,
+                    self.row_prompt_len,
+                    remote=self.manager.dual_write.remote_mask(
+                        self.row_prompt_slot[safe],
+                        positions,
+                        self.row_prompt_len[safe, None],
+                    )
+                    if self.manager.dual_write is not None
+                    else None,
                 )
         if self._fetch_sources is not None:
             # Captured alongside the fused materialization on the miss stream.
@@ -841,12 +879,13 @@ class MempoolRuntime:
             safe_rows = torch.where(row_valid, req_rows, 0).long()
             prompt = self.row_prompt_len[safe_rows, None]
             valid = misses & row_valid[:, None] & (positions >= 0)
+            remote = positions < prompt
+            if self.manager.dual_write is not None:
+                remote = self.manager.dual_write.remote_mask(
+                    self.row_prompt_slot[safe_rows], positions, prompt
+                )
             counts = torch.stack(
-                (
-                    (valid & (positions < prompt)).sum(1),
-                    (valid & (positions >= prompt)).sum(1),
-                ),
-                dim=1,
+                ((valid & remote).sum(1), (valid & ~remote).sum(1)), dim=1
             )
             self._fetch_sources[layer].index_add_(0, safe_rows, counts)
         active.fetch_layers.add(layer)
@@ -882,6 +921,12 @@ class MempoolRuntime:
             "prompt_bm_rows": progress.prompt_bm_rows if progress else 0,
             "decode_bm_rows": progress.decode_bm_rows if progress else 0,
         }
+        if self.manager.dual_write is not None:
+            report.update(
+                prefix_bm_rows=report["prompt_bm_rows"],
+                d_local_bm_rows=report["decode_bm_rows"],
+                p_alive_bm_rows=0,
+            )
         return report
 
     def end_forward(self) -> None:
@@ -1021,6 +1066,33 @@ class MempoolRuntime:
                         tokens=total,
                         start=progress.attachment.write_start,
                     )
+                if self.manager.rank == 0 and self.manager.dual_write is not None:
+                    handle = progress.attachment.slot
+                    dual = self.manager.dual_write
+                    dual.check_candidates(handle)
+                    candidates = dual.expected_counts[handle]
+                    logger.info(
+                        "mempool dual_write_complete data=%s",
+                        json.dumps(
+                            dict(
+                                slot=handle,
+                                main_remote_rows=counts[0][handle],
+                                main_remote_bytes=counts[0][handle]
+                                * self.layout.layers
+                                * self.layout.row_bytes,
+                                candidate_main_rows=candidates,
+                                candidate_main_bytes=candidates
+                                * self.layout.layers
+                                * self.layout.row_bytes,
+                                candidate_index_rows=candidates,
+                                candidate_index_bytes=candidates
+                                * self.manager.layout.prefix_index.layers
+                                * self.manager.layout.prefix_index.row_bytes,
+                                completion="forward_event",
+                                p_alive_bytes=0,
+                            )
+                        ),
+                    )
                 progress.completed = total
                 progress.main_written = counts[0][progress.attachment.slot]
                 if index_counts is not None:
@@ -1121,10 +1193,45 @@ class MempoolRuntime:
                         logical
                         - identity["prompt_tokens"] // self.observation_page_size
                     )
+                    direct_prompt = (
+                        self.manager.dual_write is not None
+                        and logical * self.observation_page_size
+                        < identity["prompt_tokens"]
+                    )
+                    if direct_prompt and p_io + d_io:
+                        location = self.manager.dual_write.prompt_location(
+                            identity["prompt_slot"], logical, layer
+                        )
+                        source.append(
+                            dict(
+                                location,
+                                rows=p_io + d_io,
+                                nbytes=(p_io + d_io) * self.layout.row_bytes,
+                                source_host=identity["prefill_host"]
+                                if p_io
+                                else identity["decode_host"],
+                            )
+                        )
                     for kind, number, pool_rank, slot, offset in (
-                        ("P_remote", p_io, 0, identity["prompt_slot"], logical),
-                        ("D_local", d_early, 1, identity["decode_slot"], d_page - 1),
-                        ("D_local", d_io - d_early, 1, identity["decode_slot"], d_page),
+                        ()
+                        if direct_prompt
+                        else (
+                            ("P_remote", p_io, 0, identity["prompt_slot"], logical),
+                            (
+                                "D_local",
+                                d_early,
+                                1,
+                                identity["decode_slot"],
+                                d_page - 1,
+                            ),
+                            (
+                                "D_local",
+                                d_io - d_early,
+                                1,
+                                identity["decode_slot"],
+                                d_page,
+                            ),
+                        )
                     ):
                         if number:
                             view = self.manager.view(pool_rank, layer)
@@ -1454,6 +1561,10 @@ def initialize_for_model_runner(model_runner: Any) -> None:
         )
         if router is not None:
             manager.enable_page_tables(model_runner.device)
+            if router.dual_write:
+                from .dual_write import DualWrite
+
+                manager.dual_write = DualWrite(manager, model_runner.device)
         runtime = MempoolRuntime(
             manager,
             req_pool_rows=model_runner.req_to_token_pool.req_to_token.shape[0],

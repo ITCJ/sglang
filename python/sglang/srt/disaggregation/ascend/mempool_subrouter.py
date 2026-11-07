@@ -50,6 +50,7 @@ class RouterShard:
         page_writers: Sequence[PageWriter] = (),
         index_writers: Sequence[PageWriter] = (),
         manager: Any = None,
+        dual_write: bool = False,
     ) -> None:
         self.control, self.native, self.effect, self.reply_to = (
             control,
@@ -93,6 +94,8 @@ class RouterShard:
             raise ValueError("SR native and DRAM page_size differ")
         self.page_size = page_size
         self.manager = manager
+        self.dual_write = dual_write
+        self.candidate_pages: list[int] = []
         capacity = (
             control.local.layout.prompt_tokens
             if control.local.role == "prefill"
@@ -110,7 +113,7 @@ class RouterShard:
     def prefix_region(self) -> str:
         if self.prefix is not None and self.prefix.prefix_layout is not None:
             assert self.prefix.manager.session is not None
-            return self.prefix.manager.session.identity
+            return str(self.prefix.manager.session.identity)
         return str(self.control.local.session)
 
     @property
@@ -241,6 +244,12 @@ class RouterShard:
                 if role == "prefill"
                 else request["max_new_tokens"]
             )
+            if self.dual_write:
+                tokens = (
+                    0
+                    if role == "prefill"
+                    else tokens + request["prompt_tokens"] - request["hit_len"]
+                )
             self.page_lease = self.alive.reserve(request["attempt"], tokens)
             self.page_handle = slot
             if self.manager is not None:
@@ -251,9 +260,29 @@ class RouterShard:
                 self.prefix.begin_request(
                     rid=request["rid"], slot=slot, tokens=request["prompt_tokens"]
                 )
+            if self.dual_write and role == "prefill":
+                assert self.prefix is not None
+                self.candidate_pages = self.prefix.reserve_candidates(
+                    len(request["candidate_sources"])
+                )
+                result["candidate_pages"] = self.candidate_pages
+                if self.manager is not None:
+                    peer = command["bindings"][rank]
+                    self.peer_page_handle = peer["slot"]
+                    self.peer_page_lease = PageLease(
+                        command["attempt"],
+                        peer["page_version"],
+                        tuple(p["physical_page"] for p in peer["pages"]),
+                    )
+                    self.manager.install_pages(
+                        1, self.peer_page_handle, self.peer_page_lease
+                    )
+                    self.manager.dual_write.install(
+                        slot, request, peer, self.candidate_pages
+                    )
             if self.restore is not None:
                 self.restore.begin_request(request, slot=slot)
-            self.fill_complete = request.get("hit_len", 0) == 0
+            self.fill_complete = self.dual_write or request.get("hit_len", 0) == 0
             self.readers = ReplicaReaders(self.main_groups)
             self.coverage = (
                 PromptCoverage(
@@ -311,8 +340,19 @@ class RouterShard:
                     )
                     if self.manager is not None:
                         self.manager.install_pages(
-                            0, self.peer_page_handle, self.peer_page_lease
+                            1 if self.dual_write and role == "prefill" else 0,
+                            self.peer_page_handle,
+                            self.peer_page_lease,
                         )
+                if role == "decode" and self.dual_write and self.manager is not None:
+                    assert self.page_lease is not None
+                    decode = dict(
+                        slot=self.page_handle,
+                        pages=[dict(physical_page=p) for p in self.page_lease.pages],
+                    )
+                    self.manager.dual_write.install(
+                        peer["slot"], self.request, decode, peer["candidate_pages"]
+                    )
                 reply = self.control.router_bind(self._binding(command))
                 if reply is not None:
                     result["message"] = native_wire(reply)
@@ -341,7 +381,9 @@ class RouterShard:
                     )
                     if self.peer_page_lease is not None:
                         self.manager.clear_pages(
-                            0, self.peer_page_handle, self.peer_page_lease
+                            1 if self.dual_write and role == "prefill" else 0,
+                            self.peer_page_handle,
+                            self.peer_page_lease,
                         )
                 self.page_lease = self.peer_page_lease = None
                 if self.prefix is not None:
@@ -454,6 +496,28 @@ class RouterShard:
             or "native_freed" not in self.sent_events
         ):
             raise ValueError("prefix admit requires completed P native cleanup")
+        if self.dual_write:
+            published = self.prefix.publish_candidates(
+                rid=command["rid"],
+                op_id=command["op_id"],
+                slot=state.p_slot.slot,
+                source_pages=command["source_pages"],
+                target_pages=command["target_pages"],
+                discarded_pages=command["discarded_pages"],
+            )
+            return dict(
+                published,
+                pages=[
+                    dict(
+                        pool="prefix",
+                        region=self.prefix_region,
+                        replica=self.prefix_replica,
+                        logical_page=p,
+                        page_size=self.page_size,
+                    )
+                    for p in published["target_pages"]
+                ],
+            )
         sources, pages = command["sources"], command["source_pages"]
         if [source["rank"] for source in sources] != list(range(16)):
             raise ValueError("admit source is missing TP ranks")
@@ -752,7 +816,11 @@ class MempoolSubrouter:
                     self.shard.readers.drained
                     and all(f is not None and f.native_freed for f in common_facts)
                 ):
-                    if command["kind"] == "admit" and self._admit_pages is None:
+                    if (
+                        command["kind"] == "admit"
+                        and self._admit_pages is None
+                        and not self.shard.dual_write
+                    ):
                         count = len(command["source_pages"])
                         assert self.shard.prefix is not None
                         self._admit_pages = tuple(self.shard.prefix.select_pages(count))

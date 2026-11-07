@@ -51,6 +51,7 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     pool_copy: bool = False
     pool_copy_sdk_build_id: str = ""
     pool_copy_bind_cpu: bool = True
+    dual_write: bool = False
     observe: bool = False
     observe_trace: bool = False
     observe_sample_every: int = 1
@@ -68,6 +69,15 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     decode_write_assignment: str = "features"
 
     def __post_init__(self) -> None:
+        if self.dual_write and not (
+            self.prefix_shared
+            and self.decode_shared
+            and self.prefix_pages
+            and self.prefix_admit_mode == "owners"
+        ):
+            raise ValueError(
+                "dual_write requires shared P/D and prefix pools with owner writers"
+            )
         if self.observe_sample_every < 1:
             raise ValueError("observe_sample_every must be positive")
         if self.prefix_shared and not (
@@ -195,6 +205,11 @@ class RouterConfig(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
             prefix_main=1 if self.prefix_shared else enabled,
             prefix_index=1 if self.prefix_shared else enabled,
         )
+
+    @property
+    def decode_storage_capacity(self) -> int:
+        # Storage capacity is distinct from the generation limit.
+        return self.decode_capacity + (self.prompt_capacity if self.dual_write else 0)
 
     @property
     def read_assignment(self) -> str:

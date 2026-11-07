@@ -136,6 +136,7 @@ class PrefixStore:
         self._operations: dict[int, _Admit] = {}
         self._reads: dict[int, _Read] = {}
         self._ready: set[int] = set()
+        self._candidates: set[int] = set()
         self._read_stream: Any = None
         self._fault: str | None = None
         self._dtype = torch.empty(1, dtype=torch.bfloat16, device="cpu")
@@ -153,6 +154,58 @@ class PrefixStore:
         if self.prefix_layout is not None:
             return self.prefix_layout.select(self._free, count, self._request_segment)
         return list(self.free_pages[:count])
+
+    def reserve_candidates(self, count: int) -> list[int]:
+        pages = self.select_pages(count)
+        if len(pages) != count:
+            raise RuntimeError("candidate reservation exceeds prefix capacity")
+        self._free.difference_update(pages)
+        self._candidates.update(pages)
+        return pages
+
+    def publish_candidates(
+        self,
+        *,
+        rid: str,
+        op_id: int,
+        slot: int,
+        source_pages: list[int],
+        target_pages: list[int],
+        discarded_pages: list[int],
+    ) -> dict[str, Any]:
+        # Called only after all P writes completed and all D readers drained.
+        if not set(target_pages + discarded_pages) <= self._candidates:
+            raise RuntimeError("publish has no candidate reservation")
+        self._candidates.difference_update(target_pages + discarded_pages)
+        self._free.update(discarded_pages)
+        main, index = self.manager.layout.prefix_main, self.manager.layout.prefix_index
+        assert main is not None and index is not None
+        written = [p for p in target_pages if self._admit_writer(p) == self.replica]
+        receipt = dict(
+            readable=True,
+            slot=slot,
+            source_pages=source_pages,
+            target_pages=target_pages,
+            main_layers=main.layers,
+            index_layers=index.layers,
+            written_pages=written,
+            main_bytes=0,
+            index_bytes=0,
+        )
+        operation = _Admit(
+            rid,
+            op_id,
+            slot,
+            self._prompt_tokens,
+            tuple(source_pages),
+            tuple(target_pages),
+            receipt=receipt,
+            written_pages=written,
+        )
+        if self.verify:
+            receipt["source_digests"] = self._admit_digests(operation)
+        self._operations[op_id] = operation
+        return receipt
 
     def complete_admit(self, op_id: int, receipts: list[dict[str, Any]]) -> None:
         """Publish local readiness only after all segment writers have completed."""
@@ -224,6 +277,8 @@ class PrefixStore:
             and self.index_writer is not None
         )
         owner = self._admit_writer(target)
+        if self.manager.dual_write is not None:
+            return dict(main=owner, index=owner)
         group = next(group for group in self.prefix_layout.groups if owner in group)
         main = next(
             rank
@@ -245,8 +300,17 @@ class PrefixStore:
 
     def _admit_digests(self, operation: _Admit) -> dict[str, dict[str, str]]:
         source = self._source
-        if source is None or not source.verified:
-            raise RuntimeError("prefix admit has no verified source")
+        if source is None:
+            raise RuntimeError("prefix admit has no source")
+        if self.manager.dual_write is None:
+            if not source.verified:
+                raise RuntimeError("prefix admit has no verified source")
+        elif any(
+            not bool(mask[page * self.page_size : (page + 1) * self.page_size].all())
+            for page in operation.source_pages
+            for mask in source.coverage.values()
+        ):
+            raise RuntimeError("prefix candidate is missing computed source rows")
         result = {}
         for page, target in zip(operation.source_pages, operation.target_pages):
             values = {
@@ -1097,7 +1161,8 @@ class PrefixStore:
             )
             for operation in operations:
                 if operation.rid == rid and (
-                    isinstance(operation, _Admit) or operation.kind == "fill"
+                    (isinstance(operation, _Admit) and self.manager.dual_write is None)
+                    or (isinstance(operation, _Read) and operation.kind == "fill")
                 ):
                     self.copy_executor.retire(operation.op_id)
         self._operations = {

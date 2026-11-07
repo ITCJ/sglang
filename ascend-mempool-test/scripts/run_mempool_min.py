@@ -258,7 +258,7 @@ def service_environment(
         LOG_DIR=str(root),
         GRAPH_MODE="graph",
         PREFILL_CAPACITY=str(config.prompt_capacity),
-        DECODE_CAPACITY=str(config.decode_capacity),
+        DECODE_CAPACITY=str(config.decode_storage_capacity),
         CONTEXT_LENGTH=str(config.context_length),
         MAX_TOTAL_TOKENS=str(config.max_total_tokens),
         P_PORT=str(config.prefill_port),
@@ -294,11 +294,12 @@ def service_ports(config: RouterConfig, role: str, *, target: bool = True) -> se
             prefill_index_shared=False,
             prefix_shared=False,
             prefix_read_assignment="auto",
+            dual_write=False,
         )
     host = config.prefill_host if role == "prefill" else config.decode_host
     layout = MempoolConfig(
         prefill_capacity=config.prompt_capacity,
-        decode_capacity=config.decode_capacity,
+        decode_capacity=config.decode_storage_capacity,
         page_size=config.page_size,
     ).make_mla_layout(
         num_layers=78,
@@ -335,7 +336,7 @@ def service_ports(config: RouterConfig, role: str, *, target: bool = True) -> se
 def memory_budget(config: RouterConfig, role: str) -> dict[str, int]:
     layout = MempoolConfig(
         prefill_capacity=config.prompt_capacity,
-        decode_capacity=config.decode_capacity,
+        decode_capacity=config.decode_storage_capacity,
         page_size=config.page_size,
     ).make_mla_layout(
         num_layers=78,

@@ -78,12 +78,14 @@ class PageObservation:
         positions: Tensor,
         misses: Tensor,
         prompt_lengths: Tensor,
+        remote: Optional[Tensor] = None,
     ) -> None:
         layer = layer_id - self.start_layer
         valid = misses & (rows[:, None] > 0) & (positions >= 0)
         prompt = prompt_lengths[rows.long(), None]
-        self._add(layer, rows, positions, valid & (positions < prompt), 3)
-        self._add(layer, rows, positions, valid & (positions >= prompt), 4)
+        remote = positions < prompt if remote is None else remote
+        self._add(layer, rows, positions, valid & remote, 3)
+        self._add(layer, rows, positions, valid & ~remote, 4)
         # An unaligned prompt can split one logical selected page across two
         # physical D pages. Retain the earlier-page count for exact locations.
         self._add(

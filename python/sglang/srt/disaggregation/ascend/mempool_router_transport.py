@@ -68,7 +68,7 @@ def attach_subrouter(
         chunked_prefill_size=-1,
         max_prefill_tokens=config.prompt_capacity,
         mempool_prefill_capacity=config.prompt_capacity,
-        mempool_decode_capacity=config.decode_capacity,
+        mempool_decode_capacity=config.decode_storage_capacity,
         disable_cuda_graph=role == "prefill",
     )
     for name, value in required.items():
@@ -183,6 +183,7 @@ def attach_subrouter(
         page_writers=[writers[rank] for rank in range(16)] if writers else (),
         index_writers=index_writers,
         manager=runtime.manager,
+        dual_write=config.dual_write,
     )
     connection = (
         SRConnection(config.control_endpoint, role, control.local.session)
@@ -218,6 +219,7 @@ def attach_subrouter(
         numa_node=runtime.manager.numa_node,
         numa_placement_verified=False,
         replicas=config.replicas(role),
+        dual_write=config.dual_write,
         replica_locations=runtime.manager.replica_registration(),
         graph=not args.disable_cuda_graph,
     )

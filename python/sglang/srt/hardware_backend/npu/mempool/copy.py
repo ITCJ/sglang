@@ -101,6 +101,13 @@ class SparseKVCopy:
                 if tensor is not None
                 else (0, 1)
             )
+        self.dual_write = prompt.owner.dual_write
+        if self.dual_write is not None:
+            regions.extend(
+                view_regions(
+                    self.dual_write.prefix_views(prompt.layer), prompt.layout.row_bytes
+                )
+            )
         self.extra_sources = extra_sources
         self.source_table = BaseTable(
             regions, output.device, [prompt.owner, *extra_sources]
@@ -173,8 +180,22 @@ class SparseKVCopy:
         source_rows = torch.zeros_like(self.inputs.dst_index)
         valid = torch.zeros_like(source_rows, dtype=torch.bool)
         for side, (view, route) in enumerate(zip(self.views, self.routes())):
-            physical = view.map_rows(route.src_index)
-            start, end = self.source_table.ranges[side]
+            if side == 0 and self.dual_write is not None:
+                handle = route.src_index // view.token_capacity
+                position = route.src_index % view.token_capacity
+                logical = position // view.layout.page_size
+                region = self.dual_write.regions[handle, logical]
+                page = self.dual_write.pages[handle, logical]
+                safe_region = region.clamp_min(0)
+                physical = (
+                    page * view.layout.layers * view.layout.page_size
+                    + position % view.layout.page_size
+                )
+                start = self.source_table.ranges[safe_region, 0]
+                end = self.source_table.ranges[safe_region, 1]
+            else:
+                physical = view.map_rows(route.src_index)
+                start, end = self.source_table.ranges[side]
             enabled = route.valid & (physical >= 0) & (physical < end - start)
             source_rows = torch.where(enabled, start + physical, source_rows)
             valid |= enabled

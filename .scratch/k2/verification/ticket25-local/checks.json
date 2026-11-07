@@ -1,0 +1,37 @@
+{
+  "base": "46af27553847c013f07bad5c2428b1c5460a082b",
+  "full_suite": {
+    "tests": 652,
+    "failures": 8,
+    "errors": 35,
+    "rounds": 1
+  },
+  "retry": {
+    "tests": 25,
+    "passed": 24,
+    "errors": 1
+  },
+  "new_tests": {
+    "passed": 3,
+    "scope": "Main admission/ABCE lifecycle and real TP16 SR allocation/dispatch; no device data validation"
+  },
+  "skip_full_suite": [
+    "admission test already ran red/green; excluded to keep maximum two rounds"
+  ],
+  "remaining_methods": [
+    "test_bandwidth_runner.TestBandwidthRunner.test_worker_failure_returns_nonzero_and_reports_cleanup",
+    "test_config.TestMempoolConfig.test_defaults_and_unsupported_model_storage",
+    "test_mempool_min_entry.TestPreflightIdentity.test_matching_identities_keep_preflight_enabled",
+    "test_mempool_min_entry.TestPreflightIdentity.test_mismatch_keeps_both_identities_and_names_the_differing_field",
+    "test_mempool_min_entry.TestPreflightIdentity.test_peer_disconnect_still_preserves_local_identity",
+    "test_mempool_session_acceptance.TestSessionAcceptance.test_cleanup_checks_actual_session_ports_not_reserved_range",
+    "test_mempool_session_acceptance.TestSessionAcceptance.test_service_ports_preserves_pair_and_shared_group_endpoints",
+    "test_page_first_arena.TestPageFirstArena.test_both_phases_fit_eight_gib_and_access_above_uint32",
+    "test_swapin_eager.TestSwapinEager.test_real_baseline_and_fused_fetch_match_all_four_sources"
+  ],
+  "npu": "not run; user explicitly excluded dual-write on group",
+  "review": {
+    "Standards": "3 suggestions fixed",
+    "Spec": "4 findings fixed; 0 static remaining"
+  }
+}
