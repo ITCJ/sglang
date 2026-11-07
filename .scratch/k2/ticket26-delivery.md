@@ -294,3 +294,13 @@ ruff通过，Standards/Spec各0未解决；硬件018待运行，26仍open、25�
 原600秒operation_timeout不改；功能源码/设备算子/通用退出路径不改。
 两项CPU检查一轮通过，ruff通过，Standards/Spec各0未解决；019硬件验收待执行。
 脚本和测试清单、双侧命令见[019说明](ticket26-timeout-only.md)。26仍open，25未解锁。
+
+
+## 019超时通过标记与020两rank微测
+
+用户回传31 TIMEOUT_PASSED，原路径已核验D故障日志、退出码及双侧清理；32 summary未单独回传。
+下一段直接调用既有run_bandwidth.py，multibase/remote-write、设备0/1、NUMA0、samples1/warmup1/iterations2。
+不使用run_ticket26 --stage benchmark，避免自动接着启动TP16；不重复已过服务或组件。
+双侧CLI计划检查确认22档、同配置；未运行NPU。仅更新说明与用户结果，功能源码/脚本/测试无修改。
+模型计算重叠仍未知，迁移观测同负载对照尚未归档；两档微测也不能单独宣称整个26通过或解锁25。
+见[020双机命令](ticket26-pair-benchmark.md)。26仍open。

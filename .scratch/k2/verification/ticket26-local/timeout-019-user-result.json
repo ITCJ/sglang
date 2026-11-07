@@ -1,0 +1,17 @@
+{
+  "source": "user-pasted prefill success marker",
+  "run_id": "k2-ticket26-019-timeout",
+  "delivered_commit": "f51d1f7d0e",
+  "identity_report_not_collected": true,
+  "prefill_marker": "TIMEOUT_PASSED; stopped for user cleanup confirmation",
+  "paired_evidence": "prefill success follows final decode fault log/exit verification and paired cleanup barriers",
+  "decode_summary": "not yet pasted",
+  "full_acceptance": "incomplete",
+  "remaining_hardware_runs": [
+    "two-rank multibase microbenchmark",
+    "TP16 multibase microbenchmark"
+  ],
+  "remaining_evidence": "migration observation comparison and model compute overlap remain unverified; old deleted reports cannot be reconstructed from markers",
+  "next_run_id": "k2-ticket26-020-pair",
+  "ticket_state": "open"
+}
