@@ -316,3 +316,14 @@ ruff通过，Standards/Spec各0未解决；硬件018待运行，26仍open、25�
 021复用插件，仅重试两rank微测，命令见[微测说明](ticket26-pair-benchmark.md)。26仍open，TP16不自动启动。
 
 本轮ruff通过；Standards与Spec评审各0项未解决。
+
+
+## 021双侧微测通过与022 TP16
+
+用户回传双侧完成标记、passed_measurement_scope、cleanup passed及四份Graph通过报告。
+source_capacity=12但post25_active_sources=4/full_shape=false，只覆盖一个NUMA组；完整形状待TP16。
+128K remote43.163GB/s、dual80.137GB/s按各自物理字节计，不能直接判断速度倍数；每档两次，仅粗测。
+D读p99基线1.163ms，128K remote干扰2.479ms、dual干扰2.994ms。物理落点和计算重叠未证明。
+022只运行TP16微测，原22档与Graph检查保留；真实CLI双侧计划核对通过，未运行硬件。
+本轮仅文档与证据记录，无功能源码、脚本或测试改动。26仍open、25未解锁。
+[022命令](ticket26-tp16-benchmark.md)。

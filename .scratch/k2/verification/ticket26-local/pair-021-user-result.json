@@ -1,0 +1,66 @@
+{
+  "source": "user-pasted both completion markers, prefill report/runner/conclusions and all four local+peer graph reports",
+  "run_id": "k2-ticket26-021-pair",
+  "delivered_commit": "ffc1749e36",
+  "status": "passed_measurement_scope",
+  "scope": "remote-write",
+  "tp_size": 2,
+  "nodes": [
+    0
+  ],
+  "samples": 1,
+  "iterations": 2,
+  "warmup": 1,
+  "copy_backend": "multibase",
+  "runner": {
+    "status": "measured",
+    "cleanup": "passed"
+  },
+  "graph": {
+    "reports": 4,
+    "status": "passed",
+    "source_capacity": 12,
+    "post25_active_sources": 4,
+    "full_shape": false,
+    "captures": 1,
+    "replays": 5,
+    "decode_stale_before_replay": "passed"
+  },
+  "physical_numa_verified": false,
+  "overlap": "not_proven_by_transfer_only_microbenchmark",
+  "sdk_identity": "source_confirmed_separate_builds",
+  "measurements": [
+    {
+      "tokens": 4096,
+      "remote_GBps": 10.422,
+      "remote_first_group_ms": 0.681,
+      "dual_GBps": 38.446,
+      "dual_first_group_ms": 0.309
+    },
+    {
+      "tokens": 8192,
+      "remote_GBps": 28.026,
+      "remote_first_group_ms": 0.363,
+      "dual_GBps": 40.73,
+      "dual_first_group_ms": 0.663
+    },
+    {
+      "tokens": 32768,
+      "remote_GBps": 33.308,
+      "remote_first_group_ms": 1.33,
+      "dual_GBps": 71.819,
+      "dual_first_group_ms": 1.255
+    },
+    {
+      "tokens": 131072,
+      "remote_GBps": 43.163,
+      "remote_first_group_ms": 3.597,
+      "dual_GBps": 80.137,
+      "dual_first_group_ms": 4.416
+    }
+  ],
+  "ticket_state": "open",
+  "dread_p99_baseline_ms": 1.163,
+  "dread_p99_128k_remote_ms": 2.479,
+  "dread_p99_128k_dual_ms": 2.994
+}
