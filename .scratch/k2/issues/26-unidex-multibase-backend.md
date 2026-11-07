@@ -332,3 +332,27 @@ Standards/Spec各0项未解决；硬件性能测量等待用户执行。
 原始范围审计及用户性能数值见[检查记录](../verification/ticket26-local/materialize-only-checks.json)。
 028仅一个4096→32请求，P eager、D Graph；observe/trace关闭，baseline不重跑。
 资源由用户确认，尚未运行028硬件；不重新认定旧NPU通过覆盖新版本，26仍open、25未解锁。
+
+
+## 028用户回传：单请求性能接近baseline
+
+31输出32个token和PERFORMANCE_MEASURED。Router TTFT=13349.075ms，
+TPOT=470.297ms/token，decode=2.126317token/s，客户端E2E=35995.345ms。
+相比026，TPOT+4.02%、吞吐-3.87%；相比027，TPOT-61.96%、吞吐+162.88%。
+本轮未复现027明显退化，但单请求不能证明某个kernel是根因或解释剩余4.02%差距。
+只保留四来源物化的方向得到本次测量支持；继续排查应关注已撤销改动及交互。
+32结果、身份manifest及summary尚未回传，人工清理待确认；不自动安排新一轮。
+没有修改生产源码、重跑baseline或采集trace；26仍open，完整验收未成立。
+数据见[028用户结果](../verification/ticket26-local/materialize-028-user-result.json)。
+
+
+## 029准备：纯eager swap-in计时
+
+按用户要求增加独立微测，不改生产代码。三组P/D拓扑1/2/16，对应NUMA0/0/0–7。
+用户进一步指定B1/B16都测，每版100轮，重新构造metadata。
+baseline原文快照调用四次copy，对照版一次四来源物化；真实BM、固定78层跨度，测第0层。
+提供metadata主机时间/设备区间、各copy event、复制跨度和总墙钟，不使用Graph/observe/trace。
+5项CPU通过；四来源项用户授权第3轮已完成四源一致比较，最后BF16常量断言已修正但未第4轮。
+两轮标准上限例外仅对应用户授权的一项第3轮；不能记最终全绿。
+Standards/Spec发现的问题已修复，复核各0剩余。NPU尚未执行，26仍open。
+详见[实施、口径和逐组指令](../ticket26-eager-swapin.md)。

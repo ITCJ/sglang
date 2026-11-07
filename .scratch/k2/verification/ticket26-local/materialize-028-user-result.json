@@ -1,0 +1,53 @@
+{
+  "status": "user_reported_single_request_measured",
+  "run_id": "k2-ticket26-028-materialize-perf",
+  "expected_source_commit": "b09d881c2b",
+  "source_identity_manifest": "not-returned",
+  "source": "user pasted prefill console metrics and PERFORMANCE_MEASURED marker",
+  "log_root": "/home/cryang/log/k2/k2-ticket26-028-materialize-perf",
+  "planned_conditions": {
+    "prompt_tokens": 4096,
+    "output_tokens": 32,
+    "prefill": "eager",
+    "decode": "Graph",
+    "observe": false,
+    "trace": false
+  },
+  "performance": {
+    "clock": "prefill Router host monotonic",
+    "scope": "Router admission to D token stream receipt; not client streaming TTFT",
+    "router_ttft_ms": 13349.075203994289,
+    "router_first_chunk_ms": 13349.075203994289,
+    "router_time_to_last_token_ms": 27928.271987941116,
+    "tpot_ms": 470.29667044989765,
+    "decode_tokens_per_second": 2.1263174137366843,
+    "first_chunk_tokens": 1,
+    "first_token_exact": true,
+    "output_tokens": 32,
+    "client_e2e_ms": 35995.34540111199,
+    "client_e2e_per_output_token_ms": 1124.8545437847497,
+    "client_output_tokens_per_second": 0.8890038321180115
+  },
+  "change_percent": {
+    "026_baseline": {
+      "router_ttft_ms": -5.923242575442844,
+      "tpot_ms": 4.023129029772221,
+      "decode_tokens_per_second": -3.8675331796842682,
+      "client_e2e_ms": -1.2105778802527722
+    },
+    "027_broad": {
+      "router_ttft_ms": -6.654328883889837,
+      "tpot_ms": -61.95928852421064,
+      "decode_tokens_per_second": 162.87626103850354,
+      "client_e2e_ms": -41.56021877967822
+    }
+  },
+  "manual_cleanup_confirmation": "pending",
+  "full_acceptance": "not-established",
+  "ticket_state": "open",
+  "limits": [
+    "One request per version; no repeated-sample variance estimate",
+    "No per-kernel timing or trace; no individual change identified as root cause",
+    "32 console and per-role summary/identity not returned"
+  ]
+}

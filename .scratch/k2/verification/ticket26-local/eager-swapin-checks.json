@@ -1,0 +1,67 @@
+{
+  "scope": "new standalone scripts only; no production changes",
+  "topologies": [
+    [
+      1,
+      [
+        0
+      ]
+    ],
+    [
+      2,
+      [
+        0
+      ]
+    ],
+    [
+      16,
+      [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ]
+    ]
+  ],
+  "batches": [
+    1,
+    16
+  ],
+  "iterations_per_variant": 100,
+  "npu": "not-run",
+  "graph": false,
+  "observe": false,
+  "trace": false,
+  "cpu": {
+    "tests": 6,
+    "passed_final_run": 5,
+    "four_source_comparison": "baseline/fused equality and kernel-count assertions passed in third run; last changed-metadata check failed because BF16(999)=1000; expected value corrected to source.item(), no fourth run",
+    "repeat_exception": "User authorized only the third run of that one test",
+    "rounds": [
+      "5 tests:3 passed,2 fixture/expectation failures",
+      "2 failed tests:topology passed,forward fixture failure",
+      "authorized one test:main comparison passed,last BF16 literal assertion failed",
+      "new failure-report test:passed"
+    ]
+  },
+  "static": "ruff passed; baseline dependency byte equality checked via snapshot",
+  "reviews": {
+    "standards_unresolved": 0,
+    "spec_unresolved": 0,
+    "fixed": [
+      "runtime KVLayout instead of PoolLayout",
+      "lookup contiguous int32 inputs/bool mask in timed region",
+      "preflight/error/cleanup report lifecycle"
+    ]
+  },
+  "limitations": [
+    "Synthetic locality, observed aggregate source ratios only",
+    "NPU event brackets can include host gaps; not profiler-exclusive kernel time",
+    "No physical NUMA residency proof",
+    "CPU final full suite is not recorded as green"
+  ]
+}

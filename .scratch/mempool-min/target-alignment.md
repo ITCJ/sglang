@@ -112,6 +112,38 @@ SR 分片数量由 worker 数量决定，不等于物理副本数。
 
 ## D 名称、验收与实施票怎样对应
 
+**26第二十九次准备：eager swap-in分项微测。**
+
+用户要求三组拓扑：P/D各1、2、16rank，分别使用NUMA0、0、0–7。
+每组测B1和B16，两版各100轮，每轮重新构造任务metadata。
+复用原始来源行数比例，baseline四次copy对照一次multibase。
+真实BM与78层跨度；只测第0层，不运行模型或Graph。
+
+报告metadata主机/设备区间、各copy event区间、总墙钟及同机rank完成跨度。
+不采集observe/trace；event区间可能含主机提交间隙，不冒充纯kernel时间。
+
+5项CPU通过；四来源项第三轮输出对照通过，末尾BF16断言修正后未第四次重跑。
+第3轮由用户明确授权；不记完整CPU绿灯，NPU尚未运行。
+
+Standards/Spec复核各0未解决，生产代码未改。
+029结束后人工确认清理再启动下一组，26保持open、25未解锁。
+详见[微测说明与命令](../k2/ticket26-eager-swapin.md)。
+
+**26第二十八次结果：四来源物化版性能接近baseline。**
+
+用户回传31控制台：32个输出token，PERFORMANCE_MEASURED。
+TTFT 13349.075ms，TPOT 470.297ms，decode 2.126317token/s。
+客户端E2E 35995.345ms；TPOT比baseline高4.02%。
+相对广泛替换版，TPOT下降61.96%，吞吐提高162.88%。
+
+单请求结果未复现此前明显退化；不归因具体kernel。
+保留物化合并，排查范围收窄到已撤销改动及其交互。
+observe/trace关闭，baseline未重跑，不自动启动下一轮。
+
+32输出、身份manifest和summary尚未回传，人工清理待确认。
+26仍open、25未解锁；本轮不等于完整验收。
+详见[028用户结果](../k2/verification/ticket26-local/materialize-028-user-result.json)。
+
 **26第二十八次准备：仅保留四来源物化，其他生产代码回退。**
 
 用户回传026/027普通请求性能，TPOT为452.108/1236.298ms。
